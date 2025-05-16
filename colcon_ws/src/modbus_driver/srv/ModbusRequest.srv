@@ -1,0 +1,11 @@
+# Request
+uint8 function_code  # 3 = read holding, 6 = write single, 16 = write multiple
+uint8 slave_id
+uint16 address
+uint16[] values      # Empty for read
+
+---
+# Response
+uint16[] result      # Result of read or echo of written values
+bool success
+string error_message

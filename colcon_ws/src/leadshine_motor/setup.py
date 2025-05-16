@@ -12,7 +12,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         # Include config files
         (f'share/{package_name}/config', ['config/motor1.yaml']),
-        (f'share/{package_name}/launch', ['launch/jog_motor.launch.py']),
+        (f'share/{package_name}/launch', ['launch/motor_control_launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -23,7 +23,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'jog_node = leadshine_motor.jog_node:main',
+            'motor_node = leadshine_motor.motor_node:main',
         ],
     },
 )

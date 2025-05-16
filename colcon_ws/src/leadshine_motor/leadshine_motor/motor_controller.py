@@ -1,14 +1,19 @@
-from modbus_driver.modbus_rtu_interface import ModbusRTUInterface
-
 class LeadshineMotor:
-    JOG_LEFT = 0x4001
-    JOG_RIGHT = 0x4002
-    REGISTER_ADDR = 0x1801
-
-    def __init__(self, modbus: ModbusRTUInterface, motor_id: int):
-        self.modbus = modbus
+    def __init__(self, motor_id, send_request_fn):
         self.motor_id = motor_id
+        self.send = send_request_fn
+        self.initialize_motor()
 
-    def jog(self, direction: str):
-        value = self.JOG_LEFT if direction == 'left' else self.JOG_RIGHT
-        return self.modbus.write_register(self.REGISTER_ADDR, value, self.motor_id)
+    def initialize_motor(self):
+        self.send(6, 0x0001, [0x2710])  # counts per rev
+        self.send(6, 0x0003, [0x0002])  # loop mode
+        self.send(6, 0x0007, [0x0000])  # direction
+
+    def jog_left(self):
+        self.send(6, 0x1801, [0x4001])
+
+    def jog_right(self):
+        self.send(6, 0x1801, [0x4002])
+
+    def abrupt_stop(self):
+        self.send(6, 0x6002, [0x0040])
