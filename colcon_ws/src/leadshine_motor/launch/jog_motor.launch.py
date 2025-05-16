@@ -4,9 +4,10 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package="leadshine_motor",
-            executable="jog_node",
-            name="leadshine_motor_1",
-            parameters=["config/motor1.yaml"]
+            package='leadshine_motor',
+            executable='jog_node',  # ✅ Not jog_node.py!
+            name='leadshine_jogger',
+            output='screen',
+            parameters=['config/motor1.yaml']
         )
     ])

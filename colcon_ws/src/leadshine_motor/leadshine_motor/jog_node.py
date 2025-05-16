@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from leadshine_motor.motor_controller import LeadshineMotor
-from leadshine_motor.modbus_interface import ModbusRTUInterface
+from modbus_driver.modbus_rtu_interface import ModbusRTUInterface
 
 class JogNode(Node):
     def __init__(self):
