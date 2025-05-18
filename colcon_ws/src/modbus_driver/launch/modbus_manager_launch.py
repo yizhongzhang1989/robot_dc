@@ -10,6 +10,7 @@ def generate_launch_description():
             parameters=[
                 {'port': '/dev/ttyUSB0'},
                 {'baudrate': 38400}
-            ]
+            ],
+            output='screen'
         )
     ])

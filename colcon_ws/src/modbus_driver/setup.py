@@ -1,4 +1,6 @@
 from setuptools import setup
+import os
+from glob import glob
 
 package_name = 'modbus_driver'
 
@@ -9,6 +11,7 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', [f'resource/{package_name}']),
         (f'share/{package_name}', ['package.xml']),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
     ],
     install_requires=['setuptools', 'pymodbus'],
     zip_safe=True,
@@ -19,7 +22,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'modbus_manager = modbus_driver.modbus_manager_node:main'
+            'modbus_manager = modbus_driver.modbus_manager_node:main',
+            'modbus_client_tester = modbus_driver.modbus_client_tester:main',
         ],
     },
 )

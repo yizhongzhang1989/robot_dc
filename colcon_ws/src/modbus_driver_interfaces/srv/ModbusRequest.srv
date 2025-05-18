@@ -1,0 +1,8 @@
+uint8 function_code
+uint8 unit_id
+uint16 address
+uint16 count
+uint16[] values
+---
+bool success
+uint16[] response

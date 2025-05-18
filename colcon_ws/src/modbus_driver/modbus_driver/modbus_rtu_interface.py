@@ -1,10 +1,11 @@
-from pymodbus.client.serial import ModbusSerialClient as ModbusClient
+from pymodbus.client import ModbusSerialClient as ModbusClient
+
 
 class ModbusRTUInterface:
-    def __init__(self, port, baudrate=38400):
+    def __init__(self, port, baudrate=38400, timeout=1):
         self.port = port
         self.baudrate = baudrate
-        self.client = ModbusClient(method='rtu', port=self.port, baudrate=self.baudrate, timeout=1)
+        self.client = ModbusClient(port=port, baudrate=baudrate, timeout=timeout)
 
     def connect(self):
         return self.client.connect()
