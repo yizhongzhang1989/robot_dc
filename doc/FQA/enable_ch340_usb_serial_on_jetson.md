@@ -170,6 +170,18 @@ Expected output:
 
 ---
 
+## ✅ Enable Permission
+
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+then reboot
+
+---
+
+
 ## ✅ Optional: Load Automatically on Boot
 
 If the module works, enable auto-loading at boot:
