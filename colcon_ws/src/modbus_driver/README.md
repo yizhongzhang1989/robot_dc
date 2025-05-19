@@ -1,41 +1,88 @@
 # modbus_driver
 
-`modbus_driver` is a ROS 2 package that provides a centralized Modbus RTU communication interface over a serial connection. It exposes a service (`/modbus_request`) for other ROS nodes to interact with Modbus slave devices like motors and sensors without directly accessing the serial port.
+`modbus_driver` is a ROS 2 package that provides a centralized Modbus RTU interface for communicating with Modbus slave devices (e.g., motors, sensors) over a serial bus. It exposes a ROS 2 service for read/write operations, allowing multiple nodes to share a single Modbus bus without contention.
 
 ---
 
 ## 📦 Package Structure
 
-- `modbus_manager_node.py`: Main node that handles service requests and interacts with serial devices.
-- `modbus_rtu_interface.py`: Wrapper around `pymodbus` for Modbus RTU communication.
-- `ModbusRequest.srv`: Custom ROS 2 service definition supporting read/write operations.
-- `modbus_manager_launch.py`: Launch file to start the node.
+```
+
+modbus\_driver/
+├── modbus\_driver/
+│   ├── modbus\_manager\_node.py         # Main Modbus manager node
+│   ├── modbus\_client\_tester.py        # Optional standalone tester script
+├── launch/
+│   └── modbus\_manager\_launch.py       # Launch file to start the manager node
+├── test/
+│   └── test\_modbus\_manager.py         # Unit tests
+modbus\_driver\_interfaces/
+└── srv/
+└── ModbusRequest.srv              # Custom service for Modbus requests
+
+````
 
 ---
 
 ## ⚙️ Features
 
-- Read Holding Registers (FC 3)
-- Write Single Register (FC 6)
-- Write Multiple Registers (FC 16)
-- Centralized resource access (prevents bus contention)
-- Configurable serial port and baudrate
+- ✅ Read Holding Registers (Function Code 3)
+- ✅ Write Single Register (Function Code 6)
+- ✅ Write Multiple Registers (Function Code 16)
+- ✅ Thread-safe access to serial bus
+- ✅ Configurable serial port and baud rate via ROS parameters
+
+---
+
+## 🛠️ Dependencies
+
+- ROS 2 (tested with **Humble**)
+- [pymodbus](https://github.com/riptideio/pymodbus)
+
+Install Python dependency:
+
+```bash
+pip install pymodbus
+````
 
 ---
 
 ## 🚀 Usage
 
-### Launch the Manager
+### 1. Build the Workspace
+
+From the root of your workspace:
+
+```bash
+colcon build
+source install/setup.bash
+```
+
+### 2. Launch the Modbus Manager
 
 ```bash
 ros2 launch modbus_driver modbus_manager_launch.py
-````
+```
 
-### Call Service
+By default, this uses:
+
+* Port: `/dev/ttyUSB0`
+* Baudrate: `38400`
+
+These can be overridden by passing arguments to the launch file or defining parameters in a YAML config.
+
+### 3. Send a Modbus Request
 
 ```bash
-ros2 service call /modbus_request modbus_driver/srv/ModbusRequest \
-"{function_code: 3, slave_id: 1, address: 0, values: [0, 0]}"
+ros2 service call /modbus_request modbus_driver_interfaces/srv/ModbusRequest \
+"{function_code: 3, slave_id: 1, address: 0, count: 2, values: []}"
+```
+
+#### 🧾 Example: Write Single Register
+
+```bash
+ros2 service call /modbus_request modbus_driver_interfaces/srv/ModbusRequest \
+"{function_code: 6, slave_id: 1, address: 0, count: 1, values: [123]}"
 ```
 
 ---
@@ -48,38 +95,42 @@ ros2 service call /modbus_request modbus_driver/srv/ModbusRequest \
 ros2 run modbus_driver modbus_client_tester
 ```
 
-### Unit Testing
+This script can be used to send raw Modbus requests for quick validation.
+
+### Unit Tests
 
 ```bash
 colcon test --packages-select modbus_driver
 ```
 
-Unit tests mock the Modbus interface, so no hardware is needed.
+Mocks the Modbus client, so hardware is not required.
 
 ---
 
-## 🛠️ Dependencies
+## 🧾 Service Definition
 
-* ROS 2 (tested with Humble/Foxy)
-* Python `pymodbus`
+**`ModbusRequest.srv`**
 
-Install with:
-
-```bash
-pip install pymodbus
+```plaintext
+uint8 function_code
+uint8 slave_id
+uint16 address
+uint16 count
+uint16[] values
+---
+bool success
+uint16[] response
 ```
 
 ---
 
 ## 📄 License
 
-MIT
+MIT License
 
 ---
 
 ## 👤 Maintainer
 
 [jetson@todo.todo](mailto:jetson@todo.todo)
-
-```
 
