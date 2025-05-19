@@ -22,7 +22,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'modbus_manager = modbus_driver.modbus_manager_node:main',
+            'modbus_manager_node = modbus_driver.modbus_manager_node:main',
             'modbus_client_tester = modbus_driver.modbus_client_tester:main',
         ],
     },
