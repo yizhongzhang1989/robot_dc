@@ -30,7 +30,7 @@ class ModbusManagerNode(Node):
     def handle_modbus_request(self, request, response):
         with self.lock:
             try:
-                self.get_logger().info(f"Handling Modbus request: {request}")
+                # self.get_logger().info(f"Handling Modbus request: {request}")
 
                 if request.function_code == 3:
                     result = self.client.read_holding_registers(
@@ -73,7 +73,7 @@ class ModbusManagerNode(Node):
                 response.success = False
                 response.response = []
 
-        self.get_logger().info(f"Modbus response: {response}")
+        # self.get_logger().info(f"Modbus response: {response}")
 
         return response
 

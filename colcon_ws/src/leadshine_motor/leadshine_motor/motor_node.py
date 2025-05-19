@@ -16,12 +16,12 @@ class MotorControlNode(Node):
             self.get_logger().info('Waiting for modbus_request service...')
 
         self.motor = LeadshineMotor(
-            self.motor_id, 
+            self.motor_id,
             self.send_modbus_request,
             self.recv_modbus_request
-        )        
-        self.create_subscription(String, 'motor_cmd', self.command_callback, 10)
+        )
 
+        self.create_subscription(String, 'motor_cmd', self.command_callback, 10)
         self.get_logger().info("✅ MotorControlNode ready!")
 
     def send_modbus_request(self, func_code, addr, values):
@@ -32,41 +32,40 @@ class MotorControlNode(Node):
         req.values = values
 
         future = self.cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
 
-        if future.done() and future.result() is not None:
-            result = future.result()
-            if result.success:
+        # Attach a non-blocking callback
+        def handle_response(fut):
+            if fut.result() is not None and fut.result().success:
                 self.get_logger().info(
-                    f"✅ Modbus request OK: fc={func_code} addr={hex(addr)} values={values} → response={result.response}"
+                    f"✅ Modbus write OK: fc={func_code} addr={hex(addr)} → {values} => {fut.result().response}"
                 )
-                return result.response
             else:
-                self.get_logger().error("❌ Modbus request failed: reported failure from service")
-        else:
-            self.get_logger().error("❌ Modbus request timed out or no result")
+                self.get_logger().error("❌ Modbus request failed or timed out")
 
-        return None
-    
+        future.add_done_callback(handle_response)
+
     def recv_modbus_request(self, func_code, addr, count):
+        # Still blocking read (can be adapted similarly)
         req = ModbusRequest.Request()
         req.function_code = func_code
         req.slave_id = self.motor_id
         req.address = addr
         req.count = count
-        req.values = []  # Empty for read
+        req.values = []
 
         future = self.cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        result = future.result()
-        if not result.success:
-            self.get_logger().error(f"Modbus read failed at addr {addr}")
-        return result.response
+        rclpy.spin_until_future_complete(self, future)  # Can keep this if only used during init
+
+        if future.done() and future.result() is not None and future.result().success:
+            return future.result().response
+        else:
+            self.get_logger().error("❌ Modbus read failed or timed out")
+            return []
 
     def command_callback(self, msg):
         cmd = msg.data.strip().lower()
         now = self.get_clock().now().to_msg()
-        self.get_logger().info(f"📥 Received command '{cmd}' at time: {now.sec}.{now.nanosec:09d}")
+        # self.get_logger().info(f"📥 Received command '{cmd}' at time: {now.sec}.{now.nanosec:09d}")
 
         try:
             match cmd:
@@ -87,7 +86,7 @@ class MotorControlNode(Node):
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
                     return
-            self.get_logger().info(f"✅ Executed command: {cmd}")
+            # self.get_logger().info(f"✅ Executed command: {cmd}")
         except Exception as e:
             self.get_logger().error(f"❌ Command failed: {e}")
 
