@@ -17,6 +17,8 @@ class LeadshineMotor:
         self.target_acceleration = 0
         self.target_deceleration = 0
 
+        self.curr_position = 0
+
         self.initialize_motor()
 
     @staticmethod
@@ -49,8 +51,8 @@ class LeadshineMotor:
         self.send(6, 0x0003, [2])       # Set loop mode
         self.send(6, 0x0007, [0])       # Set direction
 
-        self.read_motion_target()
-        self.read_motion_mode()
+        self.get_motion_target()
+        self.get_motion_mode()
 
         # print initial values for debugging
         print(f"Motor {self.motor_id} initialized with:")
@@ -60,7 +62,25 @@ class LeadshineMotor:
         print(f"  Acceleration: {self.target_acceleration}")
         print(f"  Deceleration: {self.target_deceleration}")
 
-    def read_motion_mode(self):
+    def get_motion_target(self):
+        response = self.recv(3, 0x6201, 5)
+
+        if response:
+            self.target_position = self._from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
+            self.target_velocity = self._from_unsigned_16bit_to_signed(response[2])
+            self.target_acceleration = self._from_unsigned_16bit_to_signed(response[3])
+            self.target_deceleration = self._from_unsigned_16bit_to_signed(response[4])
+
+            return (
+                self.target_position,
+                self.target_velocity,
+                self.target_acceleration,
+                self.target_deceleration,
+            )
+        else:
+            raise ValueError("Failed to read motion target")
+
+    def get_motion_mode(self):
         response = self.recv(3, 0x6200, 1)
         if response and response[0] in self.VALID_MOTION_MODES:
             self.motion_mode = response[0]
@@ -84,41 +104,18 @@ class LeadshineMotor:
     def abrupt_stop(self):
         self.send(6, 0x6002, [0x0040])  # Abrupt stop
 
+    def get_current_position(self, callback):
+        def handle_response(response):
+            if response:
+                self.curr_position = self._from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
+                callback(self.curr_position)
+            else:
+                callback(None)
+
+        self.recv(3, 0x602C, 2, handle_response)
+
     def set_zero_position(self):
         self.send(6, 0x6002, [0x0021])  # Set current position to be zero
-
-    def move_absolute(self):
-        if self.motion_mode != 0x0001:
-            self.set_motion_mode(0x0001)
-        self.send(6, 0x6002, [0x0010])  # Trigger move
-
-    def move_relative(self):
-        if self.motion_mode != 0x0041:
-            self.set_motion_mode(0x0041)
-        self.send(6, 0x6002, [0x0010])  # Trigger move
-
-    def move_velocity(self):
-        if self.motion_mode != 0x0002:
-            self.set_motion_mode(0x0002)
-        self.send(6, 0x6002, [0x0010])  # Trigger move
-
-    def read_motion_target(self):
-        response = self.recv(3, 0x6201, 5)
-
-        if response:
-            self.target_position = self._from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
-            self.target_velocity = self._from_unsigned_16bit_to_signed(response[2])
-            self.target_acceleration = self._from_unsigned_16bit_to_signed(response[3])
-            self.target_deceleration = self._from_unsigned_16bit_to_signed(response[4])
-
-            return (
-                self.target_position,
-                self.target_velocity,
-                self.target_acceleration,
-                self.target_deceleration,
-            )
-        else:
-            raise ValueError("Failed to read motion target")
 
     def set_target_position(self, pos):
         self.target_position = pos
@@ -136,3 +133,18 @@ class LeadshineMotor:
     def set_target_deceleration(self, dec):
         self.target_deceleration = dec
         self.send(6, 0x6206, [self._to_unsigned_16bit_from_signed(dec)])
+
+    def move_absolute(self):
+        if self.motion_mode != 0x0001:
+            self.set_motion_mode(0x0001)
+        self.send(6, 0x6002, [0x0010])  # Trigger move
+
+    def move_relative(self):
+        if self.motion_mode != 0x0041:
+            self.set_motion_mode(0x0041)
+        self.send(6, 0x6002, [0x0010])  # Trigger move
+
+    def move_velocity(self):
+        if self.motion_mode != 0x0002:
+            self.set_motion_mode(0x0002)
+        self.send(6, 0x6002, [0x0010])  # Trigger move

@@ -43,7 +43,7 @@ class MotorControlNode(Node):
 
         future.add_done_callback(handle_response)
 
-    def recv_modbus_request(self, func_code, addr, count):
+    def recv_modbus_request(self, func_code, addr, count, callback=None):
         req = ModbusRequest.Request()
         req.function_code = func_code
         req.slave_id = self.motor_id
@@ -52,13 +52,16 @@ class MotorControlNode(Node):
         req.values = []
 
         future = self.cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
 
-        if future.done() and future.result() is not None and future.result().success:
-            return future.result().response
+        if callback is not None:
+            future.add_done_callback(lambda fut: callback(fut.result().response if fut.result() and fut.result().success else []))
         else:
-            self.get_logger().error("❌ Modbus read failed or timed out")
-            return []
+            rclpy.spin_until_future_complete(self, future)
+            if future.done() and future.result() and future.result().success:
+                return future.result().response
+            else:
+                self.get_logger().error("❌ Modbus read failed or timed out")
+                return []
 
     def command_callback(self, msg):
         parts = msg.data.strip().lower().split()
@@ -76,35 +79,40 @@ class MotorControlNode(Node):
                     self.motor.jog_right()
                 case "stop":
                     self.motor.abrupt_stop()
+                case "get_pos":
+                    self.motor.get_current_position(
+                        lambda pos: self.get_logger().info(f"ℹ️ Current position: {pos}") if pos is not None else
+                                    self.get_logger().error("❌ Failed to read position")
+                    )
                 case "set_zero":
                     self.motor.set_zero_position()
-                case "set_position":
+                case "set_pos":
                     if arg is not None:
                         self.motor.set_target_position(arg)
                         self.get_logger().info(f"✅ Set position to {arg}")
-                case "set_velocity":
+                case "set_vel":
                     if arg is not None:
                         self.motor.set_target_velocity(arg)
                         self.get_logger().info(f"✅ Set velocity to {arg}")
-                case "set_acceleration":
+                case "set_acc":
                     if arg is not None:
                         self.motor.set_target_acceleration(arg)
                         self.get_logger().info(f"✅ Set acceleration to {arg}")
-                case "set_deceleration":
+                case "set_dec":
                     if arg is not None:
                         self.motor.set_target_deceleration(arg)
                         self.get_logger().info(f"✅ Set deceleration to {arg}")
-                case "move_absolute":
+                case "move_abs":
                     if arg is not None:
                         self.motor.set_target_position(arg)
                         self.get_logger().info(f"ℹ️ Updated position to {arg}")
                     self.motor.move_absolute()
-                case "move_relative":
+                case "move_rel":
                     if arg is not None:
                         self.motor.set_target_position(arg)
                         self.get_logger().info(f"ℹ️ Updated relative offset to {arg}")
                     self.motor.move_relative()
-                case "move_velocity":
+                case "move_vel":
                     if arg is not None:
                         self.motor.set_target_velocity(arg)
                         self.get_logger().info(f"ℹ️ Updated velocity to {arg}")
