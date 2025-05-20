@@ -10,8 +10,9 @@ class MotorControlNode(Node):
         super().__init__('leadshine_motor')
         self.declare_parameter('motor_id', 1)
         self.motor_id = self.get_parameter('motor_id').value
+        self.get_logger().info(f"motor_id from param = {self.motor_id}")
 
-        self.cli = self.create_client(ModbusRequest, 'modbus_request')
+        self.cli = self.create_client(ModbusRequest, '/modbus_request')
         while not self.cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Waiting for modbus_request service...')
 

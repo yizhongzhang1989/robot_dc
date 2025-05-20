@@ -1,5 +1,0 @@
-leadshine_motor_node:
-  ros__parameters:
-    motor_id: 1
-    port: "/dev/ttyUSB0"
-    baudrate: 38400
