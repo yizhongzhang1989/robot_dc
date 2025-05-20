@@ -33,7 +33,6 @@ class MotorControlNode(Node):
 
         future = self.cli.call_async(req)
 
-        # Attach a non-blocking callback
         def handle_response(fut):
             if fut.result() is not None and fut.result().success:
                 self.get_logger().info(
@@ -45,7 +44,6 @@ class MotorControlNode(Node):
         future.add_done_callback(handle_response)
 
     def recv_modbus_request(self, func_code, addr, count):
-        # Still blocking read (can be adapted similarly)
         req = ModbusRequest.Request()
         req.function_code = func_code
         req.slave_id = self.motor_id
@@ -54,7 +52,7 @@ class MotorControlNode(Node):
         req.values = []
 
         future = self.cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future)  # Can keep this if only used during init
+        rclpy.spin_until_future_complete(self, future)
 
         if future.done() and future.result() is not None and future.result().success:
             return future.result().response
@@ -63,9 +61,12 @@ class MotorControlNode(Node):
             return []
 
     def command_callback(self, msg):
-        cmd = msg.data.strip().lower()
-        now = self.get_clock().now().to_msg()
-        # self.get_logger().info(f"📥 Received command '{cmd}' at time: {now.sec}.{now.nanosec:09d}")
+        parts = msg.data.strip().lower().split()
+        if not parts:
+            return
+
+        cmd = parts[0]
+        arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
 
         try:
             match cmd:
@@ -77,18 +78,41 @@ class MotorControlNode(Node):
                     self.motor.abrupt_stop()
                 case "set_zero":
                     self.motor.set_zero_position()
+                case "set_position":
+                    if arg is not None:
+                        self.motor.set_target_position(arg)
+                        self.get_logger().info(f"✅ Set position to {arg}")
+                case "set_velocity":
+                    if arg is not None:
+                        self.motor.set_target_velocity(arg)
+                        self.get_logger().info(f"✅ Set velocity to {arg}")
+                case "set_acceleration":
+                    if arg is not None:
+                        self.motor.set_target_acceleration(arg)
+                        self.get_logger().info(f"✅ Set acceleration to {arg}")
+                case "set_deceleration":
+                    if arg is not None:
+                        self.motor.set_target_deceleration(arg)
+                        self.get_logger().info(f"✅ Set deceleration to {arg}")
                 case "move_absolute":
+                    if arg is not None:
+                        self.motor.set_target_position(arg)
+                        self.get_logger().info(f"ℹ️ Updated position to {arg}")
                     self.motor.move_absolute()
                 case "move_relative":
+                    if arg is not None:
+                        self.motor.set_target_position(arg)
+                        self.get_logger().info(f"ℹ️ Updated relative offset to {arg}")
                     self.motor.move_relative()
                 case "move_velocity":
+                    if arg is not None:
+                        self.motor.set_target_velocity(arg)
+                        self.get_logger().info(f"ℹ️ Updated velocity to {arg}")
                     self.motor.move_velocity()
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
-                    return
-            # self.get_logger().info(f"✅ Executed command: {cmd}")
         except Exception as e:
-            self.get_logger().error(f"❌ Command failed: {e}")
+            self.get_logger().error(f"❌ Command '{cmd}' failed: {e}")
 
 
 def main():
