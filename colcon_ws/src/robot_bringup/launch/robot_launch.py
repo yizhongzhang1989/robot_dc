@@ -32,7 +32,24 @@ def generate_launch_description():
         ]
     )
 
+    # Delay teleop launch by 3 seconds (to ensure motor nodes are ready)
+    teleop_launch = TimerAction(
+        period=3.0,
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(
+                        get_package_share_directory('robot_teleop'),
+                        'launch',
+                        'joystick_teleop_launch.py'
+                    )
+                )
+            )
+        ]
+    )
+
     return LaunchDescription([
         modbus_launch,
-        motor_launch
+        motor_launch,
+        teleop_launch
     ])
