@@ -1,28 +1,26 @@
-<!DOCTYPE html>
-<html>
-<head><title>Robot Control</title></head>
-<body>
-<h1>Robot Control Panel</h1>
-<button onclick="jog(1, 'left')">Jog Motor 1 Left</button>
-<button onclick="jog(1, 'right')">Jog Motor 1 Right</button>
-<br>
-<input id="vel1" type="number" value="-1000">
-<button onclick="setVel(1)">Set Motor 1 Velocity</button>
+<h1>Motor Control</h1>
+
+<h2>Motor 1</h2>
+<button onclick="sendJog(1, 'left')">Jog Left</button>
+<button onclick="sendJog(1, 'right')">Jog Right</button>
+
+<h2>Motor 2</h2>
+<button onclick="sendJog(2, 'left')">Jog Left</button>
+<button onclick="sendJog(2, 'right')">Jog Right</button>
+
+<h2>Emergency</h2>
+<button onclick="stopAll()">Stop All</button>
 
 <script>
-async function jog(motor, dir) {
-  await fetch(`/motor/${motor}/jog`, {
-    method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({direction: dir})
-  });
-}
-async function setVel(motor) {
-  const vel = document.getElementById("vel" + motor).value;
-  await fetch(`/motor/${motor}/set_vel`, {
-    method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({velocity: parseInt(vel)})
-  });
-}
+  async function sendJog(motor, direction) {
+    await fetch('/api/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motor: motor, direction: direction })
+    });
+  }
+
+  async function stopAll() {
+    await fetch('/api/stop', { method: 'POST' });
+  }
 </script>
-</body>
-</html>

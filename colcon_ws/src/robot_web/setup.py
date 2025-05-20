@@ -26,6 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'ros_bridge = robot_web.ros_bridge_node:main',
         ],
     },
 )
