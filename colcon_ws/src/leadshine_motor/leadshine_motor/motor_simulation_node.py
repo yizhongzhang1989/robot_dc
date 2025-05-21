@@ -60,6 +60,7 @@ class MotorSimulationNode(Node):
   
         # Physical simulation variables (float for position, velocity, etc.)  
         # The “registers” above are just a “modbus view”; we do real physics here.  
+        self.pulse_per_round = 10000
         self.current_position = 0.0  
         self.target_position = 0.0  
         self.velocity = 0.0  
@@ -297,60 +298,116 @@ class MotorSimulationNode(Node):
             self.registers[0x602C] = [0, 0]  
   
     def update_simulation(self):  
-        """Called by a ROS timer ~every 10ms to step the “physics.”"""  
+        """  
+        Called by a ROS timer (~every 10ms) to step the motor simulation physics.  
+        Unit conventions:  
+        - self.current_position, self.target_position: pulses (signed)  
+        - self.velocity: rpm (signed); e.g., 100 means 100 rpm forward, -100 means reverse  
+        - self.acc, self.dec: ms per 1,000 rpm. Larger => slower acceleration.  
+        - self.pulse_per_round: pulses per full revolution.  
+        - dt: seconds since last update.  
+        """  
         with self.lock:  
             dt = self.timer_period  
-  
-            # If we are moving, just do a very simplistic update  
+    
+            # Convert the "commanded" velocity (rpm) to pulses per second for actual motion.  
+            # If we decide to handle a velocity ramp, we'll keep track of self.current_rpm vs. self.velocity.  
+            # In velocity mode, self.velocity is the “commanded” or “target” rpm.  
+            # In absolute/relative modes below, we still do a simple no-acceleration approach for now.  
+            
+            # If you'd like to ramp in *every* mode, you can unify that logic. Here, we show ramping in velocity mode.  
+            
+            # Helper to convert rpm => pulses/s:  
+            def rpm_to_pulses_per_sec(rpm: float) -> float:  
+                return (rpm * self.pulse_per_round) / 60.0  
+            
+            # For acceleration (ms per 1000 rpm), define slope in rpm/s:  
+            # e.g. if acc=100 ms, that means 0→1000 rpm in 0.1s => 10,000 rpm/s.  
+            # slope = 1,000,000 / acc.  (since 1000 rpm / (acc ms => acc/1000 s)).  
+            acc_slope = 1_000_000 / self.acc if self.acc != 0 else 999999999  
+            dec_slope = 1_000_000 / self.dec if self.dec != 0 else 999999999  
+    
             if self.moving:  
                 if self.motion_mode == MOTION_MODE_ABS:  
-                    # We’ll move toward target_position at “velocity” steps per second.  
-                    # If velocity is zero, pick some default or do nothing.  
-                    sign = 1.0 if (self.target_position > self.current_position) else -1.0  
-                    speed = abs(self.velocity) if self.velocity != 0 else 100.0  
-                    step = sign * speed * dt  
-                    before = self.current_position  
-                    after = before + step  
-  
-                    # Check if we pass the target:  
-                    if (sign > 0 and after >= self.target_position) or (sign < 0 and after <= self.target_position):  
+                    # Move toward target_position at constant speed (rpm -> pulses/s).  
+                    # Convert commanded rpm to pulses/s.  
+                    pulses_per_sec = rpm_to_pulses_per_sec(self.velocity)  
+                    
+                    # Determine direction based on whether target is above or below current.  
+                    direction = 1.0 if (self.target_position > self.current_position) else -1.0  
+                    speed = abs(pulses_per_sec)  # magnitude of pulses/s  
+                    
+                    step = direction * speed * dt  
+                    after = self.current_position + step  
+    
+                    # Check if we cross the target.  
+                    if (direction > 0 and after >= self.target_position) or (direction < 0 and after <= self.target_position):  
                         self.current_position = self.target_position  
                         self.moving = False  
                     else:  
                         self.current_position = after  
-  
+    
                 elif self.motion_mode == MOTION_MODE_REL:  
-                    # Same logic, but we already adjusted target_position to absolute in _handle_control_word()  
-                    sign = 1.0 if (self.target_position > self.current_position) else -1.0  
-                    speed = abs(self.velocity) if self.velocity != 0 else 100.0  
-                    step = sign * speed * dt  
-                    before = self.current_position  
-                    after = before + step  
-  
-                    if (sign > 0 and after >= self.target_position) or (sign < 0 and after <= self.target_position):  
+                    # Same logic as ABS (since we adjusted target_position earlier),  
+                    # but we simply move at constant speed until we hit target.  
+                    pulses_per_sec = rpm_to_pulses_per_sec(self.velocity)  
+                    direction = 1.0 if (self.target_position > self.current_position) else -1.0  
+                    speed = abs(pulses_per_sec)  
+    
+                    step = direction * speed * dt  
+                    after = self.current_position + step  
+    
+                    if (direction > 0 and after >= self.target_position) or (direction < 0 and after <= self.target_position):  
                         self.current_position = self.target_position  
                         self.moving = False  
                     else:  
                         self.current_position = after  
-  
+    
                 elif self.motion_mode == MOTION_MODE_VEL:  
-                    # Simply update position at constant velocity  
-                    self.current_position += (self.velocity * dt)  
-  
+                    # Here we demonstrate a simple acceleration ramp in velocity mode.  
+                    # self.velocity is the “desired rpm,” self.current_rpm is our actual rpm.  
+                    # We'll accelerate or decelerate linearly toward self.velocity.  
+    
+                    # 1) Figure out how much we should change self.current_rpm this timestep.  
+                    delta_rpm = self.velocity - self.current_rpm  
+                    if abs(delta_rpm) > 1e-3:  
+                        if delta_rpm > 0:  
+                            # accelerating up  
+                            ramp_rate = acc_slope  
+                        else:  
+                            # decelerating  
+                            ramp_rate = dec_slope  
+    
+                        # amount of rpm we can change this timestep  
+                        dv = ramp_rate * dt  
+                        # clamp so we don’t overshoot  
+                        if abs(delta_rpm) <= dv:  
+                            self.current_rpm = self.velocity  
+                        else:  
+                            self.current_rpm += dv * (delta_rpm / abs(delta_rpm))  
+                    else:  
+                        # we’re basically at the commanded rpm  
+                        self.current_rpm = self.velocity  
+    
+                    # 2) Convert current_rpm -> pulses/s, update current_position  
+                    pulses_per_sec = rpm_to_pulses_per_sec(self.current_rpm)  
+                    self.current_position += pulses_per_sec * dt  
+    
             # Publish status  
             msg = MotorSimulationStatus()  
             msg.motor_id = self.motor_id  
             msg.current_position = float(self.current_position)  
             msg.target_position = float(self.target_position)  
+            # By convention, we treat self.velocity as the “desired rpm” from user commands.  
             msg.velocity = float(self.velocity)  
             msg.motion_mode = self.motion_mode  
             msg.moving = self.moving  
             msg.last_command = self.last_command  
             self.status_pub.publish(msg)  
-
+    
             # Update the 0x602C register to reflect current_position as signed 32-bit  
             self._update_position_register()  
-  
+
     def _update_position_register(self):  
         """Pack current_position (a float) into 602C as two 16-bit regs (signed 32-bit)."""  
         pos_int = int(self.current_position)  
