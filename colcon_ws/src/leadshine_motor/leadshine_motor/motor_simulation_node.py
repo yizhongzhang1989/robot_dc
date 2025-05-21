@@ -1,8 +1,8 @@
 import rclpy  
 from rclpy.node import Node  
   
-# Import your existing LeadshineMotor class.  
-# Adjust the import path if your file is named or structured differently.  
+# Import your existing LeadshineMotor class.    
+# Adjust the import path if your file or module name differs.  
 from leadshine_motor.motor_controller import LeadshineMotor  
   
 from modbus_driver_interfaces.srv import ModbusRequest  
@@ -11,7 +11,7 @@ from modbus_driver_interfaces.msg import MotorSimulationStatus
 import threading  
 import time  
   
-# Some mode constants  
+# Mode constants (used by normal non-jog logic)  
 MOTION_MODE_ABS = 0x0001  
 MOTION_MODE_REL = 0x0041  
 MOTION_MODE_VEL = 0x0002  
@@ -20,7 +20,6 @@ class MotorSimulationNode(Node):
     def __init__(self):  
         super().__init__('motor_simulation_node')  
   
-        # Get motor_id from ROS parameter (default=1)  
         self.declare_parameter('motor_id', 1)  
         self.motor_id = self.get_parameter('motor_id').value  
         self.get_logger().info(f"Simulating motor_id = {self.motor_id}")  
@@ -76,7 +75,12 @@ class MotorSimulationNode(Node):
         self.current_rpm = 0.0  
         self.last_command = "-"  
   
-        # Publisher for motor status  
+        # Jog-specific fields  
+        self.jog_active = False  
+        self.jog_speed = 0.0  
+        self.jog_end_time = 0.0  
+  
+        # Publisher  
         self.status_pub = self.create_publisher(  
             MotorSimulationStatus,  
             f'/motor{self.motor_id}/sim_status',  
@@ -133,7 +137,7 @@ class MotorSimulationNode(Node):
         msg.moving = self.moving  
         msg.last_command = self.last_command  
         self.status_pub.publish(msg)  
-
+  
     # ----------------------------------------------------------------  
     # Main simulation loop  
     # ----------------------------------------------------------------  
@@ -149,67 +153,76 @@ class MotorSimulationNode(Node):
             dec = self._get_dec()  
             curr_pos = self._get_current_pos()  
   
-            # If we’re not actively moving, zero the “actual rpm” in non-velocity modes  
-            if not self.moving:  
-                if motion_mode != MOTION_MODE_VEL:  
+            if self.jog_active:  
+                # Jog logic overrides all other modes  
+                pulses_per_sec = (self.jog_speed * pulse_per_round) / 60.0  
+                curr_pos += pulses_per_sec * dt  
+                self.current_rpm = self.jog_speed  
+  
+                # Check if 50 ms has passed  
+                if time.time() >= self.jog_end_time:  
+                    self.jog_active = False  
+                    self.moving = False  
+                    self.jog_speed = 0.0  
                     self.current_rpm = 0.0  
+  
             else:  
-                # We are in a "moving" state  
-                if motion_mode == MOTION_MODE_ABS or motion_mode == MOTION_MODE_REL:  
-                    # Move at constant velocity (no ramp)  
-                    pulses_per_sec = (velocity_cmd * pulse_per_round) / 60.0  
-                    direction = 1 if (target_pos > curr_pos) else -1  
+                # Normal (non-jog) logic  
+                if not self.moving:  
+                    # If motor is not moving and we're not in velocity mode, rpm=0  
+                    if motion_mode != MOTION_MODE_VEL:  
+                        self.current_rpm = 0.0  
+                else:  
+                    # We are in a "moving" state  
+                    if motion_mode in (MOTION_MODE_ABS, MOTION_MODE_REL):  
+                        # Simplified constant velocity  
+                        pulses_per_sec = (velocity_cmd * pulse_per_round) / 60.0  
+                        direction = 1 if (target_pos > curr_pos) else -1  
   
-                    # If commanded velocity is 0, fallback  
-                    if abs(velocity_cmd) < 1e-3:  
-                        pulses_per_sec = 100 * direction  
+                        if abs(velocity_cmd) < 1e-3:  
+                            pulses_per_sec = 100 * direction  
   
-                    step = direction * abs(pulses_per_sec) * dt  
-                    next_pos = curr_pos + step  
+                        step = direction * abs(pulses_per_sec) * dt  
+                        next_pos = curr_pos + step  
   
-                    # Check if we’ve reached/passed the target  
-                    if (direction > 0 and next_pos >= target_pos) or (direction < 0 and next_pos <= target_pos):  
-                        curr_pos = target_pos  
-                        self.moving = False  
-                    else:  
-                        curr_pos = next_pos  
-  
-                    # Actual RPM = commanded RPM  
-                    self.current_rpm = float(velocity_cmd)  
-  
-                elif motion_mode == MOTION_MODE_VEL:  
-                    # Accelerate or decelerate towards velocity_cmd  
-                    acc_slope = 1_000_000 / acc if acc else 9999999  
-                    dec_slope = 1_000_000 / dec if dec else 9999999  
-                    delta_rpm = velocity_cmd - self.current_rpm  
-  
-                    if abs(delta_rpm) > 1e-3:  
-                        slope = acc_slope if delta_rpm > 0 else dec_slope  
-                        dv = slope * dt  
-                        if abs(delta_rpm) <= dv:  
-                            self.current_rpm = velocity_cmd  
+                        if (direction > 0 and next_pos >= target_pos) or (direction < 0 and next_pos <= target_pos):  
+                            curr_pos = target_pos  
+                            self.moving = False  
                         else:  
-                            self.current_rpm += dv * (delta_rpm / abs(delta_rpm))  
+                            curr_pos = next_pos  
   
-                    pulses_per_sec = (self.current_rpm * pulse_per_round) / 60.0  
-                    curr_pos += pulses_per_sec * dt  
+                        self.current_rpm = float(velocity_cmd)  
   
-            # Save updated position to registers  
+                    elif motion_mode == MOTION_MODE_VEL:  
+                        # Velocity ramp  
+                        acc_slope = 1_000_000 / acc if acc else 9999999  
+                        dec_slope = 1_000_000 / dec if dec else 9999999  
+                        delta_rpm = velocity_cmd - self.current_rpm  
+  
+                        if abs(delta_rpm) > 1e-3:  
+                            slope = acc_slope if delta_rpm > 0 else dec_slope  
+                            dv = slope * dt  
+                            if abs(delta_rpm) <= dv:  
+                                self.current_rpm = velocity_cmd  
+                            else:  
+                                self.current_rpm += dv * (delta_rpm / abs(delta_rpm))  
+  
+                        pulses_per_sec = (self.current_rpm * pulse_per_round) / 60.0  
+                        curr_pos += pulses_per_sec * dt  
+  
+            # Update position register  
             self._set_current_pos(curr_pos)  
   
-            # Optionally store current_rpm in a register, e.g. 0x600C  
-            # self.registers[0x600C] = LeadshineMotor._to_unsigned_16bit_from_signed(int(self.current_rpm))  
-  
             # Publish status  
-            self._publish_status(float(curr_pos), float(target_pos), float(velocity_cmd), motion_mode)  
+            self._publish_status(  
+                float(curr_pos), float(target_pos), float(velocity_cmd), motion_mode  
+            )  
   
-    # ─────────────────────────────────────────────────────────────  
-    #  Service: fake Modbus read/write  
-    # ─────────────────────────────────────────────────────────────  
+    # ----------------------------------------------------------------  
+    # Service: fake Modbus read/write  
+    # ----------------------------------------------------------------  
     def handle_modbus_request(self, request, response):  
-        """Service callback that fakes Modbus read/write by referencing internal registers."""  
         with self.lock:  
-            # Only respond if the slave_id matches this motor’s ID  
             if request.slave_id != self.motor_id:  
                 self.get_logger().warning(  
                     f"Received Modbus request for slave_id={request.slave_id}, "  
@@ -257,20 +270,18 @@ class MotorSimulationNode(Node):
         self.get_logger().info(f"[Motor {self.motor_id}] {msg}")  
         self.last_command = msg  
   
-    # ─────────────────────────────────────────────────────────────  
-    #  Internal: read/write registers as 16-bit chunks  
-    # ─────────────────────────────────────────────────────────────  
+    # ----------------------------------------------------------------  
+    # Internal: read/write registers as 16-bit chunks  
+    # ----------------------------------------------------------------  
     def _read_registers(self, start_addr, count):  
-        """Return 'count' 16-bit registers from 'start_addr' onward."""  
         result = []  
         for offset in range(count):  
             addr = start_addr + offset  
-            val = self.registers.get(addr, 0)  # default 0 if missing  
-            result.append(val & 0xFFFF)        # ensure 16-bit  
+            val = self.registers.get(addr, 0)  
+            result.append(val & 0xFFFF)  
         return result  
   
     def _write_registers(self, start_addr, values):  
-        """Write a list of 16-bit values beginning at start_addr."""  
         offset = 0  
         while offset < len(values):  
             addr = start_addr + offset  
@@ -282,29 +293,35 @@ class MotorSimulationNode(Node):
   
     def _interpret_register_write(self, addr, value):  
         if addr == 0x1801:  
-            # Possibly a jog command: 0x4001 (left), 0x4002 (right)  
             self._handle_jog(value)  
         elif addr == 0x6002:  
-            # Control word  
             self._handle_control_word(value)  
-        elif addr == 0x6200:  
-            # Motion mode  
-            pass  
-        # add more if needed  
+        # ... possibly more  
   
     def _handle_jog(self, cmd):  
-        # 0x4001 => jog left => negative velocity  
-        # 0x4002 => jog right => positive velocity  
+        """  
+        Writing:  
+          0x4001 => jog left => negative jog speed  
+          0x4002 => jog right => positive jog speed  
+        for 50ms, and then stop automatically.  
+        Does NOT change 0x6200 or 0x6203; purely internal state.  
+        """  
+        # Read the configured jog speed (signed RPM)  
+        base_speed = LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x01E1])  
+  
         if cmd == 0x4001:  
-            signed_val = LeadshineMotor._to_unsigned_16bit_from_signed(-100)  
-            self.registers[0x6203] = signed_val  
-            self.registers[0x6200] = MOTION_MODE_VEL  
+            # Negative jog  
+            self.jog_speed = -abs(base_speed)  
+            self.jog_active = True  
             self.moving = True  
+            self.jog_end_time = time.time() + 0.05  # 50 ms  
+  
         elif cmd == 0x4002:  
-            signed_val = LeadshineMotor._to_unsigned_16bit_from_signed(100)  
-            self.registers[0x6203] = signed_val  
-            self.registers[0x6200] = MOTION_MODE_VEL  
+            # Positive jog  
+            self.jog_speed = abs(base_speed)  
+            self.jog_active = True  
             self.moving = True  
+            self.jog_end_time = time.time() + 0.05  
   
     def _handle_control_word(self, cmd):  
         """  
@@ -316,12 +333,17 @@ class MotorSimulationNode(Node):
         if cmd == 0x0010:  
             self.moving = True  
         elif cmd == 0x0040:  
+            # Abrupt stop  
             self.current_rpm = 0.0  
             self.moving = False  
+            # Cancel any jog in progress  
+            self.jog_active = False  
+            self.jog_speed = 0.0  
         elif cmd == 0x0021:  
+            # Reset position to zero  
             self.registers[0x602C] = 0  
             self.registers[0x602D] = 0  
-    
+  
     def destroy_node(self):  
         self.get_logger().info(f"Shutting down motor simulation for motor_id={self.motor_id}")  
         super().destroy_node()  
