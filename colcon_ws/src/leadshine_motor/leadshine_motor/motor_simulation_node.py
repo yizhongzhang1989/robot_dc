@@ -1,6 +1,7 @@
 import rclpy  
 from rclpy.node import Node  
 from modbus_driver_interfaces.srv import ModbusRequest  
+from modbus_driver_interfaces.msg import MotorSimulationStatus
    
 import threading  
 import time  
@@ -67,7 +68,13 @@ class MotorSimulationNode(Node):
         self.motion_mode = MOTION_MODE_ABS  
         self.moving = False  # Flag to indicate a move is in progress  
         self.start_time = time.time()  
-  
+
+        # Track the last command (for logging/visualization)  
+        self.last_command = "-"  
+
+        # Publisher for motor status  
+        self.status_pub = self.create_publisher(MotorSimulationStatus, f'/motor{self.motor_id}/sim_status', 10)  
+
         # Create a timer to periodically update the motor's “physics”  
         self.timer_period = 0.01  # 10 ms  
         self.timer = self.create_timer(self.timer_period, self.update_simulation)  
@@ -94,6 +101,7 @@ class MotorSimulationNode(Node):
                     read_values = self._read_registers(request.address, request.count)  
                     response.success = True  
                     response.response = read_values  
+                    self.log_modbus(f"FC=3 read {read_values} from addr={hex(request.address)}")  
   
                 elif request.function_code == 6:    
                     # Write single register  
@@ -102,12 +110,14 @@ class MotorSimulationNode(Node):
                     self._write_registers(request.address, request.values)  
                     response.success = True  
                     response.response = request.values  
+                    self.log_modbus(f"FC=6 wrote {request.values} to addr={hex(request.address)}")  
   
                 elif request.function_code == 16:    
                     # Write multiple registers  
                     self._write_registers(request.address, request.values)  
                     response.success = True  
                     response.response = request.values  
+                    self.log_modbus(f"FC=16 wrote {request.values} to addr={hex(request.address)}")  
   
                 else:  
                     raise ValueError(f"Unsupported function code: {request.function_code}")  
@@ -119,6 +129,12 @@ class MotorSimulationNode(Node):
   
         return response  
   
+    def log_modbus(self, msg: str):  
+        # For debugging in console  
+        self.get_logger().info(f"[Motor {self.motor_id}] {msg}")  
+        # Also store a short string as the “last_command” so it’s visible in the status  
+        self.last_command = msg  
+
     def _read_registers(self, start_addr, count):  
         """Return 'count' 16-bit registers from 'start_addr' onward."""  
         result = []  
@@ -321,6 +337,17 @@ class MotorSimulationNode(Node):
                     # Simply update position at constant velocity  
                     self.current_position += (self.velocity * dt)  
   
+            # Publish status  
+            msg = MotorSimulationStatus()  
+            msg.motor_id = self.motor_id  
+            msg.current_position = float(self.current_position)  
+            msg.target_position = float(self.target_position)  
+            msg.velocity = float(self.velocity)  
+            msg.motion_mode = self.motion_mode  
+            msg.moving = self.moving  
+            msg.last_command = self.last_command  
+            self.status_pub.publish(msg)  
+
             # Update the 0x602C register to reflect current_position as signed 32-bit  
             self._update_position_register()  
   

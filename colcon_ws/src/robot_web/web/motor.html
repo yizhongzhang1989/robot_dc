@@ -1,0 +1,51 @@
+<!-- motor.html -->  
+<!DOCTYPE html>  
+<html>  
+<head>  
+  <meta charset="utf-8">  
+  <title>Motor Simulation Status</title>  
+  <script>  
+    const queryMotorStatus = async (motorId) => {  
+      const resp = await fetch(`/api/motor/${motorId}/status`);  
+      if (!resp.ok) {  
+        console.error("Failed to fetch status:", resp.statusText);  
+        return null;  
+      }  
+      return await resp.json();  
+    };  
+  
+    function updateInfo(motorId) {  
+      queryMotorStatus(motorId).then(data => {  
+        if (!data) return;  
+        document.getElementById('current-pos').innerText = data.current_position.toFixed(2);  
+        document.getElementById('target-pos').innerText  = data.target_position.toFixed(2);  
+        document.getElementById('velocity').innerText    = data.velocity.toFixed(2);  
+        document.getElementById('mode').innerText        = data.motion_mode.toString(16);  
+        document.getElementById('moving').innerText      = data.moving ? "True" : "False";  
+        document.getElementById('last-cmd').innerText    = data.last_command;  
+      });  
+    }  
+  
+    window.addEventListener('DOMContentLoaded', () => {  
+      // Extract motor_id from the current URL: /motor/1 => "1"  
+      const pathParts = window.location.pathname.split('/');  
+      const motorId = pathParts[pathParts.length - 1];  
+  
+      setInterval(() => {  
+        updateInfo(motorId);  
+      }, 1000); // poll every 1s  
+    });  
+  </script>  
+</head>  
+<body>  
+  <h1>Motor Simulation Status</h1>  
+  <ul>  
+    <li>Current Position: <span id="current-pos">-</span></li>  
+    <li>Target Position: <span id="target-pos">-</span></li>  
+    <li>Velocity: <span id="velocity">-</span></li>  
+    <li>Motion Mode: <span id="mode">-</span></li>  
+    <li>Moving: <span id="moving">-</span></li>  
+    <li>Last Command: <span id="last-cmd">-</span></li>  
+  </ul>  
+</body>  
+</html>  
