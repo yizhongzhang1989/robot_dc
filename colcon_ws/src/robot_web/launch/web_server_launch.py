@@ -12,7 +12,7 @@ def generate_launch_description():
             name='ros_bridge_node'
         ),
         ExecuteProcess(
-            cmd=['uvicorn', 'robot_web.web_server:app', '--host', '0.0.0.0', '--port', '8000'],
+            cmd=['uvicorn', 'robot_web.web_server:app', '--host', '0.0.0.0', '--port', '8000', '--log-level=warning'],
             output='screen'
         )
     ])
