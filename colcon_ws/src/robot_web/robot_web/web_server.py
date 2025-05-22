@@ -18,8 +18,8 @@ from modbus_driver_interfaces.msg import MotorSimulationStatus
 PACKAGE_NAME = 'robot_web'
 WEB_DIR = os.path.join(get_package_share_directory(PACKAGE_NAME), 'web')
 MOTOR_TOPICS = {
-    1: '/motor1/motor_cmd',
-    2: '/motor2/motor_cmd',
+    1: '/motor1/cmd',
+    2: '/motor2/cmd',
 }
 
 VALID_DIRECTIONS = {'left': 'jog_left', 'right': 'jog_right'}

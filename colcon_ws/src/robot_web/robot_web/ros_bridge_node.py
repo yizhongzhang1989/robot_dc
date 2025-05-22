@@ -6,8 +6,8 @@ from std_msgs.msg import String
 class ROSBridge(Node):
     def __init__(self):
         super().__init__('ros_bridge')
-        self.pub_motor1 = self.create_publisher(String, '/motor1/motor_cmd', 10)
-        self.pub_motor2 = self.create_publisher(String, '/motor2/motor_cmd', 10)
+        self.pub_motor1 = self.create_publisher(String, '/motor1/cmd', 10)
+        self.pub_motor2 = self.create_publisher(String, '/motor2/cmd', 10)
 
     def publish_cmd(self, motor_id, cmd):
         pub = self.pub_motor1 if motor_id == 1 else self.pub_motor2
