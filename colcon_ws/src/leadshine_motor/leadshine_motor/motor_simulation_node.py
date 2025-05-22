@@ -5,6 +5,7 @@ from rclpy.node import Node
 # Adjust the import path if your file or module name differs.  
 from leadshine_motor.motor_controller import LeadshineMotor  
   
+from modbus_driver_interfaces.msg import ModbusPacket
 from modbus_driver_interfaces.srv import ModbusRequest  
 from modbus_driver_interfaces.msg import MotorSimulationStatus  
   
@@ -23,14 +24,14 @@ class MotorSimulationNode(Node):
         self.declare_parameter('motor_id', 1)  
         self.motor_id = self.get_parameter('motor_id').value  
         self.get_logger().info(f"Simulating motor_id = {self.motor_id}")  
-  
-        # Create the service server that mimics the Modbus driver  
-        self.srv = self.create_service(  
-            ModbusRequest,  
-            'modbus_request',  
-            self.handle_modbus_request  
-        )  
-  
+    
+        self.subscription = self.create_subscription(
+            ModbusPacket,
+            '/modbus_sim_cable',
+            self.handle_modbus_packet,
+            10
+        )
+
         # Concurrency lock (service callbacks + simulation timer)  
         self.lock = threading.Lock()  
   
@@ -221,51 +222,33 @@ class MotorSimulationNode(Node):
     # ----------------------------------------------------------------  
     # Service: fake Modbus read/write  
     # ----------------------------------------------------------------  
-    def handle_modbus_request(self, request, response):  
-        with self.lock:  
-            if request.slave_id != self.motor_id:  
-                self.get_logger().warning(  
-                    f"Received Modbus request for slave_id={request.slave_id}, "  
-                    f"but this sim node is for motor_id={self.motor_id}."  
-                )  
-                response.success = False  
-                response.response = []  
-                return response  
-  
-            try:  
-                if request.function_code == 3:  
-                    # Read holding registers  
-                    read_values = self._read_registers(request.address, request.count)  
-                    response.success = True  
-                    response.response = read_values  
-                    self.log_modbus(f"FC=3 read {read_values} from addr={hex(request.address)}")  
-  
-                elif request.function_code == 6:  
-                    # Write single register  
-                    if len(request.values) != 1:  
-                        raise ValueError("FC=6 expects exactly 1 value")  
-                    self._write_registers(request.address, request.values)  
-                    response.success = True  
-                    response.response = request.values  
-                    self.log_modbus(f"FC=6 wrote {request.values} to addr={hex(request.address)}")  
-  
-                elif request.function_code == 16:  
-                    # Write multiple registers  
-                    self._write_registers(request.address, request.values)  
-                    response.success = True  
-                    response.response = request.values  
-                    self.log_modbus(f"FC=16 wrote {request.values} to addr={hex(request.address)}")  
-  
-                else:  
-                    raise ValueError(f"Unsupported function code: {request.function_code}")  
-  
-            except Exception as e:  
-                self.get_logger().error(f"Simulation error: {e}")  
-                response.success = False  
-                response.response = []  
-  
-        return response  
-  
+    def handle_modbus_packet(self, msg: ModbusPacket):
+        with self.lock:
+            if msg.slave_id != self.motor_id:
+                return
+
+            try:
+                if msg.function_code == 3:
+                    read_values = self._read_registers(msg.address, msg.count)
+                    self.log_modbus(f"FC=3 read {read_values} from addr={hex(msg.address)}")
+                    # Possibly publish a response if needed later
+
+                elif msg.function_code == 6:
+                    if len(msg.values) != 1:
+                        raise ValueError("FC=6 expects exactly 1 value")
+                    self._write_registers(msg.address, msg.values)
+                    self.log_modbus(f"FC=6 wrote {msg.values} to addr={hex(msg.address)}")
+
+                elif msg.function_code == 16:
+                    self._write_registers(msg.address, msg.values)
+                    self.log_modbus(f"FC=16 wrote {msg.values} to addr={hex(msg.address)}")
+
+                else:
+                    raise ValueError(f"Unsupported function code: {msg.function_code}")
+
+            except Exception as e:
+                self.get_logger().error(f"Simulation error: {e}")
+    
     def log_modbus(self, msg: str):  
         self.get_logger().info(f"[Motor {self.motor_id}] {msg}")  
         self.last_command = msg  

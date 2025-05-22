@@ -1,0 +1,5 @@
+uint8 function_code
+uint8 slave_id
+uint16 address
+uint16 count
+uint16[] values
