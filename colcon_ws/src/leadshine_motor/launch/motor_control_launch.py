@@ -6,8 +6,7 @@ def generate_launch_description():
         Node(
             package='leadshine_motor',
             executable='motor_node',
-            name='motor_1',
-            namespace='motor1',
+            name='motor1',
             output='screen',
             emulate_tty=True,
             parameters=[{'motor_id': 1}],
@@ -15,8 +14,7 @@ def generate_launch_description():
         Node(
             package='leadshine_motor',
             executable='motor_node',
-            name='motor_2',
-            namespace='motor2',
+            name='motor2',
             output='screen',
             emulate_tty=True,
             parameters=[{'motor_id': 2}],

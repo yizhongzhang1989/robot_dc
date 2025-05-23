@@ -8,24 +8,42 @@ from modbus_driver_interfaces.srv import ModbusRequest
 class MotorControlNode(Node):
     def __init__(self):
         super().__init__('leadshine_motor')
+
+        # Declare and read motor ID parameter
         self.declare_parameter('motor_id', 1)
         self.motor_id = self.get_parameter('motor_id').value
         self.get_logger().info(f"motor_id from param = {self.motor_id}")
 
+        # Create service client
         self.cli = self.create_client(ModbusRequest, '/modbus_request')
-        while not self.cli.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Waiting for modbus_request service...')
+        self.motor = None  # Will be initialized after service becomes available
 
-        self.motor = LeadshineMotor(
-            self.motor_id,
-            self.send_modbus_request,
-            self.recv_modbus_request
-        )
+        # Set up command subscriber (immediate)
+        self.cmd_sub = self.create_subscription(String,  f'/motor{self.motor_id}/cmd', self.command_callback, 10)
+        self.get_logger().info(f"📡 Subscription to /motor{self.motor_id}/cmd created")
 
-        self.create_subscription(String, 'motor_cmd', self.command_callback, 10)
-        self.get_logger().info("✅ MotorControlNode ready!")
+        # Set up non-blocking timer to check for service availability
+        self.service_check_timer = self.create_timer(1.0, self.check_service_ready)
+        self.get_logger().info("⏳ Waiting for /modbus_request service...")
 
+    def check_service_ready(self):
+        if self.cli.service_is_ready():
+            self.get_logger().info("✅ /modbus_request service is now available!")
+
+            if self.motor is None:
+                self.motor = LeadshineMotor(
+                    self.motor_id,
+                    self.send_modbus_request,
+                    self.recv_modbus_request
+                )
+
+            self.service_check_timer.cancel()
+            
     def send_modbus_request(self, func_code, addr, values):
+        if not self.cli.service_is_ready():
+            self.get_logger().warn("Modbus service not available. Skipping write request.")
+            return
+
         req = ModbusRequest.Request()
         req.function_code = func_code
         req.slave_id = self.motor_id
@@ -45,6 +63,18 @@ class MotorControlNode(Node):
         future.add_done_callback(handle_response)
 
     def recv_modbus_request(self, func_code, addr, count, callback=None):
+        if not self.cli.service_is_ready():
+            self.get_logger().warn("Modbus service not available. Skipping read request.")
+            if callback:
+                callback([])
+            return []
+        
+        # callback cannot be None if func_code is 3
+        if func_code != 3 and callback is not None:
+            self.get_logger().warn("Callback is required for this function code.")
+            return []
+
+
         req = ModbusRequest.Request()
         req.function_code = func_code
         req.slave_id = self.motor_id
@@ -54,15 +84,12 @@ class MotorControlNode(Node):
 
         future = self.cli.call_async(req)
 
-        if callback is not None:
-            future.add_done_callback(lambda fut: callback(fut.result().response if fut.result() and fut.result().success else []))
-        else:
-            rclpy.spin_until_future_complete(self, future)
-            if future.done() and future.result() and future.result().success:
-                return future.result().response
-            else:
-                self.get_logger().error("❌ Modbus read failed or timed out")
-                return []
+        future.add_done_callback(
+            lambda fut: callback(
+                fut.result().response if fut.result() and fut.result().success else []
+            )
+        )
+        return []
 
     def command_callback(self, msg):
         parts = msg.data.strip().lower().split()
@@ -71,6 +98,10 @@ class MotorControlNode(Node):
 
         cmd = parts[0]
         arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
+
+        if self.motor is None:
+            self.get_logger().warn("⏳ Motor not initialized yet. Command ignored.")
+            return
 
         try:
             match cmd:

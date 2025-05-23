@@ -24,7 +24,7 @@ class ModbusManagerNode(Node):
             exit(1)
 
         # Create service
-        self.srv = self.create_service(ModbusRequest, 'modbus_request', self.handle_modbus_request)
+        self.srv = self.create_service(ModbusRequest, '/modbus_request', self.handle_modbus_request)
         self.get_logger().info("✅ Modbus Manager is running")
 
     def handle_modbus_request(self, request, response):

@@ -23,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'modbus_manager_node = modbus_driver.modbus_manager_node:main',
+            'modbus_simulation_node = modbus_driver.modbus_simulation_node:main',
             'modbus_client_tester = modbus_driver.modbus_client_tester:main',
         ],
     },

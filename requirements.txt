@@ -1,2 +1,4 @@
 pyserial
 pymodbus
+fastapi
+uvicorn

@@ -46,7 +46,7 @@ class LeadshineMotor:
         """Convert unsigned 16-bit int to signed 16-bit."""
         return value - 0x10000 if value & 0x8000 else value
 
-    def initialize_motor(self):
+    def initialize_motor_bak(self):
         self.send(6, 0x0001, [10000])   # Set counts per round
         self.send(6, 0x0003, [2])       # Set loop mode
         self.send(6, 0x0007, [0])       # Set direction
@@ -62,31 +62,41 @@ class LeadshineMotor:
         print(f"  Acceleration: {self.target_acceleration}")
         print(f"  Deceleration: {self.target_deceleration}")
 
-    def get_motion_target(self):
-        response = self.recv(3, 0x6201, 5)
+    def initialize_motor(self):
+        self.send(6, 0x0001, [10000])   # Set counts per round
+        self.send(6, 0x0003, [2])       # Set loop mode
+        self.send(6, 0x0007, [0])       # Set direction
 
-        if response:
-            self.target_position = self._from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
-            self.target_velocity = self._from_unsigned_16bit_to_signed(response[2])
-            self.target_acceleration = self._from_unsigned_16bit_to_signed(response[3])
-            self.target_deceleration = self._from_unsigned_16bit_to_signed(response[4])
+        self._get_motion_target()
+        self._get_motion_mode()
 
-            return (
-                self.target_position,
-                self.target_velocity,
-                self.target_acceleration,
-                self.target_deceleration,
-            )
-        else:
-            raise ValueError("Failed to read motion target")
+    def _get_motion_target(self):
+        def callback(response):
+            if response:
+                self.target_position = self._from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
+                self.target_velocity = self._from_unsigned_16bit_to_signed(response[2])
+                self.target_acceleration = self._from_unsigned_16bit_to_signed(response[3])
+                self.target_deceleration = self._from_unsigned_16bit_to_signed(response[4])
 
-    def get_motion_mode(self):
-        response = self.recv(3, 0x6200, 1)
-        if response and response[0] in self.VALID_MOTION_MODES:
-            self.motion_mode = response[0]
-        else:
-            print(f"Invalid motion mode {response[0] if response else 'None'} — setting to absolute move (0x0001)")
-            self.set_motion_mode(0x0001)
+                print(f"Motor {self.motor_id} initialized with:")
+                print(f"  Target position: {self.target_position}")
+                print(f"  Velocity: {self.target_velocity}")
+                print(f"  Acceleration: {self.target_acceleration}")
+                print(f"  Deceleration: {self.target_deceleration}")
+            else:
+                raise ValueError("Failed to read motion target")
+
+        self.recv(3, 0x6201, 5, callback)
+
+    def _get_motion_mode(self):
+        def callback(response):
+            if response and response[0] in self.VALID_MOTION_MODES:
+                self.motion_mode = response[0]
+            else:
+                print(f"Invalid motion mode {response[0] if response else 'None'} — setting to absolute move (0x0001)")
+                self.set_motion_mode(0x0001)
+
+        self.recv(3, 0x6200, 1, callback)
 
     def set_motion_mode(self, mode):
         if mode in self.VALID_MOTION_MODES:

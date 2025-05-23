@@ -1,6 +1,6 @@
 # Robot DC Control System
 
-A modular ROS 2-based control system for DC motors over RS-485 Modbus RTU, featuring centralized Modbus management and motor control. Designed for Jetson-based robot platforms with easy extensibility.
+A modular ROS 2-based control system for DC motors over RS-485 Modbus RTU, featuring centralized Modbus management, motor control, web interface, and simulation support. Designed for Jetson-based robot platforms with easy extensibility.
 
 ---
 
@@ -10,10 +10,12 @@ A modular ROS 2-based control system for DC motors over RS-485 Modbus RTU, featu
 robot_dc/
 ├── colcon_ws/                     # ROS 2 workspace containing all packages
 │   └── src/
-│       ├── leadshine_motor/       # Leadshine motor ROS 2 package
-│       ├── modbus_driver/         # Modbus RTU centralized bus driver package
-│       ├── modbus_driver_interfaces/ # Shared Modbus service interface definitions
-│       └── robot_bringup/         # Unified launch package for the robot
+│       ├── leadshine_motor/       # Leadshine motor control node and simulation logic
+│       ├── modbus_driver/         # Central Modbus RTU driver and simulator
+│       ├── modbus_driver_interfaces/ # Shared service/message interface definitions
+│       ├── robot_bringup/         # Unified system-level launch entry points
+│       ├── robot_teleop/          # Joystick teleoperation support
+│       └── robot_web/             # Web-based interface for control and monitoring
 ├── doc/                          # Documentation and FAQs
 │   └── FAQ/
 │       ├── enable_ch340_usb_serial_on_jetson.md
@@ -23,7 +25,7 @@ robot_dc/
 │   └── serial_port_finder.py
 ├── install.sh                    # Setup helper script
 ├── requirements.txt              # Python dependencies
-└── README.md                    # This file - global project overview
+└── README.md                     # This file - global project overview
 ```
 
 ---
@@ -31,13 +33,14 @@ robot_dc/
 ## Key Points
 
 * **ROS 2 workspace** is located inside `colcon_ws/` with all source packages under `src/`.
-* Each ROS 2 package contains its own detailed [README](colcon_ws/src).
+* Each ROS 2 package contains its own detailed README.
 * Individual package README files (relative paths):
 
   * [leadshine\_motor](colcon_ws/src/leadshine_motor/README.md)
   * [modbus\_driver](colcon_ws/src/modbus_driver/README.md)
-  * [modbus\_driver\_interfaces](colcon_ws/src/modbus_driver_interfaces)
-  * [robot\_bringup](colcon_ws/src/robot_bringup)
+  * [robot\_teleop](colcon_ws/src/robot_teleop/README.md)
+  * [robot\_web](colcon_ws/src/robot_web/README.md)
+* Shared interfaces are in [`modbus_driver_interfaces`](colcon_ws/src/modbus_driver_interfaces).
 * Documentation and troubleshooting FAQs are available in the `doc/FAQ/` folder:
 
   * [Enable CH340 USB serial on Jetson](doc/FAQ/enable_ch340_usb_serial_on_jetson.md)
@@ -58,20 +61,47 @@ robot_dc/
    source install/setup.bash
    ```
 
-2. **Launch the full robot system:**
+2. **Launch the full robot system (real hardware):**
 
    ```bash
    ros2 launch robot_bringup robot_launch.py
    ```
 
-3. **Use motor commands and utilities as described in the respective package README files.**
+3. **Alternatively, run in simulation mode (no physical hardware required):**
+
+   ```bash
+   ros2 launch robot_bringup simulate_motor_launch.py
+   ```
+
+4. **Access the web interface for control and monitoring:**
+
+   Open a browser and navigate to:
+
+   ```
+   http://<hostname>:8000
+   ```
+
+   > On Linux, you may need to allow port 8000 through your firewall to access from other PCs.
+
+5. **Refer to individual package READMEs for usage examples, APIs, and command formats.**
+
+---
+
+## Features
+
+* Centralized Modbus RTU management
+* Leadshine motor control via ROS 2 service interface
+* Web-based interface for visualization and command
+* Simulation mode for development without hardware
+* Joystick teleoperation support
+* Modular architecture for easy extension
 
 ---
 
 ## Documentation
 
 * Detailed FAQs and setup guides are available in the [`doc/FAQ/`](doc/FAQ/) folder.
-* For example:
+* Examples:
 
   * [Enabling CH340 USB serial devices on Jetson](doc/FAQ/enable_ch340_usb_serial_on_jetson.md)
   * [Setting up joystick support in ROS 2](doc/FAQ/setup_joystick_ros2.md)
@@ -80,14 +110,13 @@ robot_dc/
 
 ## Contributing
 
-See individual package README files (links above) for guidelines on testing, development, and coding standards.
+See individual package README files (linked above) for testing instructions, development practices, and coding style.
 
 ---
 
 ## License & Maintainer
 
-* Licensed under MIT License.
+* Licensed under the MIT License.
 * Maintained by Jetson Developer — contact via [jetson@todo.todo](mailto:jetson@todo.todo).
 
 ---
-
