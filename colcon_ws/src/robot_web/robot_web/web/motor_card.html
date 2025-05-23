@@ -1,18 +1,54 @@
-<div class="bg-white rounded-2xl shadow p-4 motor-card" data-motor-id="{{motor_id}}">
-  <h2 class="text-xl font-semibold mb-2">{{motor_id}}</h2>
-  <div class="text-sm space-y-1 mb-2">
+<div class="motor-card bg-white rounded-2xl shadow p-4" data-motor-id="{{motor_id}}">
+  <h2 class="motor-title text-xl font-semibold mb-2">{{motor_id}}</h2>
+
+  <!-- Status Section -->
+  <div class="motor-status text-sm space-y-1 mb-4">
     <div><strong>Position:</strong> <span id="{{motor_id}}-pos">-</span></div>
     <div><strong>Speed:</strong> <span id="{{motor_id}}-speed">-</span></div>
     <div><strong>Torque:</strong> <span id="{{motor_id}}-torque">-</span></div>
     <div><strong>Error:</strong> <span id="{{motor_id}}-error" class="text-red-600">-</span></div>
   </div>
-  <div class="flex flex-wrap gap-2 mb-2">
-    <button class="btn jog-left">Jog Left</button>
-    <button class="btn jog-right">Jog Right</button>
-    <button class="btn stop bg-red-600 text-white">Stop</button>
+
+  <!-- Control Buttons Section -->
+  <div class="motor-controls flex flex-wrap justify-between mb-4">
+    <button class="motor-button jog-left mx-1">Jog Left</button>
+    <button class="motor-button jog-right mx-1">Jog Right</button>
+    <button class="motor-button stop mx-1">Stop</button>
+    <button class="motor-button set-zero mx-1">Set Zero</button>
   </div>
-  <div class="flex items-center gap-2">
-    <input type="number" class="motor-input border rounded px-2 py-1 w-full" placeholder="Move to position" />
-    <button class="btn move bg-blue-500 text-white">Move</button>
+
+  <!-- Position Section -->
+  <div class="motor-section flex items-center gap-2 mb-2">
+    <span>Pos:</span>
+    <input type="number" class="motor-input motor-pos border rounded px-2 py-1 flex-grow" placeholder="Target Position" />
+    <button class="motor-button set-pos">Set Pos</button>
+  </div>
+  <div class="flex justify-end gap-2 mb-2">
+    <button class="motor-button move-abs">Move Abs</button>
+    <button class="motor-button move-rel">Move Rel</button>
+  </div>
+
+  <!-- Velocity Section -->
+  <div class="motor-section flex items-center gap-2 mb-2">
+    <span>Vel:</span>
+    <input type="number" class="motor-input motor-vel border rounded px-2 py-1 flex-grow" placeholder="Target Velocity" />
+    <button class="motor-button set-vel">Set Vel</button>
+  </div>
+  <div class="flex justify-end gap-2 mb-2">
+    <button class="motor-button move-vel">Move Vel</button>
+  </div>
+
+  <!-- Acceleration Section -->
+  <div class="motor-section flex items-center gap-2 mb-2">
+    <span>Acc:</span>
+    <input type="number" class="motor-input motor-acc border rounded px-2 py-1 flex-grow" placeholder="Acceleration" />
+    <button class="motor-button set-acc">Set Acc</button>
+  </div>
+
+  <!-- Deceleration Section -->
+  <div class="motor-section flex items-center gap-2">
+    <span>Dec:</span>
+    <input type="number" class="motor-input motor-dec border rounded px-2 py-1 flex-grow" placeholder="Deceleration" />
+    <button class="motor-button set-dec">Set Dec</button>
   </div>
 </div>
