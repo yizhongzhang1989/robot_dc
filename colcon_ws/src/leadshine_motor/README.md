@@ -84,7 +84,7 @@ ros2 run leadshine_motor motor_node --ros-args -p motor_id:=1
 
 ## 🎮 Command Interface
 
-Each motor node subscribes to its own topic, e.g., `/motor1/motor_cmd` (type: `std_msgs/String`). Commands are simple space-separated strings.
+Each motor node subscribes to its own topic, e.g., `/motor1/cmd` (type: `std_msgs/String`). Commands are simple space-separated strings.
 
 ### ✅ Supported Commands
 
@@ -109,10 +109,10 @@ Each motor node subscribes to its own topic, e.g., `/motor1/motor_cmd` (type: `s
 ### 🧪 Examples
 
 ```bash
-ros2 topic pub /motor1/motor_cmd std_msgs/String "data: 'set_vel -1000'"
-ros2 topic pub /motor1/motor_cmd std_msgs/String "data: 'move_vel'"
-ros2 topic pub /motor1/motor_cmd std_msgs/String "data: 'get_pos'"
-ros2 topic pub /motor1/motor_cmd std_msgs/String "data: 'stop'"
+ros2 topic pub /motor1/cmd std_msgs/String "data: 'set_vel -1000'"
+ros2 topic pub /motor1/cmd std_msgs/String "data: 'move_vel'"
+ros2 topic pub /motor1/cmd std_msgs/String "data: 'get_pos'"
+ros2 topic pub /motor1/cmd std_msgs/String "data: 'stop'"
 ```
 
 ---
@@ -122,8 +122,8 @@ ros2 topic pub /motor1/motor_cmd std_msgs/String "data: 'stop'"
 ### Manual Testing
 
 ```bash
-ros2 topic pub /motor1/motor_cmd std_msgs/String "data: 'set_pos 10000'"
-ros2 topic pub /motor1/motor_cmd std_msgs/String "data: 'move_abs'"
+ros2 topic pub /motor1/cmd std_msgs/String "data: 'set_pos 10000'"
+ros2 topic pub /motor1/cmd std_msgs/String "data: 'move_abs'"
 ```
 
 ### Unit Tests
