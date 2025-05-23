@@ -3,16 +3,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 import os
+from ament_index_python.packages import get_package_share_directory
 
 from .web_ros_client import WebROSClient
 
 app = FastAPI()
 ros_client = None
 
+web_path = os.path.join(get_package_share_directory('robot_web'), 'web')
+STATIC_DIR = os.path.abspath(web_path)
+print("Serving web from:", STATIC_DIR, flush=True)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.abspath(os.path.join(BASE_DIR, "web"))
-print(f"Serving web from: {STATIC_DIR}")
 
 @app.on_event("startup")
 def initialize():
