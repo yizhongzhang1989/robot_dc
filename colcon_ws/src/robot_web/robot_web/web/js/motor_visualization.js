@@ -1,4 +1,3 @@
-// motor_visualization.js
 function drawMotorVisualization(motor_id, position, speed) {
   const canvas = document.getElementById(`${motor_id}-vis`);
   if (!canvas) return;
@@ -7,6 +6,7 @@ function drawMotorVisualization(motor_id, position, speed) {
   const centerY = canvas.height / 2;
   const radius = 40;
 
+  // Clear canvas and draw outer ring
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
@@ -14,10 +14,15 @@ function drawMotorVisualization(motor_id, position, speed) {
   ctx.lineWidth = 4;
   ctx.stroke();
 
-  const angle = (position % 360) * (Math.PI / 180);
+  // Calculate angle: map 0–10000 to 0–2π (CCW), with 0 at top (−π/2)
+  const norm_pos = position % 10000;
+  const angle = ((norm_pos / 10000) * 2 * Math.PI) - Math.PI / 2;
+
+  // Compute indicator endpoint
   const barX = centerX + radius * Math.cos(angle);
   const barY = centerY + radius * Math.sin(angle);
 
+  // Draw the indicator line
   ctx.beginPath();
   ctx.moveTo(centerX, centerY);
   ctx.lineTo(barX, barY);

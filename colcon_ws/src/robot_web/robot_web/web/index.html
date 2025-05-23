@@ -112,16 +112,19 @@
 
     async function updateMotorStates(motor_id) {
       try {
-        // const data = await fetchMotorState(motor_id);
-        // document.getElementById(`${motor_id}-pos`).textContent = data.position ?? "-";
-        // document.getElementById(`${motor_id}-speed`).textContent = data.speed ?? "-";
-        // document.getElementById(`${motor_id}-torque`).textContent = data.torque ?? "-";
-        // document.getElementById(`${motor_id}-error`).textContent = data.error ?? "-";
+        const res = await fetch(`/motor/${motor_id}/status`);
+        const data = await res.json();
+        if (data.error) {
+          drawMotorVisualization(motor_id, 0, 0);
+          return;
+        }
 
-        pos = 100;
-        speed = 50;
-        drawMotorVisualization(motor_id, pos, speed);
+        document.getElementById(`${motor_id}-pos`).textContent = data.current_position.toFixed(2);
+        document.getElementById(`${motor_id}-speed`).textContent = data.velocity.toFixed(2);
+        document.getElementById(`${motor_id}-torque`).textContent = "-"; // optional if not used
+        document.getElementById(`${motor_id}-error`).textContent = data.moving ? "" : "Stopped";
 
+        drawMotorVisualization(motor_id, data.current_position, data.velocity);
       } catch (err) {
         console.error("Error fetching state for", motor_id, err);
       }
@@ -136,7 +139,7 @@
         for (const motor_id of motors) {
           const card = await loadMotorCardTemplate(motor_id);
           container.appendChild(card);
-          setInterval(() => updateMotorStates(motor_id), 1000);
+          setInterval(() => updateMotorStates(motor_id), 100);
         }
       } catch (err) {
         console.error("Error initializing motors:", err);
