@@ -25,46 +25,21 @@
       return await res.json();
     }
 
-    function createMotorCard(motor_id) {
-      const card = document.createElement("div");
-      card.className = "bg-white rounded-2xl shadow p-4";
-      card.innerHTML = `
-        <h2 class="text-xl font-semibold mb-2">${motor_id}</h2>
-        <div class="text-sm space-y-1 mb-2">
-          <div><strong>Position:</strong> <span id="${motor_id}-pos">-</span></div>
-          <div><strong>Speed:</strong> <span id="${motor_id}-speed">-</span></div>
-          <div><strong>Torque:</strong> <span id="${motor_id}-torque">-</span></div>
-          <div><strong>Error:</strong> <span id="${motor_id}-error" class="text-red-600">-</span></div>
-        </div>
-        <div class="flex flex-wrap gap-2 mb-2">
-          <button onclick="sendCommand('${motor_id}', 'jog_left')" class="btn">Jog Left</button>
-          <button onclick="sendCommand('${motor_id}', 'jog_right')" class="btn">Jog Right</button>
-          <button onclick="sendCommand('${motor_id}', 'stop')" class="btn bg-red-600 text-white">Stop</button>
-        </div>
-        <div class="flex items-center gap-2">
-          <input id="${motor_id}-input" type="number" placeholder="Move to position" class="border rounded px-2 py-1 w-full">
-          <button onclick="moveTo('${motor_id}')" class="btn bg-blue-500 text-white">Move</button>
-        </div>
-      `;
-      return card;
-    }
-
-    async function sendCommand(motor_id, command) {
+    async function sendCommand(motor_id, command, value = null) {
+      const body = { command };
+      if (value !== null) body.value = value;
       await fetch(`/motor/${motor_id}/command`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command }),
+        body: JSON.stringify(body),
       });
     }
 
-    async function moveTo(motor_id) {
-      const pos = document.getElementById(`${motor_id}-input`).value;
-      if (!pos) return alert("Enter a valid position.");
-      await fetch(`/motor/${motor_id}/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: "move_abs", value: parseFloat(pos) }),
-      });
+    async function moveTo(motor_id, card) {
+      const input = card.querySelector(".motor-input");
+      const pos = parseFloat(input.value);
+      if (isNaN(pos)) return alert("Enter a valid position.");
+      await sendCommand(motor_id, "move_abs", pos);
     }
 
     async function updateMotorStates(motor_id) {
@@ -79,16 +54,34 @@
       }
     }
 
+    async function loadMotorCardTemplate(motor_id) {
+      const res = await fetch("/web/motor_card.html");
+      let html = await res.text();
+      html = html.replace(/{{motor_id}}/g, motor_id);
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = html.trim();
+      const card = wrapper.firstChild;
+
+      // Bind button actions
+      card.querySelector(".jog-left").onclick = () => sendCommand(motor_id, "jog_left");
+      card.querySelector(".jog-right").onclick = () => sendCommand(motor_id, "jog_right");
+      card.querySelector(".stop").onclick = () => sendCommand(motor_id, "stop");
+      card.querySelector(".move").onclick = () => moveTo(motor_id, card);
+
+      return card;
+    }
+
     async function init() {
       try {
         const data = await fetchMotors();
-        const motors = data.motors;  // ✅ fixed line
-        console.log("Motors loaded:", motors);
+        const motors = data.motors;
         const container = document.getElementById("motor-container");
-        motors.forEach(motor_id => {
-          container.appendChild(createMotorCard(motor_id));
+
+        for (const motor_id of motors) {
+          const card = await loadMotorCardTemplate(motor_id);
+          container.appendChild(card);
           setInterval(() => updateMotorStates(motor_id), 1000);
-        });
+        }
       } catch (err) {
         console.error("Error initializing motors:", err);
       }
