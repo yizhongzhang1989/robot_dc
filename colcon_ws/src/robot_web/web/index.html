@@ -103,7 +103,7 @@
 
     async function sendCommand(motor_id, command, value = null) {
       const payload = value !== null ? { command, value } : { command };
-      await fetch(`/motor/${motor_id}/command`, {
+      await fetch(`/api/${motor_id}/cmd`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -112,7 +112,7 @@
 
     async function updateMotorStates(motor_id) {
       try {
-        const res = await fetch(`/motor/${motor_id}/status`);
+        const res = await fetch(`/api/${motor_id}/status`);
         const data = await res.json();
         if (data.error) {
           drawMotorVisualization(motor_id, 0, 0);

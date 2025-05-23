@@ -30,14 +30,14 @@ def serve_index():
 def get_motors():
     return {"motors": ros_client.motor_list}
 
-@app.post("/motor/{motor_id}/command")
+@app.post("/api/{motor_id}/cmd")
 async def send_motor_command(motor_id: str, request: Request):
     data = await request.json()
     command = data.get("command")
     value = data.get("value", None)
     return ros_client.send_command(motor_id, command, value)
 
-@app.get("/motor/{motor_id}/status")
+@app.get("/api/{motor_id}/status")
 def get_motor_status(motor_id: str):
     status = ros_client.get_motor_status(motor_id)
     if status is None:
