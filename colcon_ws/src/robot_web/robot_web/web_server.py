@@ -10,6 +10,7 @@ from ament_index_python.packages import get_package_share_directory
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from modbus_driver_interfaces.msg import MotorSimulationStatus  
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -17,8 +18,8 @@ from std_msgs.msg import String
 PACKAGE_NAME = 'robot_web'
 WEB_DIR = os.path.join(get_package_share_directory(PACKAGE_NAME), 'web')
 MOTOR_TOPICS = {
-    1: '/motor1/motor_cmd',
-    2: '/motor2/motor_cmd',
+    1: '/motor1/cmd',
+    2: '/motor2/cmd',
 }
 
 VALID_DIRECTIONS = {'left': 'jog_left', 'right': 'jog_right'}
@@ -26,6 +27,8 @@ VALID_DIRECTIONS = {'left': 'jog_left', 'right': 'jog_right'}
 # -----------------------------------------------------------------------------
 # ROS Node
 # -----------------------------------------------------------------------------
+status_map = {}  
+
 class WebROSClient(Node):
     def __init__(self):
         super().__init__('web_ros_client')
@@ -34,6 +37,20 @@ class WebROSClient(Node):
             for motor_id, topic in MOTOR_TOPICS.items()
         }
 
+        # Subscribe to each motor’s sim_status  
+        self.sub_motor1 = self.create_subscription(  
+            MotorSimulationStatus,  
+            '/motor1/sim_status',  
+            lambda msg: self.update_status(1, msg),  
+            10  
+        )  
+        self.sub_motor2 = self.create_subscription(  
+            MotorSimulationStatus,  
+            '/motor2/sim_status',  
+            lambda msg: self.update_status(2, msg),  
+            10  
+        )  
+
     def publish_cmd(self, motor_id: int, cmd: str):
         if motor_id not in self._motor_publishers:
             self.get_logger().error(f"Invalid motor ID: {motor_id}")
@@ -41,6 +58,18 @@ class WebROSClient(Node):
         msg = String(data=cmd)
         self._motor_publishers[motor_id].publish(msg)
         self.get_logger().info(f"Published '{cmd}' to motor{motor_id}")
+
+    def update_status(self, motor_id: int, msg: MotorSimulationStatus):  
+        status_map[motor_id] = {  
+            'motor_id': motor_id,  
+            'current_position': msg.current_position,  
+            'target_position': msg.target_position,  
+            'velocity': msg.velocity,  
+            'motion_mode': msg.motion_mode,  
+            'moving': msg.moving,  
+            'last_command': msg.last_command,  
+        }  
+
 
 def start_ros_spin(node: Node):
     rclpy.spin(node)
@@ -54,6 +83,19 @@ app.mount("/static", StaticFiles(directory=WEB_DIR, html=True), name="static")
 @app.get("/")
 async def root():
     return FileResponse(os.path.join(WEB_DIR, "index.html"))
+
+@app.get("/motor/{motor_id}")  
+async def motor_page(motor_id: int):  
+    """Serve a simple HTML page that uses a JS script to poll status."""  
+    # You could create a separate HTML file for each motor, or a single template that  
+    # reads the motor_id from the URL. For now, just serve the same file.  
+    return FileResponse(os.path.join(WEB_DIR, "motor.html"))  
+   
+@app.get("/api/motor/{motor_id}/status")  
+async def get_motor_status(motor_id: int):  
+    if motor_id not in status_map:  
+        raise HTTPException(status_code=404, detail="No status available for that motor_id.")  
+    return status_map[motor_id]  
 
 # -----------------------------------------------------------------------------
 # API Models
