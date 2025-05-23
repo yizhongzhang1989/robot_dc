@@ -9,7 +9,10 @@ from .web_ros_client import WebROSClient
 app = FastAPI()
 ros_client = None
 
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "web")
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.abspath(os.path.join(BASE_DIR, "web"))
+print(f"Serving web from: {STATIC_DIR}")
 
 @app.on_event("startup")
 def initialize():
@@ -41,4 +44,5 @@ def get_motor_status(motor_id: str):
     return status
 
 app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")
+
 
