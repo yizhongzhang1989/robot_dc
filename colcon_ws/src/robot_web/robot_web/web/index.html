@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Robot Motor Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 h-full font-sans">
+  <div class="container mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4 text-center">Robot Motor Control</h1>
+    <div id="motor-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <!-- Motor cards will be inserted here -->
+    </div>
+  </div>
+
+  <script>
+    async function fetchMotors() {
+      const res = await fetch("/motors");
+      return await res.json();
+    }
+
+    async function fetchMotorState(motor_id) {
+      const res = await fetch(`/motor/${motor_id}/status`);
+      return await res.json();
+    }
+
+    function createMotorCard(motor_id) {
+      const card = document.createElement("div");
+      card.className = "bg-white rounded-2xl shadow p-4";
+      card.innerHTML = `
+        <h2 class="text-xl font-semibold mb-2">${motor_id}</h2>
+        <div class="text-sm space-y-1 mb-2">
+          <div><strong>Position:</strong> <span id="${motor_id}-pos">-</span></div>
+          <div><strong>Speed:</strong> <span id="${motor_id}-speed">-</span></div>
+          <div><strong>Torque:</strong> <span id="${motor_id}-torque">-</span></div>
+          <div><strong>Error:</strong> <span id="${motor_id}-error" class="text-red-600">-</span></div>
+        </div>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <button onclick="sendCommand('${motor_id}', 'jog_left')" class="btn">Jog Left</button>
+          <button onclick="sendCommand('${motor_id}', 'jog_right')" class="btn">Jog Right</button>
+          <button onclick="sendCommand('${motor_id}', 'stop')" class="btn bg-red-600 text-white">Stop</button>
+        </div>
+        <div class="flex items-center gap-2">
+          <input id="${motor_id}-input" type="number" placeholder="Move to position" class="border rounded px-2 py-1 w-full">
+          <button onclick="moveTo('${motor_id}')" class="btn bg-blue-500 text-white">Move</button>
+        </div>
+      `;
+      return card;
+    }
+
+    async function sendCommand(motor_id, command) {
+      await fetch(`/motor/${motor_id}/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command }),
+      });
+    }
+
+    async function moveTo(motor_id) {
+      const pos = document.getElementById(`${motor_id}-input`).value;
+      if (!pos) return alert("Enter a valid position.");
+      await fetch(`/motor/${motor_id}/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: "move_abs", value: parseFloat(pos) }),
+      });
+    }
+
+    async function updateMotorStates(motor_id) {
+      try {
+        const data = await fetchMotorState(motor_id);
+        document.getElementById(`${motor_id}-pos`).textContent = data.position ?? "-";
+        document.getElementById(`${motor_id}-speed`).textContent = data.speed ?? "-";
+        document.getElementById(`${motor_id}-torque`).textContent = data.torque ?? "-";
+        document.getElementById(`${motor_id}-error`).textContent = data.error ?? "-";
+      } catch (err) {
+        console.error("Error fetching state for", motor_id, err);
+      }
+    }
+
+    async function init() {
+      try {
+        const data = await fetchMotors();
+        const motors = data.motors;  // ✅ fixed line
+        console.log("Motors loaded:", motors);
+        const container = document.getElementById("motor-container");
+        motors.forEach(motor_id => {
+          container.appendChild(createMotorCard(motor_id));
+          setInterval(() => updateMotorStates(motor_id), 1000);
+        });
+      } catch (err) {
+        console.error("Error initializing motors:", err);
+      }
+    }
+
+    init();
+  </script>
+
+  <style>
+    .btn {
+      @apply bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded;
+    }
+  </style>
+</body>
+</html>
