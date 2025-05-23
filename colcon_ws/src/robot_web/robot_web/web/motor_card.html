@@ -1,6 +1,9 @@
 <div class="motor-card bg-white rounded-2xl shadow p-4" data-motor-id="{{motor_id}}">
   <h2 class="motor-title text-xl font-semibold mb-2">{{motor_id}}</h2>
 
+  <!-- Motor Visual -->
+  <canvas id="{{motor_id}}-vis" width="120" height="120" class="mx-auto mb-4 border rounded"></canvas>
+
   <!-- Status Section -->
   <div class="motor-status text-sm space-y-1 mb-4">
     <div><strong>Position:</strong> <span id="{{motor_id}}-pos">-</span></div>

@@ -40,6 +40,7 @@
     </div>
   </div>
 
+  <script src="/web/js/motor_visualization.js"></script>
   <script>
     async function fetchMotors() {
       const res = await fetch("/motors");
@@ -111,11 +112,16 @@
 
     async function updateMotorStates(motor_id) {
       try {
-        const data = await fetchMotorState(motor_id);
-        document.getElementById(`${motor_id}-pos`).textContent = data.position ?? "-";
-        document.getElementById(`${motor_id}-speed`).textContent = data.speed ?? "-";
-        document.getElementById(`${motor_id}-torque`).textContent = data.torque ?? "-";
-        document.getElementById(`${motor_id}-error`).textContent = data.error ?? "-";
+        // const data = await fetchMotorState(motor_id);
+        // document.getElementById(`${motor_id}-pos`).textContent = data.position ?? "-";
+        // document.getElementById(`${motor_id}-speed`).textContent = data.speed ?? "-";
+        // document.getElementById(`${motor_id}-torque`).textContent = data.torque ?? "-";
+        // document.getElementById(`${motor_id}-error`).textContent = data.error ?? "-";
+
+        pos = 100;
+        speed = 50;
+        drawMotorVisualization(motor_id, pos, speed);
+
       } catch (err) {
         console.error("Error fetching state for", motor_id, err);
       }
