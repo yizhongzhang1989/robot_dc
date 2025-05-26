@@ -2,3 +2,4 @@ pyserial
 pymodbus
 fastapi
 uvicorn
+flask

@@ -87,6 +87,41 @@ robot_dc/
 
 ---
 
+## Remote Inspecting
+
+For remote visual monitoring of the robot or workspace, you can launch a USB camera video stream server using the script located at [`scripts/webcam_server.py`](scripts/webcam_server.py).
+
+1. **Start the webcam server**
+
+   Make sure your USB camera is connected to the device (e.g., Jetson), then run:
+
+   ```bash
+   python3 scripts/webcam_server.py
+   ```
+
+   > The server listens on port **8010** by default. You can change this by modifying the script.
+
+2. **View the camera stream**
+
+   On any device in the same network, open a browser and visit:
+
+   ```
+   http://<robot-hostname>:8010
+   ```
+
+   Replace `<robot-hostname>` with the actual IP or hostname of your robot (e.g., `192.168.1.50`).
+
+   > ⚠️ **Note:** The camera may take a few seconds to initialize. If the video doesn’t appear immediately, wait for a moment without refresh.
+
+3. **Usage Notes**
+
+   * The camera only streams when at least one viewer is connected.
+   * Once all viewers disconnect, the camera is automatically turned off to save resources.
+   * The stream supports multiple viewers simultaneously.
+
+---
+
+
 ## Features
 
 * Centralized Modbus RTU management
