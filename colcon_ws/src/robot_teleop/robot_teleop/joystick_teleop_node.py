@@ -53,7 +53,7 @@ class JoystickTeleop(Node):
         self.handle_servo_axis_control(msg.axes[2], self.servo2_pub, motor_id=12)
 
     def handle_motor_axis_control(self, axis_value, publisher, motor_id):
-        speed = int(axis_value * 300)  # Scale axis value to speed
+        speed = int(round(axis_value * 300))  # Scale axis value to speed
 
         if motor_id == 1:
             last_speed = self.last_axis1_speed
@@ -91,7 +91,7 @@ class JoystickTeleop(Node):
         pub.publish(msg)
 
     def handle_servo_axis_control(self, axis_value, publisher, motor_id):
-        speed = int(axis_value * 10)  # Scale axis value to speed
+        speed = int(round(axis_value * 5))  # Scale axis value to speed
 
         if motor_id == 11:
             last_speed = self.last_axis2_speed
