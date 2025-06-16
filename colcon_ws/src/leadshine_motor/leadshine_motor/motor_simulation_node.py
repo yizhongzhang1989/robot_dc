@@ -8,7 +8,8 @@ from leadshine_motor.motor_controller import LeadshineMotor
 from modbus_driver_interfaces.msg import ModbusPacket
 from modbus_driver_interfaces.srv import ModbusRequest  
 from modbus_driver_interfaces.msg import MotorSimulationStatus  
-  
+from modbus_devices.utils import *
+
 import threading  
 import time  
   
@@ -98,32 +99,32 @@ class MotorSimulationNode(Node):
     # Helper methods for reading/writing “physical” parameters  
     # ----------------------------------------------------------------  
     def _get_pulse_per_round(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x0001])  
+        return from_unsigned_16bit_to_signed(self.registers[0x0001])  
   
     def _get_motion_mode(self) -> int:  
         return self.registers[0x6200] & 0xFFFF  
   
     def _get_target_pos(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_regs_to_signed_32bit(  
+        return from_unsigned_16bit_regs_to_signed_32bit(  
             self.registers[0x6201], self.registers[0x6202]  
         )  
   
     def _get_velocity_cmd(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x6203])  
+        return from_unsigned_16bit_to_signed(self.registers[0x6203])  
   
     def _get_acc(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x6205])  
+        return from_unsigned_16bit_to_signed(self.registers[0x6205])  
   
     def _get_dec(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x6206])  
+        return from_unsigned_16bit_to_signed(self.registers[0x6206])  
   
     def _get_current_pos(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_regs_to_signed_32bit(  
+        return from_unsigned_16bit_regs_to_signed_32bit(  
             self.registers[0x602C], self.registers[0x602D]  
         )  
   
     def _set_current_pos(self, pos: int):  
-        high, low = LeadshineMotor._to_unsigned_16bit_regs_from_signed_32bit(int(pos))  
+        high, low = to_unsigned_16bit_regs_from_signed_32bit(int(pos))  
         self.registers[0x602C] = high  
         self.registers[0x602D] = low  
   
@@ -290,7 +291,7 @@ class MotorSimulationNode(Node):
         Does NOT change 0x6200 or 0x6203; purely internal state.  
         """  
         # Read the configured jog speed (signed RPM)  
-        base_speed = LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x01E1])  
+        base_speed = from_unsigned_16bit_to_signed(self.registers[0x01E1])  
   
         if cmd == 0x4001:  
             # Negative jog  
