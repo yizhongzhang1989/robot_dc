@@ -11,7 +11,7 @@ class ModbusManagerNode(Node):
 
         # Declare and get parameters
         self.declare_parameter('port', '/dev/ttyUSB0')
-        self.declare_parameter('baudrate', 38400)
+        self.declare_parameter('baudrate', 115200)  # Default baudrate for Modbus RTU in our system
         port = self.get_parameter('port').value
         baudrate = self.get_parameter('baudrate').value
 
