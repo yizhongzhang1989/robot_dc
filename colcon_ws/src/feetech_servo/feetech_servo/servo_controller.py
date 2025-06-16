@@ -28,8 +28,37 @@ class FeetechServo(ModbusDevice):
         self.set_target_position(2048)  # Set initial target position to midpoint
         self.set_enable_torque(True)     # Enable torque
         self.set_target_acceleration(100) # Set target acceleration
-        self.set_target_velocity(200)     # Set target velocity
+        self.set_target_velocity(10)     # Set target velocity
         self.set_target_torque_limit(1000) # Set target torque limit
+
+    def stop(self):
+        # Stop the servo by setting target position to current position
+        def callback(response):
+            if response:
+                self.target_position = response[0]
+                self.set_target_position(self.target_position)
+            else:
+                raise ValueError("Failed to read current position for stopping")
+        self.recv(3, 0x0100, 1, callback)
+
+    def get_current_status(self):
+        # Request current status (8 uint16) from the servo from address 0x100
+        def callback(response):
+            if response:
+                self.curr_status = response[0]
+                self.curr_position = response[1]
+                self.curr_velocity = response[2]
+                self.curr_PWM = response[3]
+                self.curr_voltage = response[4]
+                self.curr_temperature = response[5]
+                self.curr_moving_flag = response[6]
+                self.curr_current = response[7]
+            else:
+                raise ValueError("Failed to read current status")
+
+        self.recv(3, 0x0100, 8, callback)
+
+
 
     def set_target_position(self, position):
         self.target_position = position
@@ -50,5 +79,3 @@ class FeetechServo(ModbusDevice):
     def set_target_torque_limit(self, torque_limit):
         self.target_torque_limit = torque_limit
         self.send(6, 0x0084, [torque_limit])
-
-    

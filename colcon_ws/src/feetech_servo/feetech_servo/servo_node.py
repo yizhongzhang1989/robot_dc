@@ -105,6 +105,9 @@ class ServoControlNode(Node):
 
         try:
             match cmd:
+                case "stop":
+                    self.motor.stop()
+                    self.get_logger().info("✅ Motor stopped")
                 case "set_pos":
                     if arg is not None:
                         self.motor.set_target_position(arg)

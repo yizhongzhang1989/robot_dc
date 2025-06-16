@@ -17,6 +17,11 @@ def generate_launch_description():
         'launch',
         'motor_control_launch.py'
     )
+    servo_path = os.path.join(
+        get_package_share_directory('feetech_servo'),
+        'launch',
+        'servo_control_launch.py'
+    )
     teleop_path = os.path.join(
         get_package_share_directory('robot_teleop'),
         'launch',
@@ -38,19 +43,25 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(motor_path))]
     )
 
-    teleop_launch = TimerAction(
+    servo_launch = TimerAction(
         period=3.0,
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(servo_path))]
+    )
+
+    teleop_launch = TimerAction(
+        period=4.0,
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(teleop_path))]
     )
 
     web_launch = TimerAction(
-        period=1.0,
+        period=5.0,
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(web_path))]
     )
 
     return LaunchDescription([
         modbus_launch,
         motor_launch,
+        servo_launch,
         teleop_launch,
         web_launch
     ])
