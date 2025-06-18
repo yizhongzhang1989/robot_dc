@@ -13,6 +13,7 @@ class JoystickTeleop(Node):
         self.motor_right_pub = self.create_publisher(String, '/motor2/cmd', 10)
         self.servo_left_pub = self.create_publisher(String, '/motor17/cmd', 10)
         self.servo_right_pub = self.create_publisher(String, '/motor18/cmd', 10)
+        self.platform_pub = self.create_publisher(String, '/platform/cmd', 10)
 
         self.create_subscription(Joy, '/joy', self.joy_callback, 10)
 
@@ -34,6 +35,12 @@ class JoystickTeleop(Node):
 
         if msg.axes[2] != self.last_joy_msg.axes[2]:  # Right stick horizontal
             self.handle_servo_axis_control(msg.axes[2], self.servo_right_pub, motor_id=18)
+
+        if msg.axes[4] != self.last_joy_msg.axes[4]:  # Platform control
+            self.handle_platform_control(4, msg.axes[4])
+
+        if msg.axes[5] != self.last_joy_msg.axes[5]:  # Platform control
+            self.handle_platform_control(5, msg.axes[5])
 
         self.last_joy_msg = copy.deepcopy(msg)
 
@@ -65,6 +72,28 @@ class JoystickTeleop(Node):
                 self.get_logger().info(f'Motor {motor_id}: set_pos 4095')
                 self.send_motor_cmd(publisher, 'set_pos 4095')
 
+    def handle_platform_control(self, axis_index, axis_value):
+        if axis_index == 4:     # forward/backward
+            if axis_value > 0.5:
+                self.get_logger().info('Platform: forward')
+                self.send_motor_cmd(self.platform_pub, 'forward 1')
+            elif axis_value < -0.5:
+                self.get_logger().info('Platform: backward')
+                self.send_motor_cmd(self.platform_pub, 'backward 1')
+            else:
+                self.get_logger().info('Platform: stop')
+                self.send_motor_cmd(self.platform_pub, 'forward 0')
+        elif axis_index == 5:   # up/down
+            if axis_value > 0.5:
+                self.get_logger().info('Platform: up')
+                self.send_motor_cmd(self.platform_pub, 'up 1')
+            elif axis_value < -0.5:
+                self.get_logger().info('Platform: down')
+                self.send_motor_cmd(self.platform_pub, 'down 1')
+            else:
+                self.get_logger().info('Platform: stop')
+                self.send_motor_cmd(self.platform_pub, 'up 0')
+                
     def send_motor_cmd(self, pub, command: str):
         msg = String()
         msg.data = command

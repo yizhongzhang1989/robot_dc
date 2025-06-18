@@ -2,7 +2,6 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from leadshine_motor.motor_controller import LeadshineMotor
-from modbus_driver_interfaces.srv import ModbusRequest
 
 
 class MotorControlNode(Node):

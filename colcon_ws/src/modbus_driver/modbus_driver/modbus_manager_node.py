@@ -11,7 +11,7 @@ class ModbusManagerNode(Node):
 
         # Declare and get parameters
         self.declare_parameter('port', '/dev/ttyUSB0')
-        self.declare_parameter('baudrate', 115200)  # Default baudrate for Modbus RTU in our system
+        self.declare_parameter('baudrate', 115200)
         port = self.get_parameter('port').value
         baudrate = self.get_parameter('baudrate').value
 
@@ -23,57 +23,73 @@ class ModbusManagerNode(Node):
             self.get_logger().fatal(f"❌ Failed to open serial port {port}")
             exit(1)
 
-        # Create service
         self.srv = self.create_service(ModbusRequest, '/modbus_request', self.handle_modbus_request)
         self.get_logger().info("✅ Modbus Manager is running")
 
     def handle_modbus_request(self, request, response):
         with self.lock:
             try:
-                # self.get_logger().info(f"Handling Modbus request: {request}")
+                fc = request.function_code
+                addr = request.address
+                slave = request.slave_id
+                values = request.values
 
-                if request.function_code == 3:
-                    result = self.client.read_holding_registers(
-                        address=request.address,
-                        count=request.count,
-                        slave=request.slave_id
-                    )
+                if fc == 1:
+                    # Read coils
+                    result = self.client.read_coils(address=addr, count=request.count, slave=slave)
+                    if result.isError():
+                        raise Exception(str(result))
+                    response.success = True
+                    response.response = [int(b) for b in result.bits]
+
+                elif fc == 3:
+                    # Read holding registers
+                    result = self.client.read_holding_registers(address=addr, count=request.count, slave=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
                     response.response = list(result.registers)
 
-                elif request.function_code == 6:
-                    result = self.client.write_register(
-                        address=request.address,
-                        value=request.values[0],
-                        slave=request.slave_id
-                    )
+                elif fc == 5:
+                    # Write single coil (ON=0xFF00, OFF=0x0000)
+                    result = self.client.write_coil(address=addr, value=bool(values[0]), slave=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
-                    response.response = [request.values[0]]
+                    response.response = [int(values[0])]
 
-                elif request.function_code == 16:
-                    result = self.client.write_registers(
-                        address=request.address,
-                        values=request.values,
-                        slave=request.slave_id
-                    )
+                elif fc == 6:
+                    # Write single register
+                    result = self.client.write_register(address=addr, value=values[0], slave=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
-                    response.response = request.values
+                    response.response = [values[0]]
+
+                elif fc == 15:
+                    # Write multiple coils
+                    coil_values = [bool(v) for v in values]
+                    result = self.client.write_coils(address=addr, values=coil_values, slave=slave)
+                    if result.isError():
+                        raise Exception(str(result))
+                    response.success = True
+                    response.response = [int(v) for v in coil_values]
+
+                elif fc == 16:
+                    # Write multiple registers
+                    result = self.client.write_registers(address=addr, values=values, slave=slave)
+                    if result.isError():
+                        raise Exception(str(result))
+                    response.success = True
+                    response.response = values
 
                 else:
-                    raise ValueError(f"Unsupported function code: {request.function_code}")
+                    raise ValueError(f"Unsupported function code: {fc}")
 
             except Exception as e:
                 self.get_logger().error(f"Modbus error: {e}")
                 response.success = False
                 response.response = []
-
-        # self.get_logger().info(f"Modbus response: {response}")
 
         return response
 

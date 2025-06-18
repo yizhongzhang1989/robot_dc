@@ -1,12 +1,12 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from feetech_servo.servo_controller import FeetechServo
+from platform_controller.platform_controller import PlatformController
 
 
-class ServoControlNode(Node):
+class PlatformControlNode(Node):
     def __init__(self):
-        super().__init__('servo_control_node')
+        super().__init__('platform_control_node')
 
         # Declare and read motor ID parameter
         self.declare_parameter('device_id', 1)
@@ -14,22 +14,22 @@ class ServoControlNode(Node):
         self.get_logger().info(f"device_id from param = {self.device_id}")
 
         # motor instance
-        self.motor = FeetechServo(self.device_id, self)
+        self.platform = PlatformController(self.device_id, self)
 
         # Set up command subscriber (immediate)
-        self.cmd_sub = self.create_subscription(String,  f'/motor{self.device_id}/cmd', self.command_callback, 10)
-        self.get_logger().info(f"📡 Subscription to /motor{self.device_id}/cmd created")
+        self.cmd_sub = self.create_subscription(String,  f'/platform/cmd', self.command_callback, 10)
+        self.get_logger().info(f"📡 Subscription to /platform/cmd created")
 
         # Set up non-blocking timer to check for service availability
         self.service_check_timer = self.create_timer(1.0, self.initialize_motor_params)
         self.get_logger().info("⏳ Waiting for /modbus_request service...")
 
     def initialize_motor_params(self):
-        if self.motor.cli.service_is_ready():
+        if self.platform.cli.service_is_ready():
             self.get_logger().info("✅ /modbus_request service is now available!")
 
-            self.motor.initialize()
-            self.get_logger().info("Motor initialized successfully.")
+            self.platform.initialize()
+            self.get_logger().info("Platform initialized successfully.")
 
             self.service_check_timer.cancel()
             
@@ -41,27 +41,28 @@ class ServoControlNode(Node):
         cmd = parts[0]
         arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
 
-        if self.motor is None:
-            self.get_logger().warn("⏳ Motor not initialized yet. Command ignored.")
+        if self.platform is None:
+            self.get_logger().warn("⏳ Platform not initialized yet. Command ignored.")
             return
 
         try:
             match cmd:
-                case "stop":
-                    self.motor.stop()
-                    self.get_logger().info("✅ Motor stopped")
-                case "set_pos":
+                case "up":
                     if arg is not None:
-                        self.motor.set_target_position(arg)
-                        self.get_logger().info(f"✅ Set position to {arg}")
-                case "set_vel":
+                        self.platform.up(arg)
+                        self.get_logger().info(f"✅ Platform moving up with flag {arg}")
+                case "down":
                     if arg is not None:
-                        self.motor.set_target_velocity(arg)
-                        self.get_logger().info(f"✅ Set velocity to {arg}")
-                case "set_acc":
+                        self.platform.down(arg)
+                        self.get_logger().info(f"✅ Platform moving down with flag {arg}")
+                case "forward":
                     if arg is not None:
-                        self.motor.set_target_acceleration(arg)
-                        self.get_logger().info(f"✅ Set acceleration to {arg}")
+                        self.platform.forward(arg)
+                        self.get_logger().info(f"✅ Platform moving forward with flag {arg}")
+                case "backward":
+                    if arg is not None:
+                        self.platform.backward(arg)
+                        self.get_logger().info(f"✅ Platform moving backward with flag {arg}")
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
         except Exception as e:
@@ -70,7 +71,7 @@ class ServoControlNode(Node):
 
 def main():
     rclpy.init()
-    node = ServoControlNode()
+    node = PlatformControlNode()
     try:
         rclpy.spin(node)
     finally:
