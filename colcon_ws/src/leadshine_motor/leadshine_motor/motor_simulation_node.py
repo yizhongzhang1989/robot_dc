@@ -8,7 +8,8 @@ from leadshine_motor.motor_controller import LeadshineMotor
 from modbus_driver_interfaces.msg import ModbusPacket
 from modbus_driver_interfaces.srv import ModbusRequest  
 from modbus_driver_interfaces.msg import MotorSimulationStatus  
-  
+from modbus_devices.utils import *
+
 import threading  
 import time  
   
@@ -21,9 +22,9 @@ class MotorSimulationNode(Node):
     def __init__(self):  
         super().__init__('motor_simulation_node')  
   
-        self.declare_parameter('motor_id', 1)  
-        self.motor_id = self.get_parameter('motor_id').value  
-        self.get_logger().info(f"Simulating motor_id = {self.motor_id}")  
+        self.declare_parameter('device_id', 1)  
+        self.device_id = self.get_parameter('device_id').value  
+        self.get_logger().info(f"Simulating device_id = {self.device_id}")  
     
         self.subscription = self.create_subscription(
             ModbusPacket,
@@ -84,7 +85,7 @@ class MotorSimulationNode(Node):
         # Publisher  
         self.status_pub = self.create_publisher(  
             MotorSimulationStatus,  
-            f'/motor{self.motor_id}/sim_status',  
+            f'/motor{self.device_id}/sim_status',  
             10  
         )  
   
@@ -98,39 +99,39 @@ class MotorSimulationNode(Node):
     # Helper methods for reading/writing “physical” parameters  
     # ----------------------------------------------------------------  
     def _get_pulse_per_round(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x0001])  
+        return from_unsigned_16bit_to_signed(self.registers[0x0001])  
   
     def _get_motion_mode(self) -> int:  
         return self.registers[0x6200] & 0xFFFF  
   
     def _get_target_pos(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_regs_to_signed_32bit(  
+        return from_unsigned_16bit_regs_to_signed_32bit(  
             self.registers[0x6201], self.registers[0x6202]  
         )  
   
     def _get_velocity_cmd(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x6203])  
+        return from_unsigned_16bit_to_signed(self.registers[0x6203])  
   
     def _get_acc(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x6205])  
+        return from_unsigned_16bit_to_signed(self.registers[0x6205])  
   
     def _get_dec(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x6206])  
+        return from_unsigned_16bit_to_signed(self.registers[0x6206])  
   
     def _get_current_pos(self) -> int:  
-        return LeadshineMotor._from_unsigned_16bit_regs_to_signed_32bit(  
+        return from_unsigned_16bit_regs_to_signed_32bit(  
             self.registers[0x602C], self.registers[0x602D]  
         )  
   
     def _set_current_pos(self, pos: int):  
-        high, low = LeadshineMotor._to_unsigned_16bit_regs_from_signed_32bit(int(pos))  
+        high, low = to_unsigned_16bit_regs_from_signed_32bit(int(pos))  
         self.registers[0x602C] = high  
         self.registers[0x602D] = low  
   
     def _publish_status(self, curr_pos: float, target_pos: float,  
                         velocity_cmd: float, motion_mode: int):  
         msg = MotorSimulationStatus()  
-        msg.motor_id = self.motor_id  
+        msg.device_id = self.device_id  
         msg.current_position = curr_pos  
         msg.target_position = target_pos  
         msg.velocity = velocity_cmd  
@@ -224,7 +225,7 @@ class MotorSimulationNode(Node):
     # ----------------------------------------------------------------  
     def handle_modbus_packet(self, msg: ModbusPacket):
         with self.lock:
-            if msg.slave_id != self.motor_id:
+            if msg.slave_id != self.device_id:
                 return
 
             try:
@@ -250,7 +251,7 @@ class MotorSimulationNode(Node):
                 self.get_logger().error(f"Simulation error: {e}")
     
     def log_modbus(self, msg: str):  
-        self.get_logger().info(f"[Motor {self.motor_id}] {msg}")  
+        self.get_logger().info(f"[Motor {self.device_id}] {msg}")  
         self.last_command = msg  
   
     # ----------------------------------------------------------------  
@@ -290,7 +291,7 @@ class MotorSimulationNode(Node):
         Does NOT change 0x6200 or 0x6203; purely internal state.  
         """  
         # Read the configured jog speed (signed RPM)  
-        base_speed = LeadshineMotor._from_unsigned_16bit_to_signed(self.registers[0x01E1])  
+        base_speed = from_unsigned_16bit_to_signed(self.registers[0x01E1])  
   
         if cmd == 0x4001:  
             # Negative jog  
@@ -328,7 +329,7 @@ class MotorSimulationNode(Node):
             self.registers[0x602D] = 0  
   
     def destroy_node(self):  
-        self.get_logger().info(f"Shutting down motor simulation for motor_id={self.motor_id}")  
+        self.get_logger().info(f"Shutting down motor simulation for device_id={self.device_id}")  
         super().destroy_node()  
   
   

@@ -2,84 +2,103 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from std_msgs.msg import String
+import copy
+
 
 class JoystickTeleop(Node):
     def __init__(self):
         super().__init__('joystick_teleop')
 
-        self.motor1_pub = self.create_publisher(String, '/motor1/cmd', 10)
-        self.motor2_pub = self.create_publisher(String, '/motor2/cmd', 10)
+        self.motor_left_pub = self.create_publisher(String, '/motor1/cmd', 10)
+        self.motor_right_pub = self.create_publisher(String, '/motor2/cmd', 10)
+        self.servo_left_pub = self.create_publisher(String, '/motor17/cmd', 10)
+        self.servo_right_pub = self.create_publisher(String, '/motor18/cmd', 10)
+        self.platform_pub = self.create_publisher(String, '/platform/cmd', 10)
 
         self.create_subscription(Joy, '/joy', self.joy_callback, 10)
 
-        self.motor1_active = False
-        self.motor2_active = False
+        self.last_joy_msg = None
 
-        self.last_axis1_speed = 0
-        self.last_axis3_speed = 0
-        self.axis_deadzone = 1  # minimum delta change to trigger update
+    def joy_callback(self, msg: Joy):
+        if self.last_joy_msg is None:
+            self.last_joy_msg = copy.deepcopy(msg)
 
-    def joy_callback(self, msg):
-        # Button control
-        if msg.buttons[0] and not self.motor1_active:
-            self.get_logger().info('Motor 1: jog_left')
-            self.send_motor_cmd(self.motor1_pub, 'jog_left')
-            self.motor1_active = True
-        elif not msg.buttons[0] and self.motor1_active:
-            self.get_logger().info('Motor 1: stop')
-            self.send_motor_cmd(self.motor1_pub, 'stop')
-            self.motor1_active = False
+        # Axis-based control
+        if msg.axes[1] != self.last_joy_msg.axes[1]:  # Left stick vertical
+            self.handle_motor_axis_control(msg.axes[1], self.motor_left_pub, motor_id=1)
 
-        if msg.buttons[1] and not self.motor2_active:
-            self.get_logger().info('Motor 2: jog_left')
-            self.send_motor_cmd(self.motor2_pub, 'jog_left')
-            self.motor2_active = True
-        elif not msg.buttons[1] and self.motor2_active:
-            self.get_logger().info('Motor 2: stop')
-            self.send_motor_cmd(self.motor2_pub, 'stop')
-            self.motor2_active = False
+        if msg.axes[3] != self.last_joy_msg.axes[3]:  # Right stick vertical
+            self.handle_motor_axis_control(msg.axes[3], self.motor_right_pub, motor_id=2)
 
-        # Axis control
-        self.handle_axis_control(msg.axes[1], self.motor1_pub, motor_id=1)
-        self.handle_axis_control(msg.axes[3], self.motor2_pub, motor_id=2)
+        if msg.axes[0] != self.last_joy_msg.axes[0]:  # Left stick horizontal
+            self.handle_servo_axis_control(msg.axes[0], self.servo_left_pub, motor_id=17)
 
-    def handle_axis_control(self, axis_value, publisher, motor_id):
-        speed = int(axis_value * 300)
+        if msg.axes[2] != self.last_joy_msg.axes[2]:  # Right stick horizontal
+            self.handle_servo_axis_control(msg.axes[2], self.servo_right_pub, motor_id=18)
 
-        if motor_id == 1:
-            last_speed = self.last_axis1_speed
-        else:
-            last_speed = self.last_axis3_speed
+        if msg.axes[4] != self.last_joy_msg.axes[4]:  # Platform control
+            self.handle_platform_control(4, msg.axes[4])
 
-        # If speed is zero but last speed wasn't, send stop
-        if speed == 0 and last_speed != 0:
-            self.update_axis_motor(publisher, speed, motor_id)
-        # Only update if speed change exceeds deadzone
-        elif abs(speed - last_speed) >= self.axis_deadzone:
-            self.update_axis_motor(publisher, speed, motor_id)
+        if msg.axes[5] != self.last_joy_msg.axes[5]:  # Platform control
+            self.handle_platform_control(5, msg.axes[5])
 
-        # Update the stored last speed
-        if motor_id == 1:
-            self.last_axis1_speed = speed
-        else:
-            self.last_axis3_speed = speed
+        self.last_joy_msg = copy.deepcopy(msg)
 
-    def update_axis_motor(self, publisher, speed, motor_id):
+    def handle_motor_axis_control(self, axis_value, publisher, motor_id):
+        speed = -int(round(axis_value * 300))
+
         if speed == 0:
             self.get_logger().info(f'Motor {motor_id}: stop')
             self.send_motor_cmd(publisher, 'stop')
         else:
-            # print motor start move info (if last speed was 0)
-            if (motor_id == 1 and self.last_axis1_speed == 0) or (motor_id == 2 and self.last_axis3_speed == 0):
-                self.get_logger().info(f'Motor {motor_id}: start move') 
-
+            self.get_logger().info(f'Motor {motor_id}: set_vel {speed} + move_vel')
             self.send_motor_cmd(publisher, f'set_vel {speed}')
             self.send_motor_cmd(publisher, 'move_vel')
 
+    def handle_servo_axis_control(self, axis_value, publisher, motor_id):
+        speed = -int(round(axis_value * 5))
+
+        if speed == 0:
+            self.get_logger().info(f'Motor {motor_id}: stop')
+            self.send_motor_cmd(publisher, 'stop')
+        else:
+            self.get_logger().info(f'Motor {motor_id}: set_vel {speed}')
+            self.send_motor_cmd(publisher, f'set_vel {abs(speed)}')
+
+            if speed < 0:
+                self.get_logger().info(f'Motor {motor_id}: set_pos 0')
+                self.send_motor_cmd(publisher, 'set_pos 0')
+            else:
+                self.get_logger().info(f'Motor {motor_id}: set_pos 4095')
+                self.send_motor_cmd(publisher, 'set_pos 4095')
+
+    def handle_platform_control(self, axis_index, axis_value):
+        if axis_index == 4:     # forward/backward
+            if axis_value > 0.5:
+                self.get_logger().info('Platform: forward')
+                self.send_motor_cmd(self.platform_pub, 'forward 1')
+            elif axis_value < -0.5:
+                self.get_logger().info('Platform: backward')
+                self.send_motor_cmd(self.platform_pub, 'backward 1')
+            else:
+                self.get_logger().info('Platform: stop')
+                self.send_motor_cmd(self.platform_pub, 'forward 0')
+        elif axis_index == 5:   # up/down
+            if axis_value > 0.5:
+                self.get_logger().info('Platform: up')
+                self.send_motor_cmd(self.platform_pub, 'up 1')
+            elif axis_value < -0.5:
+                self.get_logger().info('Platform: down')
+                self.send_motor_cmd(self.platform_pub, 'down 1')
+            else:
+                self.get_logger().info('Platform: stop')
+                self.send_motor_cmd(self.platform_pub, 'up 0')
+                
     def send_motor_cmd(self, pub, command: str):
         msg = String()
         msg.data = command
         pub.publish(msg)
+
 
 def main(args=None):
     rclpy.init(args=args)

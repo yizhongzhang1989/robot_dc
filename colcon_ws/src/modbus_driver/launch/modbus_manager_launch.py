@@ -9,7 +9,7 @@ def generate_launch_description():
             name='modbus_manager_node',
             parameters=[
                 {'port': '/dev/ttyUSB0'},
-                {'baudrate': 38400}
+                {'baudrate': 115200}
             ],
             output='screen'
         )

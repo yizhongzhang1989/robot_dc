@@ -1,12 +1,12 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from leadshine_motor.motor_controller import LeadshineMotor
+from feetech_servo.servo_controller import FeetechServo
 
 
-class MotorControlNode(Node):
+class ServoControlNode(Node):
     def __init__(self):
-        super().__init__('motor_control_node')
+        super().__init__('servo_control_node')
 
         # Declare and read motor ID parameter
         self.declare_parameter('device_id', 1)
@@ -14,7 +14,7 @@ class MotorControlNode(Node):
         self.get_logger().info(f"device_id from param = {self.device_id}")
 
         # motor instance
-        self.motor = LeadshineMotor(self.device_id, self)
+        self.motor = FeetechServo(self.device_id, self)
 
         # Set up command subscriber (immediate)
         self.cmd_sub = self.create_subscription(String,  f'/motor{self.device_id}/cmd', self.command_callback, 10)
@@ -47,19 +47,9 @@ class MotorControlNode(Node):
 
         try:
             match cmd:
-                case "jog_left":
-                    self.motor.jog_left()
-                case "jog_right":
-                    self.motor.jog_right()
                 case "stop":
-                    self.motor.abrupt_stop()
-                case "get_pos":
-                    self.motor.get_current_position(
-                        lambda pos: self.get_logger().info(f"ℹ️ Current position: {pos}") if pos is not None else
-                                    self.get_logger().error("❌ Failed to read position")
-                    )
-                case "set_zero":
-                    self.motor.set_zero_position()
+                    self.motor.stop()
+                    self.get_logger().info("✅ Motor stopped")
                 case "set_pos":
                     if arg is not None:
                         self.motor.set_target_position(arg)
@@ -72,25 +62,6 @@ class MotorControlNode(Node):
                     if arg is not None:
                         self.motor.set_target_acceleration(arg)
                         self.get_logger().info(f"✅ Set acceleration to {arg}")
-                case "set_dec":
-                    if arg is not None:
-                        self.motor.set_target_deceleration(arg)
-                        self.get_logger().info(f"✅ Set deceleration to {arg}")
-                case "move_abs":
-                    if arg is not None:
-                        self.motor.set_target_position(arg)
-                        self.get_logger().info(f"ℹ️ Updated position to {arg}")
-                    self.motor.move_absolute()
-                case "move_rel":
-                    if arg is not None:
-                        self.motor.set_target_position(arg)
-                        self.get_logger().info(f"ℹ️ Updated relative offset to {arg}")
-                    self.motor.move_relative()
-                case "move_vel":
-                    if arg is not None:
-                        self.motor.set_target_velocity(arg)
-                        self.get_logger().info(f"ℹ️ Updated velocity to {arg}")
-                    self.motor.move_velocity()
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
         except Exception as e:
@@ -99,7 +70,7 @@ class MotorControlNode(Node):
 
 def main():
     rclpy.init()
-    node = MotorControlNode()
+    node = ServoControlNode()
     try:
         rclpy.spin(node)
     finally:

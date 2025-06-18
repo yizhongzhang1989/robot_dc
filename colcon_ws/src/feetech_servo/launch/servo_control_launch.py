@@ -4,19 +4,19 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package='leadshine_motor',
-            executable='motor_node',
-            name='motor1',
+            package='feetech_servo',
+            executable='servo_node',
+            name='motor17',
             output='screen',
             emulate_tty=True,
-            parameters=[{'device_id': 1}],
+            parameters=[{'device_id': 17}],
         ),
         Node(
-            package='leadshine_motor',
-            executable='motor_node',
-            name='motor2',
+            package='feetech_servo',
+            executable='servo_node',
+            name='motor18',
             output='screen',
             emulate_tty=True,
-            parameters=[{'device_id': 2}],
+            parameters=[{'device_id': 18}],
         ),
     ])

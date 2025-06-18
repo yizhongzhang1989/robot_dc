@@ -1,14 +1,15 @@
-class LeadshineMotor:
+from modbus_devices.base_device import ModbusDevice
+from modbus_devices.utils import *
+
+class LeadshineMotor(ModbusDevice):
     VALID_MOTION_MODES = {
         0x0001: 'absolute',
         0x0041: 'relative',
         0x0002: 'velocity'
     }
 
-    def __init__(self, motor_id, send_request_fn, recv_request_fn):
-        self.motor_id = motor_id
-        self.send = send_request_fn
-        self.recv = recv_request_fn
+    def __init__(self, device_id, node):
+        super().__init__(device_id, node)
 
         self.motion_mode = None
 
@@ -19,50 +20,7 @@ class LeadshineMotor:
 
         self.curr_position = 0
 
-        self.initialize_motor()
-
-    @staticmethod
-    def _to_unsigned_16bit_regs_from_signed_32bit(value):
-        """Convert signed 32-bit int to two 16-bit unsigned integers (big-endian)."""
-        if value < 0:
-            value += (1 << 32)
-        high = (value >> 16) & 0xFFFF
-        low = value & 0xFFFF
-        return [high, low]
-
-    @staticmethod
-    def _to_unsigned_16bit_from_signed(value):
-        """Convert signed 16-bit int to unsigned 16-bit for Modbus."""
-        return value & 0xFFFF
-
-    @staticmethod
-    def _from_unsigned_16bit_regs_to_signed_32bit(high, low):
-        """Convert two 16-bit unsigned registers into signed 32-bit int."""
-        raw = (high << 16) | low
-        return raw - 0x100000000 if raw & 0x80000000 else raw
-
-    @staticmethod
-    def _from_unsigned_16bit_to_signed(value):
-        """Convert unsigned 16-bit int to signed 16-bit."""
-        return value - 0x10000 if value & 0x8000 else value
-
-    def initialize_motor_bak(self):
-        self.send(6, 0x0001, [10000])   # Set counts per round
-        self.send(6, 0x0003, [2])       # Set loop mode
-        self.send(6, 0x0007, [0])       # Set direction
-
-        self.get_motion_target()
-        self.get_motion_mode()
-
-        # print initial values for debugging
-        print(f"Motor {self.motor_id} initialized with:")
-        print(f"  Motion mode: {hex(self.motion_mode)} ({self.VALID_MOTION_MODES.get(self.motion_mode, 'invalid')})")
-        print(f"  Target position: {self.target_position}")
-        print(f"  Velocity: {self.target_velocity}")
-        print(f"  Acceleration: {self.target_acceleration}")
-        print(f"  Deceleration: {self.target_deceleration}")
-
-    def initialize_motor(self):
+    def initialize(self):
         self.send(6, 0x0001, [10000])   # Set counts per round
         self.send(6, 0x0003, [2])       # Set loop mode
         self.send(6, 0x0007, [0])       # Set direction
@@ -73,12 +31,12 @@ class LeadshineMotor:
     def _get_motion_target(self):
         def callback(response):
             if response:
-                self.target_position = self._from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
-                self.target_velocity = self._from_unsigned_16bit_to_signed(response[2])
-                self.target_acceleration = self._from_unsigned_16bit_to_signed(response[3])
-                self.target_deceleration = self._from_unsigned_16bit_to_signed(response[4])
+                self.target_position = from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
+                self.target_velocity = from_unsigned_16bit_to_signed(response[2])
+                self.target_acceleration = from_unsigned_16bit_to_signed(response[3])
+                self.target_deceleration = from_unsigned_16bit_to_signed(response[4])
 
-                print(f"Motor {self.motor_id} initialized with:")
+                print(f"Motor {self.device_id} initialized with:")
                 print(f"  Target position: {self.target_position}")
                 print(f"  Velocity: {self.target_velocity}")
                 print(f"  Acceleration: {self.target_acceleration}")
@@ -117,7 +75,7 @@ class LeadshineMotor:
     def get_current_position(self, callback):
         def handle_response(response):
             if response:
-                self.curr_position = self._from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
+                self.curr_position = from_unsigned_16bit_regs_to_signed_32bit(response[0], response[1])
                 callback(self.curr_position)
             else:
                 callback(None)
@@ -129,20 +87,20 @@ class LeadshineMotor:
 
     def set_target_position(self, pos):
         self.target_position = pos
-        regs = self._to_unsigned_16bit_regs_from_signed_32bit(pos)
+        regs = to_unsigned_16bit_regs_from_signed_32bit(pos)
         self.send(16, 0x6201, regs)
 
     def set_target_velocity(self, vel):
         self.target_velocity = vel
-        self.send(6, 0x6203, [self._to_unsigned_16bit_from_signed(vel)])
+        self.send(6, 0x6203, [to_unsigned_16bit_from_signed(vel)])
 
     def set_target_acceleration(self, acc):
         self.target_acceleration = acc
-        self.send(6, 0x6205, [self._to_unsigned_16bit_from_signed(acc)])
+        self.send(6, 0x6205, [to_unsigned_16bit_from_signed(acc)])
 
     def set_target_deceleration(self, dec):
         self.target_deceleration = dec
-        self.send(6, 0x6206, [self._to_unsigned_16bit_from_signed(dec)])
+        self.send(6, 0x6206, [to_unsigned_16bit_from_signed(dec)])
 
     def move_absolute(self):
         if self.motion_mode != 0x0001:
