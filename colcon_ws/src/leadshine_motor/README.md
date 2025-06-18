@@ -77,7 +77,7 @@ ros2 launch leadshine_motor motor_control_launch.py
 Or run a single instance manually:
 
 ```bash
-ros2 run leadshine_motor motor_node --ros-args -p motor_id:=1
+ros2 run leadshine_motor motor_node --ros-args -p device_id:=1
 ```
 
 ---

@@ -6,17 +6,17 @@ def generate_launch_description():
         Node(
             package='feetech_servo',
             executable='servo_node',
-            name='servo11',
+            name='motor17',
             output='screen',
             emulate_tty=True,
-            parameters=[{'motor_id': 11}],
+            parameters=[{'device_id': 17}],
         ),
         Node(
             package='feetech_servo',
             executable='servo_node',
-            name='servo12',
+            name='motor18',
             output='screen',
             emulate_tty=True,
-            parameters=[{'motor_id': 12}],
+            parameters=[{'device_id': 18}],
         ),
     ])

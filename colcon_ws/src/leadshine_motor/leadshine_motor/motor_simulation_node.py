@@ -22,9 +22,9 @@ class MotorSimulationNode(Node):
     def __init__(self):  
         super().__init__('motor_simulation_node')  
   
-        self.declare_parameter('motor_id', 1)  
-        self.motor_id = self.get_parameter('motor_id').value  
-        self.get_logger().info(f"Simulating motor_id = {self.motor_id}")  
+        self.declare_parameter('device_id', 1)  
+        self.device_id = self.get_parameter('device_id').value  
+        self.get_logger().info(f"Simulating device_id = {self.device_id}")  
     
         self.subscription = self.create_subscription(
             ModbusPacket,
@@ -85,7 +85,7 @@ class MotorSimulationNode(Node):
         # Publisher  
         self.status_pub = self.create_publisher(  
             MotorSimulationStatus,  
-            f'/motor{self.motor_id}/sim_status',  
+            f'/motor{self.device_id}/sim_status',  
             10  
         )  
   
@@ -131,7 +131,7 @@ class MotorSimulationNode(Node):
     def _publish_status(self, curr_pos: float, target_pos: float,  
                         velocity_cmd: float, motion_mode: int):  
         msg = MotorSimulationStatus()  
-        msg.motor_id = self.motor_id  
+        msg.device_id = self.device_id  
         msg.current_position = curr_pos  
         msg.target_position = target_pos  
         msg.velocity = velocity_cmd  
@@ -225,7 +225,7 @@ class MotorSimulationNode(Node):
     # ----------------------------------------------------------------  
     def handle_modbus_packet(self, msg: ModbusPacket):
         with self.lock:
-            if msg.slave_id != self.motor_id:
+            if msg.slave_id != self.device_id:
                 return
 
             try:
@@ -251,7 +251,7 @@ class MotorSimulationNode(Node):
                 self.get_logger().error(f"Simulation error: {e}")
     
     def log_modbus(self, msg: str):  
-        self.get_logger().info(f"[Motor {self.motor_id}] {msg}")  
+        self.get_logger().info(f"[Motor {self.device_id}] {msg}")  
         self.last_command = msg  
   
     # ----------------------------------------------------------------  
@@ -329,7 +329,7 @@ class MotorSimulationNode(Node):
             self.registers[0x602D] = 0  
   
     def destroy_node(self):  
-        self.get_logger().info(f"Shutting down motor simulation for motor_id={self.motor_id}")  
+        self.get_logger().info(f"Shutting down motor simulation for device_id={self.device_id}")  
         super().destroy_node()  
   
   

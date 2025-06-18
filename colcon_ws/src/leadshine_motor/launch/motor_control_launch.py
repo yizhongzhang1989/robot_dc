@@ -9,7 +9,7 @@ def generate_launch_description():
             name='motor1',
             output='screen',
             emulate_tty=True,
-            parameters=[{'motor_id': 1}],
+            parameters=[{'device_id': 1}],
         ),
         Node(
             package='leadshine_motor',
@@ -17,6 +17,6 @@ def generate_launch_description():
             name='motor2',
             output='screen',
             emulate_tty=True,
-            parameters=[{'motor_id': 2}],
+            parameters=[{'device_id': 2}],
         ),
     ])

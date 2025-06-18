@@ -8,8 +8,8 @@ class LeadshineMotor(ModbusDevice):
         0x0002: 'velocity'
     }
 
-    def __init__(self, device_id, send_request_fn, recv_request_fn):
-        super().__init__(device_id, send_request_fn, recv_request_fn)
+    def __init__(self, device_id, node):
+        super().__init__(device_id, node)
 
         self.motion_mode = None
 
@@ -20,9 +20,7 @@ class LeadshineMotor(ModbusDevice):
 
         self.curr_position = 0
 
-        self.initialize_motor()
-
-    def initialize_motor(self):
+    def initialize(self):
         self.send(6, 0x0001, [10000])   # Set counts per round
         self.send(6, 0x0003, [2])       # Set loop mode
         self.send(6, 0x0007, [0])       # Set direction

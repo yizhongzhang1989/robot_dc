@@ -2,8 +2,8 @@ from modbus_devices.base_device import ModbusDevice
 from modbus_devices.utils import *
 
 class FeetechServo(ModbusDevice):
-    def __init__(self, device_id, send_request_fn, recv_request_fn):
-        super().__init__(device_id, send_request_fn, recv_request_fn)
+    def __init__(self, device_id, node):
+        super().__init__(device_id, node)
 
         self.motion_mode = None
 
@@ -22,9 +22,7 @@ class FeetechServo(ModbusDevice):
         self.curr_moving_flag = 0
         self.curr_current = 0
 
-        self.initialize_servo()
-
-    def initialize_servo(self):
+    def initialize(self):
         self.set_target_position(2048)  # Set initial target position to midpoint
         self.set_enable_torque(True)     # Enable torque
         self.set_target_acceleration(10) # Set target acceleration
@@ -57,8 +55,6 @@ class FeetechServo(ModbusDevice):
                 raise ValueError("Failed to read current status")
 
         self.recv(3, 0x0100, 8, callback)
-
-
 
     def set_target_position(self, position):
         self.target_position = position
