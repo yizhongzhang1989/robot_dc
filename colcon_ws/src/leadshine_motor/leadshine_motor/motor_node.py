@@ -91,6 +91,38 @@ class MotorControlNode(Node):
                         self.motor.set_target_velocity(arg)
                         self.get_logger().info(f"ℹ️ Updated velocity to {arg}")
                     self.motor.move_velocity()
+                case "+" | "-":
+                    # 回零功能，正向或反向
+                    # 默认参数
+                    default_params = {
+                        'stall_time': 1000,
+                        'output_val': 50,
+                        'high_speed': 1000,
+                        'low_speed': 200,
+                        'acc': 100,
+                        'dec': 100
+                    }
+                    # 检查是否有额外参数
+                    if len(parts) == 7:
+                        try:
+                            stall_time = int(parts[1])
+                            output_val = int(parts[2])
+                            high_speed = int(parts[3])
+                            low_speed = int(parts[4])
+                            acc = int(parts[5])
+                            dec = int(parts[6])
+                        except Exception as e:
+                            self.get_logger().error(f"❌ 回零参数解析失败: {e}")
+                            return
+                    else:
+                        stall_time = default_params['stall_time']
+                        output_val = default_params['output_val']
+                        high_speed = default_params['high_speed']
+                        low_speed = default_params['low_speed']
+                        acc = default_params['acc']
+                        dec = default_params['dec']
+                    direction = "+" if cmd == "+" else "-"
+                    self.motor.torque_home(direction, stall_time, output_val, high_speed, low_speed, acc, dec)
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
         except Exception as e:

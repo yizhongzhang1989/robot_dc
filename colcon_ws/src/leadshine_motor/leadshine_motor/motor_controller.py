@@ -116,3 +116,35 @@ class LeadshineMotor(ModbusDevice):
         if self.motion_mode != 0x0002:
             self.set_motion_mode(0x0002)
         self.send(6, 0x6002, [0x0010])  # Trigger move
+
+    def torque_home(self, direction, stall_time=1000, output_val=50, high_speed=1000, low_speed=200, acc=100, dec=100):
+        """
+        direction: '+' 正向回零, '-' 反向回零
+        其余参数同 torque_home_motor.py
+        """
+        # 力矩回零相关寄存器
+        TORQUE_MODE_ADDR = 0x600A
+        STALL_TIME_ADDR = 0x6013
+        OUTPUT_VAL_ADDR = 0x6014
+        TRIGGER_ADDR = 0x6002
+        HIGH_SPEED_ADDR = 0x600F
+        LOW_SPEED_ADDR = 0x6010
+        ACC_ADDR = 0x6011
+        DEC_ADDR = 0x6012
+        # 指令值
+        TORQUE_MODE_REVERSE = 0x000C  # 反向力矩回零
+        TORQUE_MODE_FORWARD = 0x000D  # 正向力矩回零
+        TRIGGER_TORQUE_HOME = 0x0020  # 触发力矩回零
+        # 选择回零模式
+        mode = TORQUE_MODE_FORWARD if direction == "+" else TORQUE_MODE_REVERSE
+        # 写入回零模式
+        self.send(6, TORQUE_MODE_ADDR, [mode])
+        self.send(6, STALL_TIME_ADDR, [stall_time])
+        self.send(6, OUTPUT_VAL_ADDR, [output_val])
+        self.send(6, HIGH_SPEED_ADDR, [high_speed])
+        self.send(6, LOW_SPEED_ADDR, [low_speed])
+        self.send(6, ACC_ADDR, [acc])
+        self.send(6, DEC_ADDR, [dec])
+        # 触发力矩回零
+        self.send(6, TRIGGER_ADDR, [TRIGGER_TORQUE_HOME])
+        print(f"[torque_home] {('正向' if direction == '+' else '反向')}回零已触发，参数: 堵转时间={stall_time}, 出力值={output_val}, 高速={high_speed}, 低速={low_speed}, 加速度={acc}, 减速度={dec}")
