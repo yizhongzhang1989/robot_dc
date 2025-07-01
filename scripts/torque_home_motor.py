@@ -3,7 +3,7 @@ import sys
 import argparse
 from pymodbus.client import ModbusSerialClient
 
-# 力矩回零相关寄存器
+# Torque homing related register addresses
 TORQUE_MODE_ADDR = 0x600A
 STALL_TIME_ADDR = 0x6013
 OUTPUT_VAL_ADDR = 0x6014
@@ -13,13 +13,13 @@ LOW_SPEED_ADDR = 0x6010
 ACC_ADDR = 0x6011
 DEC_ADDR = 0x6012
 
-# 指令值
-TORQUE_MODE_REVERSE = 0x000C  # 反向力矩回零
-TORQUE_MODE_FORWARD = 0x000D  # 正向力矩回零
-TRIGGER_TORQUE_HOME = 0x0020  # 触发力矩回零
-TRIGGER_STOP = 0x0040         # 急停
+# Instruction values
+TORQUE_MODE_REVERSE = 0x000C  # Reverse torque homing
+TORQUE_MODE_FORWARD = 0x000D  # Forward torque homing
+TRIGGER_TORQUE_HOME = 0x0020  # Trigger torque homing
+TRIGGER_STOP = 0x0040         # Emergency stop
 
-# Modbus参数
+# Modbus parameters
 BAUDRATE = 115200
 SLAVE_ID = 1
 
@@ -46,92 +46,91 @@ def torque_home_motor(port):
         return
 
     print(f"✅ Connected to Modbus motor at {port}")
-    print("请输入 +（正向回零）或 -（反向回零），t 急停，q 退出：")
+    print("Please input + (forward homing) or - (reverse homing), t for emergency stop, q to quit:")
 
     try:
         while True:
-            user_input = input("指令 (+/-/t/q): ").strip().lower()
+            user_input = input("Command (+/-/t/q): ").strip().lower()
             if user_input == 'q':
-                print("退出力矩回零控制。")
+                print("Exit torque homing control.")
                 break
             elif user_input == 't':
-                # 急停
+                # Emergency stop
                 result = client.write_register(address=TRIGGER_ADDR, value=TRIGGER_STOP, slave=SLAVE_ID)
                 if result.isError():
-                    print("❌ 急停失败", result)
+                    print("❌ Emergency stop failed", result)
                 else:
-                    print("🛑 已发送急停指令")
+                    print("🛑 Emergency stop command sent")
                 continue
             elif user_input not in ['+', '-']:
-                print("无效输入，请输入 +（正向）、-（反向）、t（急停）、q（退出）。")
+                print("Invalid input, please enter + (forward), - (reverse), t (emergency stop), or q (quit).")
                 continue
 
-            # 选择回零模式
+            # Select homing mode
             if user_input == '+':
                 mode = TORQUE_MODE_FORWARD
-                mode_str = "正向力矩回零"
+                mode_str = "Forward torque homing"
             else:
                 mode = TORQUE_MODE_REVERSE
-                mode_str = "反向力矩回零"
-            print(f"选择模式：{mode_str}")
+                mode_str = "Reverse torque homing"
+            print(f"Selected mode: {mode_str}")
 
-            # 交互输入参数
+            # Interactive parameter input
             try:
-                param_input = input("请输入参数：堵转时间(ms) 出力值(%) 回零高速(rpm) 回零低速(rpm) 回零加速度(ms/1000rpm) 回零减速度(ms/1000rpm)，用空格分隔: ").strip()
+                param_input = input("Please input parameters: stall_time(ms) output_val(%) high_speed(rpm) low_speed(rpm) acc(ms/1000rpm) dec(ms/1000rpm), separated by space: ").strip()
                 stall_time, output_val, high_speed, low_speed, acc, dec = map(int, param_input.split())
             except Exception:
-                print("参数输入有误，请按格式输入：堵转时间 出力值 高速 低速 加速度 减速度（空格分隔）！")
+                print("Parameter input error, please input: stall_time output_val high_speed low_speed acc dec (space separated)!")
                 continue
 
-            # 写入回零模式
+            # Write homing mode
             result = client.write_register(address=TORQUE_MODE_ADDR, value=mode, slave=SLAVE_ID)
             if result.isError():
-                print("❌ 设置回零模式失败", result)
+                print("❌ Set homing mode failed", result)
                 continue
-            # 堵转时间
+            # Stall time
             result = client.write_register(address=STALL_TIME_ADDR, value=stall_time, slave=SLAVE_ID)
             if result.isError():
-                print("❌ 设置堵转时间失败", result)
+                print("❌ Set stall time failed", result)
                 continue
-            # 出力值
+            # Output value
             result = client.write_register(address=OUTPUT_VAL_ADDR, value=output_val, slave=SLAVE_ID)
             if result.isError():
-                print("❌ 设置出力值失败", result)
+                print("❌ Set output value failed", result)
                 continue
-            # 回零高速
+            # High speed
             result = client.write_register(address=HIGH_SPEED_ADDR, value=high_speed, slave=SLAVE_ID)
             if result.isError():
-                print("❌ 设置回零高速失败", result)
+                print("❌ Set high speed failed", result)
                 continue
-            # 回零低速
+            # Low speed
             result = client.write_register(address=LOW_SPEED_ADDR, value=low_speed, slave=SLAVE_ID)
             if result.isError():
-                print("❌ 设置回零低速失败", result)
+                print("❌ Set low speed failed", result)
                 continue
-            # 回零加速度
+            # Acceleration
             result = client.write_register(address=ACC_ADDR, value=acc, slave=SLAVE_ID)
             if result.isError():
-                print("❌ 设置回零加速度失败", result)
+                print("❌ Set acceleration failed", result)
                 continue
-            # 回零减速度
+            # Deceleration
             result = client.write_register(address=DEC_ADDR, value=dec, slave=SLAVE_ID)
             if result.isError():
-                print("❌ 设置回零减速度失败", result)
+                print("❌ Set deceleration failed", result)
                 continue
-
-            # 触发力矩回零
+            # Trigger torque homing
             result = client.write_register(address=TRIGGER_ADDR, value=TRIGGER_TORQUE_HOME, slave=SLAVE_ID)
             if result.isError():
-                print("❌ 触发力矩回零失败", result)
+                print("❌ Trigger torque homing failed", result)
             else:
-                print(f"✅ {mode_str} 已触发")
+                print(f"✅ {mode_str} triggered")
             time.sleep(0.5)
     finally:
         client.close()
         print("🔌 Disconnected.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="力矩回零控制 via Modbus RTU")
+    parser = argparse.ArgumentParser(description="Torque homing control via Modbus RTU")
     parser.add_argument(
         "--port",
         type=str,

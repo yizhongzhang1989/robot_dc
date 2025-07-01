@@ -7,15 +7,15 @@ from pymodbus.client import ModbusSerialClient
 BAUDRATE = 115200
 SLAVE_ID = 1
 
-# 软件限位相关寄存器
-POS_LIMIT_HIGH_ADDR = 0x6006  # 正限位高位
-POS_LIMIT_LOW_ADDR = 0x6007   # 正限位低位
-NEG_LIMIT_HIGH_ADDR = 0x6008  # 负限位高位
-NEG_LIMIT_LOW_ADDR = 0x6009   # 负限位低位
-SET_ZERO_ADDR = 0x6002        # 设零寄存器
-SET_ZERO_CMD = 0x0021         # 设零指令
-CONTROL_SETTING_ADDR = 0x6000  # 控制设置寄存器
-CONTROL_SETTING_SOFT_LIMIT = 0x0002  # 软件限位有效
+# Software limit related register addresses
+POS_LIMIT_HIGH_ADDR = 0x6006  # Positive limit high
+POS_LIMIT_LOW_ADDR = 0x6007   # Positive limit low
+NEG_LIMIT_HIGH_ADDR = 0x6008  # Negative limit high
+NEG_LIMIT_LOW_ADDR = 0x6009   # Negative limit low
+SET_ZERO_ADDR = 0x6002        # Set zero register
+SET_ZERO_CMD = 0x0021         # Set zero command
+CONTROL_SETTING_ADDR = 0x6000  # Control setting register
+CONTROL_SETTING_SOFT_LIMIT = 0x0002  # Enable software limit
 
 def get_default_port():
     if sys.platform.startswith('win'):
@@ -29,59 +29,59 @@ def set_control_setting(client, enable_soft_limit):
     value = CONTROL_SETTING_SOFT_LIMIT if enable_soft_limit else 0x0000
     result = client.write_register(address=CONTROL_SETTING_ADDR, value=value, slave=SLAVE_ID)
     if result.isError():
-        print(f"❌ 控制设置寄存器写入失败，软件限位{'未使能' if enable_soft_limit else '未关闭'}", result)
+        print(f"❌ Write to control setting register failed, software limit {'not enabled' if enable_soft_limit else 'not disabled'}", result)
         return False
     else:
-        print(f"✅ 控制设置已写入，软件限位{'已使能' if enable_soft_limit else '已关闭'}")
+        print(f"✅ Control setting written, software limit {'enabled' if enable_soft_limit else 'disabled'}")
     time.sleep(0.2)
     return True
 
 def set_software_limit(client):
-    # 先设置控制设置寄存器，软件限位有效
+    # First set control setting register, enable software limit
     result = client.write_register(address=CONTROL_SETTING_ADDR, value=CONTROL_SETTING_SOFT_LIMIT, slave=SLAVE_ID)
     if result.isError():
-        print("❌ 控制设置寄存器写入失败，软件限位未使能", result)
+        print("❌ Write to control setting register failed, software limit not enabled", result)
         return
     else:
-        print("✅ 控制设置已写入，软件限位已使能")
+        print("✅ Control setting written, software limit enabled")
     time.sleep(0.2)
     try:
-        pos_limit = int(input("请输入正软件限位值（如100000），输入 q 退出: ").strip())
-        neg_limit = int(input("请输入负软件限位值（如-100000），输入 q 退出: ").strip())
+        pos_limit = int(input("Enter positive software limit value (e.g. 100000), or q to quit: ").strip())
+        neg_limit = int(input("Enter negative software limit value (e.g. -100000), or q to quit: ").strip())
     except ValueError:
-        print("参数输入有误，请重新输入！")
+        print("Parameter input error, please re-enter!")
         return
-    # 先手动设零
+    # Set zero manually first
     result = client.write_register(address=SET_ZERO_ADDR, value=SET_ZERO_CMD, slave=SLAVE_ID)
     if result.isError():
-        print("❌ 设零失败", result)
+        print("❌ Set zero failed", result)
         return
     else:
-        print("✅ 已发送设零指令，当前位置已清零")
+        print("✅ Set zero command sent, current position cleared to zero")
     time.sleep(0.5)
-    # 正限位高低位
+    # Positive limit high/low
     pos_limit_high = (pos_limit >> 16) & 0xFFFF
     pos_limit_low = pos_limit & 0xFFFF
     result = client.write_register(address=POS_LIMIT_HIGH_ADDR, value=pos_limit_high, slave=SLAVE_ID)
     if result.isError():
-        print("❌ 正限位高位设置失败", result)
+        print("❌ Set positive limit high failed", result)
         return
     result = client.write_register(address=POS_LIMIT_LOW_ADDR, value=pos_limit_low, slave=SLAVE_ID)
     if result.isError():
-        print("❌ 正限位低位设置失败", result)
+        print("❌ Set positive limit low failed", result)
         return
-    # 负限位高低位
+    # Negative limit high/low
     neg_limit_high = (neg_limit >> 16) & 0xFFFF
     neg_limit_low = neg_limit & 0xFFFF
     result = client.write_register(address=NEG_LIMIT_HIGH_ADDR, value=neg_limit_high, slave=SLAVE_ID)
     if result.isError():
-        print("❌ 负限位高位设置失败", result)
+        print("❌ Set negative limit high failed", result)
         return
     result = client.write_register(address=NEG_LIMIT_LOW_ADDR, value=neg_limit_low, slave=SLAVE_ID)
     if result.isError():
-        print("❌ 负限位低位设置失败", result)
+        print("❌ Set negative limit low failed", result)
         return
-    print(f"✅ 软件限位已设置，正限位：{pos_limit}，负限位：{neg_limit}")
+    print(f"✅ Software limit set, positive limit: {pos_limit}, negative limit: {neg_limit}")
 
 def main(port):
     client = ModbusSerialClient(
@@ -97,8 +97,9 @@ def main(port):
         return
     print(f"✅ Connected to Modbus motor at {port}")
     # 新增：选择是否开启软件限位
+    print("Select whether to enable software limit? (y/n): ")
     while True:
-        choice = input("是否开启软件限位？(y/n): ").strip().lower()
+        choice = input("Enable software limit? (y/n): ").strip().lower()
         if choice == 'y':
             if not set_control_setting(client, True):
                 return
@@ -108,22 +109,22 @@ def main(port):
                 return
             break
         else:
-            print("无效输入，请输入 y 或 n。")
+            print("Invalid input, please enter y or n.")
     try:
         while True:
-            user_input = input("输入 s 设置软件限位，q 退出: ").strip().lower()
+            user_input = input("Enter 's' to set software limit, 'q' to quit: ").strip().lower()
             if user_input == 'q':
-                print("退出软件限位设置。"); break
+                print("Exit software limit setting."); break
             elif user_input == 's':
                 set_software_limit(client)
             else:
-                print("无效输入，请输入 's' 或 'q'.")
+                print("Invalid input, please enter 's' or 'q'.")
     finally:
         client.close()
         print("🔌 Disconnected.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="软件限位设置 via Modbus RTU")
+    parser = argparse.ArgumentParser(description="Software limit setting via Modbus RTU")
     parser.add_argument(
         "--port",
         type=str,

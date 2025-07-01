@@ -24,7 +24,7 @@ class LeadshineMotor(ModbusDevice):
         self.send(6, 0x0001, [10000])   # Set counts per round
         self.send(6, 0x0003, [2])       # Set loop mode
         self.send(6, 0x0007, [0])       # Set direction
-
+        self.set_home_params(1000, 50, 400, 400, 200, 200)  # Initialize homing parameters
         self._get_motion_target()
         self._get_motion_mode()
 
@@ -117,73 +117,84 @@ class LeadshineMotor(ModbusDevice):
             self.set_motion_mode(0x0002)
         self.send(6, 0x6002, [0x0010])  # Trigger move
 
-    def torque_home(self, direction, stall_time=1000, output_val=50, high_speed=1000, low_speed=200, acc=100, dec=100):
+    def set_home_params(self, stall_time=1000, cur=50, high_speed=1000, low_speed=200, acc=100, dec=100):
         """
-        direction: '+' 正向回零, '-' 反向回零
-        其余参数同 torque_home_motor.py
+        Only set homing parameters, do not trigger homing
         """
-        # 力矩回零相关寄存器
         TORQUE_MODE_ADDR = 0x600A
         STALL_TIME_ADDR = 0x6013
-        OUTPUT_VAL_ADDR = 0x6014
-        TRIGGER_ADDR = 0x6002
+        CUR_ADDR = 0x6014
         HIGH_SPEED_ADDR = 0x600F
         LOW_SPEED_ADDR = 0x6010
         ACC_ADDR = 0x6011
         DEC_ADDR = 0x6012
-        # 指令值
-        TORQUE_MODE_REVERSE = 0x000C  # 反向力矩回零
-        TORQUE_MODE_FORWARD = 0x000D  # 正向力矩回零
-        TRIGGER_TORQUE_HOME = 0x0020  # 触发力矩回零
-        # 选择回零模式
-        mode = TORQUE_MODE_FORWARD if direction == "+" else TORQUE_MODE_REVERSE
-        # 写入回零模式
-        self.send(6, TORQUE_MODE_ADDR, [mode])
+        # Only write parameters, do not trigger
+        self.send(6, TORQUE_MODE_ADDR, [0x000D])  # Default: positive torque homing mode
         self.send(6, STALL_TIME_ADDR, [stall_time])
-        self.send(6, OUTPUT_VAL_ADDR, [output_val])
+        self.send(6, CUR_ADDR, [cur])
         self.send(6, HIGH_SPEED_ADDR, [high_speed])
         self.send(6, LOW_SPEED_ADDR, [low_speed])
         self.send(6, ACC_ADDR, [acc])
         self.send(6, DEC_ADDR, [dec])
-        # 触发力矩回零
+        print(f"[set_home_params] Homing parameters set: stall_time={stall_time}, current(%)={cur}, high_speed={high_speed}, low_speed={low_speed}, acc={acc}, dec={dec}")
+
+    def torque_home(self, direction):
+        """
+        Only trigger homing, do not set parameters
+        """
+        TORQUE_MODE_ADDR = 0x600A
+        TRIGGER_ADDR = 0x6002
+        TORQUE_MODE_REVERSE = 0x000C  # Reverse torque homing
+        TORQUE_MODE_FORWARD = 0x000D  # Forward torque homing
+        TRIGGER_TORQUE_HOME = 0x0020  # Trigger torque homing
+        mode = TORQUE_MODE_FORWARD if direction == "home_pos" else TORQUE_MODE_REVERSE
+        self.send(6, TORQUE_MODE_ADDR, [mode])
         self.send(6, TRIGGER_ADDR, [TRIGGER_TORQUE_HOME])
-        print(f"[torque_home] {('正向' if direction == '+' else '反向')}回零已触发，参数: 堵转时间={stall_time}, 出力值={output_val}, 高速={high_speed}, 低速={low_speed}, 加速度={acc}, 减速度={dec}")
+        print(f"[torque_home] {'Forward' if direction == 'home_pos' else 'Reverse'} homing triggered")
 
     def set_software_limit(self, pos_limit, neg_limit):
         """
-        设置正负软件限位
-        pos_limit: int, 正限位
-        neg_limit: int, 负限位
+        Set positive/negative software limits
+        pos_limit: int, positive limit
+        neg_limit: int, negative limit
         """
-        # 软件限位相关寄存器
-        POS_LIMIT_HIGH_ADDR = 0x6006  # 正限位高位
-        POS_LIMIT_LOW_ADDR = 0x6007   # 正限位低位
-        NEG_LIMIT_HIGH_ADDR = 0x6008  # 负限位高位
-        NEG_LIMIT_LOW_ADDR = 0x6009   # 负限位低位
-        SET_ZERO_ADDR = 0x6002        # 设零寄存器
-        SET_ZERO_CMD = 0x0021         # 设零指令
-        CONTROL_SETTING_ADDR = 0x6000  # 控制设置寄存器
-        CONTROL_SETTING_SOFT_LIMIT = 0x0002  # 软件限位有效
-        # 1. 使能软件限位
+        # Software limit related registers
+        POS_LIMIT_HIGH_ADDR = 0x6006  # Positive limit high
+        POS_LIMIT_LOW_ADDR = 0x6007   # Positive limit low
+        NEG_LIMIT_HIGH_ADDR = 0x6008  # Negative limit high
+        NEG_LIMIT_LOW_ADDR = 0x6009   # Negative limit low
+        SET_ZERO_ADDR = 0x6002        # Set zero register
+        SET_ZERO_CMD = 0x0021         # Set zero command
+        CONTROL_SETTING_ADDR = 0x6000  # Control setting register
+        CONTROL_SETTING_SOFT_LIMIT = 0x0002  # Enable software limit
+        # 1. Enable software limit
         self.send(6, CONTROL_SETTING_ADDR, [CONTROL_SETTING_SOFT_LIMIT])
-        # 2. 设零
+        # 2. Set zero
         self.send(6, SET_ZERO_ADDR, [SET_ZERO_CMD])
-        # 3. 正限位高低位
+        # 3. Positive limit high/low
         pos_limit_high = (pos_limit >> 16) & 0xFFFF
         pos_limit_low = pos_limit & 0xFFFF
         self.send(6, POS_LIMIT_HIGH_ADDR, [pos_limit_high])
         self.send(6, POS_LIMIT_LOW_ADDR, [pos_limit_low])
-        # 4. 负限位高低位
+        # 4. Negative limit high/low
         neg_limit_high = (neg_limit >> 16) & 0xFFFF
         neg_limit_low = neg_limit & 0xFFFF
         self.send(6, NEG_LIMIT_HIGH_ADDR, [neg_limit_high])
         self.send(6, NEG_LIMIT_LOW_ADDR, [neg_limit_low])
-        print(f"[set_software_limit] 软件限位已设置，正限位：{pos_limit}，负限位：{neg_limit}")
+        print(f"[set_software_limit] Software limit set, positive limit: {pos_limit}, negative limit: {neg_limit}")
 
     def reset_alarm(self):
         """
-        定期消除报警
+        Periodically reset alarm
         """
-        ALARM_RESET_ADDR = 0x1801  # 复位报警寄存器
-        ALARM_RESET_CMD = 0x1111   # 复位报警指令
+        ALARM_RESET_ADDR = 0x1801  # Alarm reset register
+        ALARM_RESET_CMD = 0x1111   # Alarm reset command
         self.send(6, ALARM_RESET_ADDR, [ALARM_RESET_CMD])
+
+    def get_alarm_status(self, callback):
+        """
+        Read alarm/fault status register (assume 0x603F is alarm status register), callback returns register value.
+        callback: function(int) -> None
+        """
+        ALARM_STATUS_ADDR = 0x603F
+        self.recv(3, ALARM_STATUS_ADDR, 1, callback)
