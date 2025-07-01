@@ -123,6 +123,19 @@ class MotorControlNode(Node):
                         dec = default_params['dec']
                     direction = "+" if cmd == "+" else "-"
                     self.motor.torque_home(direction, stall_time, output_val, high_speed, low_speed, acc, dec)
+                case "set_limit":
+                    # 设置软件限位，参数格式：set_limit 正限位 负限位
+                    if len(parts) == 3:
+                        try:
+                            pos_limit = int(parts[1])
+                            neg_limit = int(parts[2])
+                        except Exception as e:
+                            self.get_logger().error(f"❌ 限位参数解析失败: {e}")
+                            return
+                        self.motor.set_software_limit(pos_limit, neg_limit)
+                        self.get_logger().info(f"✅ 已设置软件限位，正限位: {pos_limit}，负限位: {neg_limit}")
+                    else:
+                        self.get_logger().error("❌ set_limit 命令需要两个参数：正限位 负限位")
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
         except Exception as e:

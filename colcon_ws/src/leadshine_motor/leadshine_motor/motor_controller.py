@@ -148,3 +148,34 @@ class LeadshineMotor(ModbusDevice):
         # 触发力矩回零
         self.send(6, TRIGGER_ADDR, [TRIGGER_TORQUE_HOME])
         print(f"[torque_home] {('正向' if direction == '+' else '反向')}回零已触发，参数: 堵转时间={stall_time}, 出力值={output_val}, 高速={high_speed}, 低速={low_speed}, 加速度={acc}, 减速度={dec}")
+
+    def set_software_limit(self, pos_limit, neg_limit):
+        """
+        设置正负软件限位
+        pos_limit: int, 正限位
+        neg_limit: int, 负限位
+        """
+        # 软件限位相关寄存器
+        POS_LIMIT_HIGH_ADDR = 0x6006  # 正限位高位
+        POS_LIMIT_LOW_ADDR = 0x6007   # 正限位低位
+        NEG_LIMIT_HIGH_ADDR = 0x6008  # 负限位高位
+        NEG_LIMIT_LOW_ADDR = 0x6009   # 负限位低位
+        SET_ZERO_ADDR = 0x6002        # 设零寄存器
+        SET_ZERO_CMD = 0x0021         # 设零指令
+        CONTROL_SETTING_ADDR = 0x6000  # 控制设置寄存器
+        CONTROL_SETTING_SOFT_LIMIT = 0x0002  # 软件限位有效
+        # 1. 使能软件限位
+        self.send(6, CONTROL_SETTING_ADDR, [CONTROL_SETTING_SOFT_LIMIT])
+        # 2. 设零
+        self.send(6, SET_ZERO_ADDR, [SET_ZERO_CMD])
+        # 3. 正限位高低位
+        pos_limit_high = (pos_limit >> 16) & 0xFFFF
+        pos_limit_low = pos_limit & 0xFFFF
+        self.send(6, POS_LIMIT_HIGH_ADDR, [pos_limit_high])
+        self.send(6, POS_LIMIT_LOW_ADDR, [pos_limit_low])
+        # 4. 负限位高低位
+        neg_limit_high = (neg_limit >> 16) & 0xFFFF
+        neg_limit_low = neg_limit & 0xFFFF
+        self.send(6, NEG_LIMIT_HIGH_ADDR, [neg_limit_high])
+        self.send(6, NEG_LIMIT_LOW_ADDR, [neg_limit_low])
+        print(f"[set_software_limit] 软件限位已设置，正限位：{pos_limit}，负限位：{neg_limit}")
