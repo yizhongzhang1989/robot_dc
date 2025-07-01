@@ -179,3 +179,11 @@ class LeadshineMotor(ModbusDevice):
         self.send(6, NEG_LIMIT_HIGH_ADDR, [neg_limit_high])
         self.send(6, NEG_LIMIT_LOW_ADDR, [neg_limit_low])
         print(f"[set_software_limit] 软件限位已设置，正限位：{pos_limit}，负限位：{neg_limit}")
+
+    def reset_alarm(self):
+        """
+        定期消除报警
+        """
+        ALARM_RESET_ADDR = 0x1801  # 复位报警寄存器
+        ALARM_RESET_CMD = 0x1111   # 复位报警指令
+        self.send(6, ALARM_RESET_ADDR, [ALARM_RESET_CMD])

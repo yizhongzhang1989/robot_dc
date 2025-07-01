@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from leadshine_motor.motor_controller import LeadshineMotor
+import threading
 
 
 class MotorControlNode(Node):
@@ -23,6 +24,21 @@ class MotorControlNode(Node):
         # Set up non-blocking timer to check for service availability
         self.service_check_timer = self.create_timer(1.0, self.initialize_motor_params)
         self.get_logger().info("⏳ Waiting for /modbus_request service...")
+
+        self.alarm_reset_stop_event = threading.Event()
+        self.alarm_reset_thread = None
+
+        # 新增：输入消除警报的时间间隔
+        while True:
+            try:
+                alarm_interval = float(input("请输入自动消除警报的时间间隔（秒，可为小数）：").strip())
+                if alarm_interval <= 0:
+                    print("时间间隔需大于0，请重新输入。")
+                    continue
+                break
+            except Exception:
+                print("输入有误，请输入正数！")
+        self.start_alarm_reset_periodic(alarm_interval)
 
     def initialize_motor_params(self):
         if self.motor.cli.service_is_ready():
@@ -140,6 +156,23 @@ class MotorControlNode(Node):
                     self.get_logger().warn(f"Unknown command: {cmd}")
         except Exception as e:
             self.get_logger().error(f"❌ Command '{cmd}' failed: {e}")
+
+    def start_alarm_reset_periodic(self, interval):
+        def reset_loop():
+            while not self.alarm_reset_stop_event.is_set():
+                try:
+                    self.motor.reset_alarm()
+                except Exception:
+                    pass
+                self.alarm_reset_stop_event.wait(interval)
+        self.alarm_reset_thread = threading.Thread(target=reset_loop, daemon=True)
+        self.alarm_reset_thread.start()
+
+    def destroy_node(self):
+        self.alarm_reset_stop_event.set()
+        if self.alarm_reset_thread:
+            self.alarm_reset_thread.join()
+        super().destroy_node()
 
 
 def main():
