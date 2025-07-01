@@ -27,6 +27,8 @@ class MotorControlNode(Node):
 
         self.alarm_reset_stop_event = threading.Event()
         self.alarm_reset_thread = None
+        self.last_home_offset = None
+        self.last_home_speed = None
 
     def initialize_motor_params(self):
         if self.motor.cli.service_is_ready():
@@ -138,10 +140,14 @@ class MotorControlNode(Node):
                             acc = default_params['acc']
                             dec = default_params['dec']
                         self.motor.set_home_params(stall_time, cur, high_speed, low_speed, acc, dec)
-                    case "home_pos" | "home_neg":
-                        # Only trigger homing, do not set parameters
-                        direction = "home_pos" if cmd == "home_pos" else "home_neg"
-                        self.motor.torque_home(direction)
+                    case "home_pos":
+                        self.last_home_offset = -20000
+                        self.last_home_speed = -100
+                        self.motor.torque_home("home_pos")
+                    case "home_neg":
+                        self.last_home_offset = 20000
+                        self.last_home_speed = 100
+                        self.motor.torque_home("home_neg")
                     case "set_limit":
                         if len(parts) == 3:
                             try:
@@ -156,6 +162,24 @@ class MotorControlNode(Node):
                             self.get_logger().error("❌ set_limit command requires two parameters: positive_limit negative_limit")
                     case "reset_limit":
                         self.motor.reset_software_limit()
+                    case "home_back":
+                        if self.last_home_offset is None or self.last_home_speed is None:
+                            self.get_logger().error("❌ 未检测到上一次回零方向，请先执行home_pos或home_neg")
+                            return
+                        # home_pos时back为-100/-20000，home_neg时back为100/20000
+                        if self.last_home_offset == -20000 and self.last_home_speed == -100:
+                            speed = -100
+                            offset = -20000
+                        elif self.last_home_offset == 20000 and self.last_home_speed == 100:
+                            speed = 100
+                            offset = 20000
+                        else:
+                            self.get_logger().error("❌ last_home_offset/speed异常")
+                            return
+                        self.motor.set_target_velocity(speed)
+                        self.motor.set_target_position(offset)
+                        self.motor.move_relative()
+                        self.get_logger().info(f"home_back (relative): move with speed {speed}, offset {offset}")
                     case _:
                         self.get_logger().warn(f"Unknown command: {cmd}")
             except Exception as e:

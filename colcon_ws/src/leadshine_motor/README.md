@@ -1,8 +1,8 @@
 # leadshine\_motor
 
-`leadshine_motor` is a ROS 2 package that provides a modular interface for controlling Leadshine motors via Modbus RTU. It delegates all Modbus communication to the centralized `modbus_driver` service, enabling multiple devices to share a single RS-485 serial line without bus contention.
+`leadshine_motor` 是一个 ROS 2 包，提供了一个模块化接口来通过 Modbus RTU 控制 Leadshine 电机。它将所有 Modbus 通信委托给集中式 `modbus_driver` 服务，使多个设备能够共享单个 RS-485 串行线而不发生总线冲突。
 
-This package wraps motor logic in a reusable Python class and provides a ROS 2 node to issue commands over topics.
+这个包将电机逻辑包装在一个可重用的 Python 类中，并提供了一个 ROS 2 节点来通过主题发布命令。
 
 ---
 
@@ -110,6 +110,7 @@ Each motor node subscribes to its own topic, e.g., `/motor1/cmd` (type: `std_msg
 | `set_home sta cur hig low acc dec`           | Set home parameters only, params: sta=StallTime(ms), cur=CurrentPercent(%) (torque homing current), hig=HighSpeed(rpm), low=LowSpeed(rpm), acc=Acceleration(ms/1000rpm), dec=Deceleration(ms/1000rpm) |
 | `set_limit P N`                             | Set software limits, P=positive limit, N=negative limit (int32, unit: pulse, e.g. 100000 -100000) |
 | `reset_limit`                                 | Reset (disable) software limits, disables both positive and negative software limits |
+| `home_back`                                 | Automatic read last zero direction, reverse movement 20000, speed 100, automatic zero after movement |
 
 Parameter description:  
 sta=StallTime(ms), cur=CurrentPercent(%) (torque homing current, set as current percent), hig=HighSpeed(rpm), low=LowSpeed(rpm), acc=Acceleration(ms/1000rpm), dec=Deceleration(ms/1000rpm)
