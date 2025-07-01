@@ -55,7 +55,7 @@ pip install pymodbus
 ### 1. Build the Workspace
 
 ```bash
-cd ~/colcon_ws
+cd colcon_ws
 colcon build
 source install/setup.bash
 ```
@@ -105,6 +105,13 @@ Each motor node subscribes to its own topic, e.g., `/motor1/cmd` (type: `std_msg
 | `move_rel X` | Set and move by relative offset    |
 | `move_vel`   | Move using previously set velocity |
 | `move_vel X` | Set and move at velocity           |
+| `+`          | 正向力矩回零（使用默认参数）        |
+| `-`          | 反向力矩回零（使用默认参数）        |
+| `+ S O H L A D`| 正向力矩回零，参数依次为：堵转时间 出力值 高速 低速 加速度 减速度 |
+| `- S O H L A D`| 反向力矩回零，参数依次为：堵转时间 出力值 高速 低速 加速度 减速度 |
+
+参数说明：  
+S=堵转时间(ms)，O=出力值(%)，H=回零高速(rpm)，L=回零低速(rpm)，A=回零加速度(ms/1000rpm)，D=回零减速度(ms/1000rpm)
 
 ### 🧪 Examples
 
