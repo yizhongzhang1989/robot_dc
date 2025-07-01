@@ -109,9 +109,12 @@ Each motor node subscribes to its own topic, e.g., `/motor1/cmd` (type: `std_msg
 | `home_neg`                                  | Torque home in negative direction (use default parameters)                 |
 | `set_home sta cur hig low acc dec`           | Set home parameters only, params: sta=StallTime(ms), cur=CurrentPercent(%) (torque homing current), hig=HighSpeed(rpm), low=LowSpeed(rpm), acc=Acceleration(ms/1000rpm), dec=Deceleration(ms/1000rpm) |
 | `set_limit P N`                             | Set software limits, P=positive limit, N=negative limit (int32, unit: pulse, e.g. 100000 -100000) |
+| `reset_limit`                                 | Reset (disable) software limits, disables both positive and negative software limits |
 
 Parameter description:  
 sta=StallTime(ms), cur=CurrentPercent(%) (torque homing current, set as current percent), hig=HighSpeed(rpm), low=LowSpeed(rpm), acc=Acceleration(ms/1000rpm), dec=Deceleration(ms/1000rpm)
+
+Note: Software limit is disabled by default on startup.
 
 ### 🧪 Examples
 
@@ -127,6 +130,10 @@ ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'home_pos'"
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'home_neg'"
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'set_home 1200 60 500 300 200 200'"  # sta cur hig low acc dec
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'set_limit 100000 -100000'"
+
+ros2 topic pub --once /motor2/cmd std_msgs/String "data: 'set_zero'"
+ros2 topic pub --once /motor2/cmd std_msgs/String "data: 'set_vel 800'"
+ros2 topic pub --once /motor2/cmd std_msgs/String "data: 'move_rel 50000'"
 ```
 
 ---
@@ -136,8 +143,11 @@ ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'set_limit 100000 -1000
 ### Manual Testing
 
 ```bash
-ros2 topic pub /motor1/cmd std_msgs/String "data: 'set_pos 10000'"
-ros2 topic pub /motor1/cmd std_msgs/String "data: 'move_abs'"
+ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'set_zero'"
+ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'set_vel 500'"
+ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'move_rel 10000'"
+ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'home_pos'"
+ros2 topic pub --once /motor2/cmd std_msgs/String "data: 'set_zero'"
 ```
 
 ### Unit Tests

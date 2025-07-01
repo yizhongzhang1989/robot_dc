@@ -154,6 +154,8 @@ class MotorControlNode(Node):
                             self.get_logger().info(f"✅ Software limit set, positive limit: {pos_limit}, negative limit: {neg_limit}")
                         else:
                             self.get_logger().error("❌ set_limit command requires two parameters: positive_limit negative_limit")
+                    case "reset_limit":
+                        self.motor.reset_software_limit()
                     case _:
                         self.get_logger().warn(f"Unknown command: {cmd}")
             except Exception as e:

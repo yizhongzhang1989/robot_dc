@@ -25,6 +25,7 @@ class LeadshineMotor(ModbusDevice):
         self.send(6, 0x0003, [2])       # Set loop mode
         self.send(6, 0x0007, [0])       # Set direction
         self.set_home_params(1000, 50, 400, 400, 200, 200)  # Initialize homing parameters
+        self.reset_software_limit()     # Disable software limit on startup
         self._get_motion_target()
         self._get_motion_mode()
 
@@ -198,3 +199,12 @@ class LeadshineMotor(ModbusDevice):
         """
         ALARM_STATUS_ADDR = 0x603F
         self.recv(3, ALARM_STATUS_ADDR, 1, callback)
+
+    def reset_software_limit(self):
+        """
+        Disable software limits (both positive and negative)
+        """
+        CONTROL_SETTING_ADDR = 0x6000  # Control setting register
+        CONTROL_SETTING_DISABLE = 0x0000  # Disable software limit
+        self.send(6, CONTROL_SETTING_ADDR, [CONTROL_SETTING_DISABLE])
+        print("[reset_software_limit] Software limit disabled.")
