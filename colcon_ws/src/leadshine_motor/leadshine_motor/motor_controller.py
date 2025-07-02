@@ -24,7 +24,7 @@ class LeadshineMotor(ModbusDevice):
         self.send(6, 0x0001, [10000])   # Set counts per round
         self.send(6, 0x0003, [2])       # Set loop mode
         self.send(6, 0x0007, [0])       # Set direction
-        self.set_home_params(1000, 50, 400, 400, 200, 200)  # Initialize homing parameters
+        self.set_home_params(1000, 30, 250, 250, 200, 200)  # Initialize homing parameters
         self.reset_software_limit()     # Disable software limit on startup
         self._get_motion_target()
         self._get_motion_mode()
@@ -173,7 +173,7 @@ class LeadshineMotor(ModbusDevice):
             self.set_motion_mode(0x0002)
         self.send(6, 0x6002, [0x0010])  # Trigger move
 
-    def set_home_params(self, stall_time=1000, cur=50, high_speed=1000, low_speed=200, acc=100, dec=100):
+    def set_home_params(self, stall_time=1000, cur=50, high_speed=250, low_speed=250, acc=100, dec=100):
         """
         Only set homing parameters, do not trigger homing
         """
@@ -219,20 +219,16 @@ class LeadshineMotor(ModbusDevice):
         POS_LIMIT_LOW_ADDR = 0x6007   # Positive limit low
         NEG_LIMIT_HIGH_ADDR = 0x6008  # Negative limit high
         NEG_LIMIT_LOW_ADDR = 0x6009   # Negative limit low
-        SET_ZERO_ADDR = 0x6002        # Set zero register
-        SET_ZERO_CMD = 0x0021         # Set zero command
         CONTROL_SETTING_ADDR = 0x6000  # Control setting register
         CONTROL_SETTING_SOFT_LIMIT = 0x0002  # Enable software limit
         # 1. Enable software limit
         self.send(6, CONTROL_SETTING_ADDR, [CONTROL_SETTING_SOFT_LIMIT])
-        # 2. Set zero
-        self.send(6, SET_ZERO_ADDR, [SET_ZERO_CMD])
-        # 3. Positive limit high/low
+        # 2. Positive limit high/low
         pos_limit_high = (pos_limit >> 16) & 0xFFFF
         pos_limit_low = pos_limit & 0xFFFF
         self.send(6, POS_LIMIT_HIGH_ADDR, [pos_limit_high])
         self.send(6, POS_LIMIT_LOW_ADDR, [pos_limit_low])
-        # 4. Negative limit high/low
+        # 3. Negative limit high/low
         neg_limit_high = (neg_limit >> 16) & 0xFFFF
         neg_limit_low = neg_limit & 0xFFFF
         self.send(6, NEG_LIMIT_HIGH_ADDR, [neg_limit_high])

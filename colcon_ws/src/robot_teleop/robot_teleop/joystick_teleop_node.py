@@ -42,6 +42,51 @@ class JoystickTeleop(Node):
         if msg.axes[5] != self.last_joy_msg.axes[5]:  # Platform control
             self.handle_platform_control(5, msg.axes[5])
 
+        # Button-based control
+        if msg.buttons[6] != self.last_joy_msg.buttons[6]:  # LT button
+            self.handle_lt_button(msg.buttons[6])
+
+        if msg.buttons[7] != self.last_joy_msg.buttons[7]:  # RT button
+            self.handle_rt_button(msg.buttons[7])
+
+        if msg.buttons[0] != self.last_joy_msg.buttons[0]:  # X button
+            if msg.buttons[0] == 1:
+                self.get_logger().info('X button pressed: motor1 home_back, motor2 home_back')
+                self.send_motor_cmd(self.motor_left_pub, 'home_back')
+                self.send_motor_cmd(self.motor_right_pub, 'home_back')
+
+        if msg.buttons[1] != self.last_joy_msg.buttons[1]:
+            if msg.buttons[1] == 1:
+                self.get_logger().info('A button pressed: motor1 home_pos, motor2 home_pos')
+                self.send_motor_cmd(self.motor_left_pub, 'set_home 1000 30 250 250 200 200')
+                self.send_motor_cmd(self.motor_right_pub, 'set_home 1000 30 250 250 200 200')
+                self.send_motor_cmd(self.motor_left_pub, 'home_pos')
+                self.send_motor_cmd(self.motor_right_pub, 'home_pos')
+
+        if msg.buttons[2] != self.last_joy_msg.buttons[2]:  # B button
+            if msg.buttons[2] == 1:
+                self.get_logger().info('B button pressed: motor1 home_neg, motor2 home_neg')
+                self.send_motor_cmd(self.motor_left_pub, 'home_neg')
+                self.send_motor_cmd(self.motor_right_pub, 'home_neg')
+
+        if msg.buttons[3] != self.last_joy_msg.buttons[3]:  # Y button
+            if msg.buttons[3] == 1:
+                self.get_logger().info('Y button pressed: motor1 set_zero, motor2 set_zero')
+                self.send_motor_cmd(self.motor_left_pub, 'set_zero')
+                self.send_motor_cmd(self.motor_right_pub, 'set_zero')
+
+        if msg.buttons[4] != self.last_joy_msg.buttons[4]:  # LB button
+            if msg.buttons[4] == 1:
+                self.get_logger().info('LB button pressed: motor1 set_limit 0 -902000, motor2 set_limit 0 -902000')
+                self.send_motor_cmd(self.motor_left_pub, 'set_limit 100 -902000')
+                self.send_motor_cmd(self.motor_right_pub, 'set_limit 100 -902000')
+
+        if msg.buttons[5] != self.last_joy_msg.buttons[5]:  # RB button
+            if msg.buttons[5] == 1:
+                self.get_logger().info('RB button pressed: motor1 reset_limit, motor2 reset_limit')
+                self.send_motor_cmd(self.motor_left_pub, 'reset_limit')
+                self.send_motor_cmd(self.motor_right_pub, 'reset_limit')
+
         self.last_joy_msg = copy.deepcopy(msg)
 
     def handle_motor_axis_control(self, axis_value, publisher, motor_id):
@@ -93,7 +138,19 @@ class JoystickTeleop(Node):
             else:
                 self.get_logger().info('Platform: stop')
                 self.send_motor_cmd(self.platform_pub, 'up 0')
-                
+
+    def handle_lt_button(self, button_value):
+        """Handle LT button press to stop motor1"""
+        if button_value == 1:  # Button pressed
+            self.get_logger().info('LT button pressed: stopping motor1')
+            self.send_motor_cmd(self.motor_left_pub, 'stop')
+
+    def handle_rt_button(self, button_value):
+        """Handle RT button press to stop motor2"""
+        if button_value == 1:  # Button pressed
+            self.get_logger().info('RT button pressed: stopping motor2')
+            self.send_motor_cmd(self.motor_right_pub, 'stop')
+
     def send_motor_cmd(self, pub, command: str):
         msg = String()
         msg.data = command

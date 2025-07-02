@@ -110,7 +110,7 @@ Each motor node subscribes to its own topic, e.g., `/motor1/cmd` (type: `std_msg
 | 'move_vel X'                              | Set and move at velocity (rpm)                      |
 | 'home_pos'                                | Torque home in positive direction                   |
 | 'home_neg'                                | Torque home in negative direction                   |
-| 'set_home sta cur hig low acc dec'         | Set home parameters                                 |
+| 'set_home sta cur hig low acc dec'        | Set home parameters                                 |
 | 'set_limit P N'                           | Set software limits                                 |
 | 'reset_limit'                             | Reset (disable) software limits                     |
 | 'home_back'                               | Automatic reverse movement after homing             |
@@ -187,7 +187,7 @@ Each motor node subscribes to its own topic, e.g., `/motor1/cmd` (type: `std_msg
 | 0x0210           | Input IO configuration duplicate  | 10              |
 
 #### Control Word (0x1801) Features
-| Control Word Value (Hex) | Feature Description                          |
+| Control Word Value (Hex) | Feature Description                         |
 |:-----------------------:|:---------------------------------------------|
 | 0x1111                  | Reset current alarm (clear current fault)    |
 | 0x1122                  | Reset history alarm                          |
@@ -220,11 +220,11 @@ ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'jog_left'"
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'jog_right'"
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'home_pos'"
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'home_neg'"
-ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'set_home 1200 60 500 300 200 200'"  # sta cur hig low acc dec
+ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'set_home 1200 60 250 250 200 200'"  # sta cur hig low acc dec
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'set_limit 100000 -100000'"
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'save_params'"
 ros2 topic pub --once /motor1/cmd std_msgs/String "data: 'factory_reset'"
-
+```
 ros2 topic pub --once /motor2/cmd std_msgs/String "data: 'set_zero'"
 ros2 topic pub --once /motor2/cmd std_msgs/String "data: 'set_vel 800'"
 ros2 topic pub --once /motor2/cmd std_msgs/String "data: 'move_rel 50000'"

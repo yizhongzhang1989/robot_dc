@@ -124,7 +124,7 @@ class MotorControlNode(Node):
                         # Parameter order: sta cur hig low acc dec
                         default_params = {
                             'stall_time': 1000,   # sta
-                            'cur': 50,            # cur
+                            'cur': 30,            # cur
                             'high_speed': 1000,   # hig
                             'low_speed': 200,     # low
                             'acc': 100,           # acc
@@ -150,11 +150,11 @@ class MotorControlNode(Node):
                             dec = default_params['dec']
                         self.motor.set_home_params(stall_time, cur, high_speed, low_speed, acc, dec)
                     case "home_pos":
-                        self.last_home_offset = -20000
+                        self.last_home_offset = -10000
                         self.last_home_speed = -100
                         self.motor.torque_home("home_pos")
                     case "home_neg":
-                        self.last_home_offset = 20000
+                        self.last_home_offset = 10000
                         self.last_home_speed = 100
                         self.motor.torque_home("home_neg")
                     case "set_limit":
@@ -173,17 +173,17 @@ class MotorControlNode(Node):
                         self.motor.reset_software_limit()
                     case "home_back":
                         if self.last_home_offset is None or self.last_home_speed is None:
-                            self.get_logger().error("❌ 未检测到上一次回零方向，请先执行home_pos或home_neg")
+                            self.get_logger().error("❌ Last homing direction not detected, please execute home_pos or home_neg first")
                             return
-                        # home_pos时back为-100/-20000，home_neg时back为100/20000
-                        if self.last_home_offset == -20000 and self.last_home_speed == -100:
+                        # For home_pos, back is -100/-20000; for home_neg, back is 100/20000
+                        if self.last_home_offset == -10000 and self.last_home_speed == -100:
                             speed = -100
-                            offset = -20000
-                        elif self.last_home_offset == 20000 and self.last_home_speed == 100:
+                            offset = -10000
+                        elif self.last_home_offset == 10000 and self.last_home_speed == 100:
                             speed = 100
-                            offset = 20000
+                            offset = 10000
                         else:
-                            self.get_logger().error("❌ last_home_offset/speed异常")
+                            self.get_logger().error("❌ last_home_offset/speed abnormal")
                             return
                         self.motor.set_target_velocity(speed)
                         self.motor.set_target_position(offset)
