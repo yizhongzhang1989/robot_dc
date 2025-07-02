@@ -64,11 +64,29 @@ class LeadshineMotor(ModbusDevice):
         else:
             raise ValueError(f"Invalid motion mode: {hex(mode)}")
 
+    def write_control_word(self, value):
+        """
+        Write a value to the control word register (0x1801).
+        """
+        self.send(6, 0x1801, [value])
+
+    def reset_current_alarm(self):
+        self.write_control_word(0x1111)
+
+    def reset_history_alarm(self):
+        self.write_control_word(0x1122)
+
+    def save_all_params_to_eeprom(self):
+        self.write_control_word(0x2211)
+
+    def factory_reset(self):
+        self.write_control_word(0x2233)
+
     def jog_left(self):
-        self.send(6, 0x1801, [0x4001])  # Jog left command
+        self.write_control_word(0x4001)
 
     def jog_right(self):
-        self.send(6, 0x1801, [0x4002])  # Jog right command
+        self.write_control_word(0x4002)
 
     def abrupt_stop(self):
         self.send(6, 0x6002, [0x0040])  # Abrupt stop
@@ -82,6 +100,43 @@ class LeadshineMotor(ModbusDevice):
                 callback(None)
 
         self.recv(3, 0x602C, 2, handle_response)
+
+    def get_motion_status(self, callback):
+        """
+        Read motion status from register 0x1003
+        Bit0: Fault (1=fault, 0=no fault)
+        Bit1: Enabled (1=enabled, 0=disabled)
+        Bit2: Running (1=running, 0=stopped)
+        Bit3: Invalid (reserved)
+        Bit4: Command completed (1=completed, 0=not completed)
+        Bit5: Path completed (1=completed, 0=not completed)
+        Bit6: Homing completed (1=completed, 0=not completed, stays 1 until next homing command)
+        callback: function(dict) -> None, receives dict with status information
+        """
+        def handle_response(response):
+            if response:
+                status_register = response[0]
+                fault = bool(status_register & (1 << 0))           # Bit0
+                enabled = bool(status_register & (1 << 1))         # Bit1
+                running = bool(status_register & (1 << 2))         # Bit2
+                command_completed = bool(status_register & (1 << 4))  # Bit4
+                path_completed = bool(status_register & (1 << 5))     # Bit5
+                homing_completed = bool(status_register & (1 << 6))   # Bit6
+                
+                status_info = {
+                    'fault': fault,
+                    'enabled': enabled,
+                    'running': running,
+                    'command_completed': command_completed,
+                    'path_completed': path_completed,
+                    'homing_completed': homing_completed,
+                    'raw_register': status_register
+                }
+                callback(status_info)
+            else:
+                callback(None)
+
+        self.recv(3, 0x1003, 1, handle_response)
 
     def set_zero_position(self):
         self.send(6, 0x6002, [0x0021])  # Set current position to be zero
@@ -194,11 +249,48 @@ class LeadshineMotor(ModbusDevice):
 
     def get_alarm_status(self, callback):
         """
-        Read alarm/fault status register (assume 0x603F is alarm status register), callback returns register value.
-        callback: function(int) -> None
+        Read alarm/fault status register 0x2203, callback returns register value and fault description.
+        callback: function(dict) -> None, receives dict with 'fault_code', 'fault_description', 'alm_blink_count'
         """
-        ALARM_STATUS_ADDR = 0x603F
-        self.recv(3, ALARM_STATUS_ADDR, 1, callback)
+        def handle_response(response):
+            if response:
+                fault_code = response[0]
+                fault_info = self._get_fault_description(fault_code)
+                callback({
+                    'fault_code': fault_code,
+                    'fault_description': fault_info['description'],
+                    'alm_blink_count': fault_info['blink_count'],
+                    'raw_register': fault_code
+                })
+            else:
+                callback(None)
+
+        ALARM_STATUS_ADDR = 0x2203
+        self.recv(3, ALARM_STATUS_ADDR, 1, handle_response)
+
+    def _get_fault_description(self, fault_code):
+        """
+        Convert fault code to description and ALM blink count
+        """
+        fault_descriptions = {
+            0x00E0: {'description': 'Overcurrent', 'blink_count': 1},
+            0x00C0: {'description': 'Overvoltage', 'blink_count': 2},
+            0x00A1: {'description': 'Current sampling circuit fault', 'blink_count': 3},
+            0x0152: {'description': 'Shaft lock (phase loss) fault', 'blink_count': 4},
+            0x0240: {'description': 'EEPROM fault', 'blink_count': 5},
+            0x05F0: {'description': 'Parameter auto-tuning fault', 'blink_count': 6},
+            0x0180: {'description': 'Position error alarm', 'blink_count': 7},
+            0x0150: {'description': 'Encoder disconnection detection', 'blink_count': 8},
+            0x00F0: {'description': 'Overtemperature', 'blink_count': 9},
+            0x0210: {'description': 'Input IO configuration duplicate', 'blink_count': 10}
+        }
+        
+        if fault_code == 0x0000:
+            return {'description': 'No fault', 'blink_count': 0}
+        elif fault_code in fault_descriptions:
+            return fault_descriptions[fault_code]
+        else:
+            return {'description': f'Unknown fault (0x{fault_code:04X})', 'blink_count': -1}
 
     def reset_software_limit(self):
         """

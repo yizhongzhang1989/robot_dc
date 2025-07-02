@@ -43,14 +43,10 @@ class MotorControlNode(Node):
         """
         Check alarm status, if alarm exists then reset it. done_callback will be called after processing.
         """
-        def alarm_cb(val):
-            if isinstance(val, list):
-                alarm_val = val[0]
-            else:
-                alarm_val = val
-            if alarm_val != 0:
+        def alarm_cb(fault_info):
+            if fault_info and fault_info['fault_code'] != 0x0000:
                 self.motor.reset_alarm()
-                self.get_logger().info(f"Alarm detected (0x603F={alarm_val}), reset command sent.")
+                self.get_logger().info(f"Alarm detected: {fault_info['fault_description']} (0x{fault_info['fault_code']:04X}, ALM blinks {fault_info['alm_blink_count']} times), reset command sent.")
             if done_callback:
                 done_callback()
         self.motor.get_alarm_status(alarm_cb)
@@ -78,6 +74,19 @@ class MotorControlNode(Node):
                             lambda pos: self.get_logger().info(f"ℹ️ Current position: {pos}") if pos is not None else
                                         self.get_logger().error("❌ Failed to read position")
                         )
+                    case "get_status":
+                        self.motor.get_motion_status(
+                            lambda status: self.get_logger().info(f"ℹ️ Motion status: fault={status['fault']}, enabled={status['enabled']}, running={status['running']}, command_completed={status['command_completed']}, path_completed={status['path_completed']}, homing_completed={status['homing_completed']}, raw_register=0x{status['raw_register']:04X}") if status is not None else
+                                        self.get_logger().error("❌ Failed to read motion status")
+                        )
+                    case "get_alarm":
+                        self.motor.get_alarm_status(
+                            lambda fault_info: self.get_logger().info(f"ℹ️ Alarm status: {fault_info['fault_description']} (0x{fault_info['fault_code']:04X}, ALM blinks {fault_info['alm_blink_count']} times)") if fault_info is not None else
+                                        self.get_logger().error("❌ Failed to read alarm status")
+                        )
+                    case "reset_alarm":
+                        self.motor.reset_alarm()
+                        self.get_logger().info("✅ Alarm reset command sent")
                     case "set_zero":
                         self.motor.set_zero_position()
                     case "set_pos":
@@ -180,6 +189,12 @@ class MotorControlNode(Node):
                         self.motor.set_target_position(offset)
                         self.motor.move_relative()
                         self.get_logger().info(f"home_back (relative): move with speed {speed}, offset {offset}")
+                    case "save_params":
+                        self.motor.save_all_params_to_eeprom()
+                        self.get_logger().info("✅ All parameters saved to EEPROM.")
+                    case "factory_reset":
+                        self.motor.factory_reset()
+                        self.get_logger().info("✅ All parameters restored to factory defaults.")
                     case _:
                         self.get_logger().warn(f"Unknown command: {cmd}")
             except Exception as e:
