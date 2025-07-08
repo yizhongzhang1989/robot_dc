@@ -87,6 +87,28 @@ class JoystickTeleop(Node):
                 self.send_motor_cmd(self.motor_left_pub, 'reset_limit')
                 self.send_motor_cmd(self.motor_right_pub, 'reset_limit')
 
+        # --- New logic for back (button 8) and start (button 9) ---
+        if msg.buttons[8] != self.last_joy_msg.buttons[8]:  # Back button
+            if msg.buttons[8] == 1:
+                self.get_logger().info('Back button pressed: set motor1 and motor2 velocity to 100 and move')
+                self.send_motor_cmd(self.motor_left_pub, 'set_vel 100')
+                self.send_motor_cmd(self.motor_right_pub, 'set_vel 100')
+                self.send_motor_cmd(self.motor_left_pub, 'move_vel')
+                self.send_motor_cmd(self.motor_right_pub, 'move_vel')
+            else:
+                # If released, you may want to stop motors (optional)
+                pass
+        if msg.buttons[9] != self.last_joy_msg.buttons[9]:  # Start button
+            if msg.buttons[9] == 1:
+                self.get_logger().info('Start button pressed: set motor1 and motor2 velocity to -100 and move')
+                self.send_motor_cmd(self.motor_left_pub, 'set_vel -100')
+                self.send_motor_cmd(self.motor_right_pub, 'set_vel -100')
+                self.send_motor_cmd(self.motor_left_pub, 'move_vel')
+                self.send_motor_cmd(self.motor_right_pub, 'move_vel')
+            else:
+                # If released, you may want to stop motors (optional)
+                pass
+
         self.last_joy_msg = copy.deepcopy(msg)
 
     def handle_motor_axis_control(self, axis_value, publisher, motor_id):
@@ -111,11 +133,11 @@ class JoystickTeleop(Node):
             self.send_motor_cmd(publisher, f'set_vel {abs(speed)}')
 
             if speed < 0:
-                self.get_logger().info(f'Motor {motor_id}: set_pos 0')
-                self.send_motor_cmd(publisher, 'set_pos 0')
+                self.get_logger().info(f'Motor {motor_id}: set_pos 1')
+                self.send_motor_cmd(publisher, 'set_pos 1')
             else:
-                self.get_logger().info(f'Motor {motor_id}: set_pos 4095')
-                self.send_motor_cmd(publisher, 'set_pos 4095')
+                self.get_logger().info(f'Motor {motor_id}: set_pos 4090')
+                self.send_motor_cmd(publisher, 'set_pos 4090')
 
     def handle_platform_control(self, axis_index, axis_value):
         if axis_index == 4:     # forward/backward
