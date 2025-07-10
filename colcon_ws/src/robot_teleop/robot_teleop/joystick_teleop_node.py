@@ -3,11 +3,13 @@ from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from std_msgs.msg import String
 import copy
+import datetime
 
 
 class JoystickTeleop(Node):
     def __init__(self):
         super().__init__('joystick_teleop')
+        self.seq_id = 0
 
         self.motor_left_pub = self.create_publisher(String, '/motor1/cmd', 10)
         self.motor_right_pub = self.create_publisher(String, '/motor2/cmd', 10)
@@ -173,10 +175,15 @@ class JoystickTeleop(Node):
             self.get_logger().info('RT button pressed: stopping motor2')
             self.send_motor_cmd(self.motor_right_pub, 'stop')
 
-    def send_motor_cmd(self, pub, command: str):
+    def send_motor_cmd(self, pub, command: str, seq_id=None):
+        if seq_id is None:
+            self.seq_id += 1
+            seq_id = self.seq_id
         msg = String()
-        msg.data = command
+        msg.data = f"seq:{seq_id}|{command}"
         pub.publish(msg)
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+        self.get_logger().info(f"[SEQ {seq_id}] [{now}] Sent command: {command}")
 
 
 def main(args=None):

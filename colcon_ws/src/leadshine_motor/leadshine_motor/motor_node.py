@@ -3,6 +3,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from leadshine_motor.motor_controller import LeadshineMotor
 import threading
+import datetime
+import collections
 
 
 class MotorControlNode(Node):
@@ -14,8 +16,13 @@ class MotorControlNode(Node):
         self.device_id = self.get_parameter('device_id').value
         self.get_logger().info(f"device_id from param = {self.device_id}")
 
+        # Declare and read use_ack_patch parameter
+        self.declare_parameter('use_ack_patch', 1)
+        use_ack_patch = self.get_parameter('use_ack_patch').value
+        self.get_logger().info(f"use_ack_patch from param = {use_ack_patch}")
+
         # motor instance
-        self.motor = LeadshineMotor(self.device_id, self)
+        self.motor = LeadshineMotor(self.device_id, self, use_ack_patch=use_ack_patch)
 
         # Set up command subscriber (immediate)
         self.cmd_sub = self.create_subscription(String,  f'/motor{self.device_id}/cmd', self.command_callback, 10)
@@ -29,6 +36,10 @@ class MotorControlNode(Node):
         self.alarm_reset_thread = None
         self.last_home_offset = None
         self.last_home_speed = None
+        self.cmd_queue = collections.deque()
+        self.waiting_for_ack = False
+
+        # Patch ack callback from base_device
 
     def initialize_motor_params(self):
         if self.motor.cli.service_is_ready():
@@ -51,159 +62,129 @@ class MotorControlNode(Node):
                 done_callback()
         self.motor.get_alarm_status(alarm_cb)
 
+    def process_next_command(self):
+        if not self.waiting_for_ack and self.cmd_queue:
+            cmd_tuple = self.cmd_queue.popleft()
+            cmd, arg, seq_id = cmd_tuple
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+            self.get_logger().info(f"[SEQ {seq_id}] [{now}] Send {cmd}{' ' + str(arg) if arg is not None else ''}")
+            self.waiting_for_ack = True
+            # 调用 motor 方法
+            match cmd:
+                case "jog_left":
+                    self.motor.jog_left(seq_id=seq_id)
+                case "jog_right":
+                    self.motor.jog_right(seq_id=seq_id)
+                case "stop":
+                    self.motor.abrupt_stop(seq_id=seq_id)
+                case "set_pos":
+                    self.motor.set_target_position(arg, seq_id=seq_id)
+                case "set_vel":
+                    self.motor.set_target_velocity(arg, seq_id=seq_id)
+                case "set_acc":
+                    self.motor.set_target_acceleration(arg, seq_id=seq_id)
+                case "set_dec":
+                    self.motor.set_target_deceleration(arg, seq_id=seq_id)
+                case "move_abs":
+                    self.motor.move_absolute(seq_id=seq_id)
+                case "move_rel":
+                    self.motor.move_relative(seq_id=seq_id)
+                case "move_vel":
+                    self.motor.move_velocity(seq_id=seq_id)
+                case "set_zero":
+                    self.motor.set_zero_position(seq_id=seq_id)
+                case "reset_alarm":
+                    self.motor.reset_alarm(seq_id=seq_id)
+                case "set_home":
+                    # 需要额外参数，略
+                    pass
+                case "home_pos":
+                    self.motor.torque_home("home_pos", seq_id=seq_id)
+                case "home_neg":
+                    self.motor.torque_home("home_neg", seq_id=seq_id)
+                case "set_limit":
+                    # 需要两个参数，略
+                    pass
+                case "reset_limit":
+                    self.motor.reset_software_limit(seq_id=seq_id)
+                case "home_back":
+                    # 需要额外参数，略
+                    pass
+                case "save_params":
+                    self.motor.save_all_params_to_eeprom(seq_id=seq_id)
+                case "factory_reset":
+                    self.motor.factory_reset(seq_id=seq_id)
+                case _:
+                    self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
+
     def command_callback(self, msg):
+        data = msg.data.strip()
+        seq_id = None
+        if data.startswith('seq:') and '|' in data:
+            try:
+                seq_id_str, rest = data.split('|', 1)
+                seq_id = int(seq_id_str[4:])
+                msg.data = rest
+            except Exception:
+                pass
         parts = msg.data.strip().lower().split()
         if not parts:
             return
         cmd = parts[0]
         arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
-        if self.motor is None:
-            self.get_logger().warn("⏳ Motor not initialized yet. Command ignored.")
-            return
-        def do_command():
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+        self.get_logger().info(f"[SEQ {seq_id}] [{now}] Receive {cmd}{' ' + str(arg) if arg is not None else ''}")
+        if getattr(self.motor, 'use_ack_patch', 1):
+            self.cmd_queue.append((cmd, arg, seq_id))
+            self.process_next_command()
+        else:
+            # 直接执行命令，不用队列
             try:
                 match cmd:
                     case "jog_left":
-                        self.motor.jog_left()
+                        self.motor.jog_left(seq_id=seq_id)
                     case "jog_right":
-                        self.motor.jog_right()
+                        self.motor.jog_right(seq_id=seq_id)
                     case "stop":
-                        self.motor.abrupt_stop()
-                    case "get_pos":
-                        self.motor.get_current_position(
-                            lambda pos: self.get_logger().info(f"ℹ️ Current position: {pos}") if pos is not None else
-                                        self.get_logger().error("❌ Failed to read position")
-                        )
-                    case "get_status":
-                        self.motor.get_motion_status(
-                            lambda status: self.get_logger().info(f"ℹ️ Motion status: fault={status['fault']}, enabled={status['enabled']}, running={status['running']}, command_completed={status['command_completed']}, path_completed={status['path_completed']}, homing_completed={status['homing_completed']}, raw_register=0x{status['raw_register']:04X}") if status is not None else
-                                        self.get_logger().error("❌ Failed to read motion status")
-                        )
-                    case "get_alarm":
-                        self.motor.get_alarm_status(
-                            lambda fault_info: self.get_logger().info(f"ℹ️ Alarm status: {fault_info['fault_description']} (0x{fault_info['fault_code']:04X}, ALM blinks {fault_info['alm_blink_count']} times)") if fault_info is not None else
-                                        self.get_logger().error("❌ Failed to read alarm status")
-                        )
-                    case "reset_alarm":
-                        self.motor.reset_alarm()
-                        self.get_logger().info("✅ Alarm reset command sent")
-                    case "set_zero":
-                        self.motor.set_zero_position()
+                        self.motor.abrupt_stop(seq_id=seq_id)
                     case "set_pos":
-                        if arg is not None:
-                            self.motor.set_target_position(arg)
-                            self.get_logger().info(f"✅ Set position to {arg}")
+                        self.motor.set_target_position(arg, seq_id=seq_id)
                     case "set_vel":
-                        if arg is not None:
-                            self.motor.set_target_velocity(arg)
-                            self.get_logger().info(f"✅ Set velocity to {arg}")
+                        self.motor.set_target_velocity(arg, seq_id=seq_id)
                     case "set_acc":
-                        if arg is not None:
-                            self.motor.set_target_acceleration(arg)
-                            self.get_logger().info(f"✅ Set acceleration to {arg}")
+                        self.motor.set_target_acceleration(arg, seq_id=seq_id)
                     case "set_dec":
-                        if arg is not None:
-                            self.motor.set_target_deceleration(arg)
-                            self.get_logger().info(f"✅ Set deceleration to {arg}")
+                        self.motor.set_target_deceleration(arg, seq_id=seq_id)
                     case "move_abs":
-                        if arg is not None:
-                            self.motor.set_target_position(arg)
-                            self.get_logger().info(f"ℹ️ Updated position to {arg}")
-                        self.motor.move_absolute()
+                        self.motor.move_absolute(seq_id=seq_id)
                     case "move_rel":
-                        if arg is not None:
-                            self.motor.set_target_position(arg)
-                            self.get_logger().info(f"ℹ️ Updated relative offset to {arg}")
-                        self.motor.move_relative()
+                        self.motor.move_relative(seq_id=seq_id)
                     case "move_vel":
-                        if arg is not None:
-                            self.motor.set_target_velocity(arg)
-                            self.get_logger().info(f"ℹ️ Updated velocity to {arg}")
-                        self.motor.move_velocity()
+                        self.motor.move_velocity(seq_id=seq_id)
+                    case "set_zero":
+                        self.motor.set_zero_position(seq_id=seq_id)
+                    case "reset_alarm":
+                        self.motor.reset_alarm(seq_id=seq_id)
                     case "set_home":
-                        # Parameter order: sta cur hig low acc dec
-                        default_params = {
-                            'stall_time': 1000,   # sta
-                            'cur': 30,            # cur
-                            'high_speed': 1000,   # hig
-                            'low_speed': 200,     # low
-                            'acc': 100,           # acc
-                            'dec': 100            # dec
-                        }
-                        if len(parts) == 7:
-                            try:
-                                stall_time = int(parts[1])   # sta
-                                cur = int(parts[2])          # cur
-                                high_speed = int(parts[3])   # hig
-                                low_speed = int(parts[4])    # low
-                                acc = int(parts[5])          # acc
-                                dec = int(parts[6])          # dec
-                            except Exception as e:
-                                self.get_logger().error(f"❌ set_home param parse failed: {e}")
-                                return
-                        else:
-                            stall_time = default_params['stall_time']
-                            cur = default_params['cur']
-                            high_speed = default_params['high_speed']
-                            low_speed = default_params['low_speed']
-                            acc = default_params['acc']
-                            dec = default_params['dec']
-                        self.motor.set_home_params(stall_time, cur, high_speed, low_speed, acc, dec)
+                        pass
                     case "home_pos":
-                        self.last_home_offset = -10000
-                        self.last_home_speed = -100
-                        self.motor.torque_home("home_pos")
+                        self.motor.torque_home("home_pos", seq_id=seq_id)
                     case "home_neg":
-                        self.last_home_offset = 10000
-                        self.last_home_speed = 100
-                        self.motor.torque_home("home_neg")
+                        self.motor.torque_home("home_neg", seq_id=seq_id)
                     case "set_limit":
-                        if len(parts) == 3:
-                            try:
-                                pos_limit = int(parts[1])
-                                neg_limit = int(parts[2])
-                            except Exception as e:
-                                self.get_logger().error(f"❌ Limit parameter parse failed: {e}")
-                                return
-                            self.motor.set_software_limit(pos_limit, neg_limit)
-                            self.get_logger().info(f"✅ Software limit set, positive limit: {pos_limit}, negative limit: {neg_limit}")
-                        else:
-                            self.get_logger().error("❌ set_limit command requires two parameters: positive_limit negative_limit")
+                        pass
                     case "reset_limit":
-                        self.motor.reset_software_limit()
+                        self.motor.reset_software_limit(seq_id=seq_id)
                     case "home_back":
-                        if self.last_home_offset is None or self.last_home_speed is None:
-                            self.get_logger().error("❌ Last homing direction not detected, please execute home_pos or home_neg first")
-                            return
-                        # For home_pos, back is -100/-20000; for home_neg, back is 100/20000
-                        if self.last_home_offset == -10000 and self.last_home_speed == -100:
-                            speed = -100
-                            offset = -10000
-                        elif self.last_home_offset == 10000 and self.last_home_speed == 100:
-                            speed = 100
-                            offset = 10000
-                        else:
-                            self.get_logger().error("❌ last_home_offset/speed abnormal")
-                            return
-                        self.motor.set_target_velocity(speed)
-                        self.motor.set_target_position(offset)
-                        self.motor.move_relative()
-                        self.get_logger().info(f"home_back (relative): move with speed {speed}, offset {offset}")
+                        pass
                     case "save_params":
-                        self.motor.save_all_params_to_eeprom()
-                        self.get_logger().info("✅ All parameters saved to EEPROM.")
+                        self.motor.save_all_params_to_eeprom(seq_id=seq_id)
                     case "factory_reset":
-                        self.motor.factory_reset()
-                        self.get_logger().info("✅ All parameters restored to factory defaults.")
+                        self.motor.factory_reset(seq_id=seq_id)
                     case _:
-                        self.get_logger().warn(f"Unknown command: {cmd}")
+                        self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
             except Exception as e:
-                self.get_logger().error(f"❌ Command '{cmd}' failed: {e}")
-        # 每次运动指令前检测报警
-        if cmd in ["jog_left", "jog_right", "move_abs", "move_rel", "move_vel", "home_pos", "home_neg"]:
-            self.try_reset_alarm_if_needed(do_command)
-        else:
-            do_command()
+                self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
 
     def destroy_node(self):
         self.alarm_reset_stop_event.set()

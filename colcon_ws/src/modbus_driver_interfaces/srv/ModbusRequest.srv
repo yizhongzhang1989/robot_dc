@@ -3,6 +3,8 @@ uint8 slave_id
 uint16 address
 uint16 count
 uint16[] values
+int32 seq_id
 ---
 bool success
-uint16[] response
+int32[] response
+int32 ack
