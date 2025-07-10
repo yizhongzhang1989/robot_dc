@@ -2,7 +2,6 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from std_msgs.msg import String
-import copy
 import datetime
 
 
@@ -11,169 +10,196 @@ class JoystickTeleop(Node):
         super().__init__('joystick_teleop')
         self.seq_id = 0
 
+        # Publishers
         self.motor_left_pub = self.create_publisher(String, '/motor1/cmd', 10)
         self.motor_right_pub = self.create_publisher(String, '/motor2/cmd', 10)
         self.servo_left_pub = self.create_publisher(String, '/motor17/cmd', 10)
         self.servo_right_pub = self.create_publisher(String, '/motor18/cmd', 10)
         self.platform_pub = self.create_publisher(String, '/platform/cmd', 10)
 
+        # Subscriptions
         self.create_subscription(Joy, '/joy', self.joy_callback, 10)
+
+        # Timer for throttled command sending
+        self.timer = self.create_timer(0.05, self.command_timer_cb)
+
+        # State
+        self.target_speeds = {
+            'motor1': 0,
+            'motor2': 0,
+            'servo17': 0,
+            'servo18': 0,
+            'platform_forward': 0,
+            'platform_up': 0,
+        }
+        self.last_sent_speeds = dict(self.target_speeds)
 
         self.last_joy_msg = None
 
     def joy_callback(self, msg: Joy):
+        # Cache last message
         if self.last_joy_msg is None:
-            self.last_joy_msg = copy.deepcopy(msg)
+            self.last_joy_msg = msg
 
-        # Axis-based control
-        if msg.axes[1] != self.last_joy_msg.axes[1]:  # Left stick vertical
-            self.handle_motor_axis_control(msg.axes[1], self.motor_left_pub, motor_id=1)
+        # Update target speeds
 
-        if msg.axes[3] != self.last_joy_msg.axes[3]:  # Right stick vertical
-            self.handle_motor_axis_control(msg.axes[3], self.motor_right_pub, motor_id=2)
+        # Motor1: Left stick vertical
+        self.target_speeds['motor1'] = -int(round(msg.axes[1] * 300))
+        # Motor2: Right stick vertical
+        self.target_speeds['motor2'] = -int(round(msg.axes[3] * 300))
+        # Servo17: Left stick horizontal
+        self.target_speeds['servo17'] = -int(round(msg.axes[0] * 5))
+        # Servo18: Right stick horizontal
+        self.target_speeds['servo18'] = -int(round(msg.axes[2] * 5))
 
-        if msg.axes[0] != self.last_joy_msg.axes[0]:  # Left stick horizontal
-            self.handle_servo_axis_control(msg.axes[0], self.servo_left_pub, motor_id=17)
-
-        if msg.axes[2] != self.last_joy_msg.axes[2]:  # Right stick horizontal
-            self.handle_servo_axis_control(msg.axes[2], self.servo_right_pub, motor_id=18)
-
-        if msg.axes[4] != self.last_joy_msg.axes[4]:  # Platform control
-            self.handle_platform_control(4, msg.axes[4])
-
-        if msg.axes[5] != self.last_joy_msg.axes[5]:  # Platform control
-            self.handle_platform_control(5, msg.axes[5])
-
-        # Button-based control
-        if msg.buttons[6] != self.last_joy_msg.buttons[6]:  # LT button
-            self.handle_lt_button(msg.buttons[6])
-
-        if msg.buttons[7] != self.last_joy_msg.buttons[7]:  # RT button
-            self.handle_rt_button(msg.buttons[7])
-
-        if msg.buttons[0] != self.last_joy_msg.buttons[0]:  # X button
-            if msg.buttons[0] == 1:
-                self.get_logger().info('X button pressed: motor1 home_back, motor2 home_back')
-                self.send_motor_cmd(self.motor_left_pub, 'home_back')
-                self.send_motor_cmd(self.motor_right_pub, 'home_back')
-
-        if msg.buttons[1] != self.last_joy_msg.buttons[1]:
-            if msg.buttons[1] == 1:
-                self.get_logger().info('A button pressed: motor1 home_pos, motor2 home_pos')
-                self.send_motor_cmd(self.motor_left_pub, 'set_home 1000 30 250 250 200 200')
-                self.send_motor_cmd(self.motor_right_pub, 'set_home 1000 30 250 250 200 200')
-                self.send_motor_cmd(self.motor_left_pub, 'home_pos')
-                self.send_motor_cmd(self.motor_right_pub, 'home_pos')
-
-        if msg.buttons[2] != self.last_joy_msg.buttons[2]:  # B button
-            if msg.buttons[2] == 1:
-                self.get_logger().info('B button pressed: motor1 home_neg, motor2 home_neg')
-                self.send_motor_cmd(self.motor_left_pub, 'home_neg')
-                self.send_motor_cmd(self.motor_right_pub, 'home_neg')
-
-        if msg.buttons[3] != self.last_joy_msg.buttons[3]:  # Y button
-            if msg.buttons[3] == 1:
-                self.get_logger().info('Y button pressed: motor1 set_zero, motor2 set_zero')
-                self.send_motor_cmd(self.motor_left_pub, 'set_zero')
-                self.send_motor_cmd(self.motor_right_pub, 'set_zero')
-
-        if msg.buttons[4] != self.last_joy_msg.buttons[4]:  # LB button
-            if msg.buttons[4] == 1:
-                self.get_logger().info('LB button pressed: motor1 set_limit 0 -902000, motor2 set_limit 0 -902000')
-                self.send_motor_cmd(self.motor_left_pub, 'set_limit 100 -902000')
-                self.send_motor_cmd(self.motor_right_pub, 'set_limit 100 -902000')
-
-        if msg.buttons[5] != self.last_joy_msg.buttons[5]:  # RB button
-            if msg.buttons[5] == 1:
-                self.get_logger().info('RB button pressed: motor1 reset_limit, motor2 reset_limit')
-                self.send_motor_cmd(self.motor_left_pub, 'reset_limit')
-                self.send_motor_cmd(self.motor_right_pub, 'reset_limit')
-
-        # --- New logic for back (button 8) and start (button 9) ---
-        if msg.buttons[8] != self.last_joy_msg.buttons[8]:  # Back button
-            if msg.buttons[8] == 1:
-                self.get_logger().info('Back button pressed: set motor1 and motor2 velocity to 100 and move')
-                self.send_motor_cmd(self.motor_left_pub, 'set_vel 100')
-                self.send_motor_cmd(self.motor_right_pub, 'set_vel 100')
-                self.send_motor_cmd(self.motor_left_pub, 'move_vel')
-                self.send_motor_cmd(self.motor_right_pub, 'move_vel')
-            else:
-                # If released, you may want to stop motors (optional)
-                pass
-        if msg.buttons[9] != self.last_joy_msg.buttons[9]:  # Start button
-            if msg.buttons[9] == 1:
-                self.get_logger().info('Start button pressed: set motor1 and motor2 velocity to -100 and move')
-                self.send_motor_cmd(self.motor_left_pub, 'set_vel -100')
-                self.send_motor_cmd(self.motor_right_pub, 'set_vel -100')
-                self.send_motor_cmd(self.motor_left_pub, 'move_vel')
-                self.send_motor_cmd(self.motor_right_pub, 'move_vel')
-            else:
-                # If released, you may want to stop motors (optional)
-                pass
-
-        self.last_joy_msg = copy.deepcopy(msg)
-
-    def handle_motor_axis_control(self, axis_value, publisher, motor_id):
-        speed = -int(round(axis_value * 300))
-
-        if speed == 0:
-            self.get_logger().info(f'Motor {motor_id}: stop')
-            self.send_motor_cmd(publisher, 'stop')
+        # Platform: axes[4] forward/backward
+        if msg.axes[4] > 0.5:
+            self.target_speeds['platform_forward'] = 1
+        elif msg.axes[4] < -0.5:
+            self.target_speeds['platform_forward'] = -1
         else:
-            self.get_logger().info(f'Motor {motor_id}: set_vel {speed} + move_vel')
-            self.send_motor_cmd(publisher, f'set_vel {speed}')
-            self.send_motor_cmd(publisher, 'move_vel')
+            self.target_speeds['platform_forward'] = 0
 
-    def handle_servo_axis_control(self, axis_value, publisher, motor_id):
-        speed = -int(round(axis_value * 5))
-
-        if speed == 0:
-            self.get_logger().info(f'Motor {motor_id}: stop')
-            self.send_motor_cmd(publisher, 'stop')
+        # Platform: axes[5] up/down
+        if msg.axes[5] > 0.5:
+            self.target_speeds['platform_up'] = 1
+        elif msg.axes[5] < -0.5:
+            self.target_speeds['platform_up'] = -1
         else:
-            self.get_logger().info(f'Motor {motor_id}: set_vel {speed}')
-            self.send_motor_cmd(publisher, f'set_vel {abs(speed)}')
+            self.target_speeds['platform_up'] = 0
 
-            if speed < 0:
-                self.get_logger().info(f'Motor {motor_id}: set_pos 1')
-                self.send_motor_cmd(publisher, 'set_pos 1')
+        # Buttons handled immediately
+        self.handle_buttons(msg)
+
+        self.last_joy_msg = msg
+
+    def command_timer_cb(self):
+        # Motor1
+        self.send_motor_velocity('motor1', self.motor_left_pub, motor_id=1)
+        # Motor2
+        self.send_motor_velocity('motor2', self.motor_right_pub, motor_id=2)
+        # Servo17
+        self.send_servo_command('servo17', self.servo_left_pub, motor_id=17)
+        # Servo18
+        self.send_servo_command('servo18', self.servo_right_pub, motor_id=18)
+        # Platform
+        self.send_platform_command()
+
+    def send_motor_velocity(self, key, publisher, motor_id):
+        target = self.target_speeds[key]
+        last = self.last_sent_speeds[key]
+
+        if target != last:
+            if target == 0:
+                self.get_logger().info(f'Motor {motor_id}: stop')
+                self.send_motor_cmd(publisher, 'stop')
             else:
-                self.get_logger().info(f'Motor {motor_id}: set_pos 4090')
-                self.send_motor_cmd(publisher, 'set_pos 4090')
+                self.get_logger().info(f'Motor {motor_id}: set_vel {target} + move_vel')
+                self.send_motor_cmd(publisher, f'set_vel {target}')
+                self.send_motor_cmd(publisher, 'move_vel')
+            self.last_sent_speeds[key] = target
 
-    def handle_platform_control(self, axis_index, axis_value):
-        if axis_index == 4:     # forward/backward
-            if axis_value > 0.5:
+    def send_servo_command(self, key, publisher, motor_id):
+        target = self.target_speeds[key]
+        last = self.last_sent_speeds[key]
+
+        if target != last:
+            if target == 0:
+                self.get_logger().info(f'Motor {motor_id}: stop')
+                self.send_motor_cmd(publisher, 'stop')
+            else:
+                self.get_logger().info(f'Motor {motor_id}: set_vel {abs(target)}')
+                self.send_motor_cmd(publisher, f'set_vel {abs(target)}')
+                pos = '1' if target < 0 else '4090'
+                self.get_logger().info(f'Motor {motor_id}: set_pos {pos}')
+                self.send_motor_cmd(publisher, f'set_pos {pos}')
+            self.last_sent_speeds[key] = target
+
+    def send_platform_command(self):
+        fwd = self.target_speeds['platform_forward']
+        up = self.target_speeds['platform_up']
+
+        if fwd != self.last_sent_speeds['platform_forward']:
+            if fwd == 1:
                 self.get_logger().info('Platform: forward')
                 self.send_motor_cmd(self.platform_pub, 'forward 1')
-            elif axis_value < -0.5:
+            elif fwd == -1:
                 self.get_logger().info('Platform: backward')
                 self.send_motor_cmd(self.platform_pub, 'backward 1')
             else:
-                self.get_logger().info('Platform: stop')
+                self.get_logger().info('Platform: stop forward')
                 self.send_motor_cmd(self.platform_pub, 'forward 0')
-        elif axis_index == 5:   # up/down
-            if axis_value > 0.5:
+            self.last_sent_speeds['platform_forward'] = fwd
+
+        if up != self.last_sent_speeds['platform_up']:
+            if up == 1:
                 self.get_logger().info('Platform: up')
                 self.send_motor_cmd(self.platform_pub, 'up 1')
-            elif axis_value < -0.5:
+            elif up == -1:
                 self.get_logger().info('Platform: down')
                 self.send_motor_cmd(self.platform_pub, 'down 1')
             else:
-                self.get_logger().info('Platform: stop')
+                self.get_logger().info('Platform: stop up')
                 self.send_motor_cmd(self.platform_pub, 'up 0')
+            self.last_sent_speeds['platform_up'] = up
 
-    def handle_lt_button(self, button_value):
-        """Handle LT button press to stop motor1"""
-        if button_value == 1:  # Button pressed
+    def handle_buttons(self, msg):
+        # Buttons (immediate response)
+        buttons = msg.buttons
+
+        if buttons[6] == 1:
             self.get_logger().info('LT button pressed: stopping motor1')
             self.send_motor_cmd(self.motor_left_pub, 'stop')
 
-    def handle_rt_button(self, button_value):
-        """Handle RT button press to stop motor2"""
-        if button_value == 1:  # Button pressed
+        if buttons[7] == 1:
             self.get_logger().info('RT button pressed: stopping motor2')
             self.send_motor_cmd(self.motor_right_pub, 'stop')
+
+        if buttons[0] == 1:
+            self.get_logger().info('X button pressed: home_back')
+            self.send_motor_cmd(self.motor_left_pub, 'home_back')
+            self.send_motor_cmd(self.motor_right_pub, 'home_back')
+
+        if buttons[1] == 1:
+            self.get_logger().info('A button pressed: set_home + home_pos')
+            self.send_motor_cmd(self.motor_left_pub, 'set_home 1000 30 250 250 200 200')
+            self.send_motor_cmd(self.motor_right_pub, 'set_home 1000 30 250 250 200 200')
+            self.send_motor_cmd(self.motor_left_pub, 'home_pos')
+            self.send_motor_cmd(self.motor_right_pub, 'home_pos')
+
+        if buttons[2] == 1:
+            self.get_logger().info('B button pressed: home_neg')
+            self.send_motor_cmd(self.motor_left_pub, 'home_neg')
+            self.send_motor_cmd(self.motor_right_pub, 'home_neg')
+
+        if buttons[3] == 1:
+            self.get_logger().info('Y button pressed: set_zero')
+            self.send_motor_cmd(self.motor_left_pub, 'set_zero')
+            self.send_motor_cmd(self.motor_right_pub, 'set_zero')
+
+        if buttons[4] == 1:
+            self.get_logger().info('LB button pressed: set_limit')
+            self.send_motor_cmd(self.motor_left_pub, 'set_limit 100 -902000')
+            self.send_motor_cmd(self.motor_right_pub, 'set_limit 100 -902000')
+
+        if buttons[5] == 1:
+            self.get_logger().info('RB button pressed: reset_limit')
+            self.send_motor_cmd(self.motor_left_pub, 'reset_limit')
+            self.send_motor_cmd(self.motor_right_pub, 'reset_limit')
+
+        if buttons[8] == 1:
+            self.get_logger().info('Back button pressed: set_vel + move_vel +100')
+            self.send_motor_cmd(self.motor_left_pub, 'set_vel 100')
+            self.send_motor_cmd(self.motor_right_pub, 'set_vel 100')
+            self.send_motor_cmd(self.motor_left_pub, 'move_vel')
+            self.send_motor_cmd(self.motor_right_pub, 'move_vel')
+
+        if buttons[9] == 1:
+            self.get_logger().info('Start button pressed: set_vel + move_vel -100')
+            self.send_motor_cmd(self.motor_left_pub, 'set_vel -100')
+            self.send_motor_cmd(self.motor_right_pub, 'set_vel -100')
+            self.send_motor_cmd(self.motor_left_pub, 'move_vel')
+            self.send_motor_cmd(self.motor_right_pub, 'move_vel')
 
     def send_motor_cmd(self, pub, command: str, seq_id=None):
         if seq_id is None:

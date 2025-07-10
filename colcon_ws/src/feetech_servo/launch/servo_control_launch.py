@@ -9,7 +9,7 @@ def generate_launch_description():
             name='motor17',
             output='screen',
             emulate_tty=True,
-            parameters=[{'device_id': 17, 'use_ack_patch': 0}],
+            parameters=[{'device_id': 17, 'use_ack_patch': 1}],
         ),
         Node(
             package='feetech_servo',
@@ -17,6 +17,6 @@ def generate_launch_description():
             name='motor18',
             output='screen',
             emulate_tty=True,
-            parameters=[{'device_id': 18, 'use_ack_patch': 0}],
+            parameters=[{'device_id': 18, 'use_ack_patch': 1}],
         ),
     ])
