@@ -28,7 +28,7 @@ class PlatformControlNode(Node):
             self.platform.initialize()
             self.get_logger().info("Platform initialized successfully.")
             self.service_check_timer.cancel()
-
+            
     def process_next_command(self):
         if not self.waiting_for_ack and self.cmd_queue:
             cmd_tuple = self.cmd_queue.popleft()
@@ -37,21 +37,20 @@ class PlatformControlNode(Node):
             self.get_logger().info(f"[SEQ {seq_id}] [{now}] Send {cmd}{' ' + str(arg) if arg is not None else ''}")
             self.waiting_for_ack = True
             try:
-                match cmd:
-                    case "up":
-                        if arg is not None:
-                            self.platform.up(arg, seq_id=seq_id)
-                    case "down":
-                        if arg is not None:
-                            self.platform.down(arg, seq_id=seq_id)
-                    case "forward":
-                        if arg is not None:
-                            self.platform.forward(arg, seq_id=seq_id)
-                    case "backward":
-                        if arg is not None:
-                            self.platform.backward(arg, seq_id=seq_id)
-                    case _:
-                        self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
+                if cmd == "up":
+                    if arg is not None:
+                        self.platform.up(arg, seq_id=seq_id)
+                elif cmd == "down":
+                    if arg is not None:
+                        self.platform.down(arg, seq_id=seq_id)
+                elif cmd == "forward":
+                    if arg is not None:
+                        self.platform.forward(arg, seq_id=seq_id)
+                elif cmd == "backward":
+                    if arg is not None:
+                        self.platform.backward(arg, seq_id=seq_id)
+                else:
+                    self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
             except Exception as e:
                 self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
 
@@ -72,6 +71,7 @@ class PlatformControlNode(Node):
         arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
         self.get_logger().info(f"[SEQ {seq_id}] [{now}] Receive {cmd}{' ' + str(arg) if arg is not None else ''}")
+        self.get_logger().info(f"[DEBUG] use_ack_patch in callback: {getattr(self.platform, 'use_ack_patch', 'NO_ATTR')}")
         if getattr(self.platform, 'use_ack_patch', 1):
             self.cmd_queue.append((cmd, arg, seq_id))
             self.process_next_command()
@@ -80,20 +80,19 @@ class PlatformControlNode(Node):
                 self.get_logger().info(f"[SEQ {seq_id}] [use_ack_patch=0] Executing {cmd}({arg})")
                 if cmd in ["up", "down", "forward", "backward"] and arg is None:
                     self.get_logger().warn(f"[SEQ {seq_id}] [use_ack_patch=0] Command '{cmd}' missing argument!")
-                match cmd:
-                    case "up":
-                        if arg is not None:
+                if cmd == "up":
+                    if arg is not None:
                             self.platform.up(bool(arg), seq_id=seq_id)
-                    case "down":
-                        if arg is not None:
+                elif cmd == "down":
+                    if arg is not None:
                             self.platform.down(bool(arg), seq_id=seq_id)
-                    case "forward":
-                        if arg is not None:
+                elif cmd == "forward":
+                    if arg is not None:
                             self.platform.forward(bool(arg), seq_id=seq_id)
-                    case "backward":
-                        if arg is not None:
+                elif cmd == "backward":
+                    if arg is not None:
                             self.platform.backward(bool(arg), seq_id=seq_id)
-                    case _:
+                else:
                         self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
             except Exception as e:
                 self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")

@@ -28,7 +28,7 @@ class ServoControlNode(Node):
             self.motor.initialize()
             self.get_logger().info("Motor initialized successfully.")
             self.service_check_timer.cancel()
-
+            
     def process_next_command(self):
         if not self.waiting_for_ack and self.cmd_queue:
             cmd_tuple = self.cmd_queue.popleft()
@@ -37,20 +37,19 @@ class ServoControlNode(Node):
             self.get_logger().info(f"[SEQ {seq_id}] [{now}] Send {cmd}{' ' + str(arg) if arg is not None else ''}")
             self.waiting_for_ack = True
             try:
-                match cmd:
-                    case "stop":
-                        self.motor.stop(seq_id=seq_id)
-                    case "set_pos":
-                        if arg is not None:
-                            self.motor.set_target_position(arg, seq_id=seq_id)
-                    case "set_vel":
-                        if arg is not None:
-                            self.motor.set_target_velocity(arg, seq_id=seq_id)
-                    case "set_acc":
-                        if arg is not None:
-                            self.motor.set_target_acceleration(arg, seq_id=seq_id)
-                    case _:
-                        self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
+                if cmd == "stop":
+                    self.motor.stop(seq_id=seq_id)
+                elif cmd == "set_pos":
+                    if arg is not None:
+                        self.motor.set_target_position(arg, seq_id=seq_id)
+                elif cmd == "set_vel":
+                    if arg is not None:
+                        self.motor.set_target_velocity(arg, seq_id=seq_id)
+                elif cmd == "set_acc":
+                    if arg is not None:
+                        self.motor.set_target_acceleration(arg, seq_id=seq_id)
+                else:
+                    self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
             except Exception as e:
                 self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
 
@@ -71,6 +70,7 @@ class ServoControlNode(Node):
         arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
         self.get_logger().info(f"[SEQ {seq_id}] [{now}] Receive {cmd}{' ' + str(arg) if arg is not None else ''}")
+        self.get_logger().info(f"[DEBUG] use_ack_patch in callback: {getattr(self.motor, 'use_ack_patch', 'NO_ATTR')}")
         if getattr(self.motor, 'use_ack_patch', 1):
             self.cmd_queue.append((cmd, arg, seq_id))
             self.process_next_command()
@@ -79,20 +79,19 @@ class ServoControlNode(Node):
                 self.get_logger().info(f"[SEQ {seq_id}] [use_ack_patch=0] Executing {cmd}({arg})")
                 if cmd in ["set_pos", "set_vel", "set_acc"] and arg is None:
                     self.get_logger().warn(f"[SEQ {seq_id}] [use_ack_patch=0] Command '{cmd}' missing argument!")
-                match cmd:
-                    case "stop":
-                        self.motor.stop(seq_id=seq_id)
-                    case "set_pos":
-                        if arg is not None:
-                            self.motor.set_target_position(arg, seq_id=seq_id)
-                    case "set_vel":
-                        if arg is not None:
-                            self.motor.set_target_velocity(arg, seq_id=seq_id)
-                    case "set_acc":
-                        if arg is not None:
-                            self.motor.set_target_acceleration(arg, seq_id=seq_id)
-                    case _:
-                        self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
+                if cmd == "stop":
+                    self.motor.stop(seq_id=seq_id)
+                elif cmd == "set_pos":
+                    if arg is not None:
+                        self.motor.set_target_position(arg, seq_id=seq_id)
+                elif cmd == "set_vel":
+                    if arg is not None:
+                        self.motor.set_target_velocity(arg, seq_id=seq_id)
+                elif cmd == "set_acc":
+                    if arg is not None:
+                        self.motor.set_target_acceleration(arg, seq_id=seq_id)
+                else:
+                    self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
             except Exception as e:
                 self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
 

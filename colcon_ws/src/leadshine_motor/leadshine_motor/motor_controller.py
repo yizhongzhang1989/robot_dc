@@ -12,6 +12,7 @@ class LeadshineMotor(ModbusDevice):
         super().__init__(device_id, node)
 
         self.motion_mode = None
+        self.use_ack_patch = use_ack_patch
 
         self.target_position = 0
         self.target_velocity = 0

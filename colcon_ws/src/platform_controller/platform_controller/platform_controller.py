@@ -4,6 +4,7 @@ from modbus_devices.utils import *
 class PlatformController(ModbusDevice):
     def __init__(self, device_id, node, use_ack_patch):
         super().__init__(device_id, node)
+        self.use_ack_patch = use_ack_patch
         if use_ack_patch:
             self._orig_send = self.send
             def send_with_ack(*args, **kwargs):

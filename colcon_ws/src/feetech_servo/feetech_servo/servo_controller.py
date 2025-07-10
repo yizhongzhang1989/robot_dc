@@ -21,6 +21,7 @@ class FeetechServo(ModbusDevice):
         self.curr_temperature = 0
         self.curr_moving_flag = 0
         self.curr_current = 0
+        self.use_ack_patch = use_ack_patch
         if use_ack_patch:
             self._orig_send = self.send
             def send_with_ack(*args, **kwargs):
