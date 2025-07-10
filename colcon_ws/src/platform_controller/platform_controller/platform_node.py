@@ -77,19 +77,22 @@ class PlatformControlNode(Node):
             self.process_next_command()
         else:
             try:
+                self.get_logger().info(f"[SEQ {seq_id}] [use_ack_patch=0] Executing {cmd}({arg})")
+                if cmd in ["up", "down", "forward", "backward"] and arg is None:
+                    self.get_logger().warn(f"[SEQ {seq_id}] [use_ack_patch=0] Command '{cmd}' missing argument!")
                 match cmd:
                     case "up":
                         if arg is not None:
-                            self.platform.up(arg, seq_id=seq_id)
+                            self.platform.up(bool(arg), seq_id=seq_id)
                     case "down":
                         if arg is not None:
-                            self.platform.down(arg, seq_id=seq_id)
+                            self.platform.down(bool(arg), seq_id=seq_id)
                     case "forward":
                         if arg is not None:
-                            self.platform.forward(arg, seq_id=seq_id)
+                            self.platform.forward(bool(arg), seq_id=seq_id)
                     case "backward":
                         if arg is not None:
-                            self.platform.backward(arg, seq_id=seq_id)
+                            self.platform.backward(bool(arg), seq_id=seq_id)
                     case _:
                         self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
             except Exception as e:

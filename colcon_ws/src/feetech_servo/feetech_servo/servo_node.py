@@ -76,6 +76,9 @@ class ServoControlNode(Node):
             self.process_next_command()
         else:
             try:
+                self.get_logger().info(f"[SEQ {seq_id}] [use_ack_patch=0] Executing {cmd}({arg})")
+                if cmd in ["set_pos", "set_vel", "set_acc"] and arg is None:
+                    self.get_logger().warn(f"[SEQ {seq_id}] [use_ack_patch=0] Command '{cmd}' missing argument!")
                 match cmd:
                     case "stop":
                         self.motor.stop(seq_id=seq_id)
