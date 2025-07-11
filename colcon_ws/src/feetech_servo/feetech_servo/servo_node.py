@@ -29,29 +29,57 @@ class ServoControlNode(Node):
             self.get_logger().info("Motor initialized successfully.")
             self.service_check_timer.cancel()
             
+    def do_motion(self, cmd, arg, seq_id, parts, use_ack_patch):
+        try:
+            if use_ack_patch:
+                # use_ack_patch=1 时，所有命令异常都被捕获，
+                # 并在异常时自动清除 waiting_for_ack，递归调用 process_next_command，
+                # 保证队列不会因单条命令异常而卡死，系统健壮性高。
+                self.get_logger().info(f"[SEQ {seq_id}] Send {cmd}{' ' + str(arg) if arg is not None else ''}")
+            else:
+                self.get_logger().info(f"[SEQ {seq_id}] [use_ack_patch=0] Executing {cmd}({arg})")
+            match cmd:
+                case "move":
+                    self.motor.move(arg, seq_id=seq_id)
+                case "set_id":
+                    self.motor.set_id(arg, seq_id=seq_id)
+                case "set_baud":
+                    self.motor.set_baud(arg, seq_id=seq_id)
+                case "set_angle_limit":
+                    if parts and len(parts) == 3:
+                        min_angle = int(parts[1])
+                        max_angle = int(parts[2])
+                        self.motor.set_angle_limit(min_angle, max_angle, seq_id=seq_id)
+                        self.get_logger().info(f"[SEQ {seq_id}] set_angle_limit: min={min_angle}, max={max_angle}")
+                    else:
+                        self.get_logger().error(f"[SEQ {seq_id}] set_angle_limit command requires two parameters: min_angle max_angle")
+                        raise ValueError("set_angle_limit param error")
+                case "reset":
+                    self.motor.reset(seq_id=seq_id)
+                case _:
+                    self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
+        except Exception as e:
+            self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
+            if use_ack_patch:
+                # use_ack_patch=1 时，异常兜底：
+                # 1. 自动清除 waiting_for_ack
+                # 2. 递归调用 process_next_command 继续队列
+                # 这样即使单条命令出错，后续命令也能继续执行
+                self.waiting_for_ack = False
+                self.process_next_command()
+            return
+
     def process_next_command(self):
         if not self.waiting_for_ack and self.cmd_queue:
             cmd_tuple = self.cmd_queue.popleft()
             cmd, arg, seq_id = cmd_tuple
-            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-            self.get_logger().info(f"[SEQ {seq_id}] [{now}] Send {cmd}{' ' + str(arg) if arg is not None else ''}")
+            parts = getattr(self, 'last_cmd_parts', None)
             self.waiting_for_ack = True
-            try:
-                if cmd == "stop":
-                    self.motor.stop(seq_id=seq_id)
-                elif cmd == "set_pos":
-                    if arg is not None:
-                        self.motor.set_target_position(arg, seq_id=seq_id)
-                elif cmd == "set_vel":
-                    if arg is not None:
-                        self.motor.set_target_velocity(arg, seq_id=seq_id)
-                elif cmd == "set_acc":
-                    if arg is not None:
-                        self.motor.set_target_acceleration(arg, seq_id=seq_id)
-                else:
-                    self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
-            except Exception as e:
-                self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
+            use_ack_patch = getattr(self.motor, 'use_ack_patch', 1)
+            if cmd in ["move"]:
+                self.try_reset_alarm_if_needed(lambda: self.do_motion(cmd, arg, seq_id, parts, use_ack_patch))
+            else:
+                self.do_motion(cmd, arg, seq_id, parts, use_ack_patch)
 
     def command_callback(self, msg):
         data = msg.data.strip()
@@ -66,34 +94,15 @@ class ServoControlNode(Node):
         parts = msg.data.strip().lower().split()
         if not parts:
             return
+        self.last_cmd_parts = parts
         cmd = parts[0]
         arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
-        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-        self.get_logger().info(f"[SEQ {seq_id}] [{now}] Receive {cmd}{' ' + str(arg) if arg is not None else ''}")
-        self.get_logger().info(f"[DEBUG] use_ack_patch in callback: {getattr(self.motor, 'use_ack_patch', 'NO_ATTR')}")
-        if getattr(self.motor, 'use_ack_patch', 1):
+        use_ack_patch = getattr(self.motor, 'use_ack_patch', 1)
+        if use_ack_patch:
             self.cmd_queue.append((cmd, arg, seq_id))
             self.process_next_command()
         else:
-            try:
-                self.get_logger().info(f"[SEQ {seq_id}] [use_ack_patch=0] Executing {cmd}({arg})")
-                if cmd in ["set_pos", "set_vel", "set_acc"] and arg is None:
-                    self.get_logger().warn(f"[SEQ {seq_id}] [use_ack_patch=0] Command '{cmd}' missing argument!")
-                if cmd == "stop":
-                    self.motor.stop(seq_id=seq_id)
-                elif cmd == "set_pos":
-                    if arg is not None:
-                        self.motor.set_target_position(arg, seq_id=seq_id)
-                elif cmd == "set_vel":
-                    if arg is not None:
-                        self.motor.set_target_velocity(arg, seq_id=seq_id)
-                elif cmd == "set_acc":
-                    if arg is not None:
-                        self.motor.set_target_acceleration(arg, seq_id=seq_id)
-                else:
-                    self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
-            except Exception as e:
-                self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
+            self.do_motion(cmd, arg, seq_id, parts, use_ack_patch)
 
 def main():
     rclpy.init()
