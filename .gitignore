@@ -3,3 +3,5 @@ colcon_ws/install/
 colcon_ws/log/
 *.pyclog/
 build/
+install/
+log/
