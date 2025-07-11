@@ -97,6 +97,36 @@ Each servo node subscribes to its own topic, e.g., '/motor17/cmd', '/motor18/cmd
 | 'help'                 | Print supported command list                       |
 
 > Currently implemented: 'stop', 'set_pos', 'set_vel', 'set_acc'. Other commands can be added as needed.
+> 新增命令：'get_pos' 读取舵机当前位置，'get_torque' 读取当前扭矩（基于PWM估算）。
+
+---
+
+### 📖 位置与扭矩读取说明
+
+| 功能         | 寄存器地址 (hex) | 单位         | 计算方式                                      |
+|--------------|------------------|--------------|-----------------------------------------------|
+| 位置读取     | 0x0101 (257)     | step (0-4095)| 直接使用返回值，0~4095对应0°~360°              |
+| 扭矩估算     | 0x0103 (259)     | 0.1% (PWM)   | Torque (N·m) = (PWM_RAW / 1000) × 4.413       |
+
+- **位置读取**：
+  - 调用 `get_position()` 方法，读取寄存器 0x0101，返回步数（step）。
+  - 例：返回 2048 → 约180°。
+
+- **扭矩读取**：
+  - 调用 `get_torque()` 方法，读取寄存器 0x0103，返回 PWM_RAW。
+  - 扭矩计算：`Torque (N·m) = (PWM_RAW / 1000) × 4.413`
+  - 例：PWM_RAW=500 → Torque=2.2065 N·m。
+
+---
+
+### 🧪 位置与扭矩读取命令示例
+
+```bash
+ros2 topic pub --once /motor17/cmd std_msgs/String "data: 'get_pos'"
+ros2 topic pub --once /motor17/cmd std_msgs/String "data: 'get_torque'"
+```
+
+节点会在日志中输出当前步数和估算扭矩。
 
 ---
 

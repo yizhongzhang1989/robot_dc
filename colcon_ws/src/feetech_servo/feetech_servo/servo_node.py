@@ -22,13 +22,31 @@ class ServoControlNode(Node):
         self.cmd_queue = collections.deque()
         self.waiting_for_ack = False
 
+    def print_position_and_torque(self):
+        def pos_callback(response):
+            if response:
+                pos = response[0]
+                self.get_logger().info(f"[Servo] Current position: {pos} (step), {pos/4095*360:.2f} deg")
+            else:
+                self.get_logger().error("[Servo] Failed to read position")
+        def torque_callback(response):
+            if response:
+                pwm_raw = response[0]
+                torque = pwm_raw / 1000 * 4.413
+                self.get_logger().info(f"[Servo] Current torque: {torque:.4f} N·m (PWM_RAW={pwm_raw})")
+            else:
+                self.get_logger().error("[Servo] Failed to read torque (PWM)")
+        self.motor.get_position(callback=pos_callback)
+        self.motor.get_torque(callback=torque_callback)
+
     def initialize_motor_params(self):
         if self.motor.cli.service_is_ready():
             self.get_logger().info("✅ /modbus_request service is now available!")
             self.motor.initialize()
             self.get_logger().info("Motor initialized successfully.")
+            self.print_position_and_torque()
             self.service_check_timer.cancel()
-            
+
     def process_next_command(self):
         if not self.waiting_for_ack and self.cmd_queue:
             cmd_tuple = self.cmd_queue.popleft()
@@ -48,6 +66,26 @@ class ServoControlNode(Node):
                 elif cmd == "set_acc":
                     if arg is not None:
                         self.motor.set_target_acceleration(arg, seq_id=seq_id)
+                elif cmd == "get_torque":
+                    def torque_callback(response):
+                        if response:
+                            raw = response[0]
+                            pwm_signed = raw - 0x10000 if raw >= 0x8000 else raw
+                            pwm_percent = pwm_signed * 0.1
+                            self.get_logger().info(f"[Servo] Current PWM: {pwm_percent:.1f}% (RAW={pwm_signed})")
+                        else:
+                            self.get_logger().error("[Servo] Failed to read torque (PWM)")
+                    self.motor.get_torque(callback=torque_callback)
+                    self.waiting_for_ack = False
+                elif cmd == "get_pos":
+                    def pos_callback(response):
+                        if response:
+                            pos = response[0]
+                            self.get_logger().info(f"[Servo] Current position: {pos} (step), {pos/4095*360:.2f} deg")
+                        else:
+                            self.get_logger().error("[Servo] Failed to read position")
+                    self.motor.get_position(callback=pos_callback)
+                    self.waiting_for_ack = False
                 else:
                     self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
             except Exception as e:
@@ -90,6 +128,24 @@ class ServoControlNode(Node):
                 elif cmd == "set_acc":
                     if arg is not None:
                         self.motor.set_target_acceleration(arg, seq_id=seq_id)
+                elif cmd == "get_torque":
+                    def torque_callback(response):
+                        if response:
+                            raw = response[0]
+                            pwm_signed = raw - 0x10000 if raw >= 0x8000 else raw
+                            pwm_percent = pwm_signed * 0.1
+                            self.get_logger().info(f"[Servo] Current PWM: {pwm_percent:.1f}% (RAW={pwm_signed})")
+                        else:
+                            self.get_logger().error("[Servo] Failed to read torque (PWM)")
+                    self.motor.get_torque(callback=torque_callback)
+                elif cmd == "get_pos":
+                    def pos_callback(response):
+                        if response:
+                            pos = response[0]
+                            self.get_logger().info(f"[Servo] Current position: {pos} (step), {pos/4095*360:.2f} deg")
+                        else:
+                            self.get_logger().error("[Servo] Failed to read position")
+                    self.motor.get_position(callback=pos_callback)
                 else:
                     self.get_logger().warn(f"[SEQ {seq_id}] 未知命令: {cmd}")
             except Exception as e:
