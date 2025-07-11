@@ -1,0 +1,1 @@
+modbus_driver_interfaces:python3-pymodbus:python3-serial:rclpy

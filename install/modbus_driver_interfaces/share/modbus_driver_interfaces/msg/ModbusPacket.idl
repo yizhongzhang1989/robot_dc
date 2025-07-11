@@ -1,0 +1,20 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from modbus_driver_interfaces/msg/ModbusPacket.msg
+// generated code does not contain a copyright notice
+
+
+module modbus_driver_interfaces {
+  module msg {
+    struct ModbusPacket {
+      uint8 function_code;
+
+      uint8 slave_id;
+
+      uint16 address;
+
+      uint16 count;
+
+      sequence<uint16> values;
+    };
+  };
+};

@@ -1,0 +1,662 @@
+[0.301s] DEBUG:colcon:Command line arguments: ['/usr/bin/colcon', 'build']
+[0.302s] DEBUG:colcon:Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=False, test_result_base=None, continue_on_error=False, executor='parallel', parallel_workers=6, event_handlers=None, ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['.'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=None, packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, allow_overriding=[], cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, verb_parser=<colcon_defaults.argument_parser.defaults.DefaultArgumentsDecorator object at 0xffff94b20130>, verb_extension=<colcon_core.verb.build.BuildVerb object at 0xffff94c35600>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0xffff94c35600>>)
+[0.781s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) check parameters
+[0.782s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) check parameters
+[0.782s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) check parameters
+[0.782s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) check parameters
+[0.782s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) discover
+[0.782s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) discover
+[0.782s] INFO:colcon.colcon_core.package_discovery:Crawling recursively for packages in '/home/jetson/Desktop/robot_dc'
+[0.783s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ignore', 'ignore_ament_install']
+[0.783s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore'
+[0.783s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore_ament_install'
+[0.783s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_pkg']
+[0.783s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_pkg'
+[0.783s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_meta']
+[0.783s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_meta'
+[0.784s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ros']
+[0.784s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ros'
+[0.810s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['cmake', 'python']
+[0.810s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'cmake'
+[0.810s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python'
+[0.810s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['python_setup_py']
+[0.810s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python_setup_py'
+[0.811s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extensions ['ignore', 'ignore_ament_install']
+[0.811s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extension 'ignore'
+[0.811s] Level 1:colcon.colcon_core.package_identification:_identify(build) ignored
+[0.811s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extensions ['ignore', 'ignore_ament_install']
+[0.812s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extension 'ignore'
+[0.812s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extension 'ignore_ament_install'
+[0.812s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extensions ['colcon_pkg']
+[0.812s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extension 'colcon_pkg'
+[0.812s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extensions ['colcon_meta']
+[0.812s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extension 'colcon_meta'
+[0.812s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extensions ['ros']
+[0.812s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extension 'ros'
+[0.813s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extensions ['cmake', 'python']
+[0.813s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extension 'cmake'
+[0.813s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extension 'python'
+[0.813s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extensions ['python_setup_py']
+[0.813s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws) by extension 'python_setup_py'
+[0.813s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/build) by extensions ['ignore', 'ignore_ament_install']
+[0.813s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/build) by extension 'ignore'
+[0.814s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/build) ignored
+[0.814s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/install) by extensions ['ignore', 'ignore_ament_install']
+[0.814s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/install) by extension 'ignore'
+[0.814s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/install) ignored
+[0.814s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/log) by extensions ['ignore', 'ignore_ament_install']
+[0.815s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/log) by extension 'ignore'
+[0.815s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/log) ignored
+[0.815s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extensions ['ignore', 'ignore_ament_install']
+[0.815s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extension 'ignore'
+[0.815s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extension 'ignore_ament_install'
+[0.815s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extensions ['colcon_pkg']
+[0.815s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extension 'colcon_pkg'
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extensions ['colcon_meta']
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extension 'colcon_meta'
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extensions ['ros']
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extension 'ros'
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extensions ['cmake', 'python']
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extension 'cmake'
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extension 'python'
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extensions ['python_setup_py']
+[0.816s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src) by extension 'python_setup_py'
+[0.817s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extensions ['ignore', 'ignore_ament_install']
+[0.817s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extension 'ignore'
+[0.817s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extension 'ignore_ament_install'
+[0.817s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extensions ['colcon_pkg']
+[0.817s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extension 'colcon_pkg'
+[0.817s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extensions ['colcon_meta']
+[0.817s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extension 'colcon_meta'
+[0.818s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extensions ['ros']
+[0.818s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/detector) by extension 'ros'
+[0.823s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/detector' with type 'ros.ament_python' and name 'detector'
+[0.824s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extensions ['ignore', 'ignore_ament_install']
+[0.824s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extension 'ignore'
+[0.825s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extension 'ignore_ament_install'
+[0.825s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extensions ['colcon_pkg']
+[0.825s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extension 'colcon_pkg'
+[0.825s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extensions ['colcon_meta']
+[0.825s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extension 'colcon_meta'
+[0.825s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extensions ['ros']
+[0.825s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/feetech_servo) by extension 'ros'
+[0.827s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/feetech_servo' with type 'ros.ament_python' and name 'feetech_servo'
+[0.827s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extensions ['ignore', 'ignore_ament_install']
+[0.827s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extension 'ignore'
+[0.827s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extension 'ignore_ament_install'
+[0.828s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extensions ['colcon_pkg']
+[0.828s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extension 'colcon_pkg'
+[0.828s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extensions ['colcon_meta']
+[0.828s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extension 'colcon_meta'
+[0.828s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extensions ['ros']
+[0.828s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/leadshine_motor) by extension 'ros'
+[0.829s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/leadshine_motor' with type 'ros.ament_python' and name 'leadshine_motor'
+[0.830s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extensions ['ignore', 'ignore_ament_install']
+[0.830s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extension 'ignore'
+[0.830s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extension 'ignore_ament_install'
+[0.830s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extensions ['colcon_pkg']
+[0.830s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extension 'colcon_pkg'
+[0.830s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extensions ['colcon_meta']
+[0.830s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extension 'colcon_meta'
+[0.831s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extensions ['ros']
+[0.831s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_devices) by extension 'ros'
+[0.832s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/modbus_devices' with type 'ros.ament_python' and name 'modbus_devices'
+[0.832s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extensions ['ignore', 'ignore_ament_install']
+[0.832s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extension 'ignore'
+[0.832s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extension 'ignore_ament_install'
+[0.832s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extensions ['colcon_pkg']
+[0.832s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extension 'colcon_pkg'
+[0.833s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extensions ['colcon_meta']
+[0.833s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extension 'colcon_meta'
+[0.833s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extensions ['ros']
+[0.833s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver) by extension 'ros'
+[0.834s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/modbus_driver' with type 'ros.ament_python' and name 'modbus_driver'
+[0.834s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extensions ['ignore', 'ignore_ament_install']
+[0.835s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extension 'ignore'
+[0.835s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extension 'ignore_ament_install'
+[0.835s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extensions ['colcon_pkg']
+[0.835s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extension 'colcon_pkg'
+[0.835s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extensions ['colcon_meta']
+[0.835s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extension 'colcon_meta'
+[0.835s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extensions ['ros']
+[0.835s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/modbus_driver_interfaces) by extension 'ros'
+[0.836s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/modbus_driver_interfaces' with type 'ros.catkin' and name 'modbus_driver_interfaces'
+[0.837s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extensions ['ignore', 'ignore_ament_install']
+[0.837s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extension 'ignore'
+[0.837s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extension 'ignore_ament_install'
+[0.837s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extensions ['colcon_pkg']
+[0.837s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extension 'colcon_pkg'
+[0.837s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extensions ['colcon_meta']
+[0.837s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extension 'colcon_meta'
+[0.838s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extensions ['ros']
+[0.838s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/platform_controller) by extension 'ros'
+[0.839s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/platform_controller' with type 'ros.ament_python' and name 'platform_controller'
+[0.839s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extensions ['ignore', 'ignore_ament_install']
+[0.839s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extension 'ignore'
+[0.839s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extension 'ignore_ament_install'
+[0.840s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extensions ['colcon_pkg']
+[0.840s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extension 'colcon_pkg'
+[0.840s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extensions ['colcon_meta']
+[0.840s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extension 'colcon_meta'
+[0.840s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extensions ['ros']
+[0.840s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_bringup) by extension 'ros'
+[0.841s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/robot_bringup' with type 'ros.ament_python' and name 'robot_bringup'
+[0.842s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extensions ['ignore', 'ignore_ament_install']
+[0.842s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extension 'ignore'
+[0.842s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extension 'ignore_ament_install'
+[0.842s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extensions ['colcon_pkg']
+[0.842s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extension 'colcon_pkg'
+[0.842s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extensions ['colcon_meta']
+[0.843s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extension 'colcon_meta'
+[0.843s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extensions ['ros']
+[0.843s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_teleop) by extension 'ros'
+[0.844s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/robot_teleop' with type 'ros.ament_python' and name 'robot_teleop'
+[0.844s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extensions ['ignore', 'ignore_ament_install']
+[0.844s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extension 'ignore'
+[0.844s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extension 'ignore_ament_install'
+[0.844s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extensions ['colcon_pkg']
+[0.845s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extension 'colcon_pkg'
+[0.845s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extensions ['colcon_meta']
+[0.845s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extension 'colcon_meta'
+[0.845s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extensions ['ros']
+[0.845s] Level 1:colcon.colcon_core.package_identification:_identify(colcon_ws/src/robot_web) by extension 'ros'
+[0.846s] DEBUG:colcon.colcon_core.package_identification:Package 'colcon_ws/src/robot_web' with type 'ros.ament_python' and name 'robot_web'
+[0.846s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extensions ['ignore', 'ignore_ament_install']
+[0.846s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extension 'ignore'
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extension 'ignore_ament_install'
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extensions ['colcon_pkg']
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extension 'colcon_pkg'
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extensions ['colcon_meta']
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extension 'colcon_meta'
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extensions ['ros']
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extension 'ros'
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extensions ['cmake', 'python']
+[0.847s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extension 'cmake'
+[0.848s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extension 'python'
+[0.848s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extensions ['python_setup_py']
+[0.848s] Level 1:colcon.colcon_core.package_identification:_identify(doc) by extension 'python_setup_py'
+[0.848s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extensions ['ignore', 'ignore_ament_install']
+[0.848s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extension 'ignore'
+[0.848s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extension 'ignore_ament_install'
+[0.848s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extensions ['colcon_pkg']
+[0.848s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extension 'colcon_pkg'
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extensions ['colcon_meta']
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extension 'colcon_meta'
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extensions ['ros']
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extension 'ros'
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extensions ['cmake', 'python']
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extension 'cmake'
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extension 'python'
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extensions ['python_setup_py']
+[0.849s] Level 1:colcon.colcon_core.package_identification:_identify(doc/FAQ) by extension 'python_setup_py'
+[0.850s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extensions ['ignore', 'ignore_ament_install']
+[0.850s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extension 'ignore'
+[0.850s] Level 1:colcon.colcon_core.package_identification:_identify(install) ignored
+[0.850s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extensions ['ignore', 'ignore_ament_install']
+[0.850s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extension 'ignore'
+[0.850s] Level 1:colcon.colcon_core.package_identification:_identify(log) ignored
+[0.851s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extensions ['ignore', 'ignore_ament_install']
+[0.851s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extension 'ignore'
+[0.851s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extension 'ignore_ament_install'
+[0.851s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extensions ['colcon_pkg']
+[0.851s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extension 'colcon_pkg'
+[0.851s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extensions ['colcon_meta']
+[0.851s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extension 'colcon_meta'
+[0.851s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extensions ['ros']
+[0.852s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extension 'ros'
+[0.852s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extensions ['cmake', 'python']
+[0.852s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extension 'cmake'
+[0.852s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extension 'python'
+[0.852s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extensions ['python_setup_py']
+[0.852s] Level 1:colcon.colcon_core.package_identification:_identify(scripts) by extension 'python_setup_py'
+[0.852s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) using defaults
+[0.852s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) discover
+[0.852s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) using defaults
+[0.852s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) discover
+[0.853s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) using defaults
+[0.938s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) check parameters
+[0.938s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) discover
+[0.944s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 271 installed packages in /opt/ros/humble
+[0.947s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) using defaults
+[1.029s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'cmake_args' from command line to 'None'
+[1.030s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'cmake_target' from command line to 'None'
+[1.030s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.030s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'cmake_clean_cache' from command line to 'False'
+[1.030s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'cmake_clean_first' from command line to 'False'
+[1.030s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'cmake_force_configure' from command line to 'False'
+[1.030s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'ament_cmake_args' from command line to 'None'
+[1.030s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'catkin_cmake_args' from command line to 'None'
+[1.030s] Level 5:colcon.colcon_core.verb:set package 'detector' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.030s] DEBUG:colcon.colcon_core.verb:Building package 'detector' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/detector', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/detector', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/detector', 'symlink_install': False, 'test_result_base': None}
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'cmake_args' from command line to 'None'
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'cmake_target' from command line to 'None'
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'cmake_clean_cache' from command line to 'False'
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'cmake_clean_first' from command line to 'False'
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'cmake_force_configure' from command line to 'False'
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'ament_cmake_args' from command line to 'None'
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'catkin_cmake_args' from command line to 'None'
+[1.031s] Level 5:colcon.colcon_core.verb:set package 'modbus_devices' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.031s] DEBUG:colcon.colcon_core.verb:Building package 'modbus_devices' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/modbus_devices', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/modbus_devices', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_devices', 'symlink_install': False, 'test_result_base': None}
+[1.032s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'cmake_args' from command line to 'None'
+[1.032s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'cmake_target' from command line to 'None'
+[1.032s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.032s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'cmake_clean_cache' from command line to 'False'
+[1.032s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'cmake_clean_first' from command line to 'False'
+[1.032s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'cmake_force_configure' from command line to 'False'
+[1.033s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'ament_cmake_args' from command line to 'None'
+[1.033s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'catkin_cmake_args' from command line to 'None'
+[1.033s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver_interfaces' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.033s] DEBUG:colcon.colcon_core.verb:Building package 'modbus_driver_interfaces' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver_interfaces', 'symlink_install': False, 'test_result_base': None}
+[1.033s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'cmake_args' from command line to 'None'
+[1.033s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'cmake_target' from command line to 'None'
+[1.034s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.034s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'cmake_clean_cache' from command line to 'False'
+[1.034s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'cmake_clean_first' from command line to 'False'
+[1.034s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'cmake_force_configure' from command line to 'False'
+[1.034s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'ament_cmake_args' from command line to 'None'
+[1.034s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'catkin_cmake_args' from command line to 'None'
+[1.034s] Level 5:colcon.colcon_core.verb:set package 'robot_teleop' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.034s] DEBUG:colcon.colcon_core.verb:Building package 'robot_teleop' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/robot_teleop', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/robot_teleop', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_teleop', 'symlink_install': False, 'test_result_base': None}
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'cmake_args' from command line to 'None'
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'cmake_target' from command line to 'None'
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'cmake_clean_cache' from command line to 'False'
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'cmake_clean_first' from command line to 'False'
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'cmake_force_configure' from command line to 'False'
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'ament_cmake_args' from command line to 'None'
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'catkin_cmake_args' from command line to 'None'
+[1.035s] Level 5:colcon.colcon_core.verb:set package 'robot_web' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.035s] DEBUG:colcon.colcon_core.verb:Building package 'robot_web' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/robot_web', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/robot_web', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_web', 'symlink_install': False, 'test_result_base': None}
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'cmake_args' from command line to 'None'
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'cmake_target' from command line to 'None'
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'cmake_clean_cache' from command line to 'False'
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'cmake_clean_first' from command line to 'False'
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'cmake_force_configure' from command line to 'False'
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'ament_cmake_args' from command line to 'None'
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'catkin_cmake_args' from command line to 'None'
+[1.036s] Level 5:colcon.colcon_core.verb:set package 'feetech_servo' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.036s] DEBUG:colcon.colcon_core.verb:Building package 'feetech_servo' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/feetech_servo', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/feetech_servo', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/feetech_servo', 'symlink_install': False, 'test_result_base': None}
+[1.037s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'cmake_args' from command line to 'None'
+[1.037s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'cmake_target' from command line to 'None'
+[1.037s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.037s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'cmake_clean_cache' from command line to 'False'
+[1.037s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'cmake_clean_first' from command line to 'False'
+[1.037s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'cmake_force_configure' from command line to 'False'
+[1.037s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'ament_cmake_args' from command line to 'None'
+[1.037s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'catkin_cmake_args' from command line to 'None'
+[1.038s] Level 5:colcon.colcon_core.verb:set package 'leadshine_motor' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.038s] DEBUG:colcon.colcon_core.verb:Building package 'leadshine_motor' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/leadshine_motor', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/leadshine_motor', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/leadshine_motor', 'symlink_install': False, 'test_result_base': None}
+[1.038s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'cmake_args' from command line to 'None'
+[1.038s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'cmake_target' from command line to 'None'
+[1.038s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.038s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'cmake_clean_cache' from command line to 'False'
+[1.039s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'cmake_clean_first' from command line to 'False'
+[1.039s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'cmake_force_configure' from command line to 'False'
+[1.039s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'ament_cmake_args' from command line to 'None'
+[1.039s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'catkin_cmake_args' from command line to 'None'
+[1.039s] Level 5:colcon.colcon_core.verb:set package 'modbus_driver' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.039s] DEBUG:colcon.colcon_core.verb:Building package 'modbus_driver' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/modbus_driver', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/modbus_driver', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver', 'symlink_install': False, 'test_result_base': None}
+[1.039s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'cmake_args' from command line to 'None'
+[1.040s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'cmake_target' from command line to 'None'
+[1.040s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.040s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'cmake_clean_cache' from command line to 'False'
+[1.040s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'cmake_clean_first' from command line to 'False'
+[1.040s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'cmake_force_configure' from command line to 'False'
+[1.040s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'ament_cmake_args' from command line to 'None'
+[1.040s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'catkin_cmake_args' from command line to 'None'
+[1.040s] Level 5:colcon.colcon_core.verb:set package 'platform_controller' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.040s] DEBUG:colcon.colcon_core.verb:Building package 'platform_controller' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/platform_controller', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/platform_controller', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/platform_controller', 'symlink_install': False, 'test_result_base': None}
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'cmake_args' from command line to 'None'
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'cmake_target' from command line to 'None'
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'cmake_clean_cache' from command line to 'False'
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'cmake_clean_first' from command line to 'False'
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'cmake_force_configure' from command line to 'False'
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'ament_cmake_args' from command line to 'None'
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'catkin_cmake_args' from command line to 'None'
+[1.041s] Level 5:colcon.colcon_core.verb:set package 'robot_bringup' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.041s] DEBUG:colcon.colcon_core.verb:Building package 'robot_bringup' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/jetson/Desktop/robot_dc/build/robot_bringup', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/jetson/Desktop/robot_dc/install/robot_bringup', 'merge_install': False, 'path': '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_bringup', 'symlink_install': False, 'test_result_base': None}
+[1.042s] INFO:colcon.colcon_core.executor:Executing jobs using 'parallel' executor
+[1.044s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete
+[1.044s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_devices' with build type 'ament_python'
+[1.045s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_devices', 'ament_prefix_path')
+[1.052s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[1.053s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/hook/ament_prefix_path.ps1'
+[1.054s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/hook/ament_prefix_path.dsv'
+[1.056s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/hook/ament_prefix_path.sh'
+[1.057s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.057s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.063s] INFO:colcon.colcon_ros.task.catkin.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver_interfaces' with build type 'catkin'
+[1.063s] INFO:colcon.colcon_cmake.task.cmake.build:Building CMake package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver_interfaces'
+[1.064s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.064s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.070s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/detector' with build type 'ament_python'
+[1.070s] Level 1:colcon.colcon_core.shell:create_environment_hook('detector', 'ament_prefix_path')
+[1.071s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/detector/share/detector/hook/ament_prefix_path.ps1'
+[1.072s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/detector/share/detector/hook/ament_prefix_path.dsv'
+[1.073s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/detector/share/detector/hook/ament_prefix_path.sh'
+[1.074s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.074s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.079s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_teleop' with build type 'ament_python'
+[1.079s] Level 1:colcon.colcon_core.shell:create_environment_hook('robot_teleop', 'ament_prefix_path')
+[1.080s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/hook/ament_prefix_path.ps1'
+[1.081s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/hook/ament_prefix_path.dsv'
+[1.082s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/hook/ament_prefix_path.sh'
+[1.083s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.083s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.088s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_web' with build type 'ament_python'
+[1.089s] Level 1:colcon.colcon_core.shell:create_environment_hook('robot_web', 'ament_prefix_path')
+[1.089s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/hook/ament_prefix_path.ps1'
+[1.090s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/hook/ament_prefix_path.dsv'
+[1.091s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/hook/ament_prefix_path.sh'
+[1.092s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.092s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.683s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_devices'
+[1.684s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.685s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.697s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces': /usr/bin/cmake /home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver_interfaces -DCATKIN_INSTALL_INTO_PREFIX_ROOT=0 -DCMAKE_INSTALL_PREFIX=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces
+[2.306s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/detector'
+[2.307s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[2.307s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[2.899s] WARNING:colcon.colcon_ros.task.ament_python.build:Package 'robot_teleop' doesn't explicitly install a marker in the package index (colcon-ros currently does it implicitly but that fallback will be removed in the future)
+[2.900s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_teleop'
+[2.901s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[2.901s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[3.508s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_web'
+[3.509s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[3.509s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[4.371s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/detector': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/detector/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/detector/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/detector build --build-base /home/jetson/Desktop/robot_dc/build/detector/build install --record /home/jetson/Desktop/robot_dc/build/detector/install.log --single-version-externally-managed install_data
+[4.381s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_web': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/robot_web/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/robot_web/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_web build --build-base /home/jetson/Desktop/robot_dc/build/robot_web/build install --record /home/jetson/Desktop/robot_dc/build/robot_web/install.log --single-version-externally-managed install_data
+[4.387s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_devices': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/modbus_devices/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/modbus_devices build --build-base /home/jetson/Desktop/robot_dc/build/modbus_devices/build install --record /home/jetson/Desktop/robot_dc/build/modbus_devices/install.log --single-version-externally-managed install_data
+[4.399s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_teleop': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/robot_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/robot_teleop/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_teleop build --build-base /home/jetson/Desktop/robot_dc/build/robot_teleop/build install --record /home/jetson/Desktop/robot_dc/build/robot_teleop/install.log --single-version-externally-managed install_data
+[5.134s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/detector' returned '0': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/detector/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/detector/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/detector build --build-base /home/jetson/Desktop/robot_dc/build/detector/build install --record /home/jetson/Desktop/robot_dc/build/detector/install.log --single-version-externally-managed install_data
+[5.141s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/detector' for CMake module files
+[5.148s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/detector' for CMake config files
+[5.150s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/detector/lib'
+[5.151s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/detector/bin'
+[5.151s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/detector/lib/pkgconfig/detector.pc'
+[5.152s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/detector/lib/python3.10/site-packages'
+[5.152s] Level 1:colcon.colcon_core.shell:create_environment_hook('detector', 'pythonpath')
+[5.152s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/detector/share/detector/hook/pythonpath.ps1'
+[5.154s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/detector/share/detector/hook/pythonpath.dsv'
+[5.155s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/detector/share/detector/hook/pythonpath.sh'
+[5.156s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/detector/bin'
+[5.157s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(detector)
+[5.158s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/detector/share/detector/package.ps1'
+[5.161s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/detector/share/detector/package.dsv'
+[5.166s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/detector/share/detector/package.sh'
+[5.170s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/detector/share/detector/package.bash'
+[5.172s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/detector/share/detector/package.zsh'
+[5.180s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/detector/share/colcon-core/packages/detector)
+[5.185s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_teleop' for CMake module files
+[5.186s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_teleop' returned '0': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/robot_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/robot_teleop/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_teleop build --build-base /home/jetson/Desktop/robot_dc/build/robot_teleop/build install --record /home/jetson/Desktop/robot_dc/build/robot_teleop/install.log --single-version-externally-managed install_data
+[5.189s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_teleop' for CMake config files
+[5.190s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_teleop/lib'
+[5.191s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_teleop/bin'
+[5.191s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_teleop/lib/pkgconfig/robot_teleop.pc'
+[5.191s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_teleop/lib/python3.10/site-packages'
+[5.192s] Level 1:colcon.colcon_core.shell:create_environment_hook('robot_teleop', 'pythonpath')
+[5.192s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/hook/pythonpath.ps1'
+[5.194s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/hook/pythonpath.dsv'
+[5.194s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/hook/pythonpath.sh'
+[5.196s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_teleop/bin'
+[5.196s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(robot_teleop)
+[5.197s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/package.ps1'
+[5.199s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/package.dsv'
+[5.200s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/package.sh'
+[5.202s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/package.bash'
+[5.203s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_teleop/share/robot_teleop/package.zsh'
+[5.204s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/robot_teleop/share/colcon-core/packages/robot_teleop)
+[5.208s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_web' for CMake module files
+[5.211s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_web' returned '0': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/robot_web/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/robot_web/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_web build --build-base /home/jetson/Desktop/robot_dc/build/robot_web/build install --record /home/jetson/Desktop/robot_dc/build/robot_web/install.log --single-version-externally-managed install_data
+[5.211s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_web' for CMake config files
+[5.213s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_web/lib'
+[5.214s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_web/bin'
+[5.214s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_web/lib/pkgconfig/robot_web.pc'
+[5.215s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_web/lib/python3.10/site-packages'
+[5.215s] Level 1:colcon.colcon_core.shell:create_environment_hook('robot_web', 'pythonpath')
+[5.215s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/hook/pythonpath.ps1'
+[5.217s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/hook/pythonpath.dsv'
+[5.218s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/hook/pythonpath.sh'
+[5.219s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_web/bin'
+[5.219s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(robot_web)
+[5.220s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/package.ps1'
+[5.222s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/package.dsv'
+[5.223s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/package.sh'
+[5.225s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/package.bash'
+[5.226s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/package.zsh'
+[5.226s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/robot_web/share/colcon-core/packages/robot_web)
+[5.228s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_devices' for CMake module files
+[5.230s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_devices' for CMake config files
+[5.231s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_devices' returned '0': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/modbus_devices/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/modbus_devices build --build-base /home/jetson/Desktop/robot_dc/build/modbus_devices/build install --record /home/jetson/Desktop/robot_dc/build/modbus_devices/install.log --single-version-externally-managed install_data
+[5.239s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_devices/lib'
+[5.239s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_devices/bin'
+[5.239s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/pkgconfig/modbus_devices.pc'
+[5.240s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages'
+[5.240s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_devices', 'pythonpath')
+[5.240s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/hook/pythonpath.ps1'
+[5.242s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/hook/pythonpath.dsv'
+[5.242s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/hook/pythonpath.sh'
+[5.244s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_devices/bin'
+[5.244s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(modbus_devices)
+[5.245s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/package.ps1'
+[5.246s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/package.dsv'
+[5.247s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/package.sh'
+[5.248s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/package.bash'
+[5.249s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices/package.zsh'
+[5.250s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/modbus_devices/share/colcon-core/packages/modbus_devices)
+[5.252s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/leadshine_motor' with build type 'ament_python'
+[5.252s] Level 1:colcon.colcon_core.shell:create_environment_hook('leadshine_motor', 'ament_prefix_path')
+[5.253s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/hook/ament_prefix_path.ps1'
+[5.254s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/hook/ament_prefix_path.dsv'
+[5.255s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/hook/ament_prefix_path.sh'
+[5.256s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[5.256s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[5.264s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/feetech_servo' with build type 'ament_python'
+[5.265s] Level 1:colcon.colcon_core.shell:create_environment_hook('feetech_servo', 'ament_prefix_path')
+[5.265s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/hook/ament_prefix_path.ps1'
+[5.266s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/hook/ament_prefix_path.dsv'
+[5.267s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/hook/ament_prefix_path.sh'
+[5.268s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[5.269s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[5.277s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/platform_controller' with build type 'ament_python'
+[5.278s] Level 1:colcon.colcon_core.shell:create_environment_hook('platform_controller', 'ament_prefix_path')
+[5.278s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/hook/ament_prefix_path.ps1'
+[5.280s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/hook/ament_prefix_path.dsv'
+[5.281s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/hook/ament_prefix_path.sh'
+[5.282s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[5.282s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[5.912s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/leadshine_motor'
+[5.913s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[5.913s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[6.519s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/feetech_servo'
+[6.520s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[6.520s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[7.119s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/platform_controller'
+[7.120s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[7.120s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[7.134s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces' returned '0': /usr/bin/cmake /home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver_interfaces -DCATKIN_INSTALL_INTO_PREFIX_ROOT=0 -DCMAKE_INSTALL_PREFIX=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces
+[7.140s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces': /usr/bin/cmake --build /home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces -- -j6 -l6
+[7.980s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/feetech_servo': AMENT_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_devices:${AMENT_PREFIX_PATH} PYTHONPATH=/home/jetson/Desktop/robot_dc/build/feetech_servo/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/feetech_servo/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/feetech_servo build --build-base /home/jetson/Desktop/robot_dc/build/feetech_servo/build install --record /home/jetson/Desktop/robot_dc/build/feetech_servo/install.log --single-version-externally-managed install_data
+[8.064s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/platform_controller': AMENT_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_devices:${AMENT_PREFIX_PATH} PYTHONPATH=/home/jetson/Desktop/robot_dc/build/platform_controller/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/platform_controller/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/platform_controller build --build-base /home/jetson/Desktop/robot_dc/build/platform_controller/build install --record /home/jetson/Desktop/robot_dc/build/platform_controller/install.log --single-version-externally-managed install_data
+[8.084s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/leadshine_motor': AMENT_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_devices:${AMENT_PREFIX_PATH} PYTHONPATH=/home/jetson/Desktop/robot_dc/build/leadshine_motor/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/leadshine_motor build --build-base /home/jetson/Desktop/robot_dc/build/leadshine_motor/build install --record /home/jetson/Desktop/robot_dc/build/leadshine_motor/install.log --single-version-externally-managed install_data
+[8.956s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/feetech_servo' for CMake module files
+[8.957s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/feetech_servo' for CMake config files
+[8.959s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/feetech_servo/lib'
+[8.959s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/feetech_servo/bin'
+[8.959s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/feetech_servo/lib/pkgconfig/feetech_servo.pc'
+[8.960s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/feetech_servo/lib/python3.10/site-packages'
+[8.960s] Level 1:colcon.colcon_core.shell:create_environment_hook('feetech_servo', 'pythonpath')
+[8.960s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/hook/pythonpath.ps1'
+[8.964s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/feetech_servo' returned '0': AMENT_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_devices:${AMENT_PREFIX_PATH} PYTHONPATH=/home/jetson/Desktop/robot_dc/build/feetech_servo/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/feetech_servo/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/feetech_servo build --build-base /home/jetson/Desktop/robot_dc/build/feetech_servo/build install --record /home/jetson/Desktop/robot_dc/build/feetech_servo/install.log --single-version-externally-managed install_data
+[8.966s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/hook/pythonpath.dsv'
+[8.968s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/hook/pythonpath.sh'
+[8.970s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/feetech_servo/bin'
+[8.970s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(feetech_servo)
+[8.972s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/package.ps1'
+[8.974s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/package.dsv'
+[8.976s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/package.sh'
+[8.980s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/package.bash'
+[8.982s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/feetech_servo/share/feetech_servo/package.zsh'
+[8.983s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/feetech_servo/share/colcon-core/packages/feetech_servo)
+[9.061s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/platform_controller' for CMake module files
+[9.062s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/platform_controller' for CMake config files
+[9.064s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/platform_controller/lib'
+[9.064s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/platform_controller/bin'
+[9.064s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/platform_controller/lib/pkgconfig/platform_controller.pc'
+[9.065s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/platform_controller/lib/python3.10/site-packages'
+[9.065s] Level 1:colcon.colcon_core.shell:create_environment_hook('platform_controller', 'pythonpath')
+[9.066s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/hook/pythonpath.ps1'
+[9.066s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/platform_controller' returned '0': AMENT_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_devices:${AMENT_PREFIX_PATH} PYTHONPATH=/home/jetson/Desktop/robot_dc/build/platform_controller/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/platform_controller/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/platform_controller build --build-base /home/jetson/Desktop/robot_dc/build/platform_controller/build install --record /home/jetson/Desktop/robot_dc/build/platform_controller/install.log --single-version-externally-managed install_data
+[9.068s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/hook/pythonpath.dsv'
+[9.070s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/hook/pythonpath.sh'
+[9.074s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/platform_controller/bin'
+[9.075s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(platform_controller)
+[9.076s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/package.ps1'
+[9.082s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/package.dsv'
+[9.090s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/package.sh'
+[9.092s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/package.bash'
+[9.095s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/platform_controller/share/platform_controller/package.zsh'
+[9.097s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/platform_controller/share/colcon-core/packages/platform_controller)
+[9.143s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/leadshine_motor' for CMake module files
+[9.144s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/leadshine_motor' returned '0': AMENT_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_devices:${AMENT_PREFIX_PATH} PYTHONPATH=/home/jetson/Desktop/robot_dc/build/leadshine_motor/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/leadshine_motor build --build-base /home/jetson/Desktop/robot_dc/build/leadshine_motor/build install --record /home/jetson/Desktop/robot_dc/build/leadshine_motor/install.log --single-version-externally-managed install_data
+[9.145s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/leadshine_motor' for CMake config files
+[9.146s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/leadshine_motor/lib'
+[9.146s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/leadshine_motor/bin'
+[9.146s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/pkgconfig/leadshine_motor.pc'
+[9.147s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages'
+[9.147s] Level 1:colcon.colcon_core.shell:create_environment_hook('leadshine_motor', 'pythonpath')
+[9.148s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/hook/pythonpath.ps1'
+[9.149s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/hook/pythonpath.dsv'
+[9.150s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/hook/pythonpath.sh'
+[9.151s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/leadshine_motor/bin'
+[9.151s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(leadshine_motor)
+[9.152s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/package.ps1'
+[9.153s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/package.dsv'
+[9.154s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/package.sh'
+[9.155s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/package.bash'
+[9.156s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/leadshine_motor/package.zsh'
+[9.157s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/leadshine_motor/share/colcon-core/packages/leadshine_motor)
+[14.911s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces' returned '0': /usr/bin/cmake --build /home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces -- -j6 -l6
+[14.935s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces': /usr/bin/cmake --install /home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces
+[15.111s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces' returned '0': /usr/bin/cmake --install /home/jetson/Desktop/robot_dc/build/modbus_driver_interfaces
+[15.112s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_driver_interfaces', 'ros_package_path')
+[15.113s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/ros_package_path.ps1'
+[15.115s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/ros_package_path.dsv'
+[15.116s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/ros_package_path.sh'
+[15.118s] Level 1:colcon.colcon_ros.task.catkin:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/local/lib/python3.10/dist-packages'
+[15.119s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_driver_interfaces', 'catkin_pythonpath')
+[15.119s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/catkin_pythonpath.ps1'
+[15.121s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/catkin_pythonpath.dsv'
+[15.122s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/catkin_pythonpath.sh'
+[15.123s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_driver_interfaces', 'pkg_config_path')
+[15.124s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/pkg_config_path.ps1'
+[15.125s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/pkg_config_path.dsv'
+[15.127s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/pkg_config_path.sh'
+[15.132s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_driver_interfaces', 'pkg_config_path_multiarch')
+[15.133s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/pkg_config_path_multiarch.ps1'
+[15.134s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/pkg_config_path_multiarch.dsv'
+[15.136s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/pkg_config_path_multiarch.sh'
+[15.140s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(modbus_driver_interfaces)
+[15.141s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces' for CMake module files
+[15.144s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces' for CMake config files
+[15.145s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_driver_interfaces', 'cmake_prefix_path')
+[15.146s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/cmake_prefix_path.ps1'
+[15.148s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/cmake_prefix_path.dsv'
+[15.149s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/cmake_prefix_path.sh'
+[15.151s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib'
+[15.152s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_driver_interfaces', 'ld_library_path_lib')
+[15.152s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/ld_library_path_lib.ps1'
+[15.154s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/ld_library_path_lib.dsv'
+[15.155s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/hook/ld_library_path_lib.sh'
+[15.156s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/bin'
+[15.157s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/pkgconfig/modbus_driver_interfaces.pc'
+[15.158s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/python3.10/site-packages'
+[15.159s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/bin'
+[15.160s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/package.ps1'
+[15.163s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/package.dsv'
+[15.165s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/package.sh'
+[15.168s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/package.bash'
+[15.169s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/modbus_driver_interfaces/package.zsh'
+[15.170s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share/colcon-core/packages/modbus_driver_interfaces)
+[15.172s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver' with build type 'ament_python'
+[15.172s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_driver', 'ament_prefix_path')
+[15.173s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/hook/ament_prefix_path.ps1'
+[15.176s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/hook/ament_prefix_path.dsv'
+[15.178s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/hook/ament_prefix_path.sh'
+[15.180s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[15.180s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[15.792s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver'
+[15.792s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[15.793s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[16.588s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver': CMAKE_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces LD_LIBRARY_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib:/usr/local/cuda-12.6/lib64:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib:/usr/local/cuda-12.6/lib64 PKG_CONFIG_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/aarch64-linux-gnu/pkgconfig:/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/pkgconfig PYTHONPATH=/home/jetson/Desktop/robot_dc/build/modbus_driver/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/modbus_driver/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/local/lib/python3.10/dist-packages:${PYTHONPATH} ROS_PACKAGE_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/modbus_driver build --build-base /home/jetson/Desktop/robot_dc/build/modbus_driver/build install --record /home/jetson/Desktop/robot_dc/build/modbus_driver/install.log --single-version-externally-managed install_data
+[17.279s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver' for CMake module files
+[17.280s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver' returned '0': CMAKE_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces LD_LIBRARY_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib:/usr/local/cuda-12.6/lib64:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib:/usr/local/cuda-12.6/lib64 PKG_CONFIG_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/aarch64-linux-gnu/pkgconfig:/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/pkgconfig PYTHONPATH=/home/jetson/Desktop/robot_dc/build/modbus_driver/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/modbus_driver/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/local/lib/python3.10/dist-packages:${PYTHONPATH} ROS_PACKAGE_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/modbus_driver build --build-base /home/jetson/Desktop/robot_dc/build/modbus_driver/build install --record /home/jetson/Desktop/robot_dc/build/modbus_driver/install.log --single-version-externally-managed install_data
+[17.281s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver' for CMake config files
+[17.283s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver/lib'
+[17.283s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver/bin'
+[17.283s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver/lib/pkgconfig/modbus_driver.pc'
+[17.284s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver/lib/python3.10/site-packages'
+[17.284s] Level 1:colcon.colcon_core.shell:create_environment_hook('modbus_driver', 'pythonpath')
+[17.284s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/hook/pythonpath.ps1'
+[17.286s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/hook/pythonpath.dsv'
+[17.286s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/hook/pythonpath.sh'
+[17.288s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/modbus_driver/bin'
+[17.288s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(modbus_driver)
+[17.289s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/package.ps1'
+[17.290s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/package.dsv'
+[17.291s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/package.sh'
+[17.292s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/package.bash'
+[17.292s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/modbus_driver/share/modbus_driver/package.zsh'
+[17.293s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/modbus_driver/share/colcon-core/packages/modbus_driver)
+[17.294s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_bringup' with build type 'ament_python'
+[17.295s] Level 1:colcon.colcon_core.shell:create_environment_hook('robot_bringup', 'ament_prefix_path')
+[17.295s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/hook/ament_prefix_path.ps1'
+[17.297s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/hook/ament_prefix_path.dsv'
+[17.298s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/hook/ament_prefix_path.sh'
+[17.300s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[17.300s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[17.936s] WARNING:colcon.colcon_ros.task.ament_python.build:Package 'robot_bringup' doesn't explicitly install a marker in the package index (colcon-ros currently does it implicitly but that fallback will be removed in the future)
+[17.937s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_bringup'
+[17.938s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[17.938s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[18.757s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_bringup': AMENT_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver:/home/jetson/Desktop/robot_dc/install/leadshine_motor:/home/jetson/Desktop/robot_dc/install/modbus_devices:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces LD_LIBRARY_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib:/usr/local/cuda-12.6/lib64:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib:/usr/local/cuda-12.6/lib64 PKG_CONFIG_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/aarch64-linux-gnu/pkgconfig:/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/pkgconfig PYTHONPATH=/home/jetson/Desktop/robot_dc/build/robot_bringup/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/robot_bringup/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_driver/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/local/lib/python3.10/dist-packages:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} ROS_PACKAGE_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_bringup build --build-base /home/jetson/Desktop/robot_dc/build/robot_bringup/build install --record /home/jetson/Desktop/robot_dc/build/robot_bringup/install.log --single-version-externally-managed install_data
+[19.475s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_bringup' for CMake module files
+[19.476s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/robot_bringup' returned '0': AMENT_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver:/home/jetson/Desktop/robot_dc/install/leadshine_motor:/home/jetson/Desktop/robot_dc/install/modbus_devices:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces LD_LIBRARY_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib:/usr/local/cuda-12.6/lib64:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib:/usr/local/cuda-12.6/lib64 PKG_CONFIG_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/aarch64-linux-gnu/pkgconfig:/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/lib/pkgconfig PYTHONPATH=/home/jetson/Desktop/robot_dc/build/robot_bringup/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/robot_bringup/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_driver/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages:/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/local/lib/python3.10/dist-packages:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} ROS_PACKAGE_PATH=/home/jetson/Desktop/robot_dc/install/modbus_driver_interfaces/share /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_bringup build --build-base /home/jetson/Desktop/robot_dc/build/robot_bringup/build install --record /home/jetson/Desktop/robot_dc/build/robot_bringup/install.log --single-version-externally-managed install_data
+[19.477s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_bringup' for CMake config files
+[19.478s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_bringup/lib'
+[19.479s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_bringup/bin'
+[19.479s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_bringup/lib/pkgconfig/robot_bringup.pc'
+[19.479s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_bringup/lib/python3.10/site-packages'
+[19.479s] Level 1:colcon.colcon_core.shell:create_environment_hook('robot_bringup', 'pythonpath')
+[19.480s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/hook/pythonpath.ps1'
+[19.481s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/hook/pythonpath.dsv'
+[19.482s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/hook/pythonpath.sh'
+[19.483s] Level 1:colcon.colcon_core.environment:checking '/home/jetson/Desktop/robot_dc/install/robot_bringup/bin'
+[19.484s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(robot_bringup)
+[19.484s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/package.ps1'
+[19.486s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/package.dsv'
+[19.487s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/package.sh'
+[19.488s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/package.bash'
+[19.488s] INFO:colcon.colcon_core.shell:Creating package script '/home/jetson/Desktop/robot_dc/install/robot_bringup/share/robot_bringup/package.zsh'
+[19.489s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/jetson/Desktop/robot_dc/install/robot_bringup/share/colcon-core/packages/robot_bringup)
+[19.490s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:closing loop
+[19.491s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:loop closed
+[19.491s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete finished with '0'
+[19.491s] DEBUG:colcon.colcon_core.event_reactor:joining thread
+[19.511s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.terminal_notifier': Not used on non-Darwin systems
+[19.512s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.win32': Not used on non-Windows systems
+[19.512s] INFO:colcon.colcon_notification.desktop_notification:Sending desktop notification using 'notify2'
+[19.545s] DEBUG:colcon.colcon_core.event_reactor:joined thread
+[19.546s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/jetson/Desktop/robot_dc/install/local_setup.ps1'
+[19.549s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/jetson/Desktop/robot_dc/install/_local_setup_util_ps1.py'
+[19.553s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/jetson/Desktop/robot_dc/install/setup.ps1'
+[19.556s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/jetson/Desktop/robot_dc/install/local_setup.sh'
+[19.558s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/jetson/Desktop/robot_dc/install/_local_setup_util_sh.py'
+[19.561s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/jetson/Desktop/robot_dc/install/setup.sh'
+[19.565s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/jetson/Desktop/robot_dc/install/local_setup.bash'
+[19.566s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/jetson/Desktop/robot_dc/install/setup.bash'
+[19.570s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/jetson/Desktop/robot_dc/install/local_setup.zsh'
+[19.572s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/jetson/Desktop/robot_dc/install/setup.zsh'

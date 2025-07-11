@@ -1,0 +1,45 @@
+running egg_info
+creating ../../../build/robot_web/robot_web.egg-info
+writing ../../../build/robot_web/robot_web.egg-info/PKG-INFO
+writing dependency_links to ../../../build/robot_web/robot_web.egg-info/dependency_links.txt
+writing entry points to ../../../build/robot_web/robot_web.egg-info/entry_points.txt
+writing requirements to ../../../build/robot_web/robot_web.egg-info/requires.txt
+writing top-level names to ../../../build/robot_web/robot_web.egg-info/top_level.txt
+writing manifest file '../../../build/robot_web/robot_web.egg-info/SOURCES.txt'
+reading manifest file '../../../build/robot_web/robot_web.egg-info/SOURCES.txt'
+writing manifest file '../../../build/robot_web/robot_web.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/jetson/Desktop/robot_dc/build/robot_web/build
+creating /home/jetson/Desktop/robot_dc/build/robot_web/build/lib
+creating /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web
+copying robot_web/ros_bridge_node.py -> /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web
+copying robot_web/web_server.py -> /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web
+copying robot_web/web_ros_client.py -> /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web
+copying robot_web/__init__.py -> /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web
+running install
+running install_lib
+copying /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web/ros_bridge_node.py -> /home/jetson/Desktop/robot_dc/install/robot_web/lib/python3.10/site-packages/robot_web
+copying /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web/web_server.py -> /home/jetson/Desktop/robot_dc/install/robot_web/lib/python3.10/site-packages/robot_web
+copying /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web/web_ros_client.py -> /home/jetson/Desktop/robot_dc/install/robot_web/lib/python3.10/site-packages/robot_web
+copying /home/jetson/Desktop/robot_dc/build/robot_web/build/lib/robot_web/__init__.py -> /home/jetson/Desktop/robot_dc/install/robot_web/lib/python3.10/site-packages/robot_web
+running install_data
+creating /home/jetson/Desktop/robot_dc/install/robot_web/share/ament_index
+creating /home/jetson/Desktop/robot_dc/install/robot_web/share/ament_index/resource_index
+creating /home/jetson/Desktop/robot_dc/install/robot_web/share/ament_index/resource_index/packages
+copying resource/robot_web -> /home/jetson/Desktop/robot_dc/install/robot_web/share/ament_index/resource_index/packages
+copying package.xml -> /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web
+copying launch/web_server_launch.py -> /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/launch
+creating /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/web
+copying web/index.html -> /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/web
+copying web/motor_card.html -> /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/web
+creating /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/web/js
+copying web/js/main.js -> /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/web/js
+copying web/js/motor_visualization.js -> /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/web/js
+creating /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/web/css
+copying web/css/style.css -> /home/jetson/Desktop/robot_dc/install/robot_web/share/robot_web/web/css
+running install_egg_info
+Copying ../../../build/robot_web/robot_web.egg-info to /home/jetson/Desktop/robot_dc/install/robot_web/lib/python3.10/site-packages/robot_web-0.0.0-py3.10.egg-info
+running install_scripts
+Installing ros_bridge script to /home/jetson/Desktop/robot_dc/install/robot_web/lib/robot_web
+writing list of installed files to '/home/jetson/Desktop/robot_dc/build/robot_web/install.log'

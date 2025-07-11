@@ -1,0 +1,17 @@
+package.xml
+setup.cfg
+setup.py
+../../../build/modbus_devices/modbus_devices.egg-info/PKG-INFO
+../../../build/modbus_devices/modbus_devices.egg-info/SOURCES.txt
+../../../build/modbus_devices/modbus_devices.egg-info/dependency_links.txt
+../../../build/modbus_devices/modbus_devices.egg-info/entry_points.txt
+../../../build/modbus_devices/modbus_devices.egg-info/requires.txt
+../../../build/modbus_devices/modbus_devices.egg-info/top_level.txt
+../../../build/modbus_devices/modbus_devices.egg-info/zip-safe
+modbus_devices/__init__.py
+modbus_devices/base_device.py
+modbus_devices/utils.py
+resource/modbus_devices
+test/test_copyright.py
+test/test_flake8.py
+test/test_pep257.py

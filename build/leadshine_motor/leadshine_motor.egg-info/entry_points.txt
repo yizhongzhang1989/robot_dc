@@ -1,0 +1,4 @@
+[console_scripts]
+motor_node = leadshine_motor.motor_node:main
+motor_simulation_node = leadshine_motor.motor_simulation_node:main
+

@@ -1,0 +1,23 @@
+running egg_info
+writing ../../../build/leadshine_motor/leadshine_motor.egg-info/PKG-INFO
+writing dependency_links to ../../../build/leadshine_motor/leadshine_motor.egg-info/dependency_links.txt
+writing entry points to ../../../build/leadshine_motor/leadshine_motor.egg-info/entry_points.txt
+writing requirements to ../../../build/leadshine_motor/leadshine_motor.egg-info/requires.txt
+writing top-level names to ../../../build/leadshine_motor/leadshine_motor.egg-info/top_level.txt
+reading manifest file '../../../build/leadshine_motor/leadshine_motor.egg-info/SOURCES.txt'
+writing manifest file '../../../build/leadshine_motor/leadshine_motor.egg-info/SOURCES.txt'
+running build
+running build_py
+copying leadshine_motor/motor_controller.py -> /home/jetson/Desktop/robot_dc/build/leadshine_motor/build/lib/leadshine_motor
+running install
+running install_lib
+copying /home/jetson/Desktop/robot_dc/build/leadshine_motor/build/lib/leadshine_motor/motor_controller.py -> /home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages/leadshine_motor
+byte-compiling /home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages/leadshine_motor/motor_controller.py to motor_controller.cpython-310.pyc
+running install_data
+running install_egg_info
+removing '/home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages/leadshine_motor-0.0.1-py3.10.egg-info' (and everything under it)
+Copying ../../../build/leadshine_motor/leadshine_motor.egg-info to /home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/python3.10/site-packages/leadshine_motor-0.0.1-py3.10.egg-info
+running install_scripts
+Installing motor_node script to /home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/leadshine_motor
+Installing motor_simulation_node script to /home/jetson/Desktop/robot_dc/install/leadshine_motor/lib/leadshine_motor
+writing list of installed files to '/home/jetson/Desktop/robot_dc/build/leadshine_motor/install.log'

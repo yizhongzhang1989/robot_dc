@@ -1,0 +1,3 @@
+[console_scripts]
+platform_node = platform_controller.platform_node:main
+

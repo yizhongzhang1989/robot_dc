@@ -1,0 +1,3 @@
+[console_scripts]
+ros_bridge = robot_web.ros_bridge_node:main
+

@@ -1,0 +1,26 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from modbus_driver_interfaces/msg/MotorSimulationStatus.msg
+// generated code does not contain a copyright notice
+
+
+module modbus_driver_interfaces {
+  module msg {
+    struct MotorSimulationStatus {
+      int32 motor_id;
+
+      float current_position;
+
+      float target_position;
+
+      float velocity;
+
+      int32 motion_mode;
+
+      boolean moving;
+
+      @verbatim (language="comment", text=
+        "e.g., \"move_abs\", \"jog_left\", etc.")
+      string last_command;
+    };
+  };
+};

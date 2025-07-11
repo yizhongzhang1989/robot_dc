@@ -1,0 +1,36 @@
+[3.340s] Invoking command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_devices': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/modbus_devices/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/modbus_devices build --build-base /home/jetson/Desktop/robot_dc/build/modbus_devices/build install --record /home/jetson/Desktop/robot_dc/build/modbus_devices/install.log --single-version-externally-managed install_data
+[3.943s] running egg_info
+[3.945s] creating ../../../build/modbus_devices/modbus_devices.egg-info
+[3.946s] writing ../../../build/modbus_devices/modbus_devices.egg-info/PKG-INFO
+[3.947s] writing dependency_links to ../../../build/modbus_devices/modbus_devices.egg-info/dependency_links.txt
+[3.947s] writing entry points to ../../../build/modbus_devices/modbus_devices.egg-info/entry_points.txt
+[3.948s] writing requirements to ../../../build/modbus_devices/modbus_devices.egg-info/requires.txt
+[3.948s] writing top-level names to ../../../build/modbus_devices/modbus_devices.egg-info/top_level.txt
+[3.949s] writing manifest file '../../../build/modbus_devices/modbus_devices.egg-info/SOURCES.txt'
+[3.954s] reading manifest file '../../../build/modbus_devices/modbus_devices.egg-info/SOURCES.txt'
+[3.956s] writing manifest file '../../../build/modbus_devices/modbus_devices.egg-info/SOURCES.txt'
+[3.957s] running build
+[3.957s] running build_py
+[3.958s] creating /home/jetson/Desktop/robot_dc/build/modbus_devices/build
+[3.959s] creating /home/jetson/Desktop/robot_dc/build/modbus_devices/build/lib
+[3.961s] creating /home/jetson/Desktop/robot_dc/build/modbus_devices/build/lib/modbus_devices
+[3.961s] copying modbus_devices/utils.py -> /home/jetson/Desktop/robot_dc/build/modbus_devices/build/lib/modbus_devices
+[3.961s] copying modbus_devices/__init__.py -> /home/jetson/Desktop/robot_dc/build/modbus_devices/build/lib/modbus_devices
+[3.962s] copying modbus_devices/base_device.py -> /home/jetson/Desktop/robot_dc/build/modbus_devices/build/lib/modbus_devices
+[3.962s] running install
+[3.963s] running install_lib
+[3.965s] copying /home/jetson/Desktop/robot_dc/build/modbus_devices/build/lib/modbus_devices/utils.py -> /home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages/modbus_devices
+[3.966s] copying /home/jetson/Desktop/robot_dc/build/modbus_devices/build/lib/modbus_devices/__init__.py -> /home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages/modbus_devices
+[3.975s] copying /home/jetson/Desktop/robot_dc/build/modbus_devices/build/lib/modbus_devices/base_device.py -> /home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages/modbus_devices
+[3.976s] byte-compiling /home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages/modbus_devices/base_device.py to base_device.cpython-310.pyc
+[3.980s] running install_data
+[3.980s] creating /home/jetson/Desktop/robot_dc/install/modbus_devices/share/ament_index
+[3.980s] creating /home/jetson/Desktop/robot_dc/install/modbus_devices/share/ament_index/resource_index
+[3.980s] creating /home/jetson/Desktop/robot_dc/install/modbus_devices/share/ament_index/resource_index/packages
+[3.981s] copying resource/modbus_devices -> /home/jetson/Desktop/robot_dc/install/modbus_devices/share/ament_index/resource_index/packages
+[3.981s] copying package.xml -> /home/jetson/Desktop/robot_dc/install/modbus_devices/share/modbus_devices
+[3.981s] running install_egg_info
+[3.982s] Copying ../../../build/modbus_devices/modbus_devices.egg-info to /home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages/modbus_devices-0.0.0-py3.10.egg-info
+[3.982s] running install_scripts
+[4.039s] writing list of installed files to '/home/jetson/Desktop/robot_dc/build/modbus_devices/install.log'
+[4.184s] Invoked command in '/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_devices' returned '0': PYTHONPATH=/home/jetson/Desktop/robot_dc/build/modbus_devices/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/jetson/Desktop/robot_dc/install/modbus_devices/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/modbus_devices build --build-base /home/jetson/Desktop/robot_dc/build/modbus_devices/build install --record /home/jetson/Desktop/robot_dc/build/modbus_devices/install.log --single-version-externally-managed install_data

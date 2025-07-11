@@ -1,0 +1,22 @@
+running egg_info
+writing ../../../build/platform_controller/platform_controller.egg-info/PKG-INFO
+writing dependency_links to ../../../build/platform_controller/platform_controller.egg-info/dependency_links.txt
+writing entry points to ../../../build/platform_controller/platform_controller.egg-info/entry_points.txt
+writing requirements to ../../../build/platform_controller/platform_controller.egg-info/requires.txt
+writing top-level names to ../../../build/platform_controller/platform_controller.egg-info/top_level.txt
+reading manifest file '../../../build/platform_controller/platform_controller.egg-info/SOURCES.txt'
+writing manifest file '../../../build/platform_controller/platform_controller.egg-info/SOURCES.txt'
+running build
+running build_py
+copying platform_controller/platform_controller.py -> /home/jetson/Desktop/robot_dc/build/platform_controller/build/lib/platform_controller
+running install
+running install_lib
+copying /home/jetson/Desktop/robot_dc/build/platform_controller/build/lib/platform_controller/platform_controller.py -> /home/jetson/Desktop/robot_dc/install/platform_controller/lib/python3.10/site-packages/platform_controller
+byte-compiling /home/jetson/Desktop/robot_dc/install/platform_controller/lib/python3.10/site-packages/platform_controller/platform_controller.py to platform_controller.cpython-310.pyc
+running install_data
+running install_egg_info
+removing '/home/jetson/Desktop/robot_dc/install/platform_controller/lib/python3.10/site-packages/platform_controller-0.0.0-py3.10.egg-info' (and everything under it)
+Copying ../../../build/platform_controller/platform_controller.egg-info to /home/jetson/Desktop/robot_dc/install/platform_controller/lib/python3.10/site-packages/platform_controller-0.0.0-py3.10.egg-info
+running install_scripts
+Installing platform_node script to /home/jetson/Desktop/robot_dc/install/platform_controller/lib/platform_controller
+writing list of installed files to '/home/jetson/Desktop/robot_dc/build/platform_controller/install.log'
