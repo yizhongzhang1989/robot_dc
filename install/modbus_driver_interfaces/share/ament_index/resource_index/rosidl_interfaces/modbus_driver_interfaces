@@ -1,8 +1,0 @@
-msg/ModbusPacket.idl
-msg/ModbusPacket.msg
-msg/MotorSimulationStatus.idl
-msg/MotorSimulationStatus.msg
-srv/ModbusRequest.idl
-srv/ModbusRequest.srv
-srv/ModbusRequest_Request.msg
-srv/ModbusRequest_Response.msg

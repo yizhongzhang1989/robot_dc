@@ -1,3 +1,0 @@
-[console_scripts]
-joystick_teleop = robot_teleop.joystick_teleop_node:main
-

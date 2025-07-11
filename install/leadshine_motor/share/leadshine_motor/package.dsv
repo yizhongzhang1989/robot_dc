@@ -1,6 +1,0 @@
-source;share/leadshine_motor/hook/pythonpath.ps1
-source;share/leadshine_motor/hook/pythonpath.dsv
-source;share/leadshine_motor/hook/pythonpath.sh
-source;share/leadshine_motor/hook/ament_prefix_path.ps1
-source;share/leadshine_motor/hook/ament_prefix_path.dsv
-source;share/leadshine_motor/hook/ament_prefix_path.sh
