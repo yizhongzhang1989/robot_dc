@@ -1,3 +1,0 @@
-[console_scripts]
-servo_node = feetech_servo.servo_node:main
-

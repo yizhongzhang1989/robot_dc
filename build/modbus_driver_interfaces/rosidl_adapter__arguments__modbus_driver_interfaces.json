@@ -1,8 +1,0 @@
-{
-  "package_name": "modbus_driver_interfaces",
-  "non_idl_tuples": [
-    "/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver_interfaces:srv/ModbusRequest.srv",
-    "/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver_interfaces:msg/ModbusPacket.msg",
-    "/home/jetson/Desktop/robot_dc/colcon_ws/src/modbus_driver_interfaces:msg/MotorSimulationStatus.msg"
-  ]
-}

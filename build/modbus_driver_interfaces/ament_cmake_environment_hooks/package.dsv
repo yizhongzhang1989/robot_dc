@@ -1,4 +1,0 @@
-source;share/modbus_driver_interfaces/local_setup.bash
-source;share/modbus_driver_interfaces/local_setup.dsv
-source;share/modbus_driver_interfaces/local_setup.sh
-source;share/modbus_driver_interfaces/local_setup.zsh
