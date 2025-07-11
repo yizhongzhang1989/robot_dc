@@ -97,36 +97,36 @@ Each servo node subscribes to its own topic, e.g., '/motor17/cmd', '/motor18/cmd
 | 'help'                 | Print supported command list                       |
 
 > Currently implemented: 'stop', 'set_pos', 'set_vel', 'set_acc'. Other commands can be added as needed.
-> 新增命令：'get_pos' 读取舵机当前位置，'get_torque' 读取当前扭矩（基于PWM估算）。
+> New commands: 'get_pos' to read the current servo position, 'get_torque' to read the current torque (estimated from PWM).
 
 ---
 
-### 📖 位置与扭矩读取说明
+### 📖 Position and Torque Reading Explanation
 
-| 功能         | 寄存器地址 (hex) | 单位         | 计算方式                                      |
-|--------------|------------------|--------------|-----------------------------------------------|
-| 位置读取     | 0x0101 (257)     | step (0-4095)| 直接使用返回值，0~4095对应0°~360°              |
-| 扭矩估算     | 0x0103 (259)     | 0.1% (PWM)   | Torque (N·m) = (PWM_RAW / 1000) × 4.413       |
+| Function      | Register Address (hex) | Unit         | Calculation Method                                 |
+|-------------- |----------------------- |--------------|---------------------------------------------------|
+| Position      | 0x0101 (257)           | step (0-4095)| Use the returned value directly, 0~4095 corresponds to 0°~360° |
+| Torque Est.   | 0x0103 (259)           | 0.1% (PWM)   | Torque (N·m) = (PWM_RAW / 1000) × 4.413           |
 
-- **位置读取**：
-  - 调用 `get_position()` 方法，读取寄存器 0x0101，返回步数（step）。
-  - 例：返回 2048 → 约180°。
+- **Position Reading**:
+  - Call `get_position()` method, read register 0x0101, return step.
+  - Example: return 2048 → about 180°.
 
-- **扭矩读取**：
-  - 调用 `get_torque()` 方法，读取寄存器 0x0103，返回 PWM_RAW。
-  - 扭矩计算：`Torque (N·m) = (PWM_RAW / 1000) × 4.413`
-  - 例：PWM_RAW=500 → Torque=2.2065 N·m。
+- **Torque Reading**:
+  - Call `get_torque()` method, read register 0x0103, return PWM_RAW.
+  - Torque calculation: `Torque (N·m) = (PWM_RAW / 1000) × 4.413`
+  - Example: PWM_RAW=500 → Torque=2.2065 N·m.
 
 ---
 
-### 🧪 位置与扭矩读取命令示例
+### 🧪 Position and Torque Reading Command Example
 
 ```bash
 ros2 topic pub --once /motor17/cmd std_msgs/String "data: 'get_pos'"
 ros2 topic pub --once /motor17/cmd std_msgs/String "data: 'get_torque'"
 ```
 
-节点会在日志中输出当前步数和估算扭矩。
+The node will output the current step and estimated torque in the log.
 
 ---
 
@@ -185,6 +185,4 @@ MIT License (update if different)
 
 ## 👤 Maintainer
 
-[yizhongzhang1989@gmail.com](mailto:yizhongzhang1989@gmail.com)
-
---- 
+[yizhongzhang1989@gmail.com](mailto:yizhongzhang1989@gmail.com) 

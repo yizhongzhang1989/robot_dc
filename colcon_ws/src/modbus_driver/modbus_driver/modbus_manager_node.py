@@ -31,7 +31,7 @@ class ModbusManagerNode(Node):
         seq_id = getattr(request, 'seq_id', None)
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
         self.get_logger().info(f"[SEQ {seq_id}] [{now}] Received ModbusRequest: {request}")
-        response.ack = 1  # 新增：收到请求立即返回ack=1
+        response.ack = 1  # Added: immediately return ack=1 upon receiving request
         with self.lock:
             try:
                 fc = request.function_code
