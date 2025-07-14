@@ -28,10 +28,14 @@ def serve_index():
 
 @app.get("/motors")
 def get_motors():
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     return {"motors": ros_client.motor_list}
 
 @app.post("/api/{motor_id}/cmd")
 async def send_motor_command(motor_id: str, request: Request):
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     data = await request.json()
     command = data.get("command")
     value = data.get("value", None)
@@ -39,10 +43,29 @@ async def send_motor_command(motor_id: str, request: Request):
 
 @app.get("/api/{motor_id}/status")
 def get_motor_status(motor_id: str):
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     status = ros_client.get_motor_status(motor_id)
     if status is None:
         return JSONResponse(content={"error": "No status yet"}, status_code=404)
     return status
+
+@app.get("/api/all_status")
+def get_all_status():
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    return ros_client.get_all_status()
+
+@app.post("/api/observation/{target}/{action}")
+def control_observation(target: str, action: str):
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    if action not in ("start", "stop"):
+        return JSONResponse(content={"error": "Invalid action"}, status_code=400)
+    result = ros_client.control_observation(target, action)
+    if "error" in result:
+        return JSONResponse(content=result, status_code=400)
+    return result
 
 app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")
 

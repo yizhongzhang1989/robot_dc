@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Int32, Float32
 from modbus_driver_interfaces.msg import MotorSimulationStatus
 from threading import Thread, Lock
 
@@ -11,6 +11,7 @@ class WebROSClient:
         self.publishers = {}
         self.status_map = {}
         self.lock = Lock()
+        self.obs_ctrl_publishers = {}  # 确保为实例属性
         self._start_ros_node()
 
     def _start_ros_node(self):
@@ -18,14 +19,43 @@ class WebROSClient:
             rclpy.init()
             self.node = Node("web_ros_client")
 
+            # 观测控制Publisher
+            for motor_id in [1, 2]:
+                ctrl_topic = f"/motor{motor_id}/read_ctrl"
+                self.obs_ctrl_publishers[f"motor{motor_id}"] = self.node.create_publisher(String, ctrl_topic, 10)
+            for servo_id in [17, 18]:
+                ctrl_topic = f"/servo{servo_id}/read_ctrl"
+                self.obs_ctrl_publishers[f"servo{servo_id}"] = self.node.create_publisher(String, ctrl_topic, 10)
+
+            # 订阅detector节点发布的电机位置
+            for motor_id in [1, 2]:
+                topic = f"/motor{motor_id}/position"
+                self.node.create_subscription(
+                    Int32, topic,
+                    lambda msg, m=motor_id: self._update_motor_position(f"motor{m}", msg),
+                    10
+                )
+
+            # 订阅detector节点发布的舵机位置和扭矩
+            for servo_id in [17, 18]:
+                pos_topic = f"/servo{servo_id}/position"
+                pwm_topic = f"/servo{servo_id}/pwm"
+                self.node.create_subscription(
+                    Int32, pos_topic,
+                    lambda msg, s=servo_id: self._update_servo_position(f"servo{s}", msg),
+                    10
+                )
+                self.node.create_subscription(
+                    Float32, pwm_topic,
+                    lambda msg, s=servo_id: self._update_servo_torque(f"servo{s}", msg),
+                    10
+                )
+
+            # 保持原有功能
             for motor in self.motor_list:
                 cmd_topic = f"/{motor}/cmd"
                 status_topic = f"/{motor}/sim_status"
-
-                # Publisher for sending commands
                 self.publishers[motor] = self.node.create_publisher(String, cmd_topic, 10)
-
-                # Subscriber for receiving sim_status
                 self.node.create_subscription(
                     MotorSimulationStatus,
                     status_topic,
@@ -46,6 +76,17 @@ class WebROSClient:
         self.publishers[motor_id].publish(msg)
         return {"motor": motor_id, "command": cmd_str}
 
+    def control_observation(self, target, action):
+        # target: 'motor1', 'motor2', 'servo17', 'servo18'
+        # action: 'start' or 'stop'
+        pub = self.obs_ctrl_publishers.get(target)
+        if pub is None:
+            return {"error": f"Unknown target: {target}"}
+        msg = String()
+        msg.data = action
+        pub.publish(msg)
+        return {"target": target, "action": action, "result": "sent"}
+
     def _update_status(self, motor_id, msg: MotorSimulationStatus):
         with self.lock:
             self.status_map[motor_id] = {
@@ -58,6 +99,28 @@ class WebROSClient:
                 "last_command": msg.last_command,
             }
 
+    def _update_motor_position(self, motor_key, msg):
+        with self.lock:
+            if motor_key not in self.status_map:
+                self.status_map[motor_key] = {}
+            self.status_map[motor_key]["position"] = msg.data
+
+    def _update_servo_position(self, servo_key, msg):
+        with self.lock:
+            if servo_key not in self.status_map:
+                self.status_map[servo_key] = {}
+            self.status_map[servo_key]["position"] = msg.data
+
+    def _update_servo_torque(self, servo_key, msg):
+        with self.lock:
+            if servo_key not in self.status_map:
+                self.status_map[servo_key] = {}
+            self.status_map[servo_key]["torque"] = msg.data
+
     def get_motor_status(self, motor_id):
         with self.lock:
             return self.status_map.get(motor_id, None)
+
+    def get_all_status(self):
+        with self.lock:
+            return self.status_map.copy()
