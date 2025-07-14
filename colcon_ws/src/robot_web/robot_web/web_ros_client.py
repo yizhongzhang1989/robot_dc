@@ -11,7 +11,7 @@ class WebROSClient:
         self.publishers = {}
         self.status_map = {}
         self.lock = Lock()
-        self.obs_ctrl_publishers = {}  # 确保为实例属性
+        self.obs_ctrl_publishers = {}  # Ensure this is an instance attribute
         self._start_ros_node()
 
     def _start_ros_node(self):
@@ -19,7 +19,7 @@ class WebROSClient:
             rclpy.init()
             self.node = Node("web_ros_client")
 
-            # 观测控制Publisher
+            # Observation control Publisher
             for motor_id in [1, 2]:
                 ctrl_topic = f"/motor{motor_id}/read_ctrl"
                 self.obs_ctrl_publishers[f"motor{motor_id}"] = self.node.create_publisher(String, ctrl_topic, 10)
@@ -27,7 +27,7 @@ class WebROSClient:
                 ctrl_topic = f"/servo{servo_id}/read_ctrl"
                 self.obs_ctrl_publishers[f"servo{servo_id}"] = self.node.create_publisher(String, ctrl_topic, 10)
 
-            # 订阅detector节点发布的电机位置
+            # Subscribe to motor position published by detector node
             for motor_id in [1, 2]:
                 topic = f"/motor{motor_id}/position"
                 self.node.create_subscription(
@@ -36,7 +36,7 @@ class WebROSClient:
                     10
                 )
 
-            # 订阅detector节点发布的舵机位置和扭矩
+            # Subscribe to servo position and torque published by detector node
             for servo_id in [17, 18]:
                 pos_topic = f"/servo{servo_id}/position"
                 pwm_topic = f"/servo{servo_id}/pwm"
@@ -51,7 +51,7 @@ class WebROSClient:
                     10
                 )
 
-            # 保持原有功能
+            # Keep original functionality
             for motor in self.motor_list:
                 cmd_topic = f"/{motor}/cmd"
                 status_topic = f"/{motor}/sim_status"
