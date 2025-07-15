@@ -110,7 +110,7 @@ class CamNode(Node):
             if img_b64:
                 self.get_logger().info(f"[{cam_id}] 拍照成功")
                 return img_b64
-            else:
+                else:
                 self.get_logger().warn(f"[{cam_id}] 拍照失败: {err}")
             time.sleep(retry_interval)
         self.get_logger().error(f"[{cam_id}] 多次尝试后仍失败，可能需要重启摄像头！")

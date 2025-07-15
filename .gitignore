@@ -5,3 +5,5 @@ colcon_ws/log/
 build/
 install/
 log/
+*.pyc
+__pycache__/
