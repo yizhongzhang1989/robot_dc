@@ -9,6 +9,6 @@ def generate_launch_description():
             name='platform',
             output='screen',
             emulate_tty=True,
-            parameters=[{'device_id': 32}],
+            parameters=[{'device_id': 32, 'use_ack_patch': 1}],
         ),
     ])

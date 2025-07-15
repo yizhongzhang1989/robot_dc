@@ -3,6 +3,7 @@ from rclpy.node import Node
 from pymodbus.client import ModbusSerialClient
 from modbus_driver_interfaces.srv import ModbusRequest
 import threading
+import datetime
 
 
 class ModbusManagerNode(Node):
@@ -27,6 +28,10 @@ class ModbusManagerNode(Node):
         self.get_logger().info("✅ Modbus Manager is running")
 
     def handle_modbus_request(self, request, response):
+        seq_id = getattr(request, 'seq_id', None)
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+        self.get_logger().info(f"[SEQ {seq_id}] [{now}] Received ModbusRequest: {request}")
+        response.ack = 1  # 新增：收到请求立即返回ack=1
         with self.lock:
             try:
                 fc = request.function_code
@@ -41,6 +46,7 @@ class ModbusManagerNode(Node):
                         raise Exception(str(result))
                     response.success = True
                     response.response = [int(b) for b in result.bits]
+                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Read coils: address={addr}, count={request.count}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 3:
                     # Read holding registers
@@ -49,6 +55,7 @@ class ModbusManagerNode(Node):
                         raise Exception(str(result))
                     response.success = True
                     response.response = list(result.registers)
+                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Read holding registers: address={addr}, count={request.count}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 5:
                     # Write single coil (ON=0xFF00, OFF=0x0000)
@@ -57,6 +64,7 @@ class ModbusManagerNode(Node):
                         raise Exception(str(result))
                     response.success = True
                     response.response = [int(values[0])]
+                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Write single coil: address={addr}, value={values[0]}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 6:
                     # Write single register
@@ -65,6 +73,7 @@ class ModbusManagerNode(Node):
                         raise Exception(str(result))
                     response.success = True
                     response.response = [values[0]]
+                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Write single register: address={addr}, value={values[0]}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 15:
                     # Write multiple coils
@@ -74,6 +83,7 @@ class ModbusManagerNode(Node):
                         raise Exception(str(result))
                     response.success = True
                     response.response = [int(v) for v in coil_values]
+                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Write multiple coils: address={addr}, values={coil_values}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 16:
                     # Write multiple registers
@@ -82,14 +92,16 @@ class ModbusManagerNode(Node):
                         raise Exception(str(result))
                     response.success = True
                     response.response = values
+                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Write multiple registers: address={addr}, values={values}, slave={slave}, success={response.success}, response={response.response}")
 
                 else:
                     raise ValueError(f"Unsupported function code: {fc}")
 
             except Exception as e:
-                self.get_logger().error(f"Modbus error: {e}")
+                self.get_logger().error(f"[SEQ {seq_id}] [{now}] Modbus error: {e}")
                 response.success = False
                 response.response = []
+                self.get_logger().error(f"[SEQ {seq_id}] [{now}] Modbus error response: success={response.success}, response={response.response}")
 
         return response
 

@@ -74,10 +74,9 @@ The teleop node publishes motor commands to:
 
 ### Example Commands Published:
 
-* `set_vel -50`
-* `move_vel`
-* `stop`
-* `jog_left`
+* 'set_vel -50'
+* 'move_vel'
+* 'stop'
 
 These topics should be subscribed by motor controller nodes such as `leadshine_motor`.
 
