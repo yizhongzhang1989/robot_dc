@@ -41,8 +41,25 @@
     </div>
     <div>
       <h2 class="text-xl font-semibold mb-2">Motor/Servo Observation</h2>
+      <div class="mb-4 flex gap-4">
+        <button id="monitor-start" class="motor-button">开启监控</button>
+        <button id="monitor-stop" class="motor-button">关闭监控</button>
+      </div>
+      <div class="mb-4 flex gap-4">
+        <button id="snapshot-btn" class="motor-button">拍照</button>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="observation-grid">
         <!-- Real-time data and observation toggle buttons will be inserted here -->
+      </div>
+      <div class="mt-6 flex gap-8" id="snapshot-area" style="display:none;">
+        <div>
+          <img id="img-cam100" src="" style="max-width:400px;max-height:300px;"/>
+          <div id="time-cam100" class="text-sm text-gray-600 mt-2"></div>
+        </div>
+        <div>
+          <img id="img-cam101" src="" style="max-width:400px;max-height:300px;"/>
+          <div id="time-cam101" class="text-sm text-gray-600 mt-2"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -167,10 +184,6 @@
       card.innerHTML = `
         <div class="flex justify-between items-center mb-2">
           <span class="font-semibold text-lg">${target.label}</span>
-          <div>
-            <button class="motor-button start-btn" data-key="${target.key}" data-action="start">Start</button>
-            <button class="motor-button stop-btn ml-2" data-key="${target.key}" data-action="stop">Stop</button>
-          </div>
         </div>
         <div class="flex flex-col gap-1">
           <div>Position: <span id="${target.key}-position">--</span></div>
@@ -207,14 +220,49 @@
         const card = createObservationCard(target);
         grid.appendChild(card);
       });
-      // Button events
-      grid.addEventListener('click', e => {
-        if (e.target.classList.contains('start-btn') || e.target.classList.contains('stop-btn')) {
-          const key = e.target.getAttribute('data-key');
-          const action = e.target.getAttribute('data-action');
-          sendObservationControl(key, action);
+      // 统一监控按钮事件
+      document.getElementById('monitor-start').onclick = () => {
+        fetch('/monitor_control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'start' })
+        });
+      };
+      document.getElementById('monitor-stop').onclick = () => {
+        fetch('/monitor_control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'stop' })
+        });
+      };
+      // 拍照按钮事件
+      document.getElementById('snapshot-btn').onclick = async () => {
+        const area = document.getElementById('snapshot-area');
+        area.style.display = 'flex';
+        document.getElementById('img-cam100').src = '';
+        document.getElementById('img-cam101').src = '';
+        document.getElementById('time-cam100').innerText = '';
+        document.getElementById('time-cam101').innerText = '';
+        try {
+          const res = await fetch('/snapshot', { method: 'POST' });
+          const data = await res.json();
+          if (data.cam100 && data.cam100.img) {
+            document.getElementById('img-cam100').src = 'data:image/jpeg;base64,' + data.cam100.img;
+            document.getElementById('time-cam100').innerText = '拍照时间：' + data.cam100.time;
+          } else {
+            document.getElementById('time-cam100').innerText = '拍照失败: ' + (data.cam100 && data.cam100.error ? data.cam100.error : '未知错误');
+          }
+          if (data.cam101 && data.cam101.img) {
+            document.getElementById('img-cam101').src = 'data:image/jpeg;base64,' + data.cam101.img;
+            document.getElementById('time-cam101').innerText = '拍照时间：' + data.cam101.time;
+          } else {
+            document.getElementById('time-cam101').innerText = '拍照失败: ' + (data.cam101 && data.cam101.error ? data.cam101.error : '未知错误');
+          }
+        } catch (err) {
+          document.getElementById('time-cam100').innerText = '网络错误';
+          document.getElementById('time-cam101').innerText = '网络错误';
         }
-      });
+      };
     }
 
     async function pollObservationStatus() {
