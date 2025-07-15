@@ -21,11 +21,21 @@ class MotorControlNode(Node):
 
         # Create motor instance
         self.motor = LeadshineMotor(self.device_id, self, use_ack_patch=use_ack_patch)
+        # Declare and read use_ack_patch parameter
+        self.declare_parameter('use_ack_patch', 1)
+        use_ack_patch = self.get_parameter('use_ack_patch').value
+        self.get_logger().info(f"use_ack_patch from param = {use_ack_patch}")
 
+        # Create motor instance
+        self.motor = LeadshineMotor(self.device_id, self, use_ack_patch=use_ack_patch)
+
+        # Set up ROS subscription for commands
+        self.cmd_sub = self.create_subscription(String, f'/motor{self.device_id}/cmd', self.command_callback, 10)
         # Set up ROS subscription for commands
         self.cmd_sub = self.create_subscription(String, f'/motor{self.device_id}/cmd', self.command_callback, 10)
         self.get_logger().info(f"📡 Subscription to /motor{self.device_id}/cmd created")
 
+        # Non-blocking timer to wait for service availability
         # Non-blocking timer to wait for service availability
         self.service_check_timer = self.create_timer(1.0, self.initialize_motor_params)
         self.get_logger().info("⏳ Waiting for /modbus_request service...")
@@ -39,7 +49,17 @@ class MotorControlNode(Node):
         # This flag controls serial execution of commands
         self.waiting_for_ack = False
 
+        # Initialize alarm reset and command queue
+        self.alarm_reset_stop_event = threading.Event()
+        self.alarm_reset_thread = None
+        self.last_home_offset = None
+        self.last_home_speed = None
+        self.cmd_queue = collections.deque()
+        # This flag controls serial execution of commands
+        self.waiting_for_ack = False
+
     def initialize_motor_params(self):
+        # Check if the Modbus service is ready
         # Check if the Modbus service is ready
         if self.motor.cli.service_is_ready():
             self.get_logger().info("✅ /modbus_request service is now available!")
@@ -74,21 +94,30 @@ class MotorControlNode(Node):
             match cmd:
                 case "jog_left":
                     self.motor.jog_left(seq_id=seq_id)
+                    self.motor.jog_left(seq_id=seq_id)
                 case "jog_right":
+                    self.motor.jog_right(seq_id=seq_id)
                     self.motor.jog_right(seq_id=seq_id)
                 case "stop":
                     self.motor.abrupt_stop(seq_id=seq_id)
+                    self.motor.abrupt_stop(seq_id=seq_id)
                 case "set_pos":
+                    self.motor.set_target_position(arg, seq_id=seq_id)
                     self.motor.set_target_position(arg, seq_id=seq_id)
                 case "set_vel":
                     self.motor.set_target_velocity(arg, seq_id=seq_id)
+                    self.motor.set_target_velocity(arg, seq_id=seq_id)
                 case "set_acc":
+                    self.motor.set_target_acceleration(arg, seq_id=seq_id)
                     self.motor.set_target_acceleration(arg, seq_id=seq_id)
                 case "set_dec":
                     self.motor.set_target_deceleration(arg, seq_id=seq_id)
+                    self.motor.set_target_deceleration(arg, seq_id=seq_id)
                 case "move_abs":
                     self.motor.move_absolute(seq_id=seq_id)
+                    self.motor.move_absolute(seq_id=seq_id)
                 case "move_rel":
+                    self.motor.move_relative(seq_id=seq_id)
                     self.motor.move_relative(seq_id=seq_id)
                 case "move_vel":
                     self.motor.move_velocity(seq_id=seq_id)
@@ -168,7 +197,77 @@ class MotorControlNode(Node):
                     return
                 case _:
                     self.get_logger().warn(f"[SEQ {seq_id}] Unknown command: {cmd}")
+                    self.get_logger().warn(f"[SEQ {seq_id}] Unknown command: {cmd}")
         except Exception as e:
+            self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
+            if use_ack_patch:
+                # Important: If error occurs, clear waiting flag and continue queue
+                self.waiting_for_ack = False
+                self.process_next_command()
+            return
+
+    def process_next_command(self):
+        """
+        Process the next command in the queue if available and no command is currently waiting for ACK.
+        This function is called:
+        - Initially by command_callback when a new command arrives
+        - Recursively after each ACK is received (ack_callback)
+        """
+        if not self.waiting_for_ack and self.cmd_queue:
+            cmd_tuple = self.cmd_queue.popleft()
+            cmd, arg, seq_id = cmd_tuple
+            parts = getattr(self, 'last_cmd_parts', None)
+            # Mark that we are waiting for completion
+            self.waiting_for_ack = True
+            use_ack_patch = getattr(self.motor, 'use_ack_patch', 1)
+            # For motion commands, reset alarm before motion
+            if cmd in ["jog_left", "jog_right", "move_abs", "move_rel", "move_vel", "home_pos", "home_neg"]:
+                self.try_reset_alarm_if_needed(lambda: self.do_motion(cmd, arg, seq_id, parts, use_ack_patch))
+            else:
+                self.do_motion(cmd, arg, seq_id, parts, use_ack_patch)
+
+    def command_callback(self, msg):
+        """
+        Receive command messages from ROS topic.
+        This is the main entry point for new commands.
+        Relationship with process_next_command:
+        - command_callback receives and enqueues commands
+        - process_next_command dequeues and executes them serially
+        """
+        data = msg.data.strip()
+        seq_id = None
+        # Parse sequence ID if present
+        if data.startswith('seq:') and '|' in data:
+            try:
+                seq_id_str, rest = data.split('|', 1)
+                seq_id = int(seq_id_str[4:])
+                msg.data = rest
+            except Exception:
+                pass
+        parts = msg.data.strip().lower().split()
+        if not parts:
+            return
+        self.last_cmd_parts = parts  # Save full parts for multi-argument commands
+        cmd = parts[0]
+        arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
+        use_ack_patch = getattr(self.motor, 'use_ack_patch', 1)
+
+        if use_ack_patch:
+            # Enqueue command and start processing queue
+            self.cmd_queue.append((cmd, arg, seq_id))
+            self.process_next_command()
+        else:
+            # Direct execution without queue
+            self.do_motion(cmd, arg, seq_id, parts, use_ack_patch)
+
+    def destroy_node(self):
+        """
+        Clean shutdown of node.
+        """
+        self.alarm_reset_stop_event.set()
+        if self.alarm_reset_thread:
+            self.alarm_reset_thread.join()
+        super().destroy_node()
             self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
             if use_ack_patch:
                 self.waiting_for_ack = False
