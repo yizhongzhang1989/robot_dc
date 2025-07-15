@@ -11,11 +11,11 @@ def get_rtsp_snapshot(rtsp_url):
     import cv2
     cap = cv2.VideoCapture(rtsp_url)
     if not cap.isOpened():
-        return None, '无法打开RTSP流'
+        return None, 'Failed to open RTSP stream'
     ret, frame = cap.read()
     cap.release()
     if not ret:
-        return None, '无法读取帧'
+        return None, 'Failed to read frame'
     _, buffer = cv2.imencode('.jpg', frame)
     import base64
     img_b64 = base64.b64encode(buffer.tobytes()).decode('utf-8')
@@ -36,20 +36,20 @@ class CamNode(Node):
         for i in range(retry):
             img_b64, err = get_rtsp_snapshot(rtsp_url)
             if img_b64:
-                self.get_logger().info(f"[{cam_id}] 拍照成功")
+                self.get_logger().info(f"[{cam_id}] Snapshot succeeded")
                 return img_b64
             else:
-                self.get_logger().warn(f"[{cam_id}] 拍照失败: {err}")
+                self.get_logger().warn(f"[{cam_id}] Snapshot failed: {err}")
             time.sleep(retry_interval)
-        self.get_logger().error(f"[{cam_id}] 多次尝试后仍失败，可能需要重启摄像头！")
+        self.get_logger().error(f"[{cam_id}] Multiple attempts failed, camera may need to be restarted!")
         self.restart_camera(cam_id)
         return None
 
     def restart_camera(self, cam_id):
-        self.get_logger().warn(f"[{cam_id}] 正在尝试重启摄像头...")
-        # 这里可集成实际硬件重启命令
+        self.get_logger().warn(f"[{cam_id}] Attempting to restart camera...")
+        # Integrate actual hardware restart command here if needed
         time.sleep(5)
-        self.get_logger().info(f"[{cam_id}] 重启完成，等待摄像头恢复...")
+        self.get_logger().info(f"[{cam_id}] Restart complete, waiting for camera to recover...")
         time.sleep(10)
 
 def main():

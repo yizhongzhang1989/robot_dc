@@ -1,34 +1,34 @@
 # cam
 
-摄像头抓拍节点，调用 snapshot 服务，具备防卡死和自动重启摄像头功能。
+Camera snapshot node with retry and auto-restart capability.
 
-## 依赖
+## Dependencies
 - Python requests
-- 需先运行 scripts/rtsp_cam_snapshot_server.py 提供 HTTP 拍照服务
+- (Legacy) If using HTTP snapshot service: scripts/rtsp_cam_snapshot_server.py must be running on port 8012
 
-## 构建
-在 ROS2 工作空间根目录下执行：
+## Build
+In the ROS2 workspace root directory:
 
 ```bash
 colcon build --packages-select cam
 source install/setup.bash
 ```
 
-## 运行
-### 直接运行节点
+## Run
+### Run node directly
 ```bash
 ros2 run cam cam_node
 ```
 
-### 使用 launch 文件
+### Use launch file
 ```bash
 ros2 launch cam cam_launch.py
 ```
 
-## 节点说明
-- 节点会定时（默认30秒）请求 cam100 和 cam101 两个摄像头的抓拍服务。
-- 若抓拍失败会自动重试，连续失败后会调用 restart_camera（需根据实际硬件实现重启逻辑）。
+## Node Description
+- The node periodically (default 30s) requests snapshots from cam100 and cam101 RTSP cameras.
+- If snapshot fails, it will retry automatically. After several failures, it will call restart_camera (you need to implement actual hardware restart logic if needed).
 
-## 注意事项
-- 请确保 `scripts/rtsp_cam_snapshot_server.py` 已在 8012 端口运行。
-- 如需修改抓拍间隔或摄像头地址，请编辑 `cam_node.py`。 
+## Notes
+- If using HTTP snapshot service, ensure `scripts/rtsp_cam_snapshot_server.py` is running on port 8012.
+- To change snapshot interval or camera addresses, edit `cam_node.py`. 

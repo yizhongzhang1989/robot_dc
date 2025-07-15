@@ -79,7 +79,7 @@ async def monitor_control(request: Request):
     action = data.get("action")
     if action not in ("start", "stop"):
         return JSONResponse(content={"error": "Invalid action"}, status_code=400)
-    # 控制所有motor/servo
+    # Control all motors/servos
     targets = ["motor1", "motor2", "servo17", "servo18"]
     results = []
     for target in targets:
@@ -87,7 +87,7 @@ async def monitor_control(request: Request):
         results.append(result)
     return {"result": results}
 
-# 摄像头抓拍接口
+# Camera snapshot interface
 RTSP_URLS = {
     'cam100': 'rtsp://admin:123456@192.168.1.100/stream0',
     'cam101': 'rtsp://admin:123456@192.168.1.101/stream0'
@@ -96,11 +96,11 @@ RTSP_URLS = {
 def get_rtsp_snapshot(rtsp_url):
     cap = cv2.VideoCapture(rtsp_url)
     if not cap.isOpened():
-        return None, '无法打开RTSP流'
+        return None, 'Failed to open RTSP stream'
     ret, frame = cap.read()
     cap.release()
     if not ret:
-        return None, '无法读取帧'
+        return None, 'Failed to read frame'
     _, buffer = cv2.imencode('.jpg', frame)
     img_b64 = base64.b64encode(buffer.tobytes()).decode('utf-8')
     return img_b64, None

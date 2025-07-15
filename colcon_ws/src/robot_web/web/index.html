@@ -42,11 +42,11 @@
     <div>
       <h2 class="text-xl font-semibold mb-2">Motor/Servo Observation</h2>
       <div class="mb-4 flex gap-4">
-        <button id="monitor-start" class="motor-button">开启监控</button>
-        <button id="monitor-stop" class="motor-button">关闭监控</button>
+        <button id="monitor-start" class="motor-button">Start Monitoring</button>
+        <button id="monitor-stop" class="motor-button">Stop Monitoring</button>
       </div>
       <div class="mb-4 flex gap-4">
-        <button id="snapshot-btn" class="motor-button">拍照</button>
+        <button id="snapshot-btn" class="motor-button">Snapshot</button>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="observation-grid">
         <!-- Real-time data and observation toggle buttons will be inserted here -->
@@ -248,19 +248,19 @@
           const data = await res.json();
           if (data.cam100 && data.cam100.img) {
             document.getElementById('img-cam100').src = 'data:image/jpeg;base64,' + data.cam100.img;
-            document.getElementById('time-cam100').innerText = '拍照时间：' + data.cam100.time;
+            document.getElementById('time-cam100').innerText = 'Snapshot Time: ' + data.cam100.time;
           } else {
-            document.getElementById('time-cam100').innerText = '拍照失败: ' + (data.cam100 && data.cam100.error ? data.cam100.error : '未知错误');
+            document.getElementById('time-cam100').innerText = 'Snapshot failed: ' + (data.cam100 && data.cam100.error ? data.cam100.error : 'Unknown error');
           }
           if (data.cam101 && data.cam101.img) {
             document.getElementById('img-cam101').src = 'data:image/jpeg;base64,' + data.cam101.img;
-            document.getElementById('time-cam101').innerText = '拍照时间：' + data.cam101.time;
+            document.getElementById('time-cam101').innerText = 'Snapshot Time: ' + data.cam101.time;
           } else {
-            document.getElementById('time-cam101').innerText = '拍照失败: ' + (data.cam101 && data.cam101.error ? data.cam101.error : '未知错误');
+            document.getElementById('time-cam101').innerText = 'Snapshot failed: ' + (data.cam101 && data.cam101.error ? data.cam101.error : 'Unknown error');
           }
         } catch (err) {
-          document.getElementById('time-cam100').innerText = '网络错误';
-          document.getElementById('time-cam101').innerText = '网络错误';
+          document.getElementById('time-cam100').innerText = 'Network error';
+          document.getElementById('time-cam101').innerText = 'Network error';
         }
       };
     }
