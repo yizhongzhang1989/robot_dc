@@ -127,8 +127,6 @@ ros2 topic pub --once /motor17/cmd std_msgs/String "data: 'get_torque'"
 ```
 
 The node will output the current step and estimated torque in the log.
-=======
->>>>>>> origin/main
 
 ---
 
