@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robot Arm Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .robot-arm-button {
+      transition: all 0.2s;
+    }
+    .robot-arm-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .robot-arm-button:active {
+      transform: translateY(0);
+    }
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+    }
+    .status-connected {
+      background-color: #10b981;
+    }
+    .status-disconnected {
+      background-color: #ef4444;
+    }
+    .command-log {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 h-full font-sans">
+  <div class="container mx-auto p-6">
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">🤖 Robot Arm Control</h1>
+      <p class="text-gray-600">DUCO Collaborative Robot Arm Web Interface</p>
+    </div>
+
+    <!-- Status Panel -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">Status</h2>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center">
+          <span class="status-indicator status-connected" id="connectionStatus"></span>
+          <span id="connectionText">Connected</span>
+        </div>
+        <div class="text-sm text-gray-600">
+          Device ID: <span id="deviceId">-</span> | 
+          Topic: <span id="topicName">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-6">Robot Arm Controls</h2>
+      
+      <div class="grid grid-cols-2 gap-4 max-w-md mx-auto">
+        <!-- Power On Button -->
+        <button 
+          id="powerOnBtn"
+          class="robot-arm-button bg-green-500 hover:bg-green-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
+          onclick="sendCommand('power_on')"
+        >
+          ⚡ Power On
+        </button>
+
+        <!-- Power Off Button -->
+        <button 
+          id="powerOffBtn"
+          class="robot-arm-button bg-red-500 hover:bg-red-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
+          onclick="sendCommand('power_off')"
+        >
+          🔴 Power Off
+        </button>
+
+        <!-- Enable Button -->
+        <button 
+          id="enableBtn"
+          class="robot-arm-button bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
+          onclick="sendCommand('enable')"
+        >
+          ✅ Enable
+        </button>
+
+        <!-- Disable Button -->
+        <button 
+          id="disableBtn"
+          class="robot-arm-button bg-orange-500 hover:bg-orange-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
+          onclick="sendCommand('disable')"
+        >
+          ⏸️ Disable
+        </button>
+      </div>
+
+      <!-- Command Status -->
+      <div class="mt-6 text-center">
+        <div id="commandStatus" class="text-sm text-gray-600">Ready to send commands</div>
+      </div>
+    </div>
+
+    <!-- Command Log -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-4">Command Log</h2>
+      <div id="commandLog" class="command-log bg-gray-50 p-4 rounded border text-sm font-mono">
+        <div class="text-gray-500">Command log will appear here...</div>
+      </div>
+      <div class="mt-4 text-right">
+        <button 
+          onclick="clearLog()"
+          class="text-gray-500 hover:text-gray-700 text-sm"
+        >
+          Clear Log
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/web/js/robot_arm_control.js"></script>
+</body>
+</html>
