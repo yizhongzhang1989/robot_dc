@@ -61,6 +61,12 @@ class ServoControlNode(Node):
             elif cmd == "set_acc":
                 if arg is not None:
                     self.motor.set_target_acceleration(arg, seq_id=seq_id)
+            elif cmd == "set_enable_torque":
+                if arg is not None:
+                    self.motor.set_enable_torque(arg)
+            elif cmd == "set_torque_limit":
+                if arg is not None:
+                    self.motor.set_target_torque_limit(arg)
             elif cmd == "get_torque":
                 # Read torque value asynchronously, log formatted PWM percent
                 def torque_callback(response):

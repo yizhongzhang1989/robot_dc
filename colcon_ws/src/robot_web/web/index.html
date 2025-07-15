@@ -39,6 +39,10 @@
       <h2 class="text-xl font-semibold mb-2">Motor Motion Control</h2>
       <div id="motor-container" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: min-content;"></div>
     </div>
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold mb-2">Servo Motion Control</h2>
+      <div id="servo-container" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: min-content;"></div>
+    </div>
     <div>
       <h2 class="text-xl font-semibold mb-2">Motor/Servo Observation</h2>
       <div class="mb-4 flex gap-4">
@@ -157,7 +161,7 @@
     async function initMotorCards() {
       try {
         const data = await fetchMotors();
-        const motors = data.motors;
+        const motors = data.motors.filter(m => m === 'motor1' || m === 'motor2');
         const container = document.getElementById("motor-container");
 
         for (const motor_id of motors) {
@@ -167,6 +171,91 @@
         }
       } catch (err) {
         console.error("Error initializing motors:", err);
+      }
+    }
+
+    async function loadServoCard(servo_id) {
+      const card = document.createElement('div');
+      card.className = 'bg-white rounded shadow p-4 motor-card flex flex-col gap-2';
+      card.innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+          <span class="font-semibold text-lg">${servo_id}</span>
+        </div>
+        <div class="flex flex-col gap-1 mb-2">
+          <div>Position: <span id="${servo_id}-pos">--</span></div>
+          <div>PWM: <span id="${servo_id}-pwm">--</span></div>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <input type="number" class="servo-pos border px-2 py-1 w-24" placeholder="Set Position">
+          <button class="set-pos motor-button">Set Position</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <input type="number" class="servo-vel border px-2 py-1 w-24" placeholder="Set Velocity">
+          <button class="set-vel motor-button">Set Velocity</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <input type="number" class="servo-acc border px-2 py-1 w-24" placeholder="Set Acceleration">
+          <button class="set-acc motor-button">Set Acceleration</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <button class="enable-torque motor-button">Enable Torque</button>
+          <button class="disable-torque motor-button">Disable Torque</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <button class="stop motor-button">Stop</button>
+        </div>
+        <div class="text-sm text-gray-500 mt-1" id="${servo_id}-cmd"></div>
+      `;
+      card.querySelector(".set-pos").onclick = () => {
+        const val = card.querySelector(".servo-pos").value;
+        sendServoCommand(servo_id, "set_pos", val);
+      };
+      card.querySelector(".set-vel").onclick = () => {
+        const val = card.querySelector(".servo-vel").value;
+        sendServoCommand(servo_id, "set_vel", val);
+      };
+      card.querySelector(".set-acc").onclick = () => {
+        const val = card.querySelector(".servo-acc").value;
+        sendServoCommand(servo_id, "set_acc", val);
+      };
+      card.querySelector(".enable-torque").onclick = () => sendServoCommand(servo_id, "set_enable_torque", 1);
+      card.querySelector(".disable-torque").onclick = () => sendServoCommand(servo_id, "set_enable_torque", 0);
+      card.querySelector(".stop").onclick = () => sendServoCommand(servo_id, "stop");
+      return card;
+    }
+    async function sendServoCommand(servo_id, command, value = null) {
+      const payload = value !== null && value !== '' ? { command, value } : { command };
+      const res = await fetch(`/api/${servo_id}/cmd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const resp = await res.json();
+      document.getElementById(`${servo_id}-cmd`).innerText = JSON.stringify(resp);
+      setTimeout(() => updateServoState(servo_id), 500);
+    }
+    async function updateServoState(servo_id) {
+      try {
+        const res = await fetch(`/api/${servo_id}/status`);
+        const data = await res.json();
+        if (data.position !== undefined)
+          document.getElementById(`${servo_id}-pos`).innerText = data.position;
+        if (data.torque !== undefined)
+          document.getElementById(`${servo_id}-pwm`).innerText = data.torque;
+      } catch (err) {}
+    }
+    async function initServoCards() {
+      try {
+        const data = await fetchMotors();
+        const servos = data.motors.filter(m => m === 'motor17' || m === 'motor18');
+        const container = document.getElementById("servo-container");
+        for (const servo_id of servos) {
+          const card = await loadServoCard(servo_id);
+          container.appendChild(card);
+          setInterval(() => updateServoState(servo_id), 1000);
+        }
+      } catch (err) {
+        console.error("Error initializing servos:", err);
       }
     }
 
@@ -278,6 +367,7 @@
     // 初始化
     window.addEventListener('DOMContentLoaded', () => {
       initMotorCards();
+      initServoCards();
       setupObservationGrid();
       setInterval(pollObservationStatus, 200);
     });

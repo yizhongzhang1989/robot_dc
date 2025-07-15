@@ -24,9 +24,9 @@ class FeetechServo(ModbusDevice):
 
     def initialize(self):
         self.set_target_position(2048)  # Set initial target position to midpoint
-        self.set_enable_torque(True)     # Enable torque
+        self.set_enable_torque(False)    # Disable torque by default
         self.set_target_acceleration(10) # Set target acceleration
-        self.set_target_velocity(5)     # Set target velocity
+        self.set_target_velocity(5)      # Set target velocity
         self.set_target_torque_limit(1000) # Set target torque limit
 
     def stop(self, seq_id=None):
