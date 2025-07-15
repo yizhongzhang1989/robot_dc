@@ -75,30 +75,21 @@ class MotorControlNode(Node):
             match cmd:
                 case "jog_left":
                     self.motor.jog_left(seq_id=seq_id)
-                    self.motor.jog_left(seq_id=seq_id)
                 case "jog_right":
-                    self.motor.jog_right(seq_id=seq_id)
                     self.motor.jog_right(seq_id=seq_id)
                 case "stop":
                     self.motor.abrupt_stop(seq_id=seq_id)
-                    self.motor.abrupt_stop(seq_id=seq_id)
                 case "set_pos":
-                    self.motor.set_target_position(arg, seq_id=seq_id)
                     self.motor.set_target_position(arg, seq_id=seq_id)
                 case "set_vel":
                     self.motor.set_target_velocity(arg, seq_id=seq_id)
-                    self.motor.set_target_velocity(arg, seq_id=seq_id)
                 case "set_acc":
-                    self.motor.set_target_acceleration(arg, seq_id=seq_id)
                     self.motor.set_target_acceleration(arg, seq_id=seq_id)
                 case "set_dec":
                     self.motor.set_target_deceleration(arg, seq_id=seq_id)
-                    self.motor.set_target_deceleration(arg, seq_id=seq_id)
                 case "move_abs":
                     self.motor.move_absolute(seq_id=seq_id)
-                    self.motor.move_absolute(seq_id=seq_id)
                 case "move_rel":
-                    self.motor.move_relative(seq_id=seq_id)
                     self.motor.move_relative(seq_id=seq_id)
                 case "move_vel":
                     self.motor.move_velocity(seq_id=seq_id)
@@ -164,20 +155,16 @@ class MotorControlNode(Node):
                 case "factory_reset":
                     self.motor.factory_reset(seq_id=seq_id)
                 case "get_pos":
-                    # get_pos 是异步读位置，回调打印结果，结束后继续处理队列
                     def pos_callback(pos):
                         if pos is not None:
                             self.get_logger().info(f"[Servo] Current position: {pos} steps")
                         else:
                             self.get_logger().error(f"[SEQ {seq_id}] Failed to read position")
-                        # 标记命令完成，继续处理队列
                         self.waiting_for_ack = False
                         self.process_next_command()
                     self.motor.get_current_position(pos_callback, seq_id=seq_id)
-                    # 异步读取，直接返回，不阻塞后续代码
                     return
                 case _:
-                    self.get_logger().warn(f"[SEQ {seq_id}] Unknown command: {cmd}")
                     self.get_logger().warn(f"[SEQ {seq_id}] Unknown command: {cmd}")
         except Exception as e:
             self.get_logger().error(f"[SEQ {seq_id}] ❌ Command '{cmd}' failed: {e}")
