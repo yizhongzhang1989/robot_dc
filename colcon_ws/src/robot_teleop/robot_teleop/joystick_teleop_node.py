@@ -168,7 +168,9 @@ class JoystickTeleop(Node):
             self.send_motor_cmd(self.motor_right_pub, 'home_pos')
 
         if buttons[2] == 1:
-            self.get_logger().info('B button pressed: home_neg')
+            self.get_logger().info('B button pressed: set_home + home_neg')
+            self.send_motor_cmd(self.motor_left_pub, 'set_home 1000 30 250 250 200 200')
+            self.send_motor_cmd(self.motor_right_pub, 'set_home 1000 30 250 250 200 200')
             self.send_motor_cmd(self.motor_left_pub, 'home_neg')
             self.send_motor_cmd(self.motor_right_pub, 'home_neg')
 

@@ -38,10 +38,25 @@
     <div class="mb-8">
       <h2 class="text-xl font-semibold mb-2">Motor Motion Control</h2>
       <div id="motor-container" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: min-content;"></div>
+      <div id="motor-group-control" class="flex flex-wrap gap-2 mt-4">
+        <input id="sync-vel-input" type="number" class="border px-2 py-1 w-24" placeholder="Sync Speed" style="margin-right:8px;">
+        <button class="motor-button" onclick="homeBack()">Home Back</button>
+        <button class="motor-button" onclick="homePositive()">Home Positive</button>
+        <button class="motor-button" onclick="homeNegative()">Home Negative</button>
+        <button class="motor-button" onclick="setZero()">Set Zero</button>
+        <button class="motor-button" onclick="setLimit()">Set Limit</button>
+        <button class="motor-button" onclick="resetLimit()">Reset Limit</button>
+        <button class="motor-button" onclick="syncForward()">Sync Forward</button>
+        <button class="motor-button" onclick="syncBackward()">Sync Backward</button>
+        <button class="motor-button bg-red-200" onclick="allMotorStop()">All Motor Stop</button>
+      </div>
     </div>
     <div class="mb-8">
       <h2 class="text-xl font-semibold mb-2">Servo Motion Control</h2>
       <div id="servo-container" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: min-content;"></div>
+      <div class="flex flex-wrap gap-2 mt-2">
+        <button class="motor-button bg-red-200" onclick="allServoStop()">All Servo Stop</button>
+      </div>
     </div>
     <div>
       <h2 class="text-xl font-semibold mb-2">Motor/Servo Observation</h2>
@@ -362,6 +377,56 @@
       } catch (err) {
         // Do not prompt on network error
       }
+    }
+
+    // Motor Group Control JS
+    function homeBack() {
+      sendCommand('motor1', 'home_back');
+      sendCommand('motor2', 'home_back');
+    }
+    function homePositive() {
+      sendCommand('motor1', 'set_home 1000 30 250 250 200 200');
+      sendCommand('motor2', 'set_home 1000 30 250 250 200 200');
+      sendCommand('motor1', 'home_pos');
+      sendCommand('motor2', 'home_pos');
+    }
+    function homeNegative() {
+      sendCommand('motor1', 'set_home 1000 30 250 250 200 200');
+      sendCommand('motor2', 'set_home 1000 30 250 250 200 200');
+      sendCommand('motor1', 'home_neg');
+      sendCommand('motor2', 'home_neg');
+    }
+    function setZero() {
+      sendCommand('motor1', 'set_zero');
+      sendCommand('motor2', 'set_zero');
+    }
+    function setLimit() {
+      sendCommand('motor1', 'set_limit 100 -902000');
+      sendCommand('motor2', 'set_limit 100 -902000');
+    }
+    function resetLimit() {
+      sendCommand('motor1', 'reset_limit');
+      sendCommand('motor2', 'reset_limit');
+    }
+    function syncForward() {
+      const v = Math.abs(Number(document.getElementById('sync-vel-input').value));
+      sendCommand('motor1', `set_vel ${v}`);
+      sendCommand('motor2', `set_vel ${v}`);
+      sendCommand('motor1', 'move_vel');
+      sendCommand('motor2', 'move_vel');
+    }
+    function syncBackward() {
+      const v = Math.abs(Number(document.getElementById('sync-vel-input').value));
+      sendCommand('motor1', `set_vel -${v}`);
+      sendCommand('motor2', `set_vel -${v}`);
+      sendCommand('motor1', 'move_vel');
+      sendCommand('motor2', 'move_vel');
+    }
+
+    // All Motor Stop
+    function allMotorStop() {
+      sendCommand('motor1', 'stop');
+      sendCommand('motor2', 'stop');
     }
 
     // 初始化
