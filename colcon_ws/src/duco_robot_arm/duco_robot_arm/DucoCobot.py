@@ -5,14 +5,12 @@ import glob
 import threading
 import time
 
-sys.path.append('gen_py')
-sys.path.append('lib')
-from thrift import Thrift
-from thrift.transport import TSocket
-from thrift.transport import TTransport
-from thrift.protocol import TBinaryProtocol
-from gen_py.robot import RPCRobot
-from gen_py.robot.ttypes import StateRobot, StateProgram, OperationMode, TaskState, Op
+from .lib.thrift import Thrift
+from .lib.thrift.transport import TSocket
+from .lib.thrift.transport import TTransport
+from .lib.thrift.protocol import TBinaryProtocol
+from .gen_py.robot import RPCRobot
+from .gen_py.robot.ttypes import StateRobot, StateProgram, OperationMode, TaskState, Op
 
 
 class DucoCobot:
