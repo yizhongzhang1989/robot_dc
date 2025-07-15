@@ -4,13 +4,29 @@ import sys
 import glob
 import threading
 import time
+import os
 
-from .lib.thrift import Thrift
-from .lib.thrift.transport import TSocket
-from .lib.thrift.transport import TTransport
-from .lib.thrift.protocol import TBinaryProtocol
-from .gen_py.robot import RPCRobot
-from .gen_py.robot.ttypes import StateRobot, StateProgram, OperationMode, TaskState, Op
+# Handle both relative imports (when used as package) and absolute imports (when used directly)
+try:
+    # Try relative imports first (when used as part of the ROS package)
+    from .lib.thrift import Thrift
+    from .lib.thrift.transport import TSocket
+    from .lib.thrift.transport import TTransport
+    from .lib.thrift.protocol import TBinaryProtocol
+    from .gen_py.robot import RPCRobot
+    from .gen_py.robot.ttypes import StateRobot, StateProgram, OperationMode, TaskState, Op
+except ImportError:
+    # Fall back to absolute imports with sys.path manipulation (when used directly)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.append(os.path.join(current_dir, 'gen_py'))
+    sys.path.append(os.path.join(current_dir, 'lib'))
+    
+    from thrift import Thrift
+    from thrift.transport import TSocket
+    from thrift.transport import TTransport
+    from thrift.protocol import TBinaryProtocol
+    from gen_py.robot import RPCRobot
+    from gen_py.robot.ttypes import StateRobot, StateProgram, OperationMode, TaskState, Op
 
 
 class DucoCobot:
