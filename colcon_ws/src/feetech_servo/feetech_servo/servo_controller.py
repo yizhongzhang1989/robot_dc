@@ -2,8 +2,8 @@ from modbus_devices.base_device import ModbusDevice
 from modbus_devices.utils import *
 
 class FeetechServo(ModbusDevice):
-    def __init__(self, device_id, node):
-        super().__init__(device_id, node)
+    def __init__(self, device_id, node, use_ack_patch):
+        super().__init__(device_id, node, use_ack_patch)
 
         self.motion_mode = None
 
@@ -29,15 +29,15 @@ class FeetechServo(ModbusDevice):
         self.set_target_velocity(5)     # Set target velocity
         self.set_target_torque_limit(1000) # Set target torque limit
 
-    def stop(self):
+    def stop(self, seq_id=None):
         # Stop the servo by setting target position to current position
         def callback(response):
             if response:
                 self.target_position = response[0]
-                self.set_target_position(self.target_position)
+                self.set_target_position(self.target_position, seq_id=seq_id)
             else:
                 raise ValueError("Failed to read current position for stopping")
-        self.recv(3, 0x0101, 1, callback)
+        self.recv(3, 0x0101, 1, callback, seq_id=seq_id)
 
     def get_current_status(self):
         # Request current status (8 uint16) from the servo from address 0x100
@@ -56,21 +56,21 @@ class FeetechServo(ModbusDevice):
 
         self.recv(3, 0x0100, 8, callback)
 
-    def set_target_position(self, position):
+    def set_target_position(self, position, seq_id=None):
         self.target_position = position
-        self.send(6, 0x0080, [position])
+        self.send(6, 0x0080, [position], seq_id=seq_id)
 
     def set_enable_torque(self, enable):
         self.enable_torque = 1 if enable else 0
         self.send(6, 0x0081, [self.enable_torque])
 
-    def set_target_acceleration(self, acceleration):
+    def set_target_acceleration(self, acceleration, seq_id=None):
         self.target_acceleration = acceleration
-        self.send(6, 0x0082, [acceleration])
+        self.send(6, 0x0082, [acceleration], seq_id=seq_id)
 
-    def set_target_velocity(self, velocity):
+    def set_target_velocity(self, velocity, seq_id=None):
         self.target_velocity = velocity
-        self.send(6, 0x0083, [velocity])
+        self.send(6, 0x0083, [velocity], seq_id=seq_id)
 
     def set_target_torque_limit(self, torque_limit):
         self.target_torque_limit = torque_limit
