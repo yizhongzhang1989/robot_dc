@@ -15,10 +15,39 @@ This ROS2 package provides real-time monitoring of Duco robot arm state via TCP 
 
 All topics are namespaced with `/arm{device_id}/`:
 
-- `/arm{device_id}/joint_state` - Joint actual and expected state data (JSON)
-- `/arm{device_id}/tcp_state` - TCP actual and expected state data (JSON) 
-- `/arm{device_id}/robot_status` - Driver status and base torque data (JSON)
-- `/arm{device_id}/raw_data` - Raw monitoring data for debugging (JSON)
+- `/arm{device_id}/robot_state` - Comprehensive robot state data including all joint, TCP, and driver information (JSON)
+
+## Data Structure
+
+The published JSON message contains all robot data with original field names for extensibility:
+
+```json
+{
+  "jointActualPosition": [7 floats],
+  "jointActualVelocity": [7 floats],
+  "jointActualAccelera": [7 floats],
+  "jointActualTorque": [7 floats],
+  "jointExpectPosition": [7 floats],
+  "jointExpectVelocity": [7 floats],
+  "jointExpectAccelera": [7 floats],
+  "jointExpectTorque": [7 floats],
+  "jointActualTemperature": [7 floats],
+  "jointActualCurrent": [7 floats],
+  "driverErrorID": [7 ints],
+  "driverState": [7 ints],
+  "TCPActualPosition": [6 floats],
+  "TCPActualVelocity": [6 floats],
+  "TCPActualAccelera": [6 floats],
+  "TCPActualTorque": [6 floats],
+  "TCPExpectPosition": [6 floats],
+  "TCPExpectVelocity": [6 floats],
+  "TCPExpectAccelera": [6 floats],
+  "TCPExpectTorque": [6 floats],
+  "baseActualTorque": [6 floats],
+  "baseExpectTorque": [6 floats],
+  "timestamp": "ROS timestamp"
+}
+```
 
 ## Parameters
 
@@ -53,6 +82,8 @@ The robot sends data frames containing:
 - TCP expected data: position, velocity, acceleration, torque
 - Driver status: error IDs and states
 - Base torque data: actual and expected
+
+All data is published in a single JSON message with original field names preserved for future extensibility.
 
 ## Integration with duco_robot_arm
 

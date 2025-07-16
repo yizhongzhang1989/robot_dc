@@ -34,12 +34,9 @@ class DucoRobotArmStateNode(Node):
         self.min_data_size = 608  # minimum bytes needed for current data structure
 
         # Publishers for robot state data
-        self.joint_state_pub = self.create_publisher(String, f'/arm{self.device_id}/joint_state', 10)
-        self.tcp_state_pub = self.create_publisher(String, f'/arm{self.device_id}/tcp_state', 10)
-        self.robot_status_pub = self.create_publisher(String, f'/arm{self.device_id}/robot_status', 10)
-        self.raw_data_pub = self.create_publisher(String, f'/arm{self.device_id}/raw_data', 10)
-
-        self.get_logger().info(f"📡 Publishers created for device {self.device_id}")
+        self.robot_state_pub = self.create_publisher(String, f'/arm{self.device_id}/robot_state', 10)
+        
+        self.get_logger().info(f"📡 Publisher created for device {self.device_id}")
 
         # Connection management
         self.socket = None
@@ -117,95 +114,52 @@ class DucoRobotArmStateNode(Node):
             # Parse the robot data
             robot_data = RobotData.from_bytes(data)
             
-            # Publish joint state data
-            joint_state_msg = self.create_joint_state_message(robot_data)
-            self.joint_state_pub.publish(joint_state_msg)
-            
-            # Publish TCP state data
-            tcp_state_msg = self.create_tcp_state_message(robot_data)
-            self.tcp_state_pub.publish(tcp_state_msg)
-            
-            # Publish robot status data
-            robot_status_msg = self.create_robot_status_message(robot_data)
-            self.robot_status_pub.publish(robot_status_msg)
-            
-            # Publish raw data (optional, for debugging)
-            raw_data_msg = self.create_raw_data_message(robot_data)
-            self.raw_data_pub.publish(raw_data_msg)
+            # Create comprehensive robot state message
+            robot_state_msg = self.create_robot_state_message(robot_data)
+            self.robot_state_pub.publish(robot_state_msg)
             
         except ValueError as e:
             self.get_logger().error(f"❌ Error parsing robot data: {e}")
 
-    def create_joint_state_message(self, robot_data: RobotData) -> String:
-        """Create a joint state message from robot data."""
-        joint_state = {
-            "actual": {
-                "position": robot_data.jointActualPosition,
-                "velocity": robot_data.jointActualVelocity,
-                "acceleration": robot_data.jointActualAccelera,
-                "torque": robot_data.jointActualTorque,
-                "temperature": robot_data.jointActualTemperature,
-                "current": robot_data.jointActualCurrent
-            },
-            "expected": {
-                "position": robot_data.jointExpectPosition,
-                "velocity": robot_data.jointExpectVelocity,
-                "acceleration": robot_data.jointExpectAccelera,
-                "torque": robot_data.jointExpectTorque
-            }
-        }
-        
-        msg = String()
-        msg.data = json.dumps(joint_state)
-        return msg
-
-    def create_tcp_state_message(self, robot_data: RobotData) -> String:
-        """Create a TCP state message from robot data."""
-        tcp_state = {
-            "actual": {
-                "position": robot_data.TCPActualPosition,
-                "velocity": robot_data.TCPActualVelocity,
-                "acceleration": robot_data.TCPActualAccelera,
-                "torque": robot_data.TCPActualTorque
-            },
-            "expected": {
-                "position": robot_data.TCPExpectPosition,
-                "velocity": robot_data.TCPExpectVelocity,
-                "acceleration": robot_data.TCPExpectAccelera,
-                "torque": robot_data.TCPExpectTorque
-            }
-        }
-        
-        msg = String()
-        msg.data = json.dumps(tcp_state)
-        return msg
-
-    def create_robot_status_message(self, robot_data: RobotData) -> String:
-        """Create a robot status message from robot data."""
-        robot_status = {
-            "driver_error_id": robot_data.driverErrorID,
-            "driver_state": robot_data.driverState,
-            "base_torque": {
-                "actual": robot_data.baseActualTorque,
-                "expected": robot_data.baseExpectTorque
-            }
-        }
-        
-        msg = String()
-        msg.data = json.dumps(robot_status)
-        return msg
-
-    def create_raw_data_message(self, robot_data: RobotData) -> String:
-        """Create a raw data message (for debugging/monitoring)."""
-        # Create a simplified version for logging
-        raw_data = {
-            "tcp_pose": robot_data.get_tcp_pose(),
-            "joint_positions": robot_data.jointActualPosition,
+    def create_robot_state_message(self, robot_data: RobotData) -> String:
+        """Create a comprehensive robot state message with all data."""
+        robot_state = {
+            # Joint data - keeping original field names for extensibility
+            "jointActualPosition": robot_data.jointActualPosition,
+            "jointActualVelocity": robot_data.jointActualVelocity,
+            "jointActualAccelera": robot_data.jointActualAccelera,
+            "jointActualTorque": robot_data.jointActualTorque,
+            "jointExpectPosition": robot_data.jointExpectPosition,
+            "jointExpectVelocity": robot_data.jointExpectVelocity,
+            "jointExpectAccelera": robot_data.jointExpectAccelera,
+            "jointExpectTorque": robot_data.jointExpectTorque,
+            
+            # Additional joint data
+            "jointActualTemperature": robot_data.jointActualTemperature,
+            "jointActualCurrent": robot_data.jointActualCurrent,
+            "driverErrorID": robot_data.driverErrorID,
+            "driverState": robot_data.driverState,
+            
+            # TCP data
+            "TCPActualPosition": robot_data.TCPActualPosition,
+            "TCPActualVelocity": robot_data.TCPActualVelocity,
+            "TCPActualAccelera": robot_data.TCPActualAccelera,
+            "TCPActualTorque": robot_data.TCPActualTorque,
+            "TCPExpectPosition": robot_data.TCPExpectPosition,
+            "TCPExpectVelocity": robot_data.TCPExpectVelocity,
+            "TCPExpectAccelera": robot_data.TCPExpectAccelera,
+            "TCPExpectTorque": robot_data.TCPExpectTorque,
+            
+            # Base torque data
+            "baseActualTorque": robot_data.baseActualTorque,
+            "baseExpectTorque": robot_data.baseExpectTorque,
+            
+            # Timestamp for reference
             "timestamp": self.get_clock().now().to_msg()
         }
         
         msg = String()
-        msg.data = json.dumps(raw_data, default=str)
+        msg.data = json.dumps(robot_state, default=str)
         return msg
 
     def destroy_node(self):
