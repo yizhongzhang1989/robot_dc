@@ -54,31 +54,148 @@ async function fetchRobotState() {
 
 // Update robot state display
 function updateRobotStateDisplay(state) {
-    // Update TCP Position
+    // Helper function to safely format values
+    const formatValue = (value, decimals = 4) => {
+        if (value === null || value === undefined || isNaN(value)) return '-';
+        return parseFloat(value).toFixed(decimals);
+    };
+
+    // Helper function to create joint display (only 6 joints, not 7)
+    const createJointDisplay = (values, unit = '', decimals = 4) => {
+        if (!values || !Array.isArray(values)) return 'No data';
+        // Only show first 6 joints (7th is reserved)
+        const jointsToShow = values.slice(0, 6);
+        return jointsToShow.map((value, index) => {
+            const formattedValue = formatValue(value, decimals);
+            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="data-value">${formattedValue}${unit}</span></div>`;
+        }).join('');
+    };
+
+    // Helper function to create compact joint grid (like TCP data)
+    const createCompactJointGrid = (values, unit = '', decimals = 4) => {
+        if (!values || !Array.isArray(values)) return '<div class="compact-item"><span class="data-label">No data</span></div>';
+        // Only show first 6 joints (7th is reserved)
+        const jointsToShow = values.slice(0, 6);
+        return jointsToShow.map((value, index) => {
+            const formattedValue = formatValue(value, decimals);
+            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="data-value">${formattedValue}${unit}</span></div>`;
+        }).join('');
+    };
+
+    // Update TCP Actual Position
     if (state.TCPActualPosition && state.TCPActualPosition.length >= 6) {
         const tcp = state.TCPActualPosition;
-        document.getElementById('tcpPosX').textContent = tcp[0].toFixed(4);
-        document.getElementById('tcpPosY').textContent = tcp[1].toFixed(4);
-        document.getElementById('tcpPosZ').textContent = tcp[2].toFixed(4);
-        document.getElementById('tcpPosRx').textContent = tcp[3].toFixed(4);
-        document.getElementById('tcpPosRy').textContent = tcp[4].toFixed(4);
-        document.getElementById('tcpPosRz').textContent = tcp[5].toFixed(4);
+        document.getElementById('tcpActualPosX').textContent = formatValue(tcp[0]);
+        document.getElementById('tcpActualPosY').textContent = formatValue(tcp[1]);
+        document.getElementById('tcpActualPosZ').textContent = formatValue(tcp[2]);
+        document.getElementById('tcpActualPosRx').textContent = formatValue(tcp[3]);
+        document.getElementById('tcpActualPosRy').textContent = formatValue(tcp[4]);
+        document.getElementById('tcpActualPosRz').textContent = formatValue(tcp[5]);
+    }
+
+    // Update TCP Expected Position
+    if (state.TCPExpectPosition && state.TCPExpectPosition.length >= 6) {
+        const tcp = state.TCPExpectPosition;
+        document.getElementById('tcpExpectedPosX').textContent = formatValue(tcp[0]);
+        document.getElementById('tcpExpectedPosY').textContent = formatValue(tcp[1]);
+        document.getElementById('tcpExpectedPosZ').textContent = formatValue(tcp[2]);
+        document.getElementById('tcpExpectedPosRx').textContent = formatValue(tcp[3]);
+        document.getElementById('tcpExpectedPosRy').textContent = formatValue(tcp[4]);
+        document.getElementById('tcpExpectedPosRz').textContent = formatValue(tcp[5]);
+    }
+
+    // Update TCP Actual Velocity
+    if (state.TCPActualVelocity && state.TCPActualVelocity.length >= 6) {
+        const tcp = state.TCPActualVelocity;
+        document.getElementById('tcpActualVelX').textContent = formatValue(tcp[0]);
+        document.getElementById('tcpActualVelY').textContent = formatValue(tcp[1]);
+        document.getElementById('tcpActualVelZ').textContent = formatValue(tcp[2]);
+        document.getElementById('tcpActualVelRx').textContent = formatValue(tcp[3]);
+        document.getElementById('tcpActualVelRy').textContent = formatValue(tcp[4]);
+        document.getElementById('tcpActualVelRz').textContent = formatValue(tcp[5]);
+    }
+
+    // Update TCP Actual Acceleration
+    if (state.TCPActualAccelera && state.TCPActualAccelera.length >= 6) {
+        const tcp = state.TCPActualAccelera;
+        document.getElementById('tcpActualAccX').textContent = formatValue(tcp[0]);
+        document.getElementById('tcpActualAccY').textContent = formatValue(tcp[1]);
+        document.getElementById('tcpActualAccZ').textContent = formatValue(tcp[2]);
+        document.getElementById('tcpActualAccRx').textContent = formatValue(tcp[3]);
+        document.getElementById('tcpActualAccRy').textContent = formatValue(tcp[4]);
+        document.getElementById('tcpActualAccRz').textContent = formatValue(tcp[5]);
+    }
+
+    // Update TCP Actual Torque
+    if (state.TCPActualTorque && state.TCPActualTorque.length >= 6) {
+        const tcp = state.TCPActualTorque;
+        document.getElementById('tcpActualTorqueX').textContent = formatValue(tcp[0]);
+        document.getElementById('tcpActualTorqueY').textContent = formatValue(tcp[1]);
+        document.getElementById('tcpActualTorqueZ').textContent = formatValue(tcp[2]);
+        document.getElementById('tcpActualTorqueRx').textContent = formatValue(tcp[3]);
+        document.getElementById('tcpActualTorqueRy').textContent = formatValue(tcp[4]);
+        document.getElementById('tcpActualTorqueRz').textContent = formatValue(tcp[5]);
+    }
+
+    // Update Base Actual Torque
+    if (state.baseActualTorque && state.baseActualTorque.length >= 6) {
+        const base = state.baseActualTorque;
+        document.getElementById('baseActualTorqueX').textContent = formatValue(base[0]);
+        document.getElementById('baseActualTorqueY').textContent = formatValue(base[1]);
+        document.getElementById('baseActualTorqueZ').textContent = formatValue(base[2]);
+        document.getElementById('baseActualTorqueRx').textContent = formatValue(base[3]);
+        document.getElementById('baseActualTorqueRy').textContent = formatValue(base[4]);
+        document.getElementById('baseActualTorqueRz').textContent = formatValue(base[5]);
+    }
+
+    // Update Joint Actual Position
+    if (state.jointActualPosition) {
+        document.getElementById('jointActualPositions').innerHTML = createCompactJointGrid(state.jointActualPosition, ' rad');
+    }
+
+    // Update Joint Actual Velocity
+    if (state.jointActualVelocity) {
+        document.getElementById('jointActualVelocities').innerHTML = createCompactJointGrid(state.jointActualVelocity, ' rad/s');
+    }
+
+    // Update Joint Actual Acceleration
+    if (state.jointActualAccelera) {
+        document.getElementById('jointActualAccelerations').innerHTML = createCompactJointGrid(state.jointActualAccelera, ' rad/s²');
+    }
+
+    // Update Joint Actual Torque
+    if (state.jointActualTorque) {
+        document.getElementById('jointActualTorques').innerHTML = createCompactJointGrid(state.jointActualTorque, ' Nm');
+    }
+
+    // Update Joint Expected Position
+    if (state.jointExpectPosition) {
+        document.getElementById('jointExpectedPositions').innerHTML = createCompactJointGrid(state.jointExpectPosition, ' rad');
+    }
+
+    // Update Joint Expected Velocity
+    if (state.jointExpectVelocity) {
+        document.getElementById('jointExpectedVelocities').innerHTML = createCompactJointGrid(state.jointExpectVelocity, ' rad/s');
     }
 
     // Update Joint Temperatures
     if (state.jointActualTemperature) {
-        const tempHtml = state.jointActualTemperature.map((temp, index) => {
-            const tempClass = temp > 40 ? 'error-indicator' : 'normal-indicator';
-            return `<div>J${index + 1}: <span class="${tempClass}">${temp.toFixed(1)}°C</span></div>`;
+        // Only show first 6 joints for temperature with color coding
+        const jointsToShow = state.jointActualTemperature.slice(0, 6);
+        const tempHtml = jointsToShow.map((temp, index) => {
+            const tempClass = temp > 50 ? 'error-indicator' : (temp > 40 ? 'warning-indicator' : 'normal-indicator');
+            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="${tempClass}">${formatValue(temp, 1)}°C</span></div>`;
         }).join('');
         document.getElementById('jointTemperatures').innerHTML = tempHtml;
     }
 
     // Update Joint Currents
     if (state.jointActualCurrent) {
-        const currentHtml = state.jointActualCurrent.map((current, index) => {
-            const currentClass = current > 50 ? 'error-indicator' : 'normal-indicator';
-            return `<div>J${index + 1}: <span class="${currentClass}">${current.toFixed(1)}‰</span></div>`;
+        // Only show first 6 joints for current with color coding
+        const jointsToShow = state.jointActualCurrent.slice(0, 6);
+        const currentHtml = jointsToShow.map((current, index) => {
+            const currentClass = current > 800 ? 'error-indicator' : (current > 600 ? 'warning-indicator' : 'normal-indicator');
+            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="${currentClass}">${formatValue(current, 0)}‰</span></div>`;
         }).join('');
         document.getElementById('jointCurrents').innerHTML = currentHtml;
     }
@@ -95,17 +212,12 @@ function updateRobotStateDisplay(state) {
             errorElement.className = 'normal-indicator';
         }
         
-        // Show first few driver states
-        const stateText = state.driverState.slice(0, 3).map(s => s.toString()).join(', ');
-        document.getElementById('driverStates').textContent = stateText;
-    }
-
-    // Update Joint Positions
-    if (state.jointActualPosition) {
-        const posHtml = state.jointActualPosition.map((pos, index) => {
-            return `<div>J${index + 1}: ${pos.toFixed(4)} rad</div>`;
-        }).join('');
-        document.getElementById('jointPositions').innerHTML = posHtml;
+        // Show error IDs
+        const errorIds = state.driverErrorID.filter(id => id !== 0);
+        document.getElementById('driverErrorIds').textContent = errorIds.length > 0 ? errorIds.join(', ') : 'None';
+        
+        // Show driver states
+        document.getElementById('driverStates').textContent = state.driverState.join(', ');
     }
 
     // Update last update time
