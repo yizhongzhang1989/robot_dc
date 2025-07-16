@@ -33,6 +33,30 @@
       max-height: 200px;
       overflow-y: auto;
     }
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+    }
+    .state-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .state-value {
+      font-family: 'Courier New', monospace;
+      font-size: 0.875rem;
+      color: #374151;
+    }
+    .error-indicator {
+      color: #ef4444;
+      font-weight: bold;
+    }
+    .normal-indicator {
+      color: #10b981;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
@@ -53,7 +77,71 @@
         </div>
         <div class="text-sm text-gray-600">
           Device ID: <span id="deviceId">-</span> | 
-          Topic: <span id="topicName">-</span>
+          Topic: <span id="topicName">-</span> |
+          State: <span id="stateStatus" class="normal-indicator">Monitoring</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Robot State Display -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">🤖 Robot State Monitor</h2>
+      
+      <div class="state-grid">
+        <!-- TCP Position -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2">📍 TCP Position</h3>
+          <div class="state-value">
+            <div>X: <span id="tcpPosX">-</span> m</div>
+            <div>Y: <span id="tcpPosY">-</span> m</div>
+            <div>Z: <span id="tcpPosZ">-</span> m</div>
+            <div>Rx: <span id="tcpPosRx">-</span> rad</div>
+            <div>Ry: <span id="tcpPosRy">-</span> rad</div>
+            <div>Rz: <span id="tcpPosRz">-</span> rad</div>
+          </div>
+        </div>
+
+        <!-- Joint Temperatures -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2">🌡️ Joint Temperatures</h3>
+          <div class="state-value" id="jointTemperatures">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Joint Currents -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2">⚡ Joint Currents</h3>
+          <div class="state-value" id="jointCurrents">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Driver Status -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2">🔧 Driver Status</h3>
+          <div class="state-value">
+            <div>Errors: <span id="driverErrors" class="normal-indicator">OK</span></div>
+            <div>States: <span id="driverStates">-</span></div>
+          </div>
+        </div>
+
+        <!-- Joint Positions -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2">🔧 Joint Positions</h3>
+          <div class="state-value" id="jointPositions">
+            Loading...
+          </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2">📊 System Info</h3>
+          <div class="state-value">
+            <div>Update Rate: <span id="updateRate">-</span> Hz</div>
+            <div>Last Update: <span id="lastUpdate">-</span></div>
+            <div>Data Status: <span id="dataStatus" class="normal-indicator">Active</span></div>
+          </div>
         </div>
       </div>
     </div>

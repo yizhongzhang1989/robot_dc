@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 import os
 from ament_index_python.packages import get_package_share_directory
 import threading
+import json
 
 class RobotArmWebServer(Node):
     def __init__(self):
@@ -28,11 +29,37 @@ class RobotArmWebServer(Node):
             10
         )
         
+        # Create subscription for robot state
+        self.robot_state_subscription = self.create_subscription(
+            String,
+            f'/arm{self.device_id}/robot_state',
+            self.robot_state_callback,
+            10
+        )
+        
+        # Store latest robot state
+        self.latest_robot_state = None
+        self.robot_state_lock = threading.Lock()
+        
         self.get_logger().info(f'Robot arm web server initialized for device {self.device_id}')
         self.get_logger().info(f'Publishing to topic: /arm{self.device_id}/cmd')
+        self.get_logger().info(f'Subscribing to topic: /arm{self.device_id}/robot_state')
         
         # Start FastAPI server in a separate thread
         self.start_web_server()
+    
+    def robot_state_callback(self, msg):
+        """Handle incoming robot state messages"""
+        with self.robot_state_lock:
+            try:
+                self.latest_robot_state = json.loads(msg.data)
+            except json.JSONDecodeError as e:
+                self.get_logger().error(f'Error parsing robot state JSON: {e}')
+    
+    def get_latest_robot_state(self):
+        """Get the latest robot state data"""
+        with self.robot_state_lock:
+            return self.latest_robot_state
     
     def send_command(self, command):
         """Send command to robot arm"""
@@ -77,8 +104,17 @@ class RobotArmWebServer(Node):
                 return {
                     "device_id": self.device_id,
                     "topic": f"/arm{self.device_id}/cmd",
+                    "state_topic": f"/arm{self.device_id}/robot_state",
                     "available_commands": ["power_on", "power_off", "enable", "disable"]
                 }
+            
+            @app.get("/api/robot_arm/state")
+            def get_robot_arm_state():
+                """Get current robot state"""
+                state = self.get_latest_robot_state()
+                if state is None:
+                    return JSONResponse(content={"error": "No robot state data available"}, status_code=503)
+                return JSONResponse(content=state)
             
             # Mount static files
             app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")

@@ -21,6 +21,12 @@ def generate_launch_description():
         description='Port number of the DUCO robot arm'
     )
     
+    robot_state_port_arg = DeclareLaunchArgument(
+        'robot_state_port',
+        default_value='2001',
+        description='Port number for robot state monitoring'
+    )
+    
     device_id_arg = DeclareLaunchArgument(
         'device_id',
         default_value='1',
@@ -41,6 +47,20 @@ def generate_launch_description():
         parameters=[
             {'ip': LaunchConfiguration('robot_ip')},
             {'port': LaunchConfiguration('robot_port')},
+            {'device_id': LaunchConfiguration('device_id')}
+        ],
+        output='screen',
+        emulate_tty=True,
+    )
+
+    # Robot state monitoring node
+    robot_state_node = Node(
+        package='duco_robot_arm_state',
+        executable='duco_robot_arm_state_node',
+        name='duco_robot_arm_state_node',
+        parameters=[
+            {'ip': LaunchConfiguration('robot_ip')},
+            {'port': LaunchConfiguration('robot_state_port')},
             {'device_id': LaunchConfiguration('device_id')}
         ],
         output='screen',
@@ -68,8 +88,10 @@ def generate_launch_description():
     return LaunchDescription([
         robot_ip_arg,
         robot_port_arg,
+        robot_state_port_arg,
         device_id_arg,
         web_port_arg,
         robot_arm_node,
+        robot_state_node,
         robot_arm_web_node
     ])

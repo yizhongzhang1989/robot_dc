@@ -1,13 +1,130 @@
 // Robot Arm Web Control JavaScript
 
 let commandCounter = 0;
+let stateUpdateInterval;
+let lastStateUpdate = null;
+let updateCount = 0;
+let updateRate = 0;
 
 // Initialize the page
 document.addEventListener('DOMContentLoaded', function() {
     fetchRobotArmInfo();
     updateConnectionStatus(true);
+    startStateMonitoring();
     logCommand('System', 'Web interface initialized');
 });
+
+// Start robot state monitoring
+function startStateMonitoring() {
+    // Update robot state every 500ms
+    stateUpdateInterval = setInterval(fetchRobotState, 500);
+}
+
+// Fetch robot state
+async function fetchRobotState() {
+    try {
+        const response = await fetch('/api/robot_arm/state');
+        
+        if (response.ok) {
+            const stateData = await response.json();
+            updateRobotStateDisplay(stateData);
+            updateStateStatus(true);
+            
+            // Calculate update rate
+            const now = Date.now();
+            if (lastStateUpdate) {
+                updateCount++;
+                if (updateCount % 10 === 0) {
+                    updateRate = Math.round(10000 / (now - lastStateUpdate) * 10) / 10;
+                    document.getElementById('updateRate').textContent = updateRate;
+                }
+            }
+            lastStateUpdate = now;
+            
+        } else {
+            updateStateStatus(false);
+            document.getElementById('stateStatus').textContent = 'No Data';
+            document.getElementById('stateStatus').className = 'error-indicator';
+        }
+    } catch (error) {
+        updateStateStatus(false);
+        console.error('Error fetching robot state:', error);
+    }
+}
+
+// Update robot state display
+function updateRobotStateDisplay(state) {
+    // Update TCP Position
+    if (state.TCPActualPosition && state.TCPActualPosition.length >= 6) {
+        const tcp = state.TCPActualPosition;
+        document.getElementById('tcpPosX').textContent = tcp[0].toFixed(4);
+        document.getElementById('tcpPosY').textContent = tcp[1].toFixed(4);
+        document.getElementById('tcpPosZ').textContent = tcp[2].toFixed(4);
+        document.getElementById('tcpPosRx').textContent = tcp[3].toFixed(4);
+        document.getElementById('tcpPosRy').textContent = tcp[4].toFixed(4);
+        document.getElementById('tcpPosRz').textContent = tcp[5].toFixed(4);
+    }
+
+    // Update Joint Temperatures
+    if (state.jointActualTemperature) {
+        const tempHtml = state.jointActualTemperature.map((temp, index) => {
+            const tempClass = temp > 40 ? 'error-indicator' : 'normal-indicator';
+            return `<div>J${index + 1}: <span class="${tempClass}">${temp.toFixed(1)}°C</span></div>`;
+        }).join('');
+        document.getElementById('jointTemperatures').innerHTML = tempHtml;
+    }
+
+    // Update Joint Currents
+    if (state.jointActualCurrent) {
+        const currentHtml = state.jointActualCurrent.map((current, index) => {
+            const currentClass = current > 50 ? 'error-indicator' : 'normal-indicator';
+            return `<div>J${index + 1}: <span class="${currentClass}">${current.toFixed(1)}‰</span></div>`;
+        }).join('');
+        document.getElementById('jointCurrents').innerHTML = currentHtml;
+    }
+
+    // Update Driver Status
+    if (state.driverErrorID && state.driverState) {
+        const hasErrors = state.driverErrorID.some(error => error !== 0);
+        const errorElement = document.getElementById('driverErrors');
+        if (hasErrors) {
+            errorElement.textContent = 'ERRORS';
+            errorElement.className = 'error-indicator';
+        } else {
+            errorElement.textContent = 'OK';
+            errorElement.className = 'normal-indicator';
+        }
+        
+        // Show first few driver states
+        const stateText = state.driverState.slice(0, 3).map(s => s.toString()).join(', ');
+        document.getElementById('driverStates').textContent = stateText;
+    }
+
+    // Update Joint Positions
+    if (state.jointActualPosition) {
+        const posHtml = state.jointActualPosition.map((pos, index) => {
+            return `<div>J${index + 1}: ${pos.toFixed(4)} rad</div>`;
+        }).join('');
+        document.getElementById('jointPositions').innerHTML = posHtml;
+    }
+
+    // Update last update time
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+    document.getElementById('dataStatus').textContent = 'Active';
+    document.getElementById('dataStatus').className = 'normal-indicator';
+}
+
+// Update state monitoring status
+function updateStateStatus(isActive) {
+    const statusElement = document.getElementById('stateStatus');
+    if (isActive) {
+        statusElement.textContent = 'Monitoring';
+        statusElement.className = 'normal-indicator';
+    } else {
+        statusElement.textContent = 'Disconnected';
+        statusElement.className = 'error-indicator';
+    }
+}
 
 // Fetch robot arm information
 async function fetchRobotArmInfo() {
