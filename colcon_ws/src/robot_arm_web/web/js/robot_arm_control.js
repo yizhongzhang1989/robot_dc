@@ -6,11 +6,27 @@ let lastStateUpdate = null;
 let updateCount = 0;
 let updateRate = 0;
 
+// 3D Visualization variables
+let scene, camera, renderer, controls;
+let baseFrame, tcpFrame;
+let isViewer3DInitialized = false;
+
 // Initialize the page
 document.addEventListener('DOMContentLoaded', function() {
+    // Check if Three.js is loaded
+    if (typeof THREE === 'undefined') {
+        console.error('Three.js is not loaded');
+        logCommand('System', 'Three.js library not loaded', 'error');
+        return;
+    }
+    
     fetchRobotArmInfo();
     updateConnectionStatus(true);
     startStateMonitoring();
+    
+    // Initialize 3D viewer with a small delay to ensure DOM is ready
+    setTimeout(init3DViewer, 100);
+    
     logCommand('System', 'Web interface initialized');
 });
 
@@ -224,6 +240,252 @@ function updateRobotStateDisplay(state) {
     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
     document.getElementById('dataStatus').textContent = 'Active';
     document.getElementById('dataStatus').className = 'normal-indicator';
+
+    // Update 3D visualization
+    if (isViewer3DInitialized) {
+        update3DVisualization(state);
+    }
+}
+
+// Initialize 3D Viewer
+function init3DViewer() {
+    try {
+        const container = document.getElementById('viewer3d');
+        const canvas = document.getElementById('robot3dCanvas');
+        
+        if (!container || !canvas) {
+            console.error('3D viewer container or canvas not found');
+            return;
+        }
+        
+        // Scene setup
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x2a2a2a);
+        
+        // Camera setup
+        const containerWidth = container.offsetWidth;
+        const containerHeight = container.offsetHeight;
+        camera = new THREE.PerspectiveCamera(75, containerWidth / containerHeight, 0.1, 1000);
+        // Position camera for Z-up coordinate system (robot perspective)
+        camera.position.set(1, 1, 1);
+        camera.lookAt(0, 0, 0);
+        
+        // Renderer setup
+        renderer = new THREE.WebGLRenderer({ 
+            canvas: canvas, 
+            antialias: true,
+            alpha: true 
+        });
+        renderer.setSize(containerWidth, containerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        // Controls setup
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, 0, 0);
+        controls.enableZoom = true;
+        controls.enableRotate = true;
+        controls.enablePan = true;
+        
+        // Make controls slower and smoother
+        controls.rotateSpeed = 0.3;
+        controls.panSpeed = 0.3;
+        controls.zoomSpeed = 0.5;
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(2, 2, 2);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        scene.add(directionalLight);
+        
+        // Grid
+        const gridHelper = new THREE.GridHelper(2, 20, 0x444444, 0x444444);
+        scene.add(gridHelper);
+        
+        // Create coordinate frames
+        createCoordinateFrames();
+        
+        // Start animation loop
+        animate();
+        
+        // Handle window resize
+        window.addEventListener('resize', onWindowResize);
+        
+        // Add keyboard shortcut for resetting view
+        document.addEventListener('keydown', handle3DKeyboard);
+        
+        isViewer3DInitialized = true;
+        logCommand('System', '3D viewer initialized successfully');
+        
+        // Force initial render
+        renderer.render(scene, camera);
+        
+    } catch (error) {
+        console.error('Error initializing 3D viewer:', error);
+        logCommand('System', `Failed to initialize 3D viewer: ${error.message}`, 'error');
+    }
+}
+
+// Create coordinate frames for base and TCP
+function createCoordinateFrames() {
+    // Base frame (fixed at origin)
+    baseFrame = createCoordinateFrame(0.3, 'Base');
+    baseFrame.position.set(0, 0, 0);
+    // Rotate base frame to show Z-up orientation
+    // Rotate -90 degrees around X-axis to make Z point up instead of Y
+    baseFrame.rotation.x = -Math.PI / 2;
+    scene.add(baseFrame);
+    
+    // TCP frame (will be updated with robot data)
+    tcpFrame = createCoordinateFrame(0.2, 'TCP');
+    // Default position in Z-up coordinate system
+    tcpFrame.position.set(0.5, 0.5, 0.5);
+    // Apply same rotation to TCP frame
+    tcpFrame.rotation.x = -Math.PI / 2;
+    scene.add(tcpFrame);
+}
+
+// Create a coordinate frame with colored axes
+function createCoordinateFrame(size, label) {
+    const frame = new THREE.Group();
+    
+    // X axis (red)
+    const xGeometry = new THREE.CylinderGeometry(0.005, 0.005, size, 8);
+    const xMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+    const xAxis = new THREE.Mesh(xGeometry, xMaterial);
+    xAxis.rotation.z = -Math.PI / 2;
+    xAxis.position.x = size / 2;
+    frame.add(xAxis);
+    
+    // X arrow
+    const xArrowGeometry = new THREE.ConeGeometry(0.02, 0.04, 8);
+    const xArrow = new THREE.Mesh(xArrowGeometry, xMaterial);
+    xArrow.rotation.z = -Math.PI / 2;
+    xArrow.position.x = size;
+    frame.add(xArrow);
+    
+    // Y axis (green)
+    const yGeometry = new THREE.CylinderGeometry(0.005, 0.005, size, 8);
+    const yMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+    const yAxis = new THREE.Mesh(yGeometry, yMaterial);
+    yAxis.position.y = size / 2;
+    frame.add(yAxis);
+    
+    // Y arrow
+    const yArrowGeometry = new THREE.ConeGeometry(0.02, 0.04, 8);
+    const yArrow = new THREE.Mesh(yArrowGeometry, yMaterial);
+    yArrow.position.y = size;
+    frame.add(yArrow);
+    
+    // Z axis (blue)
+    const zGeometry = new THREE.CylinderGeometry(0.005, 0.005, size, 8);
+    const zMaterial = new THREE.MeshLambertMaterial({ color: 0x0000ff });
+    const zAxis = new THREE.Mesh(zGeometry, zMaterial);
+    zAxis.rotation.x = Math.PI / 2;
+    zAxis.position.z = size / 2;
+    frame.add(zAxis);
+    
+    // Z arrow
+    const zArrowGeometry = new THREE.ConeGeometry(0.02, 0.04, 8);
+    const zArrow = new THREE.Mesh(zArrowGeometry, zMaterial);
+    zArrow.rotation.x = Math.PI / 2;
+    zArrow.position.z = size;
+    frame.add(zArrow);
+    
+    // Label
+    if (label) {
+        const loader = new THREE.FontLoader();
+        // For now, we'll use a simple sphere to represent the frame center
+        const sphereGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+        const sphereMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        frame.add(sphere);
+    }
+    
+    return frame;
+}
+
+// Update 3D visualization with robot state
+function update3DVisualization(state) {
+    if (!tcpFrame) return;
+    
+    // Update TCP frame position and orientation
+    if (state.TCPActualPosition && state.TCPActualPosition.length >= 6) {
+        const tcp = state.TCPActualPosition;
+        
+        // For Z-up coordinate system with -90° X rotation applied to frames
+        // We need to transform the position to match the rotated coordinate system
+        // Robot: X=forward, Y=left, Z=up
+        // After -90° X rotation: X=forward, Y=down, Z=left -> becomes X=forward, Y=up, Z=back
+        // So we need: robot_X->display_X, robot_Y->display_Z, robot_Z->display_Y
+        tcpFrame.position.set(tcp[0], tcp[2], -tcp[1]); // X=X, Y=Z, Z=-Y
+        
+        // For rotations, we need to account for the base frame rotation
+        // The TCP frame already has the base rotation applied, so we add the robot rotations
+        tcpFrame.rotation.set(tcp[3] - Math.PI / 2, tcp[4], tcp[5]); // Adjust X rotation for base frame
+    }
+}
+
+// Animation loop
+function animate() {
+    requestAnimationFrame(animate);
+    
+    if (controls) {
+        controls.update();
+    }
+    
+    if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+    }
+}
+
+// Handle window resize
+function onWindowResize() {
+    if (!camera || !renderer) return;
+    
+    const container = document.getElementById('viewer3d');
+    if (!container) return;
+    
+    const containerWidth = container.offsetWidth;
+    const containerHeight = container.offsetHeight;
+    
+    camera.aspect = containerWidth / containerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(containerWidth, containerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+}
+
+// Handle keyboard shortcuts for 3D viewer
+function handle3DKeyboard(event) {
+    if (!isViewer3DInitialized || !camera || !controls) return;
+    
+    // Reset view with 'R' key
+    if (event.key === 'r' || event.key === 'R') {
+        event.preventDefault();
+        resetCamera();
+        logCommand('3D Viewer', 'Camera view reset');
+    }
+}
+
+// Reset camera to original view
+function resetCamera() {
+    if (!camera || !controls) return;
+    
+    // Reset camera position for Z-up coordinate system
+    camera.position.set(1, 1, 1);
+    camera.lookAt(0, 0, 0);
+    
+    // Reset controls target
+    controls.target.set(0, 0, 0);
+    controls.update();
 }
 
 // Update state monitoring status
