@@ -336,20 +336,14 @@ function init3DViewer() {
 
 // Create coordinate frames for base and TCP
 function createCoordinateFrames() {
-    // Base frame (fixed at origin)
+    // Base frame (fixed at origin) - no rotation, standard coordinate system
     baseFrame = createCoordinateFrame(0.3, 'Base');
     baseFrame.position.set(0, 0, 0);
-    // Rotate base frame to show Z-up orientation
-    // Rotate -90 degrees around X-axis to make Z point up instead of Y
-    baseFrame.rotation.x = -Math.PI / 2;
     scene.add(baseFrame);
     
-    // TCP frame (will be updated with robot data)
+    // TCP frame (will be updated with robot data) - no rotation, standard coordinate system
     tcpFrame = createCoordinateFrame(0.2, 'TCP');
-    // Default position in Z-up coordinate system
     tcpFrame.position.set(0.5, 0.5, 0.5);
-    // Apply same rotation to TCP frame
-    tcpFrame.rotation.x = -Math.PI / 2;
     scene.add(tcpFrame);
 }
 
@@ -357,53 +351,53 @@ function createCoordinateFrames() {
 function createCoordinateFrame(size, label) {
     const frame = new THREE.Group();
     
-    // X axis (red)
+    // X axis (red) - points in positive X direction
     const xGeometry = new THREE.CylinderGeometry(0.005, 0.005, size, 8);
     const xMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000 });
     const xAxis = new THREE.Mesh(xGeometry, xMaterial);
-    xAxis.rotation.z = -Math.PI / 2;
-    xAxis.position.x = size / 2;
+    xAxis.rotation.z = -Math.PI / 2; // Rotate cylinder to point along X-axis
+    xAxis.position.x = size / 2; // Center it at half the length
     frame.add(xAxis);
     
-    // X arrow
+    // X arrow - points in positive X direction
     const xArrowGeometry = new THREE.ConeGeometry(0.02, 0.04, 8);
     const xArrow = new THREE.Mesh(xArrowGeometry, xMaterial);
-    xArrow.rotation.z = -Math.PI / 2;
-    xArrow.position.x = size;
+    xArrow.rotation.z = -Math.PI / 2; // Rotate cone to point along X-axis
+    xArrow.position.x = size; // Place at end of axis
     frame.add(xArrow);
     
-    // Y axis (green)
+    // Y axis (green) - points in positive Y direction
     const yGeometry = new THREE.CylinderGeometry(0.005, 0.005, size, 8);
     const yMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
     const yAxis = new THREE.Mesh(yGeometry, yMaterial);
-    yAxis.position.y = size / 2;
+    // No rotation needed, cylinder default is along Y-axis
+    yAxis.position.y = size / 2; // Center it at half the length
     frame.add(yAxis);
     
-    // Y arrow
+    // Y arrow - points in positive Y direction
     const yArrowGeometry = new THREE.ConeGeometry(0.02, 0.04, 8);
     const yArrow = new THREE.Mesh(yArrowGeometry, yMaterial);
-    yArrow.position.y = size;
+    // No rotation needed, cone default points along Y-axis
+    yArrow.position.y = size; // Place at end of axis
     frame.add(yArrow);
     
-    // Z axis (blue)
+    // Z axis (blue) - points in positive Z direction
     const zGeometry = new THREE.CylinderGeometry(0.005, 0.005, size, 8);
     const zMaterial = new THREE.MeshLambertMaterial({ color: 0x0000ff });
     const zAxis = new THREE.Mesh(zGeometry, zMaterial);
-    zAxis.rotation.x = Math.PI / 2;
-    zAxis.position.z = size / 2;
+    zAxis.rotation.x = Math.PI / 2; // Rotate cylinder to point along Z-axis
+    zAxis.position.z = size / 2; // Center it at half the length
     frame.add(zAxis);
     
-    // Z arrow
+    // Z arrow - points in positive Z direction
     const zArrowGeometry = new THREE.ConeGeometry(0.02, 0.04, 8);
     const zArrow = new THREE.Mesh(zArrowGeometry, zMaterial);
-    zArrow.rotation.x = Math.PI / 2;
-    zArrow.position.z = size;
+    zArrow.rotation.x = Math.PI / 2; // Rotate cone to point along Z-axis
+    zArrow.position.z = size; // Place at end of axis
     frame.add(zArrow);
     
-    // Label
+    // Center marker
     if (label) {
-        const loader = new THREE.FontLoader();
-        // For now, we'll use a simple sphere to represent the frame center
         const sphereGeometry = new THREE.SphereGeometry(0.02, 16, 16);
         const sphereMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
         const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
@@ -421,16 +415,13 @@ function update3DVisualization(state) {
     if (state.TCPActualPosition && state.TCPActualPosition.length >= 6) {
         const tcp = state.TCPActualPosition;
         
-        // For Z-up coordinate system with -90° X rotation applied to frames
-        // We need to transform the position to match the rotated coordinate system
-        // Robot: X=forward, Y=left, Z=up
-        // After -90° X rotation: X=forward, Y=down, Z=left -> becomes X=forward, Y=up, Z=back
-        // So we need: robot_X->display_X, robot_Y->display_Z, robot_Z->display_Y
-        tcpFrame.position.set(tcp[0], tcp[2], -tcp[1]); // X=X, Y=Z, Z=-Y
+        // Position: directly use robot coordinates (no transformation)
+        tcpFrame.position.set(tcp[0], tcp[1], tcp[2]);
         
-        // For rotations, we need to account for the base frame rotation
-        // The TCP frame already has the base rotation applied, so we add the robot rotations
-        tcpFrame.rotation.set(tcp[3] - Math.PI / 2, tcp[4], tcp[5]); // Adjust X rotation for base frame
+        // Rotation: Apply Rz*Ry*Rx transformation
+        // TCP data: [X, Y, Z, Rx, Ry, Rz] where rotations are in radians
+        tcpFrame.rotation.order = 'ZYX';  // This applies rotations in Z, Y, X order = Rz*Ry*Rx
+        tcpFrame.rotation.set(tcp[3], tcp[4], tcp[5]); // Set Rx, Ry, Rz
     }
 }
 
