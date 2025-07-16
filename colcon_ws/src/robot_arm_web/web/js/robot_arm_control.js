@@ -9,6 +9,7 @@ let updateRate = 0;
 // 3D Visualization variables
 let scene, camera, renderer, controls;
 let baseFrame, tcpFrame;
+let worldGroup; // Global rotation group - like glRotate in OpenGL
 let isViewer3DInitialized = false;
 
 // Initialize the page
@@ -306,12 +307,25 @@ function init3DViewer() {
         directionalLight.shadow.mapSize.height = 2048;
         scene.add(directionalLight);
         
-        // Grid
+        // Grid - create in x-y plane instead of x-z plane
         const gridHelper = new THREE.GridHelper(2, 20, 0x444444, 0x444444);
-        scene.add(gridHelper);
+        // Rotate grid to x-y plane (default GridHelper is in x-z plane)
+        gridHelper.rotation.x = Math.PI / 2;
         
-        // Create coordinate frames
+        // Create world group for global rotation (like glRotate in OpenGL)
+        worldGroup = new THREE.Group();
+        
+        // Add grid to world group
+        worldGroup.add(gridHelper);
+        
+        // Create coordinate frames and add them to world group
         createCoordinateFrames();
+        
+        // Add world group to scene
+        scene.add(worldGroup);
+        
+        // Apply global rotation to make Z-up (like glRotatef(-90, 1, 0, 0) in OpenGL)
+        worldGroup.rotation.x = -Math.PI / 2;
         
         // Start animation loop
         animate();
@@ -336,15 +350,15 @@ function init3DViewer() {
 
 // Create coordinate frames for base and TCP
 function createCoordinateFrames() {
-    // Base frame (fixed at origin) - no rotation, standard coordinate system
+    // Base frame (fixed at origin) - standard coordinate system
     baseFrame = createCoordinateFrame(0.3, 'Base');
     baseFrame.position.set(0, 0, 0);
-    scene.add(baseFrame);
+    worldGroup.add(baseFrame); // Add to world group instead of scene
     
-    // TCP frame (will be updated with robot data) - no rotation, standard coordinate system
+    // TCP frame (will be updated with robot data) - standard coordinate system
     tcpFrame = createCoordinateFrame(0.2, 'TCP');
     tcpFrame.position.set(0.5, 0.5, 0.5);
-    scene.add(tcpFrame);
+    worldGroup.add(tcpFrame); // Add to world group instead of scene
 }
 
 // Create a coordinate frame with colored axes
