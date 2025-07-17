@@ -446,6 +446,29 @@
       color: white;
       font-size: 12px;
     }
+    
+    /* Styles for collapsible sections */
+    details {
+      border: none;
+    }
+    details summary {
+      cursor: pointer;
+      padding: 0.5rem 0;
+      position: relative;
+      list-style: none;
+    }
+    details summary::-webkit-details-marker {
+      display: none;
+    }
+    details summary::before {
+      content: '▼';
+      margin-right: 0.5rem;
+      transition: transform 0.3s;
+      display: inline-block;
+    }
+    details:not([open]) summary::before {
+      transform: rotate(-90deg);
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
@@ -456,27 +479,111 @@
       <p class="text-gray-600">DUCO Collaborative Robot Arm Web Interface</p>
     </div>
 
-    <!-- Status Panel -->
+    <!-- Combined Status & 3D Visualization -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-4">Status</h2>
-      <div class="flex items-center justify-between">
-        <div class="flex items-center">
-          <span class="status-indicator status-connected" id="connectionStatus"></span>
-          <span id="connectionText">Connected</span>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Status Section -->
+        <div>
+          <h2 class="text-xl font-semibold mb-4">📊 Status</h2>
+          <div class="flex items-center mb-3">
+            <span class="status-indicator status-connected" id="connectionStatus"></span>
+            <span id="connectionText">Connected</span>
+          </div>
+          <div class="text-sm text-gray-600 mb-4">
+            <div class="mb-1">Device ID: <span id="deviceId">-</span></div>
+            <div class="mb-1">Topic: <span id="topicName">-</span></div>
+            <div>State: <span id="stateStatus" class="normal-indicator">Monitoring</span></div>
+          </div>
+          
+          <!-- System Info moved here from state monitor -->
+          <div class="bg-gray-50 p-3 rounded">
+            <h3 class="font-medium text-gray-700 mb-2 text-sm">📊 System Info</h3>
+            <div class="text-sm">
+              <div class="flex justify-between mb-1">
+                <span class="data-label">Rate:</span> 
+                <span id="updateRate" class="data-value">-</span> Hz
+              </div>
+              <div class="flex justify-between mb-1">
+                <span class="data-label">Updated:</span> 
+                <span id="lastUpdate" class="data-value">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="data-label">Status:</span> 
+                <span id="dataStatus" class="normal-indicator">Active</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="text-sm text-gray-600">
-          Device ID: <span id="deviceId">-</span> | 
-          Topic: <span id="topicName">-</span> |
-          State: <span id="stateStatus" class="normal-indicator">Monitoring</span>
+        
+        <!-- 3D Visualization Section -->
+        <div>
+          <h2 class="text-xl font-semibold mb-4">🎯 3D Robot Visualization</h2>
+          <div class="viewer-3d" id="viewer3d">
+            <div class="viewer-controls">
+              <div>Left click: Rotate</div>
+              <div>Right click: Pan</div>
+              <div>Wheel: Zoom</div>
+              <div>R key: Reset view</div>
+            </div>
+            <canvas id="robot3dCanvas"></canvas>
+          </div>
         </div>
       </div>
     </div>
-
-    <!-- Robot State Display -->
-    <div class="bg-white rounded-lg shadow-md p-4 mb-6">
-      <h2 class="text-xl font-semibold mb-3">🤖 Robot State Monitor</h2>
+    
+    <!-- Control Panel moved here -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-6">Robot Arm Controls</h2>
       
-      <div class="state-grid">
+      <div class="grid grid-cols-2 gap-4 max-w-md mx-auto">
+        <!-- Power On Button -->
+        <button 
+          id="powerOnBtn"
+          class="robot-arm-button bg-green-500 hover:bg-green-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
+          onclick="sendCommand('power_on')"
+        >
+          ⚡ Power On
+        </button>
+
+        <!-- Power Off Button -->
+        <button 
+          id="powerOffBtn"
+          class="robot-arm-button bg-red-500 hover:bg-red-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
+          onclick="sendCommand('power_off')"
+        >
+          🔴 Power Off
+        </button>
+
+        <!-- Enable Button -->
+        <button 
+          id="enableBtn"
+          class="robot-arm-button bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
+          onclick="sendCommand('enable')"
+        >
+          ✅ Enable
+        </button>
+
+        <!-- Disable Button -->
+        <button 
+          id="disableBtn"
+          class="robot-arm-button bg-orange-500 hover:bg-orange-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
+          onclick="sendCommand('disable')"
+        >
+          ⏸️ Disable
+        </button>
+      </div>
+
+      <!-- Command Status -->
+      <div class="mt-6 text-center">
+        <div id="commandStatus" class="text-sm text-gray-600">Ready to send commands</div>
+      </div>
+    </div>
+
+    <!-- Robot State Display (made collapsible) -->
+    <details open class="bg-white rounded-lg shadow-md p-4 mb-6">
+      <summary class="text-xl font-semibold">🤖 Robot State Monitor</summary>
+      
+      <div class="state-grid mt-3">
         <!-- TCP Actual Position -->
         <div class="state-card">
           <h3 class="font-medium text-gray-700 mb-2 text-sm">📍 TCP Actual Position</h3>
@@ -638,88 +745,8 @@
           </div>
         </div>
 
-        <!-- System Info -->
-        <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">📊 System Info</h3>
-          <div class="state-value">
-            <div class="compact-item">
-              <span class="data-label">Rate:</span> 
-              <span id="updateRate" class="data-value">-</span> Hz
-            </div>
-            <div class="compact-item">
-              <span class="data-label">Updated:</span> 
-              <span id="lastUpdate" class="data-value">-</span>
-            </div>
-            <div class="compact-item">
-              <span class="data-label">Status:</span> 
-              <span id="dataStatus" class="normal-indicator">Active</span>
-            </div>
-          </div>
-        </div>
       </div>
-    </div>
-
-    <!-- 3D Visualization -->
-    <div class="bg-white rounded-lg shadow-md p-4 mb-6">
-      <h2 class="text-xl font-semibold mb-3">🎯 3D Robot Visualization</h2>
-      <div class="viewer-3d" id="viewer3d">
-        <div class="viewer-controls">
-          <div>Left click: Rotate</div>
-          <div>Right click: Pan</div>
-          <div>Wheel: Zoom</div>
-          <div>R key: Reset view</div>
-        </div>
-        <canvas id="robot3dCanvas"></canvas>
-      </div>
-    </div>
-
-    <!-- Control Panel -->
-    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-6">Robot Arm Controls</h2>
-      
-      <div class="grid grid-cols-2 gap-4 max-w-md mx-auto">
-        <!-- Power On Button -->
-        <button 
-          id="powerOnBtn"
-          class="robot-arm-button bg-green-500 hover:bg-green-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
-          onclick="sendCommand('power_on')"
-        >
-          ⚡ Power On
-        </button>
-
-        <!-- Power Off Button -->
-        <button 
-          id="powerOffBtn"
-          class="robot-arm-button bg-red-500 hover:bg-red-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
-          onclick="sendCommand('power_off')"
-        >
-          🔴 Power Off
-        </button>
-
-        <!-- Enable Button -->
-        <button 
-          id="enableBtn"
-          class="robot-arm-button bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
-          onclick="sendCommand('enable')"
-        >
-          ✅ Enable
-        </button>
-
-        <!-- Disable Button -->
-        <button 
-          id="disableBtn"
-          class="robot-arm-button bg-orange-500 hover:bg-orange-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
-          onclick="sendCommand('disable')"
-        >
-          ⏸️ Disable
-        </button>
-      </div>
-
-      <!-- Command Status -->
-      <div class="mt-6 text-center">
-        <div id="commandStatus" class="text-sm text-gray-600">Ready to send commands</div>
-      </div>
-    </div>
+    </details>
 
     <!-- Command Log -->
     <div class="bg-white rounded-lg shadow-md p-6">
