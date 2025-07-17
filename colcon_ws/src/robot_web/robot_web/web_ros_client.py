@@ -152,8 +152,13 @@ class WebROSClient:
             request = Trigger.Request()
             future = self.snapshot_client.call_async(request)
             
-            # Wait for the service call to complete
-            rclpy.spin_until_future_complete(self.node, future, timeout_sec=10.0)
+            # Wait for the service call to complete with timeout
+            import time
+            timeout = 10.0
+            start_time = time.time()
+            
+            while not future.done() and (time.time() - start_time) < timeout:
+                rclpy.spin_once(self.node, timeout_sec=0.1)
             
             if future.done():
                 response = future.result()

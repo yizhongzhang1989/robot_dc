@@ -386,12 +386,8 @@
             // Handle high resolution camera
             if (data.high && data.high.img) {
               const imgHigh = document.getElementById('img-high');
-              // Force browser to reload image by creating a new image element
-              const newImgHigh = new Image();
-              newImgHigh.onload = function() {
-                imgHigh.src = this.src;
-              };
-              newImgHigh.src = 'data:image/jpeg;base64,' + data.high.img + '?t=' + Date.now();
+              // Set the base64 image data directly
+              imgHigh.src = 'data:image/jpeg;base64,' + data.high.img;
               document.getElementById('time-high').innerText = 'Captured: ' + data.high.timestamp;
             } else {
               document.getElementById('time-high').innerText = 'No image available';
@@ -400,12 +396,8 @@
             // Handle low resolution camera
             if (data.low && data.low.img) {
               const imgLow = document.getElementById('img-low');
-              // Force browser to reload image by creating a new image element
-              const newImgLow = new Image();
-              newImgLow.onload = function() {
-                imgLow.src = this.src;
-              };
-              newImgLow.src = 'data:image/jpeg;base64,' + data.low.img + '?t=' + Date.now();
+              // Set the base64 image data directly
+              imgLow.src = 'data:image/jpeg;base64,' + data.low.img;
               document.getElementById('time-low').innerText = 'Captured: ' + data.low.timestamp;
             } else {
               document.getElementById('time-low').innerText = 'No image available';
