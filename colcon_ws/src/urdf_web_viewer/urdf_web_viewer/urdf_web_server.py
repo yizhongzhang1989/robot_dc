@@ -123,6 +123,7 @@ class URDFWebServer(Node):
     def start_web_server(self):
         """Start HTTP server"""
         server = HTTPServer(('', self.port), self.create_request_handler())
+        self.get_logger().info(f"Server started on http://localhost:{self.port}")
         server.serve_forever()
     
     def create_request_handler(self):
@@ -148,8 +149,14 @@ class URDFWebServer(Node):
                     self.serve_meshes()
                 elif path == '/api/joint_states':
                     self.serve_joint_states()
+                elif path.startswith('/third_party/'):
+                    self.serve_static_file(path)
                 else:
                     self.send_error(404)
+            
+            def do_HEAD(self):
+                # Handle HEAD requests the same as GET but without body
+                self.do_GET()
             
             def do_POST(self):
                 parsed_url = urlparse(self.path)
@@ -190,6 +197,40 @@ class URDFWebServer(Node):
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps(node.joint_states).encode())
+            
+            def serve_static_file(self, path):
+                """Serve static files from third_party directory"""
+                try:
+                    # Get the package directory (go up from urdf_web_viewer/ to src/urdf_web_viewer/)
+                    package_dir = os.path.dirname(os.path.dirname(__file__))
+                    file_path = os.path.join(package_dir, path.lstrip('/'))
+                    
+                    if os.path.exists(file_path) and os.path.isfile(file_path):
+                        # Determine content type
+                        content_type = 'text/plain'
+                        if path.endswith('.js'):
+                            content_type = 'application/javascript'
+                        elif path.endswith('.css'):
+                            content_type = 'text/css'
+                        elif path.endswith('.html'):
+                            content_type = 'text/html'
+                        elif path.endswith('.json'):
+                            content_type = 'application/json'
+                        
+                        # Read and serve the file
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        self.send_response(200)
+                        self.send_header('Content-type', content_type)
+                        self.end_headers()
+                        self.wfile.write(content.encode())
+                    else:
+                        self.send_error(404)
+                        
+                except Exception as e:
+                    node.get_logger().error(f"Error serving static file {path}: {e}")
+                    self.send_error(500)
             
             def update_joint(self):
                 content_length = int(self.headers['Content-Length'])
@@ -262,6 +303,7 @@ class URDFWebServer(Node):
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+    <script src="/third_party/urdf-loaders/javascript/umd/URDFLoader.js"></script>
 
     <script>
         let scene, camera, renderer, controls;
@@ -447,217 +489,103 @@ class URDFWebServer(Node):
         }
         
         async function load3DModel(urdfText) {
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(urdfText, 'text/xml');
-            
-            // Create materials
-            const material = new THREE.MeshPhongMaterial({ 
-                color: 0x888888,
-                shininess: 100,
-                transparent: true,
-                opacity: 0.9
-            });
-            
-            // Parse URDF structure
-            const links = {};
-            const jointsData = {};
-            
-            // Parse links
-            const linkElements = xmlDoc.getElementsByTagName('link');
-            for (let i = 0; i < linkElements.length; i++) {
-                const link = linkElements[i];
-                const linkName = link.getAttribute('name');
-                links[linkName] = {
-                    name: linkName,
-                    meshes: [],
-                    group: new THREE.Group()
-                };
-                links[linkName].group.name = linkName;
-            }
-            
-            // Parse joints
-            const jointElements = xmlDoc.getElementsByTagName('joint');
-            for (let i = 0; i < jointElements.length; i++) {
-                const joint = jointElements[i];
-                const jointName = joint.getAttribute('name');
-                const jointType = joint.getAttribute('type');
+            try {
+                // Create URDF loader
+                const loader = new URDFLoader();
                 
-                const parent = joint.getElementsByTagName('parent')[0].getAttribute('link');
-                const child = joint.getElementsByTagName('child')[0].getAttribute('link');
-                
-                const origin = joint.getElementsByTagName('origin')[0];
-                const axis = joint.getElementsByTagName('axis')[0];
-                
-                let xyz = [0, 0, 0];
-                let rpy = [0, 0, 0];
-                let axisVector = [0, 0, 1];
-                
-                if (origin) {
-                    if (origin.getAttribute('xyz')) {
-                        xyz = origin.getAttribute('xyz').split(' ').map(parseFloat);
+                // Configure loader options
+                loader.parseCollision = false;
+                loader.loadMeshCb = (path, manager, done) => {
+                    // Check if this is the correct signature
+                    if (typeof manager === 'function') {
+                        // If manager is actually the done callback, adjust
+                        done = manager;
+                        manager = null;
                     }
-                    if (origin.getAttribute('rpy')) {
-                        rpy = origin.getAttribute('rpy').split(' ').map(parseFloat);
-                    }
-                }
-                
-                if (axis && axis.getAttribute('xyz')) {
-                    axisVector = axis.getAttribute('xyz').split(' ').map(parseFloat);
-                }
-                
-                jointsData[jointName] = {
-                    name: jointName,
-                    type: jointType,
-                    parent: parent,
-                    child: child,
-                    origin: { xyz: xyz, rpy: rpy },
-                    axis: axisVector,
-                    group: new THREE.Group()
-                };
-                jointsData[jointName].group.name = jointName;
-            }
-            
-            // Load STL meshes for each link
-            const stlLoader = new THREE.STLLoader();
-            
-            for (let i = 0; i < linkElements.length; i++) {
-                const link = linkElements[i];
-                const linkName = link.getAttribute('name');
-                
-                const visuals = link.getElementsByTagName('visual');
-                for (let j = 0; j < visuals.length; j++) {
-                    const visual = visuals[j];
-                    const geometry = visual.getElementsByTagName('geometry')[0];
-                    const mesh = geometry ? geometry.getElementsByTagName('mesh')[0] : null;
                     
-                    if (mesh) {
-                        const filename = mesh.getAttribute('filename');
-                        const meshName = filename.split('/').pop();
-                        
-                        if (meshes[meshName]) {
-                            try {
-                                // Decode base64 mesh data
-                                const binaryData = atob(meshes[meshName]);
-                                const bytes = new Uint8Array(binaryData.length);
-                                for (let k = 0; k < binaryData.length; k++) {
-                                    bytes[k] = binaryData.charCodeAt(k);
-                                }
-                                
-                                // Parse STL
-                                const stlGeometry = stlLoader.parse(bytes.buffer);
-                                stlGeometry.computeVertexNormals();
-                                
-                                // Create mesh
-                                const meshObject = new THREE.Mesh(stlGeometry, material.clone());
-                                meshObject.name = linkName + '_mesh';
-                                meshObject.castShadow = true;
-                                meshObject.receiveShadow = true;
-                                
-                                // Apply visual origin transform if specified
-                                const origin = visual.getElementsByTagName('origin')[0];
-                                if (origin) {
-                                    const xyz = origin.getAttribute('xyz');
-                                    const rpy = origin.getAttribute('rpy');
-                                    
-                                    if (xyz) {
-                                        const [x, y, z] = xyz.split(' ').map(parseFloat);
-                                        meshObject.position.set(x, y, z);
-                                    }
-                                    
-                                    if (rpy) {
-                                        const [roll, pitch, yaw] = rpy.split(' ').map(parseFloat);
-                                        meshObject.rotation.set(roll, pitch, yaw);
-                                    }
-                                }
-                                
-                                links[linkName].group.add(meshObject);
-                                links[linkName].meshes.push(meshObject);
-                                
-                            } catch (error) {
-                                console.warn(`Failed to load mesh ${meshName}:`, error);
+                    // Extract mesh filename from path
+                    const meshName = path.split('/').pop();
+                    
+                    console.log('Loading mesh:', meshName, 'from path:', path);
+                    console.log('Manager:', manager);
+                    console.log('Done callback type:', typeof done);
+                    
+                    if (meshes[meshName]) {
+                        try {
+                            // Decode base64 mesh data
+                            const binaryData = atob(meshes[meshName]);
+                            const bytes = new Uint8Array(binaryData.length);
+                            for (let k = 0; k < binaryData.length; k++) {
+                                bytes[k] = binaryData.charCodeAt(k);
+                            }
+                            
+                            // Parse STL
+                            const stlLoader = new THREE.STLLoader();
+                            const stlGeometry = stlLoader.parse(bytes.buffer);
+                            stlGeometry.computeVertexNormals();
+                            
+                            // Create mesh with material
+                            const material = new THREE.MeshPhongMaterial({ 
+                                color: 0x888888,
+                                shininess: 100,
+                                transparent: true,
+                                opacity: 0.9
+                            });
+                            
+                            const mesh = new THREE.Mesh(stlGeometry, material);
+                            mesh.castShadow = true;
+                            mesh.receiveShadow = true;
+                            
+                            if (typeof done === 'function') {
+                                done(mesh);
+                            } else {
+                                console.error('done is not a function:', done);
+                            }
+                        } catch (error) {
+                            console.warn(`Failed to load mesh ${meshName}:`, error);
+                            if (typeof done === 'function') {
+                                done(null);
                             }
                         }
+                    } else {
+                        console.warn(`Mesh not found: ${meshName}`);
+                        if (typeof done === 'function') {
+                            done(null);
+                        }
                     }
-                }
-            }
-            
-            // Build kinematic chain
-            window.robotLinks = links;
-            window.robotJoints = jointsData;
-            
-            // Add base_link to scene
-            if (links['base_link']) {
-                robotGroup.add(links['base_link'].group);
-            }
-            
-            // Build the joint hierarchy
-            for (const [jointName, jointData] of Object.entries(jointsData)) {
-                const parentLink = links[jointData.parent];
-                const childLink = links[jointData.child];
+                };
                 
-                if (parentLink && childLink) {
-                    // Set joint origin transform
-                    jointData.group.position.set(...jointData.origin.xyz);
-                    jointData.group.rotation.set(...jointData.origin.rpy);
-                    
-                    // Add child link to joint
-                    jointData.group.add(childLink.group);
-                    
-                    // Add joint to parent link
-                    parentLink.group.add(jointData.group);
-                }
+                // Load the URDF
+                const robot = loader.parse(urdfText);
+                
+                // Store reference to robot for joint control
+                window.robotModel = robot;
+                
+                // Add robot to scene
+                robotGroup.add(robot);
+                
+                // Center the robot
+                const box = new THREE.Box3().setFromObject(robotGroup);
+                const center = box.getCenter(new THREE.Vector3());
+                robotGroup.position.set(-center.x, -center.y, -center.z);
+                
+                console.log('Robot loaded successfully:', robot);
+                console.log('Available joints:', Object.keys(robot.joints));
+                
+            } catch (error) {
+                console.error('Error loading URDF model:', error);
+                throw error;
             }
-            
-            // Center the robot
-            const box = new THREE.Box3().setFromObject(robotGroup);
-            const center = box.getCenter(new THREE.Vector3());
-            robotGroup.position.set(-center.x, -center.y, -center.z);
         }
         
         function updateRobotPose() {
-            if (!window.robotJoints) return;
+            if (!window.robotModel) return;
             
-            // Apply joint transformations
-            for (const [jointName, jointData] of Object.entries(window.robotJoints)) {
-                if (jointStates[jointName] !== undefined) {
-                    const jointValue = jointStates[jointName];
-                    const axis = jointData.axis;
-                    
-                    // Always start with original position
-                    jointData.group.position.set(...jointData.origin.xyz);
-                    
-                    if (jointData.type === 'revolute' || jointData.type === 'continuous') {
-                        // Create original rotation matrix from URDF rpy
-                        const originalRotation = new THREE.Euler(...jointData.origin.rpy);
-                        const originalMatrix = new THREE.Matrix4().makeRotationFromEuler(originalRotation);
-                        
-                        if (Math.abs(jointValue) > 1e-6) {
-                            // Only apply joint rotation if value is non-zero
-                            const axisVector = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
-                            const jointRotation = new THREE.Matrix4().makeRotationAxis(axisVector, jointValue);
-                            
-                            // Combine original rotation with joint rotation
-                            const finalMatrix = new THREE.Matrix4().multiplyMatrices(originalMatrix, jointRotation);
-                            jointData.group.setRotationFromMatrix(finalMatrix);
-                        } else {
-                            // For zero joint value, just use the original URDF rotation
-                            jointData.group.setRotationFromMatrix(originalMatrix);
-                        }
-                    }
-                    else if (jointData.type === 'prismatic') {
-                        // Apply original rotation
-                        jointData.group.rotation.set(...jointData.origin.rpy);
-                        
-                        // Apply translation along the joint axis
-                        const axisVector = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
-                        const translation = axisVector.multiplyScalar(jointValue);
-                        
-                        jointData.group.position.set(
-                            jointData.origin.xyz[0] + translation.x,
-                            jointData.origin.xyz[1] + translation.y,
-                            jointData.origin.xyz[2] + translation.z
-                        );
-                    }
+            // Apply joint values using the URDF loader's built-in joint control
+            for (const [jointName, jointValue] of Object.entries(jointStates)) {
+                const joint = window.robotModel.joints[jointName];
+                if (joint) {
+                    joint.setJointValue(jointValue);
                 }
             }
         }
