@@ -253,9 +253,23 @@ function updateTCPFramePosition() {
         // Update position
         tcpFrame.position.set(tcp[0], tcp[1], tcp[2]);
         
-        // Create rotation from Euler angles (assuming XYZ order)
-        const rotation = new THREE.Euler(tcp[3], tcp[4], tcp[5], 'XYZ');
-        tcpFrame.setRotationFromEuler(rotation);
+        // Rotation: Apply Rz*Ry*Rx transformation (matching update3DVisualization)
+        // TCP data: [X, Y, Z, Rx, Ry, Rz] where rotations are in radians
+        tcpFrame.rotation.order = 'ZYX';  // This applies rotations in Z, Y, X order = Rz*Ry*Rx
+        tcpFrame.rotation.set(tcp[3], tcp[4], tcp[5]); // Set Rx, Ry, Rz
+        
+        // Log when TCP frame is updated with position and rotation
+        console.log("TCP Frame Updated:",
+            "Position:", 
+            tcpFrame.position.x.toFixed(3),
+            tcpFrame.position.y.toFixed(3),
+            tcpFrame.position.z.toFixed(3),
+            "| Rotation:",
+            tcpFrame.rotation.x.toFixed(3),
+            tcpFrame.rotation.y.toFixed(3),
+            tcpFrame.rotation.z.toFixed(3),
+            "Order:", tcpFrame.rotation.order
+        );
     }
 }
 
@@ -432,10 +446,7 @@ function updateRobotStateDisplay(state) {
     document.getElementById('dataStatus').textContent = 'Active';
     document.getElementById('dataStatus').className = 'normal-indicator';
 
-    // Update 3D visualization
-    if (isViewer3DInitialized) {
-        update3DVisualization(state);
-    }
+    // Update 3D visualization - removed duplicate TCP update to prevent flickering
 }
 
 // Initialize 3D Viewer
@@ -612,22 +623,12 @@ function createCoordinateFrame(size, label) {
     return frame;
 }
 
-// Update 3D visualization with robot state
+// Update 3D visualization with robot state - DEPRECATED
+// This function is no longer used to avoid duplicate updates causing flickering
+// All TCP frame updates are now handled by updateTCPFramePosition()
 function update3DVisualization(state) {
-    if (!tcpFrame) return;
-    
-    // Update TCP frame position and orientation
-    if (state.TCPActualPosition && state.TCPActualPosition.length >= 6) {
-        const tcp = state.TCPActualPosition;
-        
-        // Position: directly use robot coordinates (no transformation)
-        tcpFrame.position.set(tcp[0], tcp[1], tcp[2]);
-        
-        // Rotation: Apply Rz*Ry*Rx transformation
-        // TCP data: [X, Y, Z, Rx, Ry, Rz] where rotations are in radians
-        tcpFrame.rotation.order = 'ZYX';  // This applies rotations in Z, Y, X order = Rz*Ry*Rx
-        tcpFrame.rotation.set(tcp[3], tcp[4], tcp[5]); // Set Rx, Ry, Rz
-    }
+    // Function kept for reference but no longer used
+    return;
 }
 
 // Animation loop with frame limiting for better performance
