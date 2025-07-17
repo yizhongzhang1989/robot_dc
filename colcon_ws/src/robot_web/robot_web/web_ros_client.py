@@ -1,8 +1,10 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32
+from std_srvs.srv import Trigger
 from modbus_driver_interfaces.msg import MotorSimulationStatus
 from threading import Thread, Lock
+import ast
 
 class WebROSClient:
     def __init__(self, motor_list):
@@ -12,6 +14,10 @@ class WebROSClient:
         self.status_map = {}
         self.lock = Lock()
         self.obs_ctrl_publishers = {}  # Ensure this is an instance attribute
+        
+        # Snapshot service client
+        self.snapshot_client = None
+        
         self._start_ros_node()
 
     def _start_ros_node(self):
@@ -62,6 +68,15 @@ class WebROSClient:
                     lambda msg, m=motor: self._update_status(m, msg),
                     10
                 )
+
+            # Create snapshot service client
+            self.snapshot_client = self.node.create_client(Trigger, 'snapshot')
+            
+            # Wait for snapshot service to be available
+            if not self.snapshot_client.wait_for_service(timeout_sec=5.0):
+                self.node.get_logger().warn("Snapshot service not available")
+            else:
+                self.node.get_logger().info("Snapshot service is available")
 
             rclpy.spin(self.node)
 
@@ -124,3 +139,42 @@ class WebROSClient:
     def get_all_status(self):
         with self.lock:
             return self.status_map.copy()
+
+    def get_snapshot(self):
+        """Get snapshot from cam_node service."""
+        if self.snapshot_client is None:
+            return {"error": "Snapshot client not initialized"}
+        
+        if not self.snapshot_client.service_is_ready():
+            return {"error": "Snapshot service not available"}
+        
+        try:
+            request = Trigger.Request()
+            future = self.snapshot_client.call_async(request)
+            
+            # Wait for the service call to complete
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=10.0)
+            
+            if future.done():
+                response = future.result()
+                if response.success:
+                    try:
+                        # Parse the response message (it's a string representation of a dict)
+                        result = ast.literal_eval(response.message)
+                        # 验证结果格式
+                        if isinstance(result, dict):
+                            self.node.get_logger().info(f"Snapshot received: {list(result.keys())}")
+                            return result
+                        else:
+                            return {"error": "Invalid response format"}
+                    except (ValueError, SyntaxError) as e:
+                        self.node.get_logger().error(f"Failed to parse snapshot response: {e}")
+                        return {"error": f"Failed to parse response: {str(e)}"}
+                else:
+                    return {"error": f"Snapshot failed: {response.message}"}
+            else:
+                return {"error": "Snapshot service call timed out"}
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Exception during snapshot: {e}")
+            return {"error": f"Exception during snapshot: {str(e)}"}

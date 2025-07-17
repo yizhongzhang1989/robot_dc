@@ -82,21 +82,12 @@
         <button id="monitor-start" class="motor-button">Start Monitoring</button>
         <button id="monitor-stop" class="motor-button">Stop Monitoring</button>
       </div>
-      <div class="mb-4 flex gap-4">
-        <button id="snapshot-btn" class="motor-button">Snapshot</button>
-      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="observation-grid">
         <!-- Real-time data and observation toggle buttons will be inserted here -->
       </div>
-      <div class="mt-6 flex gap-8" id="snapshot-area" style="display:none;">
-        <div>
-          <img id="img-cam100" src="" style="max-width:400px;max-height:300px;"/>
-          <div id="time-cam100" class="text-sm text-gray-600 mt-2"></div>
-        </div>
-        <div>
-          <img id="img-cam101" src="" style="max-width:400px;max-height:300px;"/>
-          <div id="time-cam101" class="text-sm text-gray-600 mt-2"></div>
-        </div>
+      <div class="mt-6 flex gap-8" id="snapshot-area">
+        <button id="snapshot-btn" class="motor-button">Take Snapshot</button>
+        <div id="snapshot-imgs" class="flex gap-4"></div>
       </div>
     </div>
   </div>
@@ -357,33 +348,30 @@
           body: JSON.stringify({ action: 'stop' })
         });
       };
-      // 拍照按钮事件
+      
+      // Snapshot button event
       document.getElementById('snapshot-btn').onclick = async () => {
-        const area = document.getElementById('snapshot-area');
-        area.style.display = 'flex';
-        document.getElementById('img-cam100').src = '';
-        document.getElementById('img-cam101').src = '';
-        document.getElementById('time-cam100').innerText = '';
-        document.getElementById('time-cam101').innerText = '';
-        try {
-          const res = await fetch('/snapshot', { method: 'POST' });
-          const data = await res.json();
-          if (data.cam100 && data.cam100.img) {
-            document.getElementById('img-cam100').src = 'data:image/jpeg;base64,' + data.cam100.img;
-            document.getElementById('time-cam100').innerText = 'Snapshot Time: ' + data.cam100.time;
-          } else {
-            document.getElementById('time-cam100').innerText = 'Snapshot failed: ' + (data.cam100 && data.cam100.error ? data.cam100.error : 'Unknown error');
-          }
-          if (data.cam101 && data.cam101.img) {
-            document.getElementById('img-cam101').src = 'data:image/jpeg;base64,' + data.cam101.img;
-            document.getElementById('time-cam101').innerText = 'Snapshot Time: ' + data.cam101.time;
-          } else {
-            document.getElementById('time-cam101').innerText = 'Snapshot failed: ' + (data.cam101 && data.cam101.error ? data.cam101.error : 'Unknown error');
-          }
-        } catch (err) {
-          document.getElementById('time-cam100').innerText = 'Network error';
-          document.getElementById('time-cam101').innerText = 'Network error';
+        const res = await fetch('/snapshot', {method: 'POST'});
+        const data = await res.json();
+        const imgDiv = document.getElementById('snapshot-imgs');
+        imgDiv.innerHTML = '';
+        if (data.error) {
+          imgDiv.innerHTML = `<span class='text-red-500'>${data.error}</span>`;
+          return;
         }
+        Object.entries(data).forEach(([key, val]) => {
+          if (val.img) {
+            const img = document.createElement('img');
+            img.src = `data:image/jpeg;base64,${val.img}`;
+            img.alt = key;
+            img.style.maxWidth = '320px';
+            img.style.border = '1px solid #ccc';
+            img.title = `${key} ${val.timestamp}`;
+            imgDiv.appendChild(img);
+          } else {
+            imgDiv.innerHTML += `<span class='text-red-500'>No image for ${key}</span>`;
+          }
+        });
       };
     }
 

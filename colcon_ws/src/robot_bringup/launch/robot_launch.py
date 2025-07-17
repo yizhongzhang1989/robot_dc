@@ -42,10 +42,10 @@ def generate_launch_description():
         'launch',
         'detector_launch.py'
     )
-    cam_path = os.path.join(
-        get_package_share_directory('cam'),
+    cam_node_path = os.path.join(
+        get_package_share_directory('cam_node'),
         'launch',
-        'cam_launch.py'
+        'cam_node_launch.py'
     )
 
     # Launch descriptions
@@ -82,9 +82,10 @@ def generate_launch_description():
         period=7.0,
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(detector_path))]
     )
-    cam_launch = TimerAction(
+
+    cam_node_launch = TimerAction(
         period=8.0,
-        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cam_path))]
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cam_node_path))]
     )
 
     return LaunchDescription([
@@ -95,5 +96,5 @@ def generate_launch_description():
         teleop_launch,
         web_launch,
         detector_launch,
-        cam_launch
+        cam_node_launch
     ])
