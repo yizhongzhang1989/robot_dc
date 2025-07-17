@@ -49,6 +49,11 @@ let stateSocket = null;
 
 // Start robot state monitoring
 function startStateMonitoring() {
+    // Use polling method for now until WebSocket server issue is fixed
+    logCommand('System', 'Using polling method for state updates');
+    stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
+    
+    /* WebSocket functionality temporarily disabled due to server issues
     // Try WebSocket first for real-time updates
     if ("WebSocket" in window) {
         connectWebSocket();
@@ -57,6 +62,7 @@ function startStateMonitoring() {
         logCommand('System', 'WebSockets not supported, using polling instead');
         stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
     }
+    */
 }
 
 // Connect to WebSocket for real-time robot state updates
@@ -946,7 +952,16 @@ function updateSetting(key, value) {
 
 // Switch between WebSocket and polling connection types
 function toggleConnectionType(type) {
+    // Currently only polling is supported until server-side WebSocket issue is fixed
     if (type === 'websocket') {
+        logCommand('Settings', 'WebSocket currently unavailable - using polling instead');
+        
+        // Ensure polling is active
+        if (!stateUpdateInterval) {
+            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
+        }
+        
+        /* WebSocket functionality temporarily disabled
         // Clear polling interval if active
         if (stateUpdateInterval) {
             clearInterval(stateUpdateInterval);
@@ -956,6 +971,7 @@ function toggleConnectionType(type) {
         // Start WebSocket connection
         connectWebSocket();
         logCommand('Settings', 'Switched to WebSocket real-time data');
+        */
     } else {
         // Close WebSocket if active
         if (stateSocket) {
