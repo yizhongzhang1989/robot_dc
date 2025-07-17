@@ -92,6 +92,15 @@ async def take_snapshot():
     result = ros_client.get_snapshot()
     return JSONResponse(content=result)
 
+@app.post("/restart_camera")
+async def restart_camera():
+    """Restart the camera node using the restart service."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    result = ros_client.restart_camera_node()
+    return JSONResponse(content=result)
+
 app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ class WebROSClient:
         # Snapshot service client
         self.snapshot_client = None
         
+        # Camera restart service client
+        self.restart_client = None
+        
         self._start_ros_node()
 
     def _start_ros_node(self):
@@ -69,8 +72,11 @@ class WebROSClient:
                     10
                 )
 
-            # Create snapshot service client
+            # Create snapshot client
             self.snapshot_client = self.node.create_client(Trigger, 'snapshot')
+            
+            # Create camera restart client
+            self.restart_client = self.node.create_client(Trigger, 'restart_cam_node')
             
             # Wait for snapshot service to be available
             if not self.snapshot_client.wait_for_service(timeout_sec=5.0):
@@ -141,12 +147,21 @@ class WebROSClient:
             return self.status_map.copy()
 
     def get_snapshot(self):
-        """Get snapshot from cam_node service."""
+        """Get snapshot from cam_node service with auto-reconnection."""
         if self.snapshot_client is None:
             return {"error": "Snapshot client not initialized"}
         
+        # Check if service is available, recreate client if needed
         if not self.snapshot_client.service_is_ready():
-            return {"error": "Snapshot service not available"}
+            self.node.get_logger().warning("Snapshot service not ready, recreating client...")
+            self.snapshot_client = self.node.create_client(Trigger, 'snapshot')
+            
+            # Wait a bit for service to become available
+            import time
+            time.sleep(1)
+            
+            if not self.snapshot_client.service_is_ready():
+                return {"error": "Snapshot service not available after reconnection attempt"}
         
         try:
             request = Trigger.Request()
@@ -183,3 +198,46 @@ class WebROSClient:
         except Exception as e:
             self.node.get_logger().error(f"Exception during snapshot: {e}")
             return {"error": f"Exception during snapshot: {str(e)}"}
+
+    def restart_camera_node(self):
+        """Restart the camera node using the restart service with auto-reconnection."""
+        if self.restart_client is None:
+            return {"error": "Restart client not initialized"}
+        
+        # Check if service is available, recreate client if needed
+        if not self.restart_client.service_is_ready():
+            self.node.get_logger().warning("Restart service not ready, recreating client...")
+            self.restart_client = self.node.create_client(Trigger, 'restart_cam_node')
+            
+            # Wait a bit for service to become available
+            import time
+            time.sleep(1)
+            
+            if not self.restart_client.service_is_ready():
+                return {"success": False, "message": "Camera restart service not available"}
+        
+        try:
+            request = Trigger.Request()
+            future = self.restart_client.call_async(request)
+            
+            # Wait for the service call to complete with timeout
+            import time
+            timeout = 5.0
+            start_time = time.time()
+            
+            while not future.done() and (time.time() - start_time) < timeout:
+                rclpy.spin_once(self.node, timeout_sec=0.1)
+            
+            if future.done():
+                response = future.result()
+                if response.success:
+                    self.node.get_logger().info("Camera node restart initiated successfully")
+                    return {"success": True, "message": response.message}
+                else:
+                    return {"success": False, "message": f"Restart failed: {response.message}"}
+            else:
+                return {"success": False, "message": "Restart service call timed out"}
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Exception during camera restart: {e}")
+            return {"success": False, "message": f"Exception during restart: {str(e)}"}

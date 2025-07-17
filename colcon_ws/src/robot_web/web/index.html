@@ -84,6 +84,7 @@
       </div>
       <div class="mb-4 flex gap-4">
         <button id="snapshot-btn" class="motor-button">Take Snapshot</button>
+        <button id="restart-cam-btn" class="motor-button">Restart Camera Node</button>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="observation-grid">
         <!-- Real-time data and observation toggle buttons will be inserted here -->
@@ -409,6 +410,31 @@
         } finally {
           btn.disabled = false;
           btn.innerText = 'Take Snapshot';
+        }
+      };
+
+      // Restart Camera Node button event
+      document.getElementById('restart-cam-btn').onclick = async () => {
+        const btn = document.getElementById('restart-cam-btn');
+        
+        btn.disabled = true;
+        btn.innerText = 'Restarting...';
+        
+        try {
+          const res = await fetch('/restart_camera', { method: 'POST' });
+          const data = await res.json();
+          
+          if (data.success) {
+            alert('Camera node restart initiated successfully!');
+          } else {
+            alert('Failed to restart camera node: ' + data.message);
+          }
+        } catch (error) {
+          console.error('Error restarting camera node:', error);
+          alert('Error restarting camera node: ' + error.message);
+        } finally {
+          btn.disabled = false;
+          btn.innerText = 'Restart Camera Node';
         }
       };
     }
