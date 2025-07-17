@@ -577,6 +577,19 @@
                 <input type="range" min="10" max="60" value="30" 
                   oninput="updateSetting('render3DRate', this.value)">
               </div>
+              <div class="mt-2 flex justify-between items-center">
+                <span class="text-xs text-gray-700">Debug Mode:</span>
+                <label class="flex items-center">
+                  <input type="checkbox" id="debugToggle" onchange="toggleDebug(this.checked)" class="mr-1">
+                  <span class="text-xs">Enable</span>
+                </label>
+              </div>
+              <div id="debugInfo" class="mt-2 text-xs bg-gray-100 p-2 rounded hidden">
+                <div>Last Update: <span id="debugLastUpdate">-</span></div>
+                <div>Time Between Messages: <span id="debugTimeBetween">-</span> ms</div>
+                <div>Avg Interval (10 msgs): <span id="debugAvgInterval">-</span></div>
+                <div>Messages Count: <span id="debugMsgCount">0</span></div>
+              </div>
             </div>
           </details>
         </div>

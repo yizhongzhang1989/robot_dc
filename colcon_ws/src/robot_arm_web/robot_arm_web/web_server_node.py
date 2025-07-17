@@ -186,21 +186,36 @@ class RobotArmWebServer(Node):
     def run_state_broadcaster(self):
         """Run the state broadcaster loop in a separate thread"""
         import asyncio
+        import time
         
         # Create a new event loop for this thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
+        # Keep track of last broadcast time to avoid over-broadcasting
+        last_broadcast_time = 0
+        min_broadcast_interval = 0.05  # 50ms minimum between broadcasts (20Hz max)
+        
         async def broadcast_state():
+            nonlocal last_broadcast_time
+            
             while True:
                 # Wait for new state event
                 self.new_state_event.wait()
                 self.new_state_event.clear()
                 
+                # Enforce minimum interval between broadcasts
+                current_time = time.time()
+                if current_time - last_broadcast_time < min_broadcast_interval:
+                    # Skip this update if too soon after the last one
+                    await asyncio.sleep(0.005)  # Small sleep
+                    continue
+                
                 # Get the latest state and broadcast it
                 with self.robot_state_lock:
                     if self.latest_robot_state:
                         await self.connection_manager.broadcast(self.latest_robot_state)
+                        last_broadcast_time = time.time()
                 
                 # Small sleep to avoid CPU overuse
                 await asyncio.sleep(0.01)

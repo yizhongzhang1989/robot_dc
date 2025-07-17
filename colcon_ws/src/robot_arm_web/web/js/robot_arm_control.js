@@ -14,7 +14,8 @@ const settings = {
     dataRefreshRate: 100,     // How often to fetch data from API (ms)
     uiRefreshRate: 500,      // How often to update the UI elements (ms)
     render3DRate: 30,        // Target FPS for 3D rendering
-    animationEnabled: true   // Whether to enable continuous rendering
+    animationEnabled: true,  // Whether to enable continuous rendering
+    debug: false            // Enable debug mode
 };
 
 // 3D Visualization variables
@@ -98,12 +99,36 @@ function connectWebSocket() {
             // Request a 3D render
             needsRender = true;
             
-            // Calculate update rate
+            // Calculate update rate - fixed to use 1000 for correct Hz calculation
             const now = Date.now();
             if (lastStateUpdate) {
+                const timeBetween = now - lastStateUpdate;
                 updateCount++;
+                
+                // Update debug info if enabled
+                if (settings.debug) {
+                    document.getElementById('debugLastUpdate').textContent = new Date().toLocaleTimeString() + '.' + String(now % 1000).padStart(3, '0');
+                    document.getElementById('debugTimeBetween').textContent = timeBetween;
+                    document.getElementById('debugMsgCount').textContent = updateCount;
+                }
+                
+                // Calculate rolling average of last 10 updates for more stable rate display
                 if (updateCount % 10 === 0) {
-                    updateRate = Math.round(10000 / (now - lastStateUpdate) * 10) / 10;
+                    // Store last 10 intervals to calculate average rate
+                    if (!window.timeIntervals) window.timeIntervals = [];
+                    window.timeIntervals.push(timeBetween);
+                    // Keep only last 10 intervals
+                    if (window.timeIntervals.length > 10) window.timeIntervals.shift();
+                    
+                    // Calculate average interval
+                    const avgInterval = window.timeIntervals.reduce((sum, val) => sum + val, 0) / window.timeIntervals.length;
+                    
+                    // Calculate Hz correctly: 1000ms / avg_time_between_messages_ms
+                    updateRate = Math.round(1000 / avgInterval * 10) / 10;
+                    
+                    if (settings.debug) {
+                        document.getElementById('debugAvgInterval').textContent = avgInterval.toFixed(2) + "ms";
+                    }
                 }
             }
             lastStateUpdate = now;
@@ -148,6 +173,12 @@ async function fetchRobotState() {
         return;
     }
     
+    // Skip if WebSocket just received data (avoid rate calculation interference)
+    const now = Date.now();
+    if (lastStateUpdate && now - lastStateUpdate < settings.dataRefreshRate * 0.8) {
+        return;
+    }
+    
     try {
         const response = await fetch('/api/robot_arm/state');
         
@@ -164,9 +195,22 @@ async function fetchRobotState() {
             // Calculate update rate
             const now = Date.now();
             if (lastStateUpdate) {
+                const timeBetween = now - lastStateUpdate;
                 updateCount++;
+                
+                // Calculate rolling average of last 10 updates for more stable rate display
                 if (updateCount % 10 === 0) {
-                    updateRate = Math.round(10000 / (now - lastStateUpdate) * 10) / 10;
+                    // Store last 10 intervals to calculate average rate
+                    if (!window.timeIntervals) window.timeIntervals = [];
+                    window.timeIntervals.push(timeBetween);
+                    // Keep only last 10 intervals
+                    if (window.timeIntervals.length > 10) window.timeIntervals.shift();
+                    
+                    // Calculate average interval
+                    const avgInterval = window.timeIntervals.reduce((sum, val) => sum + val, 0) / window.timeIntervals.length;
+                    
+                    // Calculate Hz correctly: 1000ms / avg_time_between_messages_ms
+                    updateRate = Math.round(1000 / avgInterval * 10) / 10;
                 }
             }
             lastStateUpdate = now;
@@ -924,6 +968,19 @@ function toggleConnectionType(type) {
             stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
         }
         logCommand('Settings', 'Switched to polling data');
+    }
+}
+
+// Toggle debug mode
+function toggleDebug(enabled) {
+    settings.debug = enabled;
+    const debugInfo = document.getElementById('debugInfo');
+    if (enabled) {
+        debugInfo.classList.remove('hidden');
+        logCommand('Settings', 'Debug mode enabled');
+    } else {
+        debugInfo.classList.add('hidden');
+        logCommand('Settings', 'Debug mode disabled');
     }
 }
 
