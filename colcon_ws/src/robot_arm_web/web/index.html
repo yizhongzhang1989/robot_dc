@@ -6,6 +6,8 @@
   <title>Robot Arm Control</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+  <script src="/third_party/urdf-loaders/javascript/umd/URDFLoader.js"></script>
   <script>
     // OrbitControls inline to avoid CDN issues
     (function() {
@@ -486,6 +488,36 @@
       width: 4rem;
       text-align: right;
     }
+    
+    /* URDF Joint Controls */
+    .joint-control {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.375rem;
+      background: #f9fafb;
+    }
+    
+    .joint-control label {
+      font-weight: 500;
+      font-size: 0.875rem;
+      color: #374151;
+      min-width: 4rem;
+    }
+    
+    .joint-control input[type="range"] {
+      flex: 1;
+      margin: 0 0.5rem;
+    }
+    
+    .joint-control .joint-value {
+      font-size: 0.75rem;
+      color: #6b7280;
+      min-width: 4rem;
+      text-align: right;
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
@@ -605,6 +637,14 @@
               <div>R key: Reset view</div>
             </div>
             <canvas id="robot3dCanvas"></canvas>
+          </div>
+          
+          <!-- URDF Joint Controls -->
+          <div class="mt-4">
+            <h3 class="text-lg font-semibold mb-2">🔧 URDF Joint Controls</h3>
+            <div id="urdfJointControls" class="space-y-2">
+              <div class="text-sm text-gray-600">Loading joint controls...</div>
+            </div>
           </div>
         </div>
       </div>
@@ -844,6 +884,6 @@
     </div>
   </div>
 
-  <script src="/web/js/robot_arm_control.js"></script>
+      <script src="web/js/robot_arm_control.js?v=4&ts=1752776600"></script>
 </body>
 </html>
