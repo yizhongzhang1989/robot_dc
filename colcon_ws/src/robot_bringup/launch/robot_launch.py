@@ -45,7 +45,7 @@ def generate_launch_description():
     cam_node_path = os.path.join(
         get_package_share_directory('cam_node'),
         'launch',
-        'cam_node_launch.py'
+        'cam_launch.py'
     )
 
     # Launch descriptions
