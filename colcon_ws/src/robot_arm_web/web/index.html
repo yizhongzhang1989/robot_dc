@@ -469,6 +469,23 @@
     details:not([open]) summary::before {
       transform: rotate(-90deg);
     }
+    
+    /* Settings panel */
+    .settings-panel {
+      font-size: 0.8rem;
+      background-color: #f8fafc;
+      border-radius: 0.375rem;
+      padding: 0.75rem;
+    }
+    
+    .settings-panel input[type="range"] {
+      width: 100%;
+    }
+    
+    .settings-panel input[type="number"] {
+      width: 4rem;
+      text-align: right;
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
@@ -513,6 +530,55 @@
               </div>
             </div>
           </div>
+          
+          <!-- Performance Settings Panel -->
+          <details class="mt-3">
+            <summary class="text-sm font-medium text-gray-700">🔧 Performance Settings</summary>
+            <div class="settings-panel mt-2">
+              <div class="mb-2 flex items-center justify-between">
+                <span class="text-xs text-gray-700">Connection Type:</span>
+                <div class="flex space-x-2">
+                  <label class="flex items-center">
+                    <input type="radio" name="connectionType" value="websocket" checked 
+                      onchange="toggleConnectionType(this.value)" class="mr-1">
+                    <span class="text-xs">WebSocket (Real-time)</span>
+                  </label>
+                  <label class="flex items-center">
+                    <input type="radio" name="connectionType" value="polling" 
+                      onchange="toggleConnectionType(this.value)" class="mr-1">
+                    <span class="text-xs">Polling (Fallback)</span>
+                  </label>
+                </div>
+              </div>
+              <div class="mb-2">
+                <label class="flex justify-between mb-1">
+                  <span>Data Refresh Rate (ms):</span>
+                  <input type="number" id="dataRefreshRate" min="10" max="2000" value="100" 
+                    onchange="updateSetting('dataRefreshRate', this.value)">
+                </label>
+                <input type="range" min="10" max="2000" value="100" 
+                  oninput="updateSetting('dataRefreshRate', this.value)">
+              </div>
+              <div class="mb-2">
+                <label class="flex justify-between mb-1">
+                  <span>UI Refresh Rate (ms):</span>
+                  <input type="number" id="uiRefreshRate" min="100" max="5000" value="500" 
+                    onchange="updateSetting('uiRefreshRate', this.value)">
+                </label>
+                <input type="range" min="100" max="5000" value="500" 
+                  oninput="updateSetting('uiRefreshRate', this.value)">
+              </div>
+              <div class="mb-1">
+                <label class="flex justify-between mb-1">
+                  <span>3D Render FPS:</span>
+                  <input type="number" id="render3DRate" min="10" max="60" value="30" 
+                    onchange="updateSetting('render3DRate', this.value)">
+                </label>
+                <input type="range" min="10" max="60" value="30" 
+                  oninput="updateSetting('render3DRate', this.value)">
+              </div>
+            </div>
+          </details>
         </div>
         
         <!-- 3D Visualization Section -->

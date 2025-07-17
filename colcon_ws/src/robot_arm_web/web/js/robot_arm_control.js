@@ -2,15 +2,27 @@
 
 let commandCounter = 0;
 let stateUpdateInterval;
+let renderLoopActive = false;
 let lastStateUpdate = null;
 let updateCount = 0;
 let updateRate = 0;
+let lastUIUpdate = 0;
+let robotStateData = null;
+
+// User configurable settings
+const settings = {
+    dataRefreshRate: 100,     // How often to fetch data from API (ms)
+    uiRefreshRate: 500,      // How often to update the UI elements (ms)
+    render3DRate: 30,        // Target FPS for 3D rendering
+    animationEnabled: true   // Whether to enable continuous rendering
+};
 
 // 3D Visualization variables
 let scene, camera, renderer, controls;
 let baseFrame, tcpFrame;
 let worldGroup; // Global rotation group - like glRotate in OpenGL
 let isViewer3DInitialized = false;
+let needsRender = true;      // Flag to indicate if rendering is needed
 
 // Initialize the page
 document.addEventListener('DOMContentLoaded', function() {
@@ -31,21 +43,60 @@ document.addEventListener('DOMContentLoaded', function() {
     logCommand('System', 'Web interface initialized');
 });
 
+// WebSocket for real-time updates
+let stateSocket = null;
+
 // Start robot state monitoring
 function startStateMonitoring() {
-    // Update robot state every 500ms
-    stateUpdateInterval = setInterval(fetchRobotState, 500);
+    // Try WebSocket first for real-time updates
+    if ("WebSocket" in window) {
+        connectWebSocket();
+    } else {
+        // Fallback to polling if WebSockets are not supported
+        logCommand('System', 'WebSockets not supported, using polling instead');
+        stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
+    }
 }
 
-// Fetch robot state
-async function fetchRobotState() {
-    try {
-        const response = await fetch('/api/robot_arm/state');
+// Connect to WebSocket for real-time robot state updates
+function connectWebSocket() {
+    // Close existing socket if any
+    if (stateSocket) {
+        stateSocket.close();
+    }
+    
+    // Create WebSocket connection
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/robot_state`;
+    
+    stateSocket = new WebSocket(wsUrl);
+    
+    stateSocket.onopen = function(e) {
+        logCommand('System', 'WebSocket connection established');
+        updateConnectionStatus(true);
         
-        if (response.ok) {
-            const stateData = await response.json();
-            updateRobotStateDisplay(stateData);
-            updateStateStatus(true);
+        // Cancel polling interval if it exists
+        if (stateUpdateInterval) {
+            clearInterval(stateUpdateInterval);
+            stateUpdateInterval = null;
+        }
+    };
+    
+    stateSocket.onmessage = function(event) {
+        // Handle ping messages
+        if (event.data === "ping") return;
+        
+        try {
+            const stateData = JSON.parse(event.data);
+            
+            // Store the data for UI updates
+            robotStateData = stateData;
+            
+            // Always update TCP frame in 3D viewer immediately for smooth motion
+            updateTCPFramePosition();
+            
+            // Request a 3D render
+            needsRender = true;
             
             // Calculate update rate
             const now = Date.now();
@@ -53,19 +104,108 @@ async function fetchRobotState() {
                 updateCount++;
                 if (updateCount % 10 === 0) {
                     updateRate = Math.round(10000 / (now - lastStateUpdate) * 10) / 10;
-                    document.getElementById('updateRate').textContent = updateRate;
                 }
             }
             lastStateUpdate = now;
             
+            // Update UI if enough time has passed since last update
+            if (now - lastUIUpdate >= settings.uiRefreshRate) {
+                updateRobotStateDisplay(robotStateData);
+                updateStateStatus(true);
+                document.getElementById('updateRate').textContent = updateRate;
+                lastUIUpdate = now;
+            }
+        } catch (error) {
+            console.error('Error processing WebSocket message:', error);
+        }
+    };
+    
+    stateSocket.onclose = function(event) {
+        if (event.wasClean) {
+            logCommand('System', `WebSocket connection closed cleanly, code=${event.code} reason=${event.reason}`);
+        } else {
+            logCommand('System', 'WebSocket connection died', 'error');
+            // Try to reconnect in 5 seconds
+            setTimeout(connectWebSocket, 5000);
+        }
+        
+        // Fall back to polling if WebSocket fails
+        if (!stateUpdateInterval) {
+            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
+        }
+    };
+    
+    stateSocket.onerror = function(error) {
+        logCommand('System', `WebSocket error: ${error.message}`, 'error');
+        updateConnectionStatus(false);
+    };
+}
+
+// Fetch robot state (fallback polling method)
+async function fetchRobotState() {
+    // Skip if we have an active WebSocket connection
+    if (stateSocket && stateSocket.readyState === WebSocket.OPEN) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/robot_arm/state');
+        
+        if (response.ok) {
+            // Store the data for rendering and UI updates
+            robotStateData = await response.json();
+            
+            // Always update TCP frame in 3D viewer immediately for smooth motion
+            updateTCPFramePosition();
+            
+            // Request a 3D render
+            needsRender = true;
+            
+            // Calculate update rate
+            const now = Date.now();
+            if (lastStateUpdate) {
+                updateCount++;
+                if (updateCount % 10 === 0) {
+                    updateRate = Math.round(10000 / (now - lastStateUpdate) * 10) / 10;
+                }
+            }
+            lastStateUpdate = now;
+            
+            // Update UI if enough time has passed since last update
+            if (now - lastUIUpdate >= settings.uiRefreshRate) {
+                updateRobotStateDisplay(robotStateData);
+                updateStateStatus(true);
+                document.getElementById('updateRate').textContent = updateRate;
+                lastUIUpdate = now;
+            }
         } else {
             updateStateStatus(false);
             document.getElementById('stateStatus').textContent = 'No Data';
             document.getElementById('stateStatus').className = 'error-indicator';
+            
+            // Try WebSocket connection if polling fails
+            if (!stateSocket || stateSocket.readyState !== WebSocket.OPEN) {
+                connectWebSocket();
+            }
         }
     } catch (error) {
         updateStateStatus(false);
         console.error('Error fetching robot state:', error);
+    }
+}
+
+// Update TCP frame position in 3D scene
+function updateTCPFramePosition() {
+    if (!robotStateData || !robotStateData.TCPActualPosition || !tcpFrame) return;
+    
+    const tcp = robotStateData.TCPActualPosition;
+    if (tcp.length >= 6) {
+        // Update position
+        tcpFrame.position.set(tcp[0], tcp[1], tcp[2]);
+        
+        // Create rotation from Euler angles (assuming XYZ order)
+        const rotation = new THREE.Euler(tcp[3], tcp[4], tcp[5], 'XYZ');
+        tcpFrame.setRotationFromEuler(rotation);
     }
 }
 
@@ -327,8 +467,9 @@ function init3DViewer() {
         // Apply global rotation to make Z-up (like glRotatef(-90, 1, 0, 0) in OpenGL)
         worldGroup.rotation.x = -Math.PI / 2;
         
-        // Start animation loop
-        animate();
+        // Start animation loop with optimal frame timing
+        renderLoopActive = true;
+        requestAnimationFrame(animate);
         
         // Handle window resize
         window.addEventListener('resize', onWindowResize);
@@ -439,16 +580,30 @@ function update3DVisualization(state) {
     }
 }
 
-// Animation loop
-function animate() {
+// Animation loop with frame limiting for better performance
+let lastRenderTime = 0;
+const frameInterval = 1000 / settings.render3DRate; // ms between frames based on target FPS
+
+function animate(timestamp) {
+    if (!renderLoopActive) return;
+    
+    // Request next frame first for smoother animation
     requestAnimationFrame(animate);
     
+    // Skip frames to maintain target frame rate
+    const elapsed = timestamp - lastRenderTime;
+    if (elapsed < frameInterval && !needsRender) return;
+    
+    // Update controls (OrbitControls)
     if (controls) {
         controls.update();
     }
     
-    if (renderer && scene && camera) {
+    // Only render if needed (on data updates) or if controls are active
+    if ((needsRender || controls.enableDamping) && renderer && scene && camera) {
         renderer.render(scene, camera);
+        needsRender = false;
+        lastRenderTime = timestamp;
     }
 }
 
@@ -702,3 +857,80 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Periodic connection check
 setInterval(fetchRobotArmInfo, 30000); // Check every 30 seconds
+
+// Update settings from UI
+function updateSetting(key, value) {
+    value = parseInt(value);
+    
+    // Input validation
+    switch(key) {
+        case 'dataRefreshRate':
+            value = Math.max(10, Math.min(2000, value));
+            document.getElementById('dataRefreshRate').value = value;
+            break;
+        case 'uiRefreshRate':
+            value = Math.max(100, Math.min(5000, value));
+            document.getElementById('uiRefreshRate').value = value;
+            break;
+        case 'render3DRate':
+            value = Math.max(10, Math.min(60, value));
+            document.getElementById('render3DRate').value = value;
+            break;
+    }
+    
+    // Update settings object
+    if (settings[key] !== value) {
+        settings[key] = value;
+        
+        // Apply changes immediately
+        if (key === 'dataRefreshRate') {
+            // Reset state monitoring interval
+            clearInterval(stateUpdateInterval);
+            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
+            logCommand('Settings', `Data refresh rate changed to ${value} ms`);
+        }
+        else if (key === 'render3DRate') {
+            // Update frame interval for rendering
+            frameInterval = 1000 / settings.render3DRate;
+            logCommand('Settings', `3D render rate changed to ${value} FPS`);
+        }
+        else if (key === 'uiRefreshRate') {
+            logCommand('Settings', `UI refresh rate changed to ${value} ms`);
+        }
+    }
+}
+
+// Switch between WebSocket and polling connection types
+function toggleConnectionType(type) {
+    if (type === 'websocket') {
+        // Clear polling interval if active
+        if (stateUpdateInterval) {
+            clearInterval(stateUpdateInterval);
+            stateUpdateInterval = null;
+        }
+        
+        // Start WebSocket connection
+        connectWebSocket();
+        logCommand('Settings', 'Switched to WebSocket real-time data');
+    } else {
+        // Close WebSocket if active
+        if (stateSocket) {
+            stateSocket.close();
+            stateSocket = null;
+        }
+        
+        // Start polling
+        if (!stateUpdateInterval) {
+            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
+        }
+        logCommand('Settings', 'Switched to polling data');
+    }
+}
+
+// Initialize settings values in UI on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Set initial values for settings inputs
+    document.getElementById('dataRefreshRate').value = settings.dataRefreshRate;
+    document.getElementById('uiRefreshRate').value = settings.uiRefreshRate;
+    document.getElementById('render3DRate').value = settings.render3DRate;
+});
