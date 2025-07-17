@@ -161,7 +161,7 @@ class WebROSClient:
                     try:
                         # Parse the response message (it's a string representation of a dict)
                         result = ast.literal_eval(response.message)
-                        # 验证结果格式
+                        # Validate result format
                         if isinstance(result, dict):
                             self.node.get_logger().info(f"Snapshot received: {list(result.keys())}")
                             return result

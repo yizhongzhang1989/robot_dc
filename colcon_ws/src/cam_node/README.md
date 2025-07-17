@@ -1,53 +1,77 @@
 # Cam Node Package
 
-## 概述
-此包提供 ROS2 相机快照服务，支持从两个 RTSP 摄像头流（高清和低清）获取图像快照。
+## Overview
+This package provides ROS2 camera snapshot service, supporting image snapshots from two RTSP camera streams (high and low resolution).
 
-## 功能
-- 连接两个 RTSP 摄像头流 (192.168.1.100 和 192.168.1.101)
-- 提供 ROS2 快照服务 (`/snapshot`)
-- 返回 base64 编码的 JPEG 图像
-- 自动重连和错误处理
+## Features
+- Connect to two RTSP camera streams (192.168.1.100 and 192.168.1.101)
+- Provide ROS2 snapshot service (`/snapshot`)
+- Return base64-encoded JPEG images
+- Basic error handling and reconnection mechanism
 
-## 启动命令
+## Current Protection Mechanisms
 
-### 单独启动 cam_node
+### 1. **Basic Timeout Detection**
+- ffprobe stream resolution acquisition: 10-second timeout
+- Default resolution fallback: 640x480
+
+### 2. **Process Management**
+- Use subprocess.Popen to start ffmpeg
+- Daemon threads handle frame reading
+- Graceful process cleanup and resource release
+
+### 3. **Thread Safety**
+- Use threading.Lock() to protect frame data access
+- Daemon threads prevent blocking main process exit
+
+### 4. **Basic Error Handling**
+- Incomplete frame detection and skipping
+- Exception catching and logging
+- Frame counting and periodic status output
+
+### 5. **Resource Management**
+- Automatic process termination (stop method)
+- Thread synchronization and waiting
+- Memory management (frame data copying)
+
+## Launch Commands
+
+### Launch cam_node independently
 ```bash
 cd /home/jetson/Desktop/robot_dc/colcon_ws
 source install/setup.bash
 ros2 launch cam_node cam_launch.py
 ```
 
-### 同时启动相机和 Web 服务（推荐）
-```bash
-cd /home/jetson/Desktop/robot_dc/colcon_ws
-source install/setup.bash
-ros2 launch cam_node camera_web_launch.py
-```
-
-## 服务接口
+## Service Interface
 
 ### /snapshot
-- **类型**: std_srvs/srv/Trigger
-- **功能**: 获取两个摄像头的快照
-- **返回**: JSON 格式的响应，包含两个摄像头的 base64 编码图像
+- **Type**: std_srvs/srv/Trigger
+- **Function**: Get snapshots from both cameras
+- **Return**: JSON format response containing base64-encoded images from both cameras
 
-#### 测试命令
+#### Test Command
 ```bash
 ros2 service call /snapshot std_srvs/srv/Trigger
 ```
 
-## 配置
-- 高清摄像头: rtsp://admin:123456@192.168.1.100/stream0
-- 低清摄像头: rtsp://admin:123456@192.168.1.101/stream0
+## Configuration
+- High resolution camera: rtsp://admin:123456@192.168.1.100/stream0
+- Low resolution camera: rtsp://admin:123456@192.168.1.101/stream0
 
-## 依赖
+## Dependencies
 - rclpy
 - opencv-python
 - numpy
 - ffmpeg/ffprobe
 
-## 注意事项
-1. 确保两个摄像头网络连接正常
-2. 启动前需要 source install/setup.bash
-3. 需要安装 ffmpeg 和 ffprobe 工具
+## Notes
+1. Ensure both cameras have normal network connections
+2. Source install/setup.bash before launching
+3. ffmpeg and ffprobe tools must be installed
+4. Current version is a basic implementation, main protection mechanisms focus on basic error handling and resource management
+
+## Relationship to Original Implementation
+- Based on design concepts from `scripts/cam.py`
+- Maintains compatibility with original RTSPStream class
+- Adapted to ROS2 service interface specifications

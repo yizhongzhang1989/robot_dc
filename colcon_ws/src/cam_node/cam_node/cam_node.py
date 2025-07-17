@@ -11,7 +11,7 @@ import datetime
 import json
 import os
 
-# 设置显示环境变量，确保Jetson本地显示
+# Set display environment variable to ensure local display on Jetson
 if 'DISPLAY' not in os.environ:
     os.environ['DISPLAY'] = ':0'
 
@@ -132,12 +132,12 @@ class CamNode(Node):
         super().__init__('cam_node')
         self.display = display
         self.get_logger().info("Initializing CamNode...")
-        # 初始化两个摄像头流
+        # Initialize two camera streams
         self.streams = {}
         for key, url in RTSP_URLS.items():
             self.get_logger().info(f"Starting {key} stream: {url}")
             self.streams[key] = RTSPStream(key, url)
-        # 创建快照服务
+        # Create snapshot service
         self.snapshot_srv = self.create_service(
             Trigger,
             'snapshot',
@@ -187,7 +187,7 @@ def main():
     rclpy.init()
     node = CamNode(display=True)
     try:
-        # 主动spin，保证OpenCV窗口实时刷新
+        # Active spin to ensure real-time OpenCV window refresh
         import time
         while rclpy.ok():
             rclpy.spin_once(node, timeout_sec=0.1)

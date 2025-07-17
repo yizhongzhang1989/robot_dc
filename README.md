@@ -10,6 +10,7 @@ A modular ROS 2-based control system for DC motors over RS-485 Modbus RTU, featu
 robot_dc/
 ├── colcon_ws/                     # ROS 2 workspace containing all packages
 │   └── src/
+│       ├── cam_node/              # RTSP camera snapshot service
 │       ├── leadshine_motor/       # Leadshine motor control node and simulation logic
 │       ├── modbus_driver/         # Central Modbus RTU driver and simulator
 │       ├── modbus_driver_interfaces/ # Shared service/message interface definitions
@@ -21,6 +22,7 @@ robot_dc/
 │       ├── enable_ch340_usb_serial_on_jetson.md
 │       └── setup_joystick_ros2.md
 ├── scripts/                      # Utility and testing scripts
+│   ├── cam.py                    # Original camera script (reference)
 │   ├── jog_motor.py
 │   └── serial_port_finder.py
 ├── install.sh                    # Setup helper script
@@ -36,6 +38,7 @@ robot_dc/
 * Each ROS 2 package contains its own detailed README.
 * Individual package README files (relative paths):
 
+  * [cam\_node](colcon_ws/src/cam_node/README.md)
   * [leadshine\_motor](colcon_ws/src/leadshine_motor/README.md)
   * [modbus\_driver](colcon_ws/src/modbus_driver/README.md)
   * [robot\_teleop](colcon_ws/src/robot_teleop/README.md)
@@ -83,7 +86,15 @@ robot_dc/
 
    > On Linux, you may need to allow port 8000 through your firewall to access from other PCs.
 
-5. **Refer to individual package READMEs for usage examples, APIs, and command formats.**
+5. **Take camera snapshots via the web interface:**
+
+   The system includes a dual-camera RTSP snapshot service. Once the system is running, you can:
+   - Access the web interface at `http://<hostname>:8000`
+   - Use the "Take Snapshot" button to capture images from both cameras
+   - Images are automatically displayed in the web interface
+   - Service endpoint: `/snapshot` (std_srvs/srv/Trigger)
+
+6. **Refer to individual package READMEs for usage examples, APIs, and command formats.**
 
 ---
 
@@ -126,6 +137,7 @@ For remote visual monitoring of the robot or workspace, you can launch a USB cam
 
 * Centralized Modbus RTU management
 * Leadshine motor control via ROS 2 service interface
+* RTSP camera snapshot service for dual-camera systems
 * Web-based interface for visualization and command
 * Simulation mode for development without hardware
 * Joystick teleoperation support

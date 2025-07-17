@@ -82,12 +82,23 @@
         <button id="monitor-start" class="motor-button">Start Monitoring</button>
         <button id="monitor-stop" class="motor-button">Stop Monitoring</button>
       </div>
+      <div class="mb-4 flex gap-4">
+        <button id="snapshot-btn" class="motor-button">Take Snapshot</button>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="observation-grid">
         <!-- Real-time data and observation toggle buttons will be inserted here -->
       </div>
-      <div class="mt-6 flex gap-8" id="snapshot-area">
-        <button id="snapshot-btn" class="motor-button">Take Snapshot</button>
-        <div id="snapshot-imgs" class="flex gap-4"></div>
+      <div class="mt-6 flex gap-8" id="snapshot-area" style="display:none;">
+        <div>
+          <h3 class="font-semibold mb-2">High Resolution Camera</h3>
+          <img id="img-high" src="" style="max-width:400px;max-height:300px; border: 1px solid #ccc;"/>
+          <div id="time-high" class="text-sm text-gray-600 mt-2"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Low Resolution Camera</h3>
+          <img id="img-low" src="" style="max-width:400px;max-height:300px; border: 1px solid #ccc;"/>
+          <div id="time-low" class="text-sm text-gray-600 mt-2"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -333,7 +344,7 @@
         const card = createObservationCard(target);
         grid.appendChild(card);
       });
-      // 统一监控按钮事件
+      // Unified monitoring button events
       document.getElementById('monitor-start').onclick = () => {
         fetch('/monitor_control', {
           method: 'POST',
@@ -351,27 +362,62 @@
       
       // Snapshot button event
       document.getElementById('snapshot-btn').onclick = async () => {
-        const res = await fetch('/snapshot', {method: 'POST'});
-        const data = await res.json();
-        const imgDiv = document.getElementById('snapshot-imgs');
-        imgDiv.innerHTML = '';
-        if (data.error) {
-          imgDiv.innerHTML = `<span class='text-red-500'>${data.error}</span>`;
-          return;
-        }
-        Object.entries(data).forEach(([key, val]) => {
-          if (val.img) {
-            const img = document.createElement('img');
-            img.src = `data:image/jpeg;base64,${val.img}`;
-            img.alt = key;
-            img.style.maxWidth = '320px';
-            img.style.border = '1px solid #ccc';
-            img.title = `${key} ${val.timestamp}`;
-            imgDiv.appendChild(img);
+        const btn = document.getElementById('snapshot-btn');
+        const area = document.getElementById('snapshot-area');
+        
+        btn.disabled = true;
+        btn.innerText = 'Taking Snapshot...';
+        
+        // Show the snapshot area and clear previous images
+        area.style.display = 'flex';
+        document.getElementById('img-high').src = '';
+        document.getElementById('img-low').src = '';
+        document.getElementById('time-high').innerText = 'Loading...';
+        document.getElementById('time-low').innerText = 'Loading...';
+        
+        try {
+          const res = await fetch('/snapshot', { method: 'POST' });
+          const data = await res.json();
+          
+          if (data.error) {
+            document.getElementById('time-high').innerText = 'Error: ' + data.error;
+            document.getElementById('time-low').innerText = 'Error: ' + data.error;
           } else {
-            imgDiv.innerHTML += `<span class='text-red-500'>No image for ${key}</span>`;
+            // Handle high resolution camera
+            if (data.high && data.high.img) {
+              const imgHigh = document.getElementById('img-high');
+              // Force browser to reload image by creating a new image element
+              const newImgHigh = new Image();
+              newImgHigh.onload = function() {
+                imgHigh.src = this.src;
+              };
+              newImgHigh.src = 'data:image/jpeg;base64,' + data.high.img + '?t=' + Date.now();
+              document.getElementById('time-high').innerText = 'Captured: ' + data.high.timestamp;
+            } else {
+              document.getElementById('time-high').innerText = 'No image available';
+            }
+            
+            // Handle low resolution camera
+            if (data.low && data.low.img) {
+              const imgLow = document.getElementById('img-low');
+              // Force browser to reload image by creating a new image element
+              const newImgLow = new Image();
+              newImgLow.onload = function() {
+                imgLow.src = this.src;
+              };
+              newImgLow.src = 'data:image/jpeg;base64,' + data.low.img + '?t=' + Date.now();
+              document.getElementById('time-low').innerText = 'Captured: ' + data.low.timestamp;
+            } else {
+              document.getElementById('time-low').innerText = 'No image available';
+            }
           }
-        });
+        } catch (err) {
+          document.getElementById('time-high').innerText = 'Network error';
+          document.getElementById('time-low').innerText = 'Network error';
+        } finally {
+          btn.disabled = false;
+          btn.innerText = 'Take Snapshot';
+        }
       };
     }
 
@@ -447,7 +493,7 @@
       });
     }
 
-    // 初始化
+    // Initialize
     window.addEventListener('DOMContentLoaded', () => {
       initMotorCards();
       initServoCards();
