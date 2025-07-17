@@ -1,5 +1,6 @@
 pyserial
 pymodbus
 fastapi
-uvicorn
+uvicorn[standard]
+websockets>=10.0
 flask
