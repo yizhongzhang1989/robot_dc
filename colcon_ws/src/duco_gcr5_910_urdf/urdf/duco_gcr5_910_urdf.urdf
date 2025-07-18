@@ -4,6 +4,12 @@
      For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
 <robot
   name="duco_gcr5_910_urdf">
+  <link name="rotated_base"/>  <!-- dummy root frame -->
+  <joint name="base_rotation" type="fixed">
+    <parent link="rotated_base"/>
+    <child link="base_link"/>
+    <origin rpy="0 0 -1.5708" xyz="0 0 0"/>  <!-- -90° in radians -->
+  </joint>
   <link
     name="base_link">
     <inertial>
@@ -95,7 +101,7 @@
     <child
       link="link1" />
     <axis
-      xyz="-1 0 0" />
+      xyz="1 0 0" />
   </joint>
   <link
     name="link2">
@@ -148,7 +154,7 @@
     <child
       link="link2" />
     <axis
-      xyz="-1 0 0" />
+      xyz="1 0 0" />
   </joint>
   <link
     name="link3">
@@ -201,7 +207,7 @@
     <child
       link="link3" />
     <axis
-      xyz="-1 0 0" />
+      xyz="1 0 0" />
   </joint>
   <link
     name="link4">
@@ -307,7 +313,7 @@
     <child
       link="link5" />
     <axis
-      xyz="0 0 1" />
+      xyz="0 0 -1" />
   </joint>
   <link
     name="link6">
