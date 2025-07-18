@@ -297,9 +297,18 @@ class RobotArmWebServer(Node):
             async def serve_urdf_loader_files(path: str):
                 """Serve static files from urdf_web_viewer third_party directory"""
                 try:
-                    # The third_party directory is in the urdf_web_viewer package directory
-                    # which is in the workspace src directory
-                    workspace_src_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    # Find the workspace src directory more reliably
+                    # Look for the colcon_ws directory in the path
+                    current_path = os.path.abspath(__file__)
+                    while current_path != os.path.dirname(current_path):
+                        if os.path.basename(current_path) == 'colcon_ws':
+                            workspace_src_dir = os.path.join(current_path, 'src')
+                            break
+                        current_path = os.path.dirname(current_path)
+                    else:
+                        # Fallback: try to find src directory
+                        workspace_src_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src')
+                    
                     third_party_dir = os.path.join(workspace_src_dir, 'urdf_web_viewer', 'third_party')
                     file_path = os.path.join(third_party_dir, path)
                     
@@ -309,6 +318,26 @@ class RobotArmWebServer(Node):
                         return JSONResponse(content={'error': f'File not found: {file_path}'}, status_code=404)
                 except Exception as e:
                     return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            # Serve JavaScript file
+            @app.get("/js/{filename}")
+            async def serve_js_file(filename: str):
+                """Serve JavaScript files"""
+                js_path = os.path.join(STATIC_DIR, 'js', filename)
+                if os.path.exists(js_path) and os.path.isfile(js_path):
+                    return FileResponse(js_path, media_type='application/javascript')
+                else:
+                    return JSONResponse(content={'error': f'File not found: {filename}'}, status_code=404)
+            
+            # Serve CSS file
+            @app.get("/css/{filename}")
+            async def serve_css_file(filename: str):
+                """Serve CSS files"""
+                css_path = os.path.join(STATIC_DIR, 'css', filename)
+                if os.path.exists(css_path) and os.path.isfile(css_path):
+                    return FileResponse(css_path, media_type='text/css')
+                else:
+                    return JSONResponse(content={'error': f'File not found: {filename}'}, status_code=404)
             
             # Mount static files
             app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")
