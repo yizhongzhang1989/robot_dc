@@ -662,11 +662,6 @@ async function initURDFViewer() {
         urdfJointStates = await statesResponse.json();
         console.log('✅ Joint states loaded:', urdfJointStates);
         
-        // Create joint controls
-        console.log('🎛️ Creating URDF joint controls...');
-        createURDFJointControls();
-        console.log('✅ URDF joint controls created');
-        
         // Load URDF model into 3D scene
         console.log('🎨 Loading URDF model into 3D scene...');
         await loadURDFModel(urdfText);
@@ -680,61 +675,6 @@ async function initURDFViewer() {
         console.error('📋 Error stack:', error.stack);
         logCommand('System', `Failed to initialize URDF viewer: ${error.message}`, 'error');
     }
-}
-
-// Create URDF joint controls
-function createURDFJointControls() {
-    const container = document.getElementById('urdfJointControls');
-    
-    // Safety check - if element doesn't exist, log and return
-    if (!container) {
-        console.warn('urdfJointControls element not found in DOM');
-        return;
-    }
-    
-    container.innerHTML = '';
-    
-    if (Object.keys(urdfJoints).length === 0) {
-        container.innerHTML = '<div class="text-sm text-gray-600">No controllable joints found</div>';
-        return;
-    }
-    
-    for (const [jointName, jointInfo] of Object.entries(urdfJoints)) {
-        const div = document.createElement('div');
-        div.className = 'joint-control';
-        
-        const label = document.createElement('label');
-        label.textContent = jointName;
-        
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.min = jointInfo.lower;
-        slider.max = jointInfo.upper;
-        slider.step = 0.01;
-        slider.value = urdfJointStates[jointName] || 0;
-        slider.id = `slider-${jointName}`;  // Add ID for easier access
-        
-        const valueSpan = document.createElement('div');
-        valueSpan.className = 'joint-value';
-        valueSpan.id = `value-${jointName}`;  // Add ID for easier access
-        updateJointValueDisplay(valueSpan, jointInfo, parseFloat(slider.value));
-        
-        slider.addEventListener('input', (e) => {
-            const value = parseFloat(e.target.value);
-            updateJointValueDisplay(valueSpan, jointInfo, value);
-            updateURDFJoint(jointName, value);
-        });
-        
-        div.appendChild(label);
-        div.appendChild(slider);
-        div.appendChild(valueSpan);
-        container.appendChild(div);
-    }
-}
-
-// Update joint value display
-function updateJointValueDisplay(element, jointInfo, value) {
-    element.textContent = `${value.toFixed(2)} rad`;
 }
 
 // Update URDF joint value
@@ -1374,106 +1314,6 @@ document.addEventListener('DOMContentLoaded', function() {
 // Periodic connection check
 setInterval(fetchRobotArmInfo, 30000); // Check every 30 seconds
 
-// Update settings from UI
-function updateSetting(key, value) {
-    value = parseInt(value);
-    
-    // Input validation
-    switch(key) {
-        case 'dataRefreshRate':
-            value = Math.max(10, Math.min(2000, value));
-            document.getElementById('dataRefreshRate').value = value;
-            break;
-        case 'uiRefreshRate':
-            value = Math.max(100, Math.min(5000, value));
-            document.getElementById('uiRefreshRate').value = value;
-            break;
-        case 'render3DRate':
-            value = Math.max(10, Math.min(60, value));
-            document.getElementById('render3DRate').value = value;
-            break;
-    }
-    
-    // Update settings object
-    if (settings[key] !== value) {
-        settings[key] = value;
-        
-        // Apply changes immediately
-        if (key === 'dataRefreshRate') {
-            // Reset state monitoring interval
-            clearInterval(stateUpdateInterval);
-            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
-            logCommand('Settings', `Data refresh rate changed to ${value} ms`);
-        }
-        else if (key === 'render3DRate') {
-            // Update frame interval for rendering
-            frameInterval = 1000 / settings.render3DRate;
-            logCommand('Settings', `3D render rate changed to ${value} FPS`);
-        }
-        else if (key === 'uiRefreshRate') {
-            logCommand('Settings', `UI refresh rate changed to ${value} ms`);
-        }
-    }
-}
-
-// Switch between WebSocket and polling connection types
-function toggleConnectionType(type) {
-    // Currently only polling is supported until server-side WebSocket issue is fixed
-    if (type === 'websocket') {
-        logCommand('Settings', 'WebSocket currently unavailable - using polling instead');
-        
-        // Ensure polling is active
-        if (!stateUpdateInterval) {
-            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
-        }
-        
-        /* WebSocket functionality temporarily disabled
-        // Clear polling interval if active
-        if (stateUpdateInterval) {
-            clearInterval(stateUpdateInterval);
-            stateUpdateInterval = null;
-        }
-        
-        // Start WebSocket connection
-        connectWebSocket();
-        logCommand('Settings', 'Switched to WebSocket real-time data');
-        */
-    } else {
-        // Close WebSocket if active
-        if (stateSocket) {
-            stateSocket.close();
-            stateSocket = null;
-        }
-        
-        // Start polling
-        if (!stateUpdateInterval) {
-            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
-        }
-        logCommand('Settings', 'Switched to polling data');
-    }
-}
-
-// Toggle debug mode
-function toggleDebug(enabled) {
-    settings.debug = enabled;
-    const debugInfo = document.getElementById('debugInfo');
-    if (enabled) {
-        debugInfo.classList.remove('hidden');
-        logCommand('Settings', 'Debug mode enabled');
-    } else {
-        debugInfo.classList.add('hidden');
-        logCommand('Settings', 'Debug mode disabled');
-    }
-}
-
-// Initialize settings values in UI on page load
-document.addEventListener('DOMContentLoaded', function() {
-    // Set initial values for settings inputs
-    document.getElementById('dataRefreshRate').value = settings.dataRefreshRate;
-    document.getElementById('uiRefreshRate').value = settings.uiRefreshRate;
-    document.getElementById('render3DRate').value = settings.render3DRate;
-});
-
 // Update URDF joint states from actual joint positions
 function updateURDFFromActualJoints(jointActualPosition) {
     if (!jointActualPosition || !Array.isArray(jointActualPosition)) {
@@ -1489,18 +1329,6 @@ function updateURDFFromActualJoints(jointActualPosition) {
         
         // Update the URDF joint state
         urdfJointStates[jointName] = actualValue;
-        
-        // Update the corresponding slider if it exists
-        const slider = document.getElementById(`slider-${jointName}`);
-        if (slider) {
-            slider.value = actualValue;
-            
-            // Update the value display
-            const valueSpan = document.getElementById(`value-${jointName}`);
-            if (valueSpan) {
-                valueSpan.textContent = `${actualValue.toFixed(2)} rad`;
-            }
-        }
     }
     
     // Update the robot pose in the 3D visualization
