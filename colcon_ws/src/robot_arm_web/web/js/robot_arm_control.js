@@ -24,22 +24,84 @@ let baseFrame, tcpFrame;
 let worldGroup; // Global rotation group - like glRotate in OpenGL
 let isViewer3DInitialized = false;
 let needsRender = true;      // Flag to indicate if rendering is needed
+let directionalLight;        // Global directional light variable
+
+// URDF variables
+let urdfJoints = {};
+let urdfMeshes = {};
+let urdfJointStates = {};
+let robotModel = null;
 
 // Initialize the page
-document.addEventListener('DOMContentLoaded', function() {
+window.addEventListener('load', function() {
+    console.log('Page load event fired');
+    
     // Check if Three.js is loaded
     if (typeof THREE === 'undefined') {
         console.error('Three.js is not loaded');
-        logCommand('System', 'Three.js library not loaded', 'error');
         return;
     }
+    
+    console.log('Three.js loaded successfully');
     
     fetchRobotArmInfo();
     updateConnectionStatus(true);
     startStateMonitoring();
     
     // Initialize 3D viewer with a small delay to ensure DOM is ready
-    setTimeout(init3DViewer, 100);
+    setTimeout(() => {
+        console.log('Initializing 3D viewer...');
+        init3DViewer();
+    }, 100);
+    
+    // Initialize URDF viewer
+    setTimeout(() => {
+        console.log('Starting URDF initialization...');
+        
+        // Test URDFLoader availability first
+        if (typeof URDFLoader === 'undefined') {
+            console.error('ERROR: URDFLoader is not defined!');
+            return;
+        }
+        console.log('URDFLoader is available');
+        
+        // Create a simple test to see if the parser works
+        try {
+            const testLoader = new URDFLoader();
+            console.log('URDFLoader instance created successfully');
+            
+            // Test parsing with simple URDF
+            const simpleURDF = `<?xml version="1.0"?>
+<robot name="test">
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.1 0.1 0.1"/>
+      </geometry>
+    </visual>
+  </link>
+</robot>`;
+            
+            const testRobot = testLoader.parse(simpleURDF);
+            console.log('Simple URDF parsed successfully');
+            console.log('Test robot type:', testRobot ? testRobot.constructor.name : 'null');
+            console.log('Test robot children:', testRobot && testRobot.children ? testRobot.children.length : 'undefined');
+            
+            // Now try the actual URDF initialization
+            console.log('About to call initURDFViewer()...');
+            try {
+                console.log('Calling initURDFViewer() now...');
+                initURDFViewer();
+                console.log('initURDFViewer() call returned');
+            } catch (error) {
+                console.error('Error in initURDFViewer() call:', error);
+            }
+            
+        } catch (error) {
+            console.error('ERROR in URDF test:', error.message);
+            console.error('Error stack:', error.stack);
+        }
+    }, 300);
     
     logCommand('System', 'Web interface initialized');
 });
@@ -49,11 +111,6 @@ let stateSocket = null;
 
 // Start robot state monitoring
 function startStateMonitoring() {
-    // Use polling method for now until WebSocket server issue is fixed
-    logCommand('System', 'Using polling method for state updates');
-    stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
-    
-    /* WebSocket functionality temporarily disabled due to server issues
     // Try WebSocket first for real-time updates
     if ("WebSocket" in window) {
         connectWebSocket();
@@ -62,7 +119,6 @@ function startStateMonitoring() {
         logCommand('System', 'WebSockets not supported, using polling instead');
         stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
     }
-    */
 }
 
 // Connect to WebSocket for real-time robot state updates
@@ -167,8 +223,15 @@ function connectWebSocket() {
     };
     
     stateSocket.onerror = function(error) {
-        logCommand('System', `WebSocket error: ${error.message}`, 'error');
+        console.error('WebSocket error:', error);
+        logCommand('System', `WebSocket error: ${error.type || 'Connection failed'}`, 'error');
         updateConnectionStatus(false);
+        
+        // Fall back to polling if WebSocket fails
+        if (!stateUpdateInterval) {
+            logCommand('System', 'Falling back to polling method');
+            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
+        }
     };
 }
 
@@ -372,6 +435,8 @@ function updateRobotStateDisplay(state) {
     // Update Joint Actual Position
     if (state.jointActualPosition) {
         document.getElementById('jointActualPositions').innerHTML = createCompactJointGrid(state.jointActualPosition, ' rad');
+        // Update URDF joint states from actual joint positions
+        updateURDFFromActualJoints(state.jointActualPosition);
     }
 
     // Update Joint Actual Velocity
@@ -485,7 +550,7 @@ function init3DViewer() {
         
         // Controls setup
         controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
+        controls.enableDamping = false;  // Disable inertia/damping
         controls.dampingFactor = 0.05;
         controls.target.set(0, 0, 0);
         controls.enableZoom = true;
@@ -501,7 +566,7 @@ function init3DViewer() {
         const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
         scene.add(ambientLight);
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(2, 2, 2);
         directionalLight.castShadow = true;
         directionalLight.shadow.mapSize.width = 2048;
@@ -548,6 +613,325 @@ function init3DViewer() {
         console.error('Error initializing 3D viewer:', error);
         logCommand('System', `Failed to initialize 3D viewer: ${error.message}`, 'error');
     }
+}
+
+// Initialize URDF viewer functionality
+async function initURDFViewer() {
+    try {
+        console.log('=== URDF VIEWER INITIALIZATION START ===');
+        
+        // Wait for 3D viewer to be initialized
+        if (!isViewer3DInitialized || !scene || !worldGroup) {
+            console.log('3D viewer not ready, waiting...', {
+                isViewer3DInitialized,
+                scene: !!scene,
+                worldGroup: !!worldGroup
+            });
+            logCommand('System', 'Waiting for 3D viewer to initialize...');
+            // Wait a bit longer and try again
+            setTimeout(initURDFViewer, 500);
+            return;
+        }
+        
+        console.log('✅ 3D viewer is ready, proceeding with URDF initialization...');
+        
+        // Load URDF data
+        logCommand('System', 'Loading URDF data...');
+        
+        // Get URDF content
+        console.log('📥 Fetching URDF content...');
+        const urdfResponse = await fetch('/api/urdf');
+        const urdfText = await urdfResponse.text();
+        console.log('✅ URDF content loaded, length:', urdfText.length);
+        
+        // Get joints
+        console.log('📥 Fetching joints...');
+        const jointsResponse = await fetch('/api/joints');
+        urdfJoints = await jointsResponse.json();
+        console.log('✅ Joints loaded:', Object.keys(urdfJoints));
+        
+        // Get meshes
+        console.log('📥 Fetching meshes...');
+        const meshesResponse = await fetch('/api/meshes');
+        urdfMeshes = await meshesResponse.json();
+        console.log('✅ Meshes loaded:', Object.keys(urdfMeshes));
+        
+        // Get initial joint states
+        console.log('📥 Fetching joint states...');
+        const statesResponse = await fetch('/api/joint_states');
+        urdfJointStates = await statesResponse.json();
+        console.log('✅ Joint states loaded:', urdfJointStates);
+        
+        // Load URDF model into 3D scene
+        console.log('🎨 Loading URDF model into 3D scene...');
+        await loadURDFModel(urdfText);
+        console.log('✅ URDF model loaded into 3D scene');
+        
+        console.log('🎉 URDF viewer initialization completed successfully');
+        logCommand('System', 'URDF viewer initialized successfully');
+        
+    } catch (error) {
+        console.error('❌ Error initializing URDF viewer:', error);
+        console.error('📋 Error stack:', error.stack);
+        logCommand('System', `Failed to initialize URDF viewer: ${error.message}`, 'error');
+    }
+}
+
+// Update URDF joint value
+async function updateURDFJoint(jointName, value) {
+    try {
+        const response = await fetch('/api/update_joint', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                joint_name: jointName,
+                value: value
+            })
+        });
+        
+        if (response.ok) {
+            urdfJointStates[jointName] = value;
+            updateRobotPose();
+        }
+        
+    } catch (error) {
+        console.error('Error updating joint:', error);
+    }
+}
+
+// Load URDF model into 3D scene
+async function loadURDFModel(urdfText) {
+    try {
+        console.log('🔍 Starting loadURDFModel...');
+        
+        if (!scene) {
+            console.log('❌ 3D scene not initialized');
+            throw new Error('3D scene not initialized');
+        }
+        console.log('✅ 3D scene is initialized');
+        
+        if (!worldGroup) {
+            console.log('❌ World group not initialized');
+            throw new Error('World group not initialized');
+        }
+        console.log('✅ World group is initialized');
+        
+        if (!urdfText || urdfText.trim() === '') {
+            console.log('❌ URDF text is empty');
+            throw new Error('URDF text is empty');
+        }
+        console.log('✅ URDF text is valid, length:', urdfText.length);
+        
+        // Check if URDFLoader is available
+        if (typeof URDFLoader === 'undefined') {
+            console.log('❌ URDFLoader is not loaded');
+            throw new Error('URDFLoader is not loaded');
+        }
+        console.log('✅ URDFLoader is available');
+        
+        // Create URDF loader
+        console.log('🔧 Creating URDF loader...');
+        const loader = new URDFLoader();
+        console.log('✅ URDF loader created');
+        
+        // Configure loader options
+        loader.parseCollision = false;
+        loader.loadMeshCb = (path, manager, done) => {
+            console.log('🔗 Loading mesh callback called for:', path);
+            
+            // Check if this is the correct signature
+            if (typeof manager === 'function') {
+                // If manager is actually the done callback, adjust
+                done = manager;
+                manager = null;
+            }
+            
+            // Extract mesh filename from path
+            const meshName = path.split('/').pop();
+            console.log('📦 Looking for mesh:', meshName);
+            
+            if (urdfMeshes[meshName]) {
+                console.log('✅ Found mesh in cache:', meshName);
+                try {
+                    // Decode base64 mesh data
+                    const binaryData = atob(urdfMeshes[meshName]);
+                    const bytes = new Uint8Array(binaryData.length);
+                    for (let k = 0; k < binaryData.length; k++) {
+                        bytes[k] = binaryData.charCodeAt(k);
+                    }
+                    
+                    // Parse STL
+                    const stlLoader = new THREE.STLLoader();
+                    const stlGeometry = stlLoader.parse(bytes.buffer);
+                    stlGeometry.computeVertexNormals();
+                    
+                    // Create mesh with material
+                    const material = new THREE.MeshPhongMaterial({ 
+                        color: 0x888888,
+                        shininess: 100,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+                    
+                    const mesh = new THREE.Mesh(stlGeometry, material);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    
+                    console.log('✅ Successfully created mesh for:', meshName);
+                    if (typeof done === 'function') {
+                        done(mesh);
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to load mesh ${meshName}:`, error);
+                    if (typeof done === 'function') {
+                        done(null);
+                    }
+                }
+            } else {
+                console.warn(`⚠️ Mesh not found: ${meshName}`);
+                if (typeof done === 'function') {
+                    done(null);
+                }
+            }
+        };
+        
+        // Load the URDF
+        console.log('🚀 Parsing URDF...');
+        
+        try {
+            robotModel = loader.parse(urdfText);
+        } catch (error) {
+            console.error('❌ URDFLoader.parse() failed:', error);
+            throw error; // Re-throw to trigger the outer catch
+        }
+        
+        console.log('✅ URDF parsed, robotModel:', robotModel);
+        
+        if (!robotModel) {
+            console.log('❌ Failed to parse URDF model');
+            throw new Error('Failed to parse URDF model');
+        }
+        
+        // Check robotModel properties
+        console.log('📊 Robot model properties:');
+        console.log('  - Type:', typeof robotModel);
+        console.log('  - Constructor:', robotModel.constructor.name);
+        console.log('  - Keys:', Object.keys(robotModel));
+        console.log('  - Has children:', 'children' in robotModel);
+        console.log('  - Children value:', robotModel.children);
+        
+        // Try to access children safely
+        try {
+            if (robotModel.children) {
+                console.log('✅ Children property exists and has length:', robotModel.children.length);
+                for (let i = 0; i < Math.min(3, robotModel.children.length); i++) {
+                    const child = robotModel.children[i];
+                    console.log('  Child', i, ':', child ? child.constructor.name : 'null');
+                }
+            } else {
+                console.log('❌ Children property is null or undefined');
+            }
+        } catch (error) {
+            console.log('❌ Error accessing children:', error.message);
+        }
+        
+        // Store reference to robot for joint control
+        window.robotModel = robotModel;
+        console.log('✅ Robot model stored in window.robotModel');
+        
+        // Add robot to world group
+        console.log('🌍 Adding robot to world group...');
+        
+        try {
+            worldGroup.add(robotModel);
+            console.log('✅ Robot added to world group');
+        } catch (error) {
+            console.log('❌ Error adding robot to world group:', error.message);
+            throw error;
+        }
+        
+        // Center the robot
+        console.log('🎯 Centering robot...');
+        
+        try {
+            const box = new THREE.Box3().setFromObject(worldGroup);
+            const center = box.getCenter(new THREE.Vector3());
+            worldGroup.position.set(-center.x, -center.y, -center.z);
+            console.log('✅ Robot centered at:', center);
+        } catch (error) {
+            console.log('❌ Error centering robot:', error.message);
+            throw error;
+        }
+        
+        console.log('🎉 URDF robot loaded successfully!');
+        console.log('🔧 Available joints:', Object.keys(robotModel.joints || {}));
+        
+        // Force render
+        needsRender = true;
+        
+    } catch (error) {
+        console.error('❌ Error loading URDF model:', error);
+        console.error('📋 Error stack:', error.stack);
+        throw error;
+    }
+}
+
+// Update URDF joint states from actual joint positions
+function updateURDFFromActualJoints(jointActualPosition) {
+    if (!jointActualPosition || !Array.isArray(jointActualPosition)) {
+        return;
+    }
+    
+    // Map joint actual positions to URDF joint names
+    const jointNames = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'];
+    
+    for (let i = 0; i < Math.min(jointActualPosition.length, jointNames.length); i++) {
+        const jointName = jointNames[i];
+        const actualValue = jointActualPosition[i];
+        
+        // Update the URDF joint state
+        urdfJointStates[jointName] = actualValue;
+        
+        // Update the corresponding slider if it exists
+        const slider = document.getElementById(`slider-${jointName}`);
+        if (slider) {
+            slider.value = actualValue;
+            
+            // Update the value display
+            const valueSpan = document.getElementById(`value-${jointName}`);
+            if (valueSpan) {
+                valueSpan.textContent = `${actualValue.toFixed(2)} rad`;
+            }
+        }
+    }
+    
+    // Update the robot pose in the 3D visualization
+    updateRobotPose();
+}
+
+// Update robot pose based on joint states
+function updateRobotPose() {
+    if (!window.robotModel) return;
+    
+    if (!window.robotModel.joints) {
+        console.warn('Robot model has no joints property');
+        return;
+    }
+    
+    // Apply joint values using the URDF loader's built-in joint control
+    for (const [jointName, jointValue] of Object.entries(urdfJointStates)) {
+        const joint = window.robotModel.joints[jointName];
+        if (joint && typeof joint.setJointValue === 'function') {
+            joint.setJointValue(jointValue);
+        } else if (joint) {
+            console.warn(`Joint ${jointName} found but setJointValue method not available`);
+        }
+    }
+    
+    // Force render
+    needsRender = true;
 }
 
 // Create coordinate frames for base and TCP
@@ -650,8 +1034,22 @@ function animate(timestamp) {
         controls.update();
     }
     
+    // Update directional light to follow camera
+    if (directionalLight && camera) {
+        const cameraDirection = new THREE.Vector3();
+        camera.getWorldDirection(cameraDirection);
+        
+        // Position light slightly above and to the side of the camera
+        const lightOffset = new THREE.Vector3(1, 1, 1);
+        directionalLight.position.copy(camera.position).add(lightOffset);
+        
+        // Make the light look at the same point as the camera
+        directionalLight.target.position.copy(camera.position).add(cameraDirection.multiplyScalar(5));
+        directionalLight.target.updateMatrixWorld();
+    }
+    
     // Only render if needed (on data updates) or if controls are active
-    if ((needsRender || controls.enableDamping) && renderer && scene && camera) {
+    if ((needsRender || controls.enableDamping || controls.enabled) && renderer && scene && camera) {
         renderer.render(scene, camera);
         needsRender = false;
         lastRenderTime = timestamp;
@@ -813,6 +1211,13 @@ function updateConnectionStatus(connected) {
 // Log command to the command log
 function logCommand(type, command, status = 'info') {
     const logElement = document.getElementById('commandLog');
+    
+    // Safety check - if element doesn't exist, log to console and return
+    if (!logElement) {
+        console.log(`[${type}] ${command} (${status})`);
+        return;
+    }
+    
     const timestamp = new Date().toLocaleTimeString();
     
     commandCounter++;
@@ -909,102 +1314,23 @@ document.addEventListener('DOMContentLoaded', function() {
 // Periodic connection check
 setInterval(fetchRobotArmInfo, 30000); // Check every 30 seconds
 
-// Update settings from UI
-function updateSetting(key, value) {
-    value = parseInt(value);
-    
-    // Input validation
-    switch(key) {
-        case 'dataRefreshRate':
-            value = Math.max(10, Math.min(2000, value));
-            document.getElementById('dataRefreshRate').value = value;
-            break;
-        case 'uiRefreshRate':
-            value = Math.max(100, Math.min(5000, value));
-            document.getElementById('uiRefreshRate').value = value;
-            break;
-        case 'render3DRate':
-            value = Math.max(10, Math.min(60, value));
-            document.getElementById('render3DRate').value = value;
-            break;
+// Update URDF joint states from actual joint positions
+function updateURDFFromActualJoints(jointActualPosition) {
+    if (!jointActualPosition || !Array.isArray(jointActualPosition)) {
+        return;
     }
     
-    // Update settings object
-    if (settings[key] !== value) {
-        settings[key] = value;
+    // Map joint actual positions to URDF joint names
+    const jointNames = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'];
+    
+    for (let i = 0; i < Math.min(jointActualPosition.length, jointNames.length); i++) {
+        const jointName = jointNames[i];
+        const actualValue = jointActualPosition[i];
         
-        // Apply changes immediately
-        if (key === 'dataRefreshRate') {
-            // Reset state monitoring interval
-            clearInterval(stateUpdateInterval);
-            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
-            logCommand('Settings', `Data refresh rate changed to ${value} ms`);
-        }
-        else if (key === 'render3DRate') {
-            // Update frame interval for rendering
-            frameInterval = 1000 / settings.render3DRate;
-            logCommand('Settings', `3D render rate changed to ${value} FPS`);
-        }
-        else if (key === 'uiRefreshRate') {
-            logCommand('Settings', `UI refresh rate changed to ${value} ms`);
-        }
+        // Update the URDF joint state
+        urdfJointStates[jointName] = actualValue;
     }
+    
+    // Update the robot pose in the 3D visualization
+    updateRobotPose();
 }
-
-// Switch between WebSocket and polling connection types
-function toggleConnectionType(type) {
-    // Currently only polling is supported until server-side WebSocket issue is fixed
-    if (type === 'websocket') {
-        logCommand('Settings', 'WebSocket currently unavailable - using polling instead');
-        
-        // Ensure polling is active
-        if (!stateUpdateInterval) {
-            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
-        }
-        
-        /* WebSocket functionality temporarily disabled
-        // Clear polling interval if active
-        if (stateUpdateInterval) {
-            clearInterval(stateUpdateInterval);
-            stateUpdateInterval = null;
-        }
-        
-        // Start WebSocket connection
-        connectWebSocket();
-        logCommand('Settings', 'Switched to WebSocket real-time data');
-        */
-    } else {
-        // Close WebSocket if active
-        if (stateSocket) {
-            stateSocket.close();
-            stateSocket = null;
-        }
-        
-        // Start polling
-        if (!stateUpdateInterval) {
-            stateUpdateInterval = setInterval(fetchRobotState, settings.dataRefreshRate);
-        }
-        logCommand('Settings', 'Switched to polling data');
-    }
-}
-
-// Toggle debug mode
-function toggleDebug(enabled) {
-    settings.debug = enabled;
-    const debugInfo = document.getElementById('debugInfo');
-    if (enabled) {
-        debugInfo.classList.remove('hidden');
-        logCommand('Settings', 'Debug mode enabled');
-    } else {
-        debugInfo.classList.add('hidden');
-        logCommand('Settings', 'Debug mode disabled');
-    }
-}
-
-// Initialize settings values in UI on page load
-document.addEventListener('DOMContentLoaded', function() {
-    // Set initial values for settings inputs
-    document.getElementById('dataRefreshRate').value = settings.dataRefreshRate;
-    document.getElementById('uiRefreshRate').value = settings.uiRefreshRate;
-    document.getElementById('render3DRate').value = settings.render3DRate;
-});

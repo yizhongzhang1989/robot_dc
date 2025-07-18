@@ -6,6 +6,8 @@
   <title>Robot Arm Control</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+  <script src="/third_party/urdf-loaders/javascript/umd/URDFLoader.js"></script>
   <script>
     // OrbitControls inline to avoid CDN issues
     (function() {
@@ -530,68 +532,6 @@
               </div>
             </div>
           </div>
-          
-          <!-- Performance Settings Panel -->
-          <details class="mt-3">
-            <summary class="text-sm font-medium text-gray-700">🔧 Performance Settings</summary>
-            <div class="settings-panel mt-2">
-              <div class="mb-2 flex items-center justify-between">
-                <span class="text-xs text-gray-700">Connection Type:</span>
-                <div class="flex space-x-2">
-                  <label class="flex items-center">
-                    <input type="radio" name="connectionType" value="websocket" checked 
-                      onchange="toggleConnectionType(this.value)" class="mr-1">
-                    <span class="text-xs">WebSocket (Real-time)</span>
-                  </label>
-                  <label class="flex items-center">
-                    <input type="radio" name="connectionType" value="polling" 
-                      onchange="toggleConnectionType(this.value)" class="mr-1">
-                    <span class="text-xs">Polling (Fallback)</span>
-                  </label>
-                </div>
-              </div>
-              <div class="mb-2">
-                <label class="flex justify-between mb-1">
-                  <span>Data Refresh Rate (ms):</span>
-                  <input type="number" id="dataRefreshRate" min="10" max="2000" value="100" 
-                    onchange="updateSetting('dataRefreshRate', this.value)">
-                </label>
-                <input type="range" min="10" max="2000" value="100" 
-                  oninput="updateSetting('dataRefreshRate', this.value)">
-              </div>
-              <div class="mb-2">
-                <label class="flex justify-between mb-1">
-                  <span>UI Refresh Rate (ms):</span>
-                  <input type="number" id="uiRefreshRate" min="100" max="5000" value="500" 
-                    onchange="updateSetting('uiRefreshRate', this.value)">
-                </label>
-                <input type="range" min="100" max="5000" value="500" 
-                  oninput="updateSetting('uiRefreshRate', this.value)">
-              </div>
-              <div class="mb-1">
-                <label class="flex justify-between mb-1">
-                  <span>3D Render FPS:</span>
-                  <input type="number" id="render3DRate" min="10" max="60" value="30" 
-                    onchange="updateSetting('render3DRate', this.value)">
-                </label>
-                <input type="range" min="10" max="60" value="30" 
-                  oninput="updateSetting('render3DRate', this.value)">
-              </div>
-              <div class="mt-2 flex justify-between items-center">
-                <span class="text-xs text-gray-700">Debug Mode:</span>
-                <label class="flex items-center">
-                  <input type="checkbox" id="debugToggle" onchange="toggleDebug(this.checked)" class="mr-1">
-                  <span class="text-xs">Enable</span>
-                </label>
-              </div>
-              <div id="debugInfo" class="mt-2 text-xs bg-gray-100 p-2 rounded hidden">
-                <div>Last Update: <span id="debugLastUpdate">-</span></div>
-                <div>Time Between Messages: <span id="debugTimeBetween">-</span> ms</div>
-                <div>Avg Interval (10 msgs): <span id="debugAvgInterval">-</span></div>
-                <div>Messages Count: <span id="debugMsgCount">0</span></div>
-              </div>
-            </div>
-          </details>
         </div>
         
         <!-- 3D Visualization Section -->
@@ -844,6 +784,6 @@
     </div>
   </div>
 
-  <script src="/web/js/robot_arm_control.js"></script>
+      <script src="/js/robot_arm_control.js?v=4&ts=1752776600"></script>
 </body>
 </html>
