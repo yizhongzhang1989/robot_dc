@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import rclpy
 from rclpy.node import Node
 import base64
+import threading
 
 class URDFWebServer(Node):
     def __init__(self):
@@ -121,10 +122,21 @@ class URDFWebServer(Node):
             self.get_logger().info(f'Updated joint {joint_name} to {clamped_value}')
     
     def start_web_server(self):
-        """Start HTTP server"""
-        server = HTTPServer(('', self.port), self.create_request_handler())
-        self.get_logger().info(f"Server started on http://localhost:{self.port}")
-        server.serve_forever()
+        """Start HTTP server in a separate thread"""
+        def server_thread():
+            self.server = HTTPServer(('', self.port), self.create_request_handler())
+            self.get_logger().info(f"Server started on http://localhost:{self.port}")
+            self.server.serve_forever()
+        
+        # Start server in a separate thread
+        self.server_thread = threading.Thread(target=server_thread, daemon=True)
+        self.server_thread.start()
+        
+    def shutdown_server(self):
+        """Shutdown the HTTP server"""
+        if hasattr(self, 'server'):
+            self.server.shutdown()
+            self.server.server_close()
     
     def create_request_handler(self):
         """Create request handler with access to node instance"""
@@ -611,6 +623,8 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        if 'node' in locals():
+            node.shutdown_server()
         rclpy.shutdown()
 
 if __name__ == '__main__':
