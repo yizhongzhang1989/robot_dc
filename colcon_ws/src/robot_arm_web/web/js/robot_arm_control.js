@@ -435,6 +435,8 @@ function updateRobotStateDisplay(state) {
     // Update Joint Actual Position
     if (state.jointActualPosition) {
         document.getElementById('jointActualPositions').innerHTML = createCompactJointGrid(state.jointActualPosition, ' rad');
+        // Update URDF joint states from actual joint positions
+        updateURDFFromActualJoints(state.jointActualPosition);
     }
 
     // Update Joint Actual Velocity
@@ -710,9 +712,11 @@ function createURDFJointControls() {
         slider.max = jointInfo.upper;
         slider.step = 0.01;
         slider.value = urdfJointStates[jointName] || 0;
+        slider.id = `slider-${jointName}`;  // Add ID for easier access
         
         const valueSpan = document.createElement('div');
         valueSpan.className = 'joint-value';
+        valueSpan.id = `value-${jointName}`;  // Add ID for easier access
         updateJointValueDisplay(valueSpan, jointInfo, parseFloat(slider.value));
         
         slider.addEventListener('input', (e) => {
@@ -932,6 +936,39 @@ async function loadURDFModel(urdfText) {
         console.error('📋 Error stack:', error.stack);
         throw error;
     }
+}
+
+// Update URDF joint states from actual joint positions
+function updateURDFFromActualJoints(jointActualPosition) {
+    if (!jointActualPosition || !Array.isArray(jointActualPosition)) {
+        return;
+    }
+    
+    // Map joint actual positions to URDF joint names
+    const jointNames = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'];
+    
+    for (let i = 0; i < Math.min(jointActualPosition.length, jointNames.length); i++) {
+        const jointName = jointNames[i];
+        const actualValue = jointActualPosition[i];
+        
+        // Update the URDF joint state
+        urdfJointStates[jointName] = actualValue;
+        
+        // Update the corresponding slider if it exists
+        const slider = document.getElementById(`slider-${jointName}`);
+        if (slider) {
+            slider.value = actualValue;
+            
+            // Update the value display
+            const valueSpan = document.getElementById(`value-${jointName}`);
+            if (valueSpan) {
+                valueSpan.textContent = `${actualValue.toFixed(2)} rad`;
+            }
+        }
+    }
+    
+    // Update the robot pose in the 3D visualization
+    updateRobotPose();
 }
 
 // Update robot pose based on joint states
@@ -1436,3 +1473,36 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('uiRefreshRate').value = settings.uiRefreshRate;
     document.getElementById('render3DRate').value = settings.render3DRate;
 });
+
+// Update URDF joint states from actual joint positions
+function updateURDFFromActualJoints(jointActualPosition) {
+    if (!jointActualPosition || !Array.isArray(jointActualPosition)) {
+        return;
+    }
+    
+    // Map joint actual positions to URDF joint names
+    const jointNames = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'];
+    
+    for (let i = 0; i < Math.min(jointActualPosition.length, jointNames.length); i++) {
+        const jointName = jointNames[i];
+        const actualValue = jointActualPosition[i];
+        
+        // Update the URDF joint state
+        urdfJointStates[jointName] = actualValue;
+        
+        // Update the corresponding slider if it exists
+        const slider = document.getElementById(`slider-${jointName}`);
+        if (slider) {
+            slider.value = actualValue;
+            
+            // Update the value display
+            const valueSpan = document.getElementById(`value-${jointName}`);
+            if (valueSpan) {
+                valueSpan.textContent = `${actualValue.toFixed(2)} rad`;
+            }
+        }
+    }
+    
+    // Update the robot pose in the 3D visualization
+    updateRobotPose();
+}
