@@ -22,7 +22,7 @@ def generate_launch_description():
     # URDF Web Server Node
     urdf_web_server = Node(
         package='urdf_web_viewer',
-        executable='urdf_web_server.py',
+        executable='urdf_web_server',
         name='urdf_web_server',
         parameters=[{
             'port': LaunchConfiguration('port'),
