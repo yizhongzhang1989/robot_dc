@@ -158,6 +158,9 @@ function connectWebSocket() {
             // Always update TCP frame in 3D viewer immediately for smooth motion
             updateTCPFramePosition();
             
+            // Always update URDF joints immediately for smooth motion
+            updateURDFJointsFromState(stateData);
+            
             // Request a 3D render
             needsRender = true;
             
@@ -258,6 +261,9 @@ async function fetchRobotState() {
             // Always update TCP frame in 3D viewer immediately for smooth motion
             updateTCPFramePosition();
             
+            // Always update URDF joints immediately for smooth motion
+            updateURDFJointsFromState(robotStateData);
+            
             // Request a 3D render
             needsRender = true;
             
@@ -334,6 +340,27 @@ function updateTCPFramePosition() {
             "Order:", tcpFrame.rotation.order
         );
     }
+}
+
+// Update URDF joints from robot state data at high frequency
+function updateURDFJointsFromState(stateData) {
+    if (!stateData || !stateData.jointActualPosition || !Array.isArray(stateData.jointActualPosition)) {
+        return;
+    }
+    
+    // Map joint actual positions to URDF joint names
+    const jointNames = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'];
+    
+    for (let i = 0; i < Math.min(stateData.jointActualPosition.length, jointNames.length); i++) {
+        const jointName = jointNames[i];
+        const actualValue = stateData.jointActualPosition[i];
+        
+        // Update the URDF joint state
+        urdfJointStates[jointName] = actualValue;
+    }
+    
+    // Update the robot pose in the 3D visualization immediately
+    updateRobotPose();
 }
 
 // Update robot state display
@@ -876,39 +903,6 @@ async function loadURDFModel(urdfText) {
         console.error('📋 Error stack:', error.stack);
         throw error;
     }
-}
-
-// Update URDF joint states from actual joint positions
-function updateURDFFromActualJoints(jointActualPosition) {
-    if (!jointActualPosition || !Array.isArray(jointActualPosition)) {
-        return;
-    }
-    
-    // Map joint actual positions to URDF joint names
-    const jointNames = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'];
-    
-    for (let i = 0; i < Math.min(jointActualPosition.length, jointNames.length); i++) {
-        const jointName = jointNames[i];
-        const actualValue = jointActualPosition[i];
-        
-        // Update the URDF joint state
-        urdfJointStates[jointName] = actualValue;
-        
-        // Update the corresponding slider if it exists
-        const slider = document.getElementById(`slider-${jointName}`);
-        if (slider) {
-            slider.value = actualValue;
-            
-            // Update the value display
-            const valueSpan = document.getElementById(`value-${jointName}`);
-            if (valueSpan) {
-                valueSpan.textContent = `${actualValue.toFixed(2)} rad`;
-            }
-        }
-    }
-    
-    // Update the robot pose in the 3D visualization
-    updateRobotPose();
 }
 
 // Update robot pose based on joint states
