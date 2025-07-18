@@ -24,6 +24,7 @@ let baseFrame, tcpFrame;
 let worldGroup; // Global rotation group - like glRotate in OpenGL
 let isViewer3DInitialized = false;
 let needsRender = true;      // Flag to indicate if rendering is needed
+let directionalLight;        // Global directional light variable
 
 // URDF variables
 let urdfJoints = {};
@@ -547,7 +548,7 @@ function init3DViewer() {
         
         // Controls setup
         controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
+        controls.enableDamping = false;  // Disable inertia/damping
         controls.dampingFactor = 0.05;
         controls.target.set(0, 0, 0);
         controls.enableZoom = true;
@@ -563,7 +564,7 @@ function init3DViewer() {
         const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
         scene.add(ambientLight);
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(2, 2, 2);
         directionalLight.castShadow = true;
         directionalLight.shadow.mapSize.width = 2048;
@@ -1056,8 +1057,22 @@ function animate(timestamp) {
         controls.update();
     }
     
+    // Update directional light to follow camera
+    if (directionalLight && camera) {
+        const cameraDirection = new THREE.Vector3();
+        camera.getWorldDirection(cameraDirection);
+        
+        // Position light slightly above and to the side of the camera
+        const lightOffset = new THREE.Vector3(1, 1, 1);
+        directionalLight.position.copy(camera.position).add(lightOffset);
+        
+        // Make the light look at the same point as the camera
+        directionalLight.target.position.copy(camera.position).add(cameraDirection.multiplyScalar(5));
+        directionalLight.target.updateMatrixWorld();
+    }
+    
     // Only render if needed (on data updates) or if controls are active
-    if ((needsRender || controls.enableDamping) && renderer && scene && camera) {
+    if ((needsRender || controls.enableDamping || controls.enabled) && renderer && scene && camera) {
         renderer.render(scene, camera);
         needsRender = false;
         lastRenderTime = timestamp;
