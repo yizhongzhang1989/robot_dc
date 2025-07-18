@@ -14,7 +14,6 @@ install(DIRECTORY
   launch
   meshes
   urdf
-  textures
   DESTINATION share/${PROJECT_NAME}
 )
 
