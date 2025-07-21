@@ -15,11 +15,11 @@ class WebROSClient:
         self.lock = Lock()
         self.obs_ctrl_publishers = {}  # Ensure this is an instance attribute
         
-        # Snapshot service client
-        self.snapshot_client = None
+        # Snapshot service clients for each camera
+        self.snapshot_clients = {}
         
-        # Camera restart service client
-        self.restart_client = None
+        # Camera restart service clients
+        self.restart_clients = {}
         
         self._start_ros_node()
 
@@ -72,20 +72,27 @@ class WebROSClient:
                     10
                 )
 
-            # Create snapshot client
-            self.snapshot_client = self.node.create_client(Trigger, 'snapshot')
-            
-            # Create camera restart client
-            self.restart_client = self.node.create_client(Trigger, 'restart_cam_node')
+            # Create snapshot clients for each camera
+            camera_names = ['camera_100', 'camera_101']
+            for camera_name in camera_names:
+                snapshot_service = f'{camera_name}_snapshot'
+                restart_service = f'restart_{camera_name}_node'
+                
+                self.snapshot_clients[camera_name] = self.node.create_client(Trigger, snapshot_service)
+                self.restart_clients[camera_name] = self.node.create_client(Trigger, restart_service)
+                
+                self.node.get_logger().info(f"Created snapshot client for {camera_name}: {snapshot_service}")
+                self.node.get_logger().info(f"Created restart client for {camera_name}: {restart_service}")
             
             # Create platform command publisher
             self.platform_publisher = self.node.create_publisher(String, '/platform/cmd', 10)
             
-            # Wait for snapshot service to be available
-            if not self.snapshot_client.wait_for_service(timeout_sec=5.0):
-                self.node.get_logger().warn("Snapshot service not available")
-            else:
-                self.node.get_logger().info("Snapshot service is available")
+            # Wait for snapshot services to be available
+            for camera_name, client in self.snapshot_clients.items():
+                if not client.wait_for_service(timeout_sec=5.0):
+                    self.node.get_logger().warn(f"Snapshot service for {camera_name} not available")
+                else:
+                    self.node.get_logger().info(f"Snapshot service for {camera_name} is available")
 
             rclpy.spin(self.node)
 
@@ -149,26 +156,56 @@ class WebROSClient:
         with self.lock:
             return self.status_map.copy()
 
-    def get_snapshot(self):
-        """Get snapshot from cam_node service with auto-reconnection."""
-        if self.snapshot_client is None:
-            return {"error": "Snapshot client not initialized"}
+    def get_snapshot(self, camera_name=None):
+        """Get snapshot from specific camera or all cameras."""
+        if camera_name:
+            # Get snapshot from specific camera
+            return self._get_single_snapshot(camera_name)
+        else:
+            # Get snapshots from all cameras
+            results = {}
+            for cam_name in self.snapshot_clients.keys():
+                result = self._get_single_snapshot(cam_name)
+                if 'error' not in result:
+                    results[cam_name] = result
+                else:
+                    results[cam_name] = {"error": result['error']}
+            
+            # Map to IP-based format for frontend
+            mapped_results = {}
+            if 'camera_100' in results:
+                mapped_results['100'] = results['camera_100']
+            if 'camera_101' in results:
+                mapped_results['101'] = results['camera_101']
+            
+            return mapped_results
+    
+    def _get_single_snapshot(self, camera_name):
+        """Get snapshot from a single camera."""
+        if camera_name not in self.snapshot_clients:
+            return {"error": f"Unknown camera: {camera_name}"}
+        
+        snapshot_client = self.snapshot_clients[camera_name]
+        if snapshot_client is None:
+            return {"error": f"Snapshot client for {camera_name} not initialized"}
         
         # Check if service is available, recreate client if needed
-        if not self.snapshot_client.service_is_ready():
-            self.node.get_logger().warning("Snapshot service not ready, recreating client...")
-            self.snapshot_client = self.node.create_client(Trigger, 'snapshot')
+        if not snapshot_client.service_is_ready():
+            self.node.get_logger().warning(f"Snapshot service for {camera_name} not ready, recreating client...")
+            service_name = f'{camera_name}_snapshot'
+            snapshot_client = self.node.create_client(Trigger, service_name)
+            self.snapshot_clients[camera_name] = snapshot_client
             
             # Wait a bit for service to become available
             import time
             time.sleep(1)
             
-            if not self.snapshot_client.service_is_ready():
-                return {"error": "Snapshot service not available after reconnection attempt"}
+            if not snapshot_client.service_is_ready():
+                return {"error": f"Snapshot service for {camera_name} not available after reconnection attempt"}
         
         try:
             request = Trigger.Request()
-            future = self.snapshot_client.call_async(request)
+            future = snapshot_client.call_async(request)
             
             # Wait for the service call to complete with timeout
             import time
@@ -183,24 +220,82 @@ class WebROSClient:
                 if response.success:
                     try:
                         # Parse the response message (it's a string representation of a dict)
+                        import ast
                         result = ast.literal_eval(response.message)
-                        # Validate result format
-                        if isinstance(result, dict):
-                            self.node.get_logger().info(f"Snapshot received: {list(result.keys())}")
+                        # Validate result format and add timestamp if missing
+                        if isinstance(result, dict) and 'img' in result:
+                            self.node.get_logger().info(f"Snapshot received for {camera_name}")
                             return result
                         else:
-                            return {"error": "Invalid response format"}
+                            return {"error": "Invalid response format - missing image data"}
                     except (ValueError, SyntaxError) as e:
-                        self.node.get_logger().error(f"Failed to parse snapshot response: {e}")
+                        self.node.get_logger().error(f"Failed to parse snapshot response for {camera_name}: {e}")
                         return {"error": f"Failed to parse response: {str(e)}"}
                 else:
-                    return {"error": f"Snapshot failed: {response.message}"}
+                    return {"error": f"Snapshot failed for {camera_name}: {response.message}"}
             else:
-                return {"error": "Snapshot service call timed out"}
+                return {"error": f"Snapshot service call timed out for {camera_name}"}
                 
         except Exception as e:
-            self.node.get_logger().error(f"Exception during snapshot: {e}")
-            return {"error": f"Exception during snapshot: {str(e)}"}
+            self.node.get_logger().error(f"Exception during snapshot for {camera_name}: {e}")
+            return {"error": f"Exception during snapshot for {camera_name}: {str(e)}"}
+
+    def restart_camera_node(self, camera_name=None):
+        """Restart specific camera node or all camera nodes."""
+        if camera_name:
+            # Restart specific camera
+            return self._restart_single_camera(camera_name)
+        else:
+            # Restart all cameras
+            results = {}
+            for cam_name in self.restart_clients.keys():
+                results[cam_name] = self._restart_single_camera(cam_name)
+            return results
+    
+    def _restart_single_camera(self, camera_name):
+        """Restart a single camera node."""
+        if camera_name not in self.restart_clients:
+            return {"error": f"Unknown camera: {camera_name}"}
+        
+        restart_client = self.restart_clients[camera_name]
+        if restart_client is None:
+            return {"error": f"Restart client for {camera_name} not initialized"}
+        
+        # Check if service is available, recreate client if needed
+        if not restart_client.service_is_ready():
+            self.node.get_logger().warning(f"Restart service for {camera_name} not ready, recreating client...")
+            service_name = f'restart_{camera_name}_node'
+            restart_client = self.node.create_client(Trigger, service_name)
+            self.restart_clients[camera_name] = restart_client
+            
+            # Wait a bit for service to become available
+            import time
+            time.sleep(1)
+            
+            if not restart_client.service_is_ready():
+                return {"success": False, "message": f"Camera restart service for {camera_name} not available"}
+        
+        try:
+            request = Trigger.Request()
+            future = restart_client.call_async(request)
+            
+            # Wait for the service call to complete
+            import time
+            timeout = 5.0
+            start_time = time.time()
+            
+            while not future.done() and (time.time() - start_time) < timeout:
+                rclpy.spin_once(self.node, timeout_sec=0.1)
+            
+            if future.done():
+                response = future.result()
+                return {"success": response.success, "message": response.message}
+            else:
+                return {"success": False, "message": f"Restart service call timed out for {camera_name}"}
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Exception during camera restart for {camera_name}: {e}")
+            return {"success": False, "message": f"Exception during restart for {camera_name}: {str(e)}"}
 
     def restart_camera_node(self):
         """Restart the camera node using the restart service with auto-reconnection."""

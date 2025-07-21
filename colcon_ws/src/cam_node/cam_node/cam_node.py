@@ -7,16 +7,9 @@ import numpy as np
 import cv2
 import base64
 import time
-import datetime
+import os
+from datetime import datetime
 import json
-
-HIGH_URL = "rtsp://admin:123456@192.168.1.100/stream0"
-LOW_URL = "rtsp://admin:123456@192.168.1.101/stream0"
-
-RTSP_URLS = {
-    'high': HIGH_URL,
-    'low': LOW_URL
-}
 
 def get_stream_resolution(url, max_retries=3, retry_delay=2):
     """Get the resolution of an RTSP stream using ffprobe with retry mechanism."""
@@ -170,35 +163,51 @@ class CamNode(Node):
         super().__init__('cam_node')
         self.get_logger().info("Initializing CamNode...")
         
+        # Declare and read camera parameters similar to motor_node
+        self.declare_parameter('camera_name', '100')
+        self.camera_name = self.get_parameter('camera_name').value
+        self.get_logger().info(f"camera_name from param = {self.camera_name}")
+        
+        self.declare_parameter('rtsp_url', 'rtsp://admin:123456@192.168.1.100/stream0')
+        self.rtsp_url = self.get_parameter('rtsp_url').value
+        self.get_logger().info(f"rtsp_url from param = {self.rtsp_url}")
+        
+        self.declare_parameter('camera_ip', '192.168.1.100')
+        self.camera_ip = self.get_parameter('camera_ip').value
+        self.get_logger().info(f"camera_ip from param = {self.camera_ip}")
+        
         # Camera reconnection detection - use network ping instead of frame counting
         self.camera_status = {}  # Track camera connectivity status
         self.check_interval = 3.0  # Check every 3 seconds
         
-        # Initialize RTSP streams
-        self.streams = {}
-        for key, url in RTSP_URLS.items():
-            self.get_logger().info(f"Starting {key} stream: {url}")
-            self.streams[key] = RTSPStream(key, url)
-            self.camera_status[key] = {
-                'last_check_time': time.time(),
-                'was_disconnected': False,
-                'reconnect_detected': False,
-                'disconnection_logged': False
-            }
+        # Initialize single RTSP stream
+        self.stream = None
+        self.get_logger().info(f"Starting camera stream: {self.rtsp_url}")
+        self.stream = RTSPStream(self.camera_name, self.rtsp_url)
+        self.camera_status[self.camera_name] = {
+            'last_check_time': time.time(),
+            'was_disconnected': False,
+            'reconnect_detected': False,
+            'disconnection_logged': False
+        }
         
-        # Create snapshot service
+        # Create snapshot service with camera-specific name
+        service_name = f'{self.camera_name}_snapshot'
         self.snapshot_srv = self.create_service(
             Trigger,
-            'snapshot',
+            service_name,
             self.handle_snapshot
         )
+        self.get_logger().info(f"Created snapshot service: {service_name}")
         
-        # Create restart service
+        # Create restart service with camera-specific name
+        restart_service_name = f'restart_{self.camera_name}_node'
         self.restart_srv = self.create_service(
             Trigger,
-            'restart_cam_node',
+            restart_service_name,
             self.handle_restart
         )
+        self.get_logger().info(f"Created restart service: {restart_service_name}")
         
         # Create timer for camera status monitoring
         self.status_timer = self.create_timer(self.check_interval, self.check_camera_reconnection)
@@ -210,76 +219,72 @@ class CamNode(Node):
         current_time = time.time()
         restart_needed = False
         
-        for key, stream in self.streams.items():
-            status = self.camera_status[key]
-            
-            # Test actual network connectivity using ping
-            camera_ip = "192.168.1.100" if key == 'high' else "192.168.1.101"
-            
-            # Quick ping test (timeout 1 second)
-            ping_result = subprocess.run(
-                ["ping", "-c", "1", "-W", "1", camera_ip], 
-                capture_output=True, 
-                text=True
-            )
-            is_reachable = ping_result.returncode == 0
-            
-            # Update our tracking
-            status['last_check_time'] = current_time
-            
-            if is_reachable:
-                # Camera is network reachable
-                if status['was_disconnected']:
-                    # Camera was disconnected but now reachable again
-                    self.get_logger().error(f"Camera {key} ({camera_ip}) RECONNECTED! Network is reachable again. Restarting node...")
-                    status['reconnect_detected'] = True
-                    restart_needed = True
-                
-            else:
-                # Camera is not reachable
-                if not status['was_disconnected']:
-                    self.get_logger().warning(f"Camera {key} ({camera_ip}) DISCONNECTED - network unreachable")
-                    status['was_disconnected'] = True
-                    status['disconnection_logged'] = True
+        # Check single camera status
+        status = self.camera_status[self.camera_name]
         
-        # If any camera reconnected, restart the entire node
+        # Quick ping test (timeout 1 second)
+        ping_result = subprocess.run(
+            ["ping", "-c", "1", "-W", "1", self.camera_ip], 
+            capture_output=True, 
+            text=True
+        )
+        is_reachable = ping_result.returncode == 0
+        
+        # Update our tracking
+        status['last_check_time'] = current_time
+        
+        if is_reachable:
+            # Camera is network reachable
+            if status['was_disconnected']:
+                # Camera was disconnected but now reachable again
+                self.get_logger().error(f"Camera {self.camera_name} ({self.camera_ip}) RECONNECTED! Network is reachable again. Restarting node...")
+                status['reconnect_detected'] = True
+                restart_needed = True
+            
+        else:
+            # Camera is not reachable
+            if not status['was_disconnected']:
+                self.get_logger().warning(f"Camera {self.camera_name} ({self.camera_ip}) DISCONNECTED - network unreachable")
+                status['was_disconnected'] = True
+                status['disconnection_logged'] = True
+        
+        # If camera reconnected, restart the node
         if restart_needed:
             self.get_logger().error("Camera reconnection detected. Restarting node immediately...")
             self.restart_node()
 
     def restart_node(self):
-        """Restart the cam node streams without restarting the entire process."""
-        self.get_logger().info("Shutting down existing streams...")
+        """Restart the node by recreating the camera stream"""
+        self.get_logger().error(f"Restarting camera node for camera {self.camera_name}...")
         
-        # Stop existing streams
-        for stream in self.streams.values():
-            stream.stop()
-        
-        # Clear existing streams
-        self.streams.clear()
-        
-        # Wait for cameras to stabilize after reconnection
-        self.get_logger().info("Waiting for cameras to stabilize...")
-        time.sleep(3)  # Reduced from 5 to 3 seconds since we're not restarting the process
-        
-        # Reinitialize streams
-        self.get_logger().info("Reinitializing camera streams...")
-        for key, url in RTSP_URLS.items():
-            self.get_logger().info(f"Restarting {key} stream: {url}")
-            try:
-                self.streams[key] = RTSPStream(key, url)
-                # Reset camera status
-                self.camera_status[key] = {
-                    'last_check_time': time.time(),
+        try:
+            # Clean up existing stream
+            if hasattr(self, 'stream') and self.stream is not None:
+                try:
+                    self.stream.stop()
+                    self.get_logger().info("Stopped existing camera stream")
+                except Exception as e:
+                    self.get_logger().warning(f"Error stopping stream: {e}")
+            
+            # Recreate the single stream
+            self.stream = RTSPStream(self.camera_name, self.rtsp_url)
+            
+            # Reset status
+            if self.camera_name in self.camera_status:
+                self.camera_status[self.camera_name] = {
                     'was_disconnected': False,
                     'reconnect_detected': False,
-                    'disconnection_logged': False
+                    'disconnection_logged': False,
+                    'last_check_time': 0
                 }
-                self.get_logger().info(f"Successfully restarted {key} stream")
-            except Exception as e:
-                self.get_logger().error(f"Failed to restart {key} stream: {e}")
-        
-        self.get_logger().info("Camera node restart completed")
+            
+            self.get_logger().info(f"Camera node for {self.camera_name} restarted successfully")
+            
+        except Exception as e:
+            self.get_logger().error(f"Failed to restart camera node: {e}")
+            
+        # Clear last error to allow fresh start
+        self.last_error_time = None
 
     def handle_restart(self, request, response):
         """Handle restart service request from web interface."""
@@ -301,54 +306,63 @@ class CamNode(Node):
         return response
 
     def handle_snapshot(self, request, response):
-        """Handle snapshot service request."""
-        self.get_logger().info("Snapshot request received")
-        
-        result = {}
-        successful_snapshots = 0
-        
-        for key, stream in self.streams.items():
-            timestamp = datetime.datetime.now().isoformat()
+        """Handle snapshot request for the camera"""
+        try:
+            if self.stream is None:
+                response.success = False
+                response.message = "Camera stream not available"
+                self.get_logger().error(f"Snapshot failed: Camera stream not available for {self.camera_name}")
+                return response
             
-            frame = stream.get_frame()
-            if frame is not None:
-                try:
-                    _, buffer = cv2.imencode('.jpg', frame)
-                    img_b64 = base64.b64encode(buffer.tobytes()).decode('utf-8')
-                    result[key] = {'img': img_b64, 'timestamp': timestamp, 'status': 'success'}
-                    successful_snapshots += 1
-                    self.get_logger().info(f"Snapshot captured for {key}")
-                except Exception as e:
-                    self.get_logger().error(f"Error encoding frame for {key}: {e}")
-                    result[key] = {
-                        'img': '', 
-                        'timestamp': timestamp, 
-                        'status': 'encoding_error',
-                        'error': str(e)
-                    }
-            else:
-                self.get_logger().warning(f"No frame available for {key}")
-                result[key] = {
-                    'img': '', 
-                    'timestamp': timestamp, 
-                    'status': 'no_frame'
+            # Try to get a frame from the camera
+            frame = self.stream.get_frame()
+            if frame is None:
+                response.success = False
+                response.message = "Failed to capture image from camera"
+                self.get_logger().error(f"Snapshot failed: Could not get frame from {self.camera_name}")
+                return response
+            
+            # Save the image to file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{self.camera_name}_snapshot_{timestamp}.jpg"
+            filepath = os.path.join("/tmp", filename)
+            
+            # Encode image as base64 for web interface
+            import cv2
+            import base64
+            _, buffer = cv2.imencode('.jpg', frame)
+            img_b64 = base64.b64encode(buffer.tobytes()).decode('utf-8')
+            
+            # Save file and return base64 data
+            success = cv2.imwrite(filepath, frame)
+            if success:
+                response.success = True
+                # Return JSON string with both file path and base64 data
+                result_data = {
+                    "img": img_b64,
+                    "timestamp": timestamp,
+                    "filepath": filepath,
+                    "camera": self.camera_name
                 }
+                response.message = str(result_data)
+                self.get_logger().info(f"Snapshot saved for {self.camera_name}: {filepath}")
+            else:
+                response.success = False
+                response.message = "Failed to save image"
+                self.get_logger().error(f"Failed to save snapshot for {self.camera_name}")
+                
+        except Exception as e:
+            response.success = False
+            response.message = f"Error taking snapshot: {str(e)}"
+            self.get_logger().error(f"Exception in snapshot for {self.camera_name}: {e}")
         
-        # Determine overall success
-        response.success = successful_snapshots > 0
-        if successful_snapshots == 0:
-            self.get_logger().error("No snapshots captured from any camera")
-        elif successful_snapshots < len(self.streams):
-            self.get_logger().warning(f"Only {successful_snapshots}/{len(self.streams)} cameras provided snapshots")
-            
-        response.message = str(result)
         return response
 
     def destroy_node(self):
         """Clean up resources when destroying the node."""
         self.get_logger().info("Destroying CamNode...")
-        for stream in self.streams.values():
-            stream.stop()
+        if hasattr(self, 'stream') and self.stream is not None:
+            self.stream.stop()
         super().destroy_node()
 
 def main():

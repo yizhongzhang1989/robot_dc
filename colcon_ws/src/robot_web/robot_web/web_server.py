@@ -85,20 +85,38 @@ async def monitor_control(request: Request):
 
 @app.post("/snapshot")
 async def take_snapshot():
-    """Take a snapshot using the cam_node service."""
+    """Take snapshots from all cameras using the cam_node services."""
     if ros_client is None:
         return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     
     result = ros_client.get_snapshot()
     return JSONResponse(content=result)
 
+@app.post("/snapshot/{camera_name}")
+async def take_single_snapshot(camera_name: str):
+    """Take snapshot from specific camera."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    result = ros_client.get_snapshot(camera_name)
+    return JSONResponse(content=result)
+
 @app.post("/restart_camera")
 async def restart_camera():
-    """Restart the camera node using the restart service."""
+    """Restart all camera nodes using the restart services."""
     if ros_client is None:
         return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     
     result = ros_client.restart_camera_node()
+    return JSONResponse(content=result)
+
+@app.post("/restart_camera/{camera_name}")
+async def restart_single_camera(camera_name: str):
+    """Restart specific camera node."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    result = ros_client.restart_camera_node(camera_name)
     return JSONResponse(content=result)
 
 @app.post("/api/platform/cmd")

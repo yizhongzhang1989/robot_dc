@@ -129,14 +129,14 @@
       </div>
       <div class="mt-6 flex gap-8" id="snapshot-area" style="display:none;">
         <div>
-          <h3 class="font-semibold mb-2">High Resolution Camera</h3>
-          <img id="img-high" src="" style="max-width:400px;max-height:300px; border: 1px solid #ccc;"/>
-          <div id="time-high" class="text-sm text-gray-600 mt-2"></div>
+          <h3 class="font-semibold mb-2">100</h3>
+          <img id="img-100" src="" style="max-width:400px;max-height:300px; border: 1px solid #ccc;"/>
+          <div id="time-100" class="text-sm text-gray-600 mt-2"></div>
         </div>
         <div>
-          <h3 class="font-semibold mb-2">Low Resolution Camera</h3>
-          <img id="img-low" src="" style="max-width:400px;max-height:300px; border: 1px solid #ccc;"/>
-          <div id="time-low" class="text-sm text-gray-600 mt-2"></div>
+          <h3 class="font-semibold mb-2">101</h3>
+          <img id="img-101" src="" style="max-width:400px;max-height:300px; border: 1px solid #ccc;"/>
+          <div id="time-101" class="text-sm text-gray-600 mt-2"></div>
         </div>
       </div>
     </div>
@@ -409,42 +409,42 @@
         
         // Show the snapshot area and clear previous images
         area.style.display = 'flex';
-        document.getElementById('img-high').src = '';
-        document.getElementById('img-low').src = '';
-        document.getElementById('time-high').innerText = 'Loading...';
-        document.getElementById('time-low').innerText = 'Loading...';
+        document.getElementById('img-100').src = '';
+        document.getElementById('img-101').src = '';
+        document.getElementById('time-100').innerText = 'Loading...';
+        document.getElementById('time-101').innerText = 'Loading...';
         
         try {
           const res = await fetch('/snapshot', { method: 'POST' });
           const data = await res.json();
           
           if (data.error) {
-            document.getElementById('time-high').innerText = 'Error: ' + data.error;
-            document.getElementById('time-low').innerText = 'Error: ' + data.error;
+            document.getElementById('time-100').innerText = 'Error: ' + data.error;
+            document.getElementById('time-101').innerText = 'Error: ' + data.error;
           } else {
-            // Handle high resolution camera
-            if (data.high && data.high.img) {
-              const imgHigh = document.getElementById('img-high');
+            // Handle camera 100
+            if (data['100'] && data['100'].img) {
+              const img100 = document.getElementById('img-100');
               // Set the base64 image data directly
-              imgHigh.src = 'data:image/jpeg;base64,' + data.high.img;
-              document.getElementById('time-high').innerText = 'Captured: ' + data.high.timestamp;
+              img100.src = 'data:image/jpeg;base64,' + data['100'].img;
+              document.getElementById('time-100').innerText = 'Captured: ' + data['100'].timestamp;
             } else {
-              document.getElementById('time-high').innerText = 'No image available';
+              document.getElementById('time-100').innerText = 'No image available';
             }
             
-            // Handle low resolution camera
-            if (data.low && data.low.img) {
-              const imgLow = document.getElementById('img-low');
+            // Handle camera 101
+            if (data['101'] && data['101'].img) {
+              const img101 = document.getElementById('img-101');
               // Set the base64 image data directly
-              imgLow.src = 'data:image/jpeg;base64,' + data.low.img;
-              document.getElementById('time-low').innerText = 'Captured: ' + data.low.timestamp;
+              img101.src = 'data:image/jpeg;base64,' + data['101'].img;
+              document.getElementById('time-101').innerText = 'Captured: ' + data['101'].timestamp;
             } else {
-              document.getElementById('time-low').innerText = 'No image available';
+              document.getElementById('time-101').innerText = 'No image available';
             }
           }
         } catch (err) {
-          document.getElementById('time-high').innerText = 'Network error';
-          document.getElementById('time-low').innerText = 'Network error';
+          document.getElementById('time-100').innerText = 'Network error';
+          document.getElementById('time-101').innerText = 'Network error';
         } finally {
           btn.disabled = false;
           btn.innerText = 'Take Snapshot';
