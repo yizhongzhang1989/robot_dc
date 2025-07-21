@@ -164,7 +164,7 @@ class CamNode(Node):
         self.get_logger().info("Initializing CamNode...")
         
         # Declare and read camera parameters similar to motor_node
-        self.declare_parameter('camera_name', '100')
+        self.declare_parameter('camera_name', 'cam100')
         self.camera_name = self.get_parameter('camera_name').value
         self.get_logger().info(f"camera_name from param = {self.camera_name}")
         

@@ -73,7 +73,7 @@ class WebROSClient:
                 )
 
             # Create snapshot clients for each camera
-            camera_names = ['camera_100', 'camera_101']
+            camera_names = ['cam100', 'cam101']
             for camera_name in camera_names:
                 snapshot_service = f'{camera_name}_snapshot'
                 restart_service = f'restart_{camera_name}_node'
@@ -173,10 +173,10 @@ class WebROSClient:
             
             # Map to IP-based format for frontend
             mapped_results = {}
-            if 'camera_100' in results:
-                mapped_results['100'] = results['camera_100']
-            if 'camera_101' in results:
-                mapped_results['101'] = results['camera_101']
+            if 'cam100' in results:
+                mapped_results['100'] = results['cam100']
+            if 'cam101' in results:
+                mapped_results['101'] = results['cam101']
             
             return mapped_results
     
