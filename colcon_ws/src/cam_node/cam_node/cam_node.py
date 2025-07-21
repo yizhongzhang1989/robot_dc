@@ -10,6 +10,7 @@ import time
 import os
 from datetime import datetime
 import json
+from flask import Flask, Response
 
 def get_stream_resolution(url, max_retries=3, retry_delay=2):
     """Get the resolution of an RTSP stream using ffprobe with retry mechanism."""
@@ -74,6 +75,10 @@ class RTSPStream:
         self.frame = None
         self.running = True
         self.lock = threading.Lock()
+        
+        # Add viewer tracking for streaming
+        self.viewer_count = 0
+        self.viewer_lock = threading.Lock()
         
         print(f"Getting resolution for {name} stream: {url}")
         self.width, self.height = get_stream_resolution(self.url)
@@ -141,6 +146,51 @@ class RTSPStream:
     def get_frame(self):
         with self.lock:
             return self.frame.copy() if self.frame is not None else None
+
+    def generate_frames_for_streaming(self, fps=25, quality=75, max_width=480):
+        """Generator function for streaming frames to multiple viewers with minimal latency."""
+        with self.viewer_lock:
+            self.viewer_count += 1
+            
+        last_frame_id = -1  # Track frame changes to avoid re-encoding same frame
+        
+        try:
+            while True:
+                with self.lock:
+                    # Check if we have a new frame
+                    if self.frame is not None and self.frame_count != last_frame_id:
+                        # Resize frame to specified max width for lower latency
+                        height, width = self.frame.shape[:2]
+                        if width > max_width:
+                            scale = max_width / width
+                            new_width = max_width
+                            new_height = int(height * scale)
+                            resized_frame = cv2.resize(self.frame, (new_width, new_height))
+                        else:
+                            resized_frame = self.frame.copy()
+                        
+                        last_frame_id = self.frame_count
+                
+                # Only encode and send if we have a new frame
+                if 'resized_frame' in locals():
+                    try:
+                        # Use lower quality for faster encoding
+                        _, buffer = cv2.imencode('.jpg', resized_frame, [cv2.IMWRITE_JPEG_QUALITY, max(quality - 20, 30)])
+                        frame_bytes = buffer.tobytes()
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                        del resized_frame  # Clean up
+                    except Exception as e:
+                        print(f"Error encoding frame for {self.name}: {e}")
+                
+                # Very small sleep to prevent CPU spinning but maintain low latency
+                time.sleep(0.005)  # 5ms sleep
+                    
+        except GeneratorExit:
+            pass
+        finally:
+            with self.viewer_lock:
+                self.viewer_count -= 1
     
     def get_frame_info(self):
         """Get frame info for reconnection detection."""
@@ -175,6 +225,24 @@ class CamNode(Node):
         self.declare_parameter('camera_ip', '192.168.1.100')
         self.camera_ip = self.get_parameter('camera_ip').value
         self.get_logger().info(f"camera_ip from param = {self.camera_ip}")
+        
+        # Declare streaming port parameter
+        self.declare_parameter('stream_port', 8010)
+        self.stream_port = self.get_parameter('stream_port').value
+        self.get_logger().info(f"stream_port from param = {self.stream_port}")
+        
+        # Declare performance tuning parameters
+        self.declare_parameter('stream_fps', 25)
+        self.stream_fps = self.get_parameter('stream_fps').value
+        self.get_logger().info(f"stream_fps from param = {self.stream_fps}")
+        
+        self.declare_parameter('jpeg_quality', 75)
+        self.jpeg_quality = self.get_parameter('jpeg_quality').value
+        self.get_logger().info(f"jpeg_quality from param = {self.jpeg_quality}")
+        
+        self.declare_parameter('max_width', 480)
+        self.max_width = self.get_parameter('max_width').value
+        self.get_logger().info(f"max_width from param = {self.max_width}")
         
         # Camera reconnection detection - use network ping instead of frame counting
         self.camera_status = {}  # Track camera connectivity status
@@ -212,7 +280,39 @@ class CamNode(Node):
         # Create timer for camera status monitoring
         self.status_timer = self.create_timer(self.check_interval, self.check_camera_reconnection)
         
+        # Start Flask streaming server in a separate thread
+        self.start_streaming_server()
+        
         self.get_logger().info("CamNode initialized successfully")
+
+    def start_streaming_server(self):
+        """Start Flask server for video streaming in a separate thread."""
+        flask_app = Flask(__name__)
+        
+        @flask_app.route('/')
+        def index():
+            return f'<h1>Camera Stream: {self.camera_name}</h1><img src="/video_feed" style="max-width:640px;">'
+
+        @flask_app.route('/video_feed')
+        def video_feed():
+            if self.stream is None:
+                return "Camera not available", 503
+            # Pass the configured fps and quality parameters
+            return Response(self.stream.generate_frames_for_streaming(
+                fps=self.stream_fps, 
+                quality=self.jpeg_quality,
+                max_width=self.max_width
+            ), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+        def run_flask():
+            try:
+                flask_app.run(host='0.0.0.0', port=self.stream_port, threaded=True, debug=False)
+            except Exception as e:
+                self.get_logger().error(f"Failed to start streaming server: {e}")
+
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        self.get_logger().info(f"Started streaming server on port {self.stream_port}")
 
     def check_camera_reconnection(self):
         """Check camera connectivity by testing actual network connectivity."""

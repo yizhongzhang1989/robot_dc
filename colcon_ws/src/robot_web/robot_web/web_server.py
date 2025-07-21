@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 import os
@@ -158,6 +158,37 @@ async def platform_timed_move(request: Request):
     if "error" in result:
         return JSONResponse(content=result, status_code=400)
     return JSONResponse(content=result)
+
+@app.get("/stream/{camera_name}")
+async def stream_camera(camera_name: str):
+    """Stream video from specific camera node."""
+    # Map camera names to their streaming ports
+    camera_ports = {
+        "cam100": 8010,
+        "cam101": 8011
+    }
+    
+    if camera_name not in camera_ports:
+        return JSONResponse(content={"error": "Unknown camera"}, status_code=404)
+    
+    port = camera_ports[camera_name]
+    stream_url = f"http://localhost:{port}/video_feed"
+    
+    try:
+        import requests
+        response = requests.get(stream_url, stream=True)
+        
+        def generate():
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    yield chunk
+        
+        return StreamingResponse(
+            generate(),
+            media_type="multipart/x-mixed-replace; boundary=frame"
+        )
+    except Exception as e:
+        return JSONResponse(content={"error": f"Stream not available: {str(e)}"}, status_code=503)
 
 app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")
 
