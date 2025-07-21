@@ -16,7 +16,7 @@ class ModbusClientTester(Node):
         req.slave_id = 1
         req.address = 0
         req.values = [0, 0]
-        req.seq_id = 1  # 测试用，实际可自增
+        req.seq_id = 1  # For testing, can be incremented in actual use
 
         future = self.cli.call_async(req)
         rclpy.spin_until_future_complete(self, future)

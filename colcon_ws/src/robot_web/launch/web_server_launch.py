@@ -3,7 +3,7 @@ from launch_ros.actions import Node
 from launch.actions import ExecuteProcess, SetEnvironmentVariable
 
 def generate_launch_description():
-    motor_names = "motor1,motor2"
+    motor_names = "motor1,motor2,motor17,motor18,platform"
 
     return LaunchDescription([
         SetEnvironmentVariable(name='MOTOR_NAMES', value=motor_names),

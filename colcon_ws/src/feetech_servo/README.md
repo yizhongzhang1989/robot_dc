@@ -97,6 +97,36 @@ Each servo node subscribes to its own topic, e.g., '/motor17/cmd', '/motor18/cmd
 | 'help'                 | Print supported command list                       |
 
 > Currently implemented: 'stop', 'set_pos', 'set_vel', 'set_acc'. Other commands can be added as needed.
+> New commands: 'get_pos' to read the current servo position, 'get_torque' to read the current torque (estimated from PWM).
+
+---
+
+### 📖 Position and Torque Reading Explanation
+
+| Function      | Register Address (hex) | Unit         | Calculation Method                                 |
+|-------------- |----------------------- |--------------|---------------------------------------------------|
+| Position      | 0x0101 (257)           | step (0-4095)| Use the returned value directly, 0~4095 corresponds to 0°~360° |
+| Torque Est.   | 0x0103 (259)           | 0.1% (PWM)   | Torque (N·m) = (PWM_RAW / 1000) × 4.413           |
+
+- **Position Reading**:
+  - Call `get_position()` method, read register 0x0101, return step.
+  - Example: return 2048 → about 180°.
+
+- **Torque Reading**:
+  - Call `get_torque()` method, read register 0x0103, return PWM_RAW.
+  - Torque calculation: `Torque (N·m) = (PWM_RAW / 1000) × 4.413`
+  - Example: PWM_RAW=500 → Torque=2.2065 N·m.
+
+---
+
+### 🧪 Position and Torque Reading Command Example
+
+```bash
+ros2 topic pub --once /motor17/cmd std_msgs/String "data: 'get_pos'"
+ros2 topic pub --once /motor17/cmd std_msgs/String "data: 'get_torque'"
+```
+
+The node will output the current step and estimated torque in the log.
 
 ---
 
@@ -155,6 +185,4 @@ MIT License (update if different)
 
 ## 👤 Maintainer
 
-[yizhongzhang1989@gmail.com](mailto:yizhongzhang1989@gmail.com)
-
---- 
+[yizhongzhang1989@gmail.com](mailto:yizhongzhang1989@gmail.com) 

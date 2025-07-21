@@ -3,9 +3,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from leadshine_motor.motor_controller import LeadshineMotor
 import threading
-import datetime
 import collections
-
 
 class MotorControlNode(Node):
     def __init__(self):
@@ -26,11 +24,11 @@ class MotorControlNode(Node):
 
         # Set up ROS subscription for commands
         self.cmd_sub = self.create_subscription(String, f'/motor{self.device_id}/cmd', self.command_callback, 10)
-        self.get_logger().info(f"📡 Subscription to /motor{self.device_id}/cmd created")
+        self.get_logger().info(f"\U0001F4E1 Subscription to /motor{self.device_id}/cmd created")
 
         # Non-blocking timer to wait for service availability
         self.service_check_timer = self.create_timer(1.0, self.initialize_motor_params)
-        self.get_logger().info("⏳ Waiting for /modbus_request service...")
+        self.get_logger().info("\u23F3 Waiting for /modbus_request service...")
 
         # Initialize alarm reset and command queue
         self.alarm_reset_stop_event = threading.Event()
@@ -42,6 +40,7 @@ class MotorControlNode(Node):
         self.waiting_for_ack = False
 
     def initialize_motor_params(self):
+        # Check if the Modbus service is ready
         # Check if the Modbus service is ready
         if self.motor.cli.service_is_ready():
             self.get_logger().info("✅ /modbus_request service is now available!")
@@ -69,13 +68,10 @@ class MotorControlNode(Node):
         """
         try:
             if use_ack_patch:
-                # In use_ack_patch mode, execution is robust:
-                # Errors will automatically clear waiting_for_ack and continue the queue.
                 self.get_logger().info(f"[SEQ {seq_id}] Send {cmd}{' ' + str(arg) if arg is not None else ''}")
             else:
                 self.get_logger().info(f"[SEQ {seq_id}] [use_ack_patch=0] Executing {cmd}({arg})")
 
-            # Dispatch commands
             match cmd:
                 case "jog_left":
                     self.motor.jog_left(seq_id=seq_id)
@@ -103,7 +99,6 @@ class MotorControlNode(Node):
                 case "reset_alarm":
                     self.motor.reset_alarm(seq_id=seq_id)
                 case "set_home":
-                    # Parse optional parameters for set_home
                     if parts and len(parts) == 7:
                         stall_time = int(parts[1])
                         cur = int(parts[2])
@@ -137,7 +132,6 @@ class MotorControlNode(Node):
                 case "reset_limit":
                     self.motor.reset_software_limit(seq_id=seq_id)
                 case "home_back":
-                    # Move back to previous home offset and speed
                     if getattr(self, 'last_home_offset', None) is None or getattr(self, 'last_home_speed', None) is None:
                         self.get_logger().error(
                             f"[SEQ {seq_id}] home_back: Last homing direction not detected, run home_pos or home_neg first")
@@ -160,6 +154,16 @@ class MotorControlNode(Node):
                     self.motor.save_all_params_to_eeprom(seq_id=seq_id)
                 case "factory_reset":
                     self.motor.factory_reset(seq_id=seq_id)
+                case "get_pos":
+                    def pos_callback(pos):
+                        if pos is not None:
+                            self.get_logger().info(f"[Servo] Current position: {pos} steps")
+                        else:
+                            self.get_logger().error(f"[SEQ {seq_id}] Failed to read position")
+                        self.waiting_for_ack = False
+                        self.process_next_command()
+                    self.motor.get_current_position(pos_callback, seq_id=seq_id)
+                    return
                 case _:
                     self.get_logger().warn(f"[SEQ {seq_id}] Unknown command: {cmd}")
         except Exception as e:

@@ -37,6 +37,16 @@ def generate_launch_description():
         'launch',
         'web_server_launch.py'
     )
+    motor_status_path = os.path.join(
+        get_package_share_directory('motor_status'),
+        'launch',
+        'motor_status_launch.py'
+    )
+    cam_node_path = os.path.join(
+        get_package_share_directory('cam_node'),
+        'launch',
+        'cam_launch.py'
+    )
 
     # Launch descriptions
     modbus_launch = IncludeLaunchDescription(
@@ -68,11 +78,23 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(web_path))]
     )
 
+    motor_status_launch = TimerAction(
+        period=7.0,
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(motor_status_path))]
+    )
+
+    cam_node_launch = TimerAction(
+        period=8.0,
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cam_node_path))]
+    )
+
     return LaunchDescription([
         modbus_launch,
         motor_launch,
         servo_launch,
         platform_launch,
         teleop_launch,
-        web_launch
+        web_launch,
+        motor_status_launch,
+        cam_node_launch
     ])

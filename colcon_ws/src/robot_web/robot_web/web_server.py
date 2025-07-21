@@ -28,10 +28,14 @@ def serve_index():
 
 @app.get("/motors")
 def get_motors():
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     return {"motors": ros_client.motor_list}
 
 @app.post("/api/{motor_id}/cmd")
 async def send_motor_command(motor_id: str, request: Request):
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     data = await request.json()
     command = data.get("command")
     value = data.get("value", None)
@@ -39,11 +43,124 @@ async def send_motor_command(motor_id: str, request: Request):
 
 @app.get("/api/{motor_id}/status")
 def get_motor_status(motor_id: str):
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     status = ros_client.get_motor_status(motor_id)
     if status is None:
         return JSONResponse(content={"error": "No status yet"}, status_code=404)
     return status
 
+@app.get("/api/all_status")
+def get_all_status():
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    return ros_client.get_all_status()
+
+@app.post("/api/observation/{target}/{action}")
+def control_observation(target: str, action: str):
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    if action not in ("start", "stop"):
+        return JSONResponse(content={"error": "Invalid action"}, status_code=400)
+    result = ros_client.control_observation(target, action)
+    if "error" in result:
+        return JSONResponse(content=result, status_code=400)
+    return result
+
+@app.post("/monitor_control")
+async def monitor_control(request: Request):
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    data = await request.json()
+    action = data.get("action")
+    if action not in ("start", "stop"):
+        return JSONResponse(content={"error": "Invalid action"}, status_code=400)
+    # Control all motors/servos
+    targets = ["motor1", "motor2", "servo17", "servo18"]
+    results = []
+    for target in targets:
+        result = ros_client.control_observation(target, action)
+        results.append(result)
+    return {"result": results}
+
+@app.post("/snapshot")
+async def take_snapshot():
+    """Take snapshots from all cameras using the cam_node services."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    result = ros_client.get_snapshot()
+    return JSONResponse(content=result)
+
+@app.post("/snapshot/{camera_name}")
+async def take_single_snapshot(camera_name: str):
+    """Take snapshot from specific camera."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    result = ros_client.get_snapshot(camera_name)
+    return JSONResponse(content=result)
+
+@app.post("/restart_camera")
+async def restart_camera():
+    """Restart all camera nodes using the restart services."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    result = ros_client.restart_camera_node()
+    return JSONResponse(content=result)
+
+@app.post("/restart_camera/{camera_name}")
+async def restart_single_camera(camera_name: str):
+    """Restart specific camera node."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    result = ros_client.restart_camera_node(camera_name)
+    return JSONResponse(content=result)
+
+@app.post("/api/platform/cmd")
+async def platform_command(request: Request):
+    """Send command to platform controller."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    data = await request.json()
+    command = data.get("command")
+    value = data.get("value", None)
+    
+    if not command:
+        return JSONResponse(content={"error": "Command is required"}, status_code=400)
+    
+    result = ros_client.send_platform_command(command, value)
+    
+    if "error" in result:
+        return JSONResponse(content=result, status_code=400)
+    return JSONResponse(content=result)
+
+@app.post("/api/platform/timed_move")
+async def platform_timed_move(request: Request):
+    """Send timed movement command to platform controller."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    data = await request.json()
+    direction = data.get("direction")
+    duration = data.get("duration")
+    
+    if not direction or duration is None:
+        return JSONResponse(content={"error": "Direction and duration are required"}, status_code=400)
+    
+    # Send the timed movement command
+    command = f"timed_{direction}"
+    result = ros_client.send_platform_command(command, duration)
+    
+    if "error" in result:
+        return JSONResponse(content=result, status_code=400)
+    return JSONResponse(content=result)
+
 app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")
 
-
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
