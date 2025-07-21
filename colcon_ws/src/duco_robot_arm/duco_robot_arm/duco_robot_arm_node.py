@@ -61,35 +61,100 @@ class DucoRobotArmNode(Node):
 
             
     def command_callback(self, msg):
-        parts = msg.data.strip().lower().split()
-        if not parts:
+        command_str = msg.data.strip()
+        if not command_str:
             return
-
-        cmd = parts[0]
-        arg = int(parts[1]) if len(parts) > 1 and parts[1].lstrip('-').isdigit() else None
 
         if self.robot is None:
             self.get_logger().warn("⏳ Robot not initialized yet. Command ignored.")
             return
 
         try:
+            # Parse command and arguments
+            parts = command_str.split()
+            cmd = parts[0].lower()
+            
             match cmd:
                 case "power_on":
                     res = self.robot.power_on(True)
                     self.get_logger().info(f"Power on: {res}")
+                    
                 case "power_off":
                     res = self.robot.power_off(True)
                     self.get_logger().info(f"Power off: {res}")
+                    
                 case "enable":
                     res = self.robot.enable(True)
                     self.get_logger().info(f"Enable: {res}")
+                    
                 case "disable":
                     res = self.robot.disable(True)
                     self.get_logger().info(f"Disable: {res}")
+                    
+                case "servoj":
+                    # Parse servoj command: servoj [j1,j2,j3,j4,j5,j6] v a block kp kd
+                    if len(parts) < 6:
+                        self.get_logger().error("ServoJ command requires at least 5 parameters")
+                        return
+                        
+                    # Extract joint angles from list format [j1,j2,j3,j4,j5,j6]
+                    joints_str = parts[1]
+                    if joints_str.startswith('[') and joints_str.endswith(']'):
+                        joints_str = joints_str[1:-1]  # Remove brackets
+                        joint_values = [float(x.strip()) for x in joints_str.split(',')]
+                        
+                        if len(joint_values) != 6:
+                            self.get_logger().error("ServoJ requires exactly 6 joint values")
+                            return
+                            
+                        v = float(parts[2])  # velocity
+                        a = float(parts[3])  # acceleration
+                        block_str = parts[4].lower()
+                        block = block_str == 'true'
+                        kp = int(parts[5]) if len(parts) > 5 else 200
+                        kd = int(parts[6]) if len(parts) > 6 else 25
+                        
+                        res = self.robot.servoj(joint_values, v, a, block, kp, kd)
+                        self.get_logger().info(f"ServoJ command executed: {res}")
+                    else:
+                        self.get_logger().error("Invalid joint list format for ServoJ")
+                        
+                case "servo_tcp":
+                    # Parse servo_tcp command: servo_tcp [x,y,z,rx,ry,rz] v a tool block kp kd
+                    if len(parts) < 7:
+                        self.get_logger().error("ServoTCP command requires at least 6 parameters")
+                        return
+                        
+                    # Extract pose offset from list format [x,y,z,rx,ry,rz]
+                    pose_str = parts[1]
+                    if pose_str.startswith('[') and pose_str.endswith(']'):
+                        pose_str = pose_str[1:-1]  # Remove brackets
+                        pose_values = [float(x.strip()) for x in pose_str.split(',')]
+                        
+                        if len(pose_values) != 6:
+                            self.get_logger().error("ServoTCP requires exactly 6 pose values")
+                            return
+                            
+                        v = float(parts[2])  # velocity
+                        a = float(parts[3])  # acceleration
+                        tool = parts[4].strip('"\'')  # tool number as string, remove quotes if present
+                        block_str = parts[5].lower()
+                        block = block_str == 'true'
+                        kp = int(parts[6]) if len(parts) > 6 else 200
+                        kd = int(parts[7]) if len(parts) > 7 else 25
+                        
+                        res = self.robot.servo_tcp(pose_values, v, a, tool, block, kp, kd)
+                        self.get_logger().info(f"ServoTCP command executed: {res}")
+                    else:
+                        self.get_logger().error("Invalid pose list format for ServoTCP")
+                        
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
+                    
         except Exception as e:
-            self.get_logger().error(f"❌ Command '{cmd}' failed: {e}")
+            self.get_logger().error(f"❌ Command '{command_str}' failed: {e}")
+            import traceback
+            self.get_logger().error(f"Traceback: {traceback.format_exc()}")
 
 
 def main():

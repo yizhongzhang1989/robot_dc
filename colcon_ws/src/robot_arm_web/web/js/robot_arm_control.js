@@ -103,6 +103,23 @@ window.addEventListener('load', function() {
         }
     }, 300);
     
+    // Initialize long press controls after DOM is ready
+    setTimeout(() => {
+        console.log('Initializing long press controls...');
+        initializeLongPressControls();
+        
+        // Add global event listeners to handle edge cases
+        document.addEventListener('mouseup', clearAllLongPress);
+        document.addEventListener('mouseleave', clearAllLongPress);
+        document.addEventListener('touchend', clearAllLongPress);
+        document.addEventListener('touchcancel', clearAllLongPress);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                clearAllLongPress();
+            }
+        });
+    }, 500);
+    
     logCommand('System', 'Web interface initialized');
 });
 
@@ -533,12 +550,86 @@ function updateRobotStateDisplay(state) {
         document.getElementById('driverStates').textContent = state.driverState.join(', ');
     }
 
+    // Update Move Control Section
+    updateMoveControlDisplay(state);
+
     // Update last update time
     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
     document.getElementById('dataStatus').textContent = 'Active';
     document.getElementById('dataStatus').className = 'normal-indicator';
 
     // Update 3D visualization - removed duplicate TCP update to prevent flickering
+}
+
+// Update Move Control Display Section
+function updateMoveControlDisplay(state) {
+    // Helper function to safely format values with higher precision for Move Control
+    const formatMoveValue = (value, decimals = 3) => {
+        if (value === null || value === undefined || isNaN(value)) return '-';
+        return parseFloat(value).toFixed(decimals);
+    };
+
+    // Helper function to convert radians to degrees
+    const radToDeg = (rad) => {
+        if (rad === null || rad === undefined || isNaN(rad)) return '-';
+        return (parseFloat(rad) * 180 / Math.PI).toFixed(2) + '°';
+    };
+
+    // Update Joint Angles (convert from radians to degrees for better readability)
+    if (state.jointActualPosition && state.jointActualPosition.length >= 6) {
+        const joints = state.jointActualPosition;
+        for (let i = 0; i < 6; i++) {
+            const element = document.getElementById(`moveJoint${i + 1}`);
+            if (element) {
+                const degreeValue = parseFloat(joints[i]) * 180 / Math.PI;
+                // Only update if the input is not currently focused (to avoid interrupting user input)
+                if (document.activeElement !== element) {
+                    element.value = degreeValue.toFixed(1);
+                }
+                // Update internal tracking variable
+                currentJointValues[i] = degreeValue;
+            }
+        }
+    }
+
+    // Update TCP Position (with mm units for position, degrees for orientation)
+    if (state.TCPActualPosition && state.TCPActualPosition.length >= 6) {
+        const tcp = state.TCPActualPosition;
+        
+        // Position (assuming meters, convert to mm)
+        const posElements = ['moveTcpX', 'moveTcpY', 'moveTcpZ'];
+        const posAxes = ['x', 'y', 'z'];
+        for (let i = 0; i < 3; i++) {
+            const element = document.getElementById(posElements[i]);
+            if (element) {
+                const valueInMm = parseFloat(tcp[i]) * 1000;
+                // Only update if the input is not currently focused
+                if (document.activeElement !== element) {
+                    element.value = valueInMm.toFixed(1);
+                }
+                // Update internal tracking variable
+                currentTcpValues[posAxes[i]] = valueInMm;
+            }
+        }
+        
+        // Orientation (convert radians to degrees)
+        const orientElements = ['moveTcpRx', 'moveTcpRy', 'moveTcpRz'];
+        const orientAxes = ['rx', 'ry', 'rz'];
+        for (let i = 3; i < 6; i++) {
+            const element = document.getElementById(orientElements[i - 3]);
+            if (element) {
+                const degreeValue = parseFloat(tcp[i]) * 180 / Math.PI;
+                // Only update if the input is not currently focused
+                if (document.activeElement !== element) {
+                    element.value = degreeValue.toFixed(1);
+                }
+                // Update internal tracking variable
+                currentTcpValues[orientAxes[i - 3]] = degreeValue;
+            }
+        }
+    }
+
+    // Update Move Control status and timestamp - removed as requested
 }
 
 // Initialize 3D Viewer
@@ -1303,7 +1394,31 @@ document.addEventListener('DOMContentLoaded', function() {
             element.title = `Click to execute or press ${button.shortcut}`;
         }
     });
+    
+    // Initialize move control input fields with default values
+    initializeMoveControlInputs();
 });
+
+// Function to initialize move control input fields
+function initializeMoveControlInputs() {
+    // Initialize joint input fields
+    for (let i = 1; i <= 6; i++) {
+        const element = document.getElementById(`moveJoint${i}`);
+        if (element) {
+            element.value = currentJointValues[i - 1].toFixed(1);
+        }
+    }
+    
+    // Initialize TCP input fields
+    const tcpAxes = ['x', 'y', 'z', 'rx', 'ry', 'rz'];
+    tcpAxes.forEach(axis => {
+        const elementId = `moveTcp${axis.charAt(0).toUpperCase() + axis.slice(1)}`;
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.value = currentTcpValues[axis].toFixed(1);
+        }
+    });
+}
 
 // Periodic connection check
 setInterval(fetchRobotArmInfo, 30000); // Check every 30 seconds
@@ -1327,4 +1442,869 @@ function updateURDFFromActualJoints(jointActualPosition) {
     
     // Update the robot pose in the 3D visualization
     updateRobotPose();
+}
+
+// Move control variables for tracking current values
+let currentJointValues = [0, 0, 0, 0, 0, 0];
+let currentTcpValues = {x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0};
+
+// Adjustment step sizes
+const jointStepSize = 0.5; // degrees  
+const positionStepSize = 5.0; // mm
+const rotationStepSize = 2.0; // degrees
+
+// Long press functionality variables
+let longPressTimers = new Map(); // 存储每个按钮的计时器
+let longPressIntervals = new Map(); // 存储每个按钮的重复执行间隔
+const LONG_PRESS_DELAY = 500; // 长按触发延迟 (ms)
+const REPEAT_INTERVAL = 20; // 重复执行间隔 (ms)
+
+// Function to adjust joint values
+function adjustJoint(jointIndex, direction) {
+    const elementId = `moveJoint${jointIndex}`;
+    const element = document.getElementById(elementId);
+    
+    if (!element) return;
+    
+    // Get current value or use 0 if not set
+    let currentValue = parseFloat(element.value) || 0;
+    
+    // Apply adjustment
+    currentValue += direction * jointStepSize;
+    
+    // Update display
+    element.value = currentValue.toFixed(1);
+    
+    // Store the value
+    currentJointValues[jointIndex - 1] = currentValue;
+    
+    // Log the action
+    logCommand('Move Control', `Joint ${jointIndex} adjusted to ${currentValue.toFixed(1)}°`);
+    
+    // Send servoj command to robot
+    sendServoJCommand();
+}
+
+// Function to adjust TCP values
+function adjustTcp(axis, direction) {
+    const elementId = `moveTcp${axis.charAt(0).toUpperCase() + axis.slice(1)}`;
+    const element = document.getElementById(elementId);
+    
+    if (!element) return;
+    
+    // Get current value or use 0 if not set
+    let currentValue = parseFloat(element.value) || 0;
+    
+    // Determine step size based on axis
+    let stepSize;
+    if (axis === 'x' || axis === 'y' || axis === 'z') {
+        stepSize = positionStepSize;
+    } else {
+        stepSize = rotationStepSize;
+    }
+    
+    // Apply adjustment
+    currentValue += direction * stepSize;
+    
+    // Update display
+    element.value = currentValue.toFixed(1);
+    
+    // Store the value
+    currentTcpValues[axis] = currentValue;
+    
+    // Log the action
+    const unit = (axis === 'x' || axis === 'y' || axis === 'z') ? 'mm' : '°';
+    logCommand('Move Control', `TCP ${axis.toUpperCase()} adjusted to ${currentValue.toFixed(1)}${unit}`);
+    
+    // Send servo_tcp command to robot with incremental movement
+    sendServoTcpCommandIncremental(axis, direction);
+}
+
+// Function to send servoj command to robot
+async function sendServoJCommand() {
+    try {
+        // Convert degrees to radians for the robot
+        const jointRadians = currentJointValues.map(deg => deg * Math.PI / 180);
+        
+        // Create servoj command with parameters: joints, velocity, acceleration, blocking, kp, kd
+        const command = `servoj [${jointRadians.join(',')}] 1.0 1.0 False 200 65`;
+        
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('ServoJ command sent successfully:', result);
+        } else {
+            console.error('Failed to send ServoJ command:', response.statusText);
+            logCommand('Move Control', `❌ Failed to send ServoJ command: ${response.statusText}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error sending ServoJ command:', error);
+        logCommand('Move Control', `❌ Error sending ServoJ command: ${error.message}`, 'error');
+    }
+}
+
+// Function to send servo_tcp command to robot
+async function sendServoTcpCommand() {
+    try {
+        // servo_tcp expects pose offset (relative movement), not absolute position
+        // Calculate small incremental movements based on the step size
+        const poseOffset = [
+            positionStepSize / 1000,  // Convert mm to meters for small incremental movement
+            0,  // Only move in one axis at a time for safety
+            0,
+            0,  // No rotation change for now
+            0,
+            0
+        ];
+        
+        // For now, let's just do a small movement test
+        // TODO: Implement proper incremental movement logic
+        
+        // Create servo_tcp command with parameters: pose_offset, velocity, acceleration, tool, blocking, kp, kd
+        const command = `servo_tcp [${poseOffset.join(',')}] 1.0 1.0 "" False 200 25`;
+        
+        console.log('Sending servo_tcp command:', command);
+        
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('ServoTCP command sent successfully:', result);
+        } else {
+            console.error('Failed to send ServoTCP command:', response.statusText);
+            logCommand('Move Control', `❌ Failed to send ServoTCP command: ${response.statusText}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error sending ServoTCP command:', error);
+        logCommand('Move Control', `❌ Error sending ServoTCP command: ${error.message}`, 'error');
+    }
+}
+
+// Function to send incremental servo_tcp command to robot
+async function sendServoTcpCommandIncremental(axis, direction) {
+    try {
+        // Create pose offset for incremental movement
+        // servo_tcp expects relative movement, not absolute position
+        let poseOffset = [0, 0, 0, 0, 0, 0];
+        
+        if (axis === 'x' || axis === 'y' || axis === 'z') {
+            // Position movement - convert mm to meters
+            const axisIndex = axis === 'x' ? 0 : (axis === 'y' ? 1 : 2);
+            poseOffset[axisIndex] = direction * positionStepSize / 1000; // Convert mm to meters
+        } else {
+            // Rotation movement - convert degrees to radians
+            const axisIndex = axis === 'rx' ? 3 : (axis === 'ry' ? 4 : 5);
+            poseOffset[axisIndex] = direction * rotationStepSize * Math.PI / 180; // Convert degrees to radians
+        }
+        
+        // Create servo_tcp command with parameters: pose_offset, velocity, acceleration, tool, blocking, kp, kd
+        const command = `servo_tcp [${poseOffset.join(',')}] 1.0 1.0 "" False 150 35`;
+        
+        console.log(`Sending incremental servo_tcp command for ${axis} axis:`, command);
+        
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('Incremental ServoTCP command sent successfully:', result);
+        } else {
+            console.error('Failed to send incremental ServoTCP command:', response.statusText);
+            logCommand('Move Control', `❌ Failed to send incremental ServoTCP command: ${response.statusText}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error sending incremental ServoTCP command:', error);
+        logCommand('Move Control', `❌ Error sending incremental ServoTCP command: ${error.message}`, 'error');
+    }
+}
+
+// Long press functionality for control buttons
+function startLongPress(buttonType, jointIndex, axis, direction) {
+    const buttonId = buttonType === 'joint' ? `joint_${jointIndex}_${direction}` : `tcp_${axis}_${direction}`;
+    
+    // Clear any existing timer for this button
+    clearLongPress(buttonId);
+    
+    // Set a timer to start long press after delay
+    const timer = setTimeout(() => {
+        console.log(`Starting long press for ${buttonId}`);
+        
+        // Add visual feedback class to the button
+        const button = getCurrentButton(buttonType, jointIndex, axis, direction);
+        if (button) {
+            button.classList.add('long-pressing');
+        }
+        
+        // Start repeating the action
+        const interval = setInterval(() => {
+            if (buttonType === 'joint') {
+                adjustJoint(jointIndex, direction);
+            } else {
+                adjustTcp(axis, direction);
+            }
+        }, REPEAT_INTERVAL);
+        
+        longPressIntervals.set(buttonId, interval);
+    }, LONG_PRESS_DELAY);
+    
+    longPressTimers.set(buttonId, timer);
+}
+
+function clearLongPress(buttonId) {
+    // Clear the timer
+    if (longPressTimers.has(buttonId)) {
+        clearTimeout(longPressTimers.get(buttonId));
+        longPressTimers.delete(buttonId);
+    }
+    
+    // Clear the interval
+    if (longPressIntervals.has(buttonId)) {
+        clearInterval(longPressIntervals.get(buttonId));
+        longPressIntervals.delete(buttonId);
+    }
+}
+
+function clearAllLongPress() {
+    // Clear all timers and intervals
+    longPressTimers.forEach((timer) => clearTimeout(timer));
+    longPressIntervals.forEach((interval) => clearInterval(interval));
+    longPressTimers.clear();
+    longPressIntervals.clear();
+    
+    // Remove visual feedback from all buttons
+    document.querySelectorAll('.control-button.long-pressing').forEach(button => {
+        button.classList.remove('long-pressing');
+    });
+}
+
+// Helper function to get the current button element
+function getCurrentButton(buttonType, jointIndex, axis, direction) {
+    let selector;
+    if (buttonType === 'joint') {
+        // Find button by onclick attribute (for joints)
+        selector = `button[data-action="adjustJoint"][data-joint="${jointIndex}"][data-direction="${direction}"]`;
+        // Fallback to searching by title
+        if (!document.querySelector(selector)) {
+            const title = direction > 0 ? `Increase Joint ${jointIndex}` : `Decrease Joint ${jointIndex}`;
+            selector = `button[title="${title}"]`;
+        }
+    } else {
+        // Find button by onclick attribute (for TCP)
+        selector = `button[data-action="adjustTcp"][data-axis="${axis}"][data-direction="${direction}"]`;
+        // Fallback to searching by title
+        if (!document.querySelector(selector)) {
+            const title = direction > 0 ? `Increase ${axis.toUpperCase()}` : `Decrease ${axis.toUpperCase()}`;
+            selector = `button[title="${title}"]`;
+        }
+    }
+    
+    return document.querySelector(selector);
+}
+
+// Enhanced adjust functions that support both single click and long press
+function adjustJointWithLongPress(jointIndex, direction, isLongPress = false) {
+    // Always execute the adjustment
+    adjustJoint(jointIndex, direction);
+    
+    // If this is not a long press action, it's a single click
+    if (!isLongPress) {
+        console.log(`Single click adjustment for Joint ${jointIndex}`);
+    }
+}
+
+function adjustTcpWithLongPress(axis, direction, isLongPress = false) {
+    // Always execute the adjustment
+    adjustTcp(axis, direction);
+    
+    // If this is not a long press action, it's a single click
+    if (!isLongPress) {
+        console.log(`Single click adjustment for TCP ${axis}`);
+    }
+}
+
+// Event handlers for mouse/touch events
+function handleControlButtonMouseDown(event, buttonType, jointIndex, axis, direction) {
+    event.preventDefault();
+    
+    // Add visual feedback class
+    event.target.classList.add('long-pressing');
+    
+    // Execute immediate action (single click behavior)
+    if (buttonType === 'joint') {
+        adjustJointWithLongPress(jointIndex, direction, false);
+    } else {
+        adjustTcpWithLongPress(axis, direction, false);
+    }
+    
+    // Start long press timer
+    startLongPress(buttonType, jointIndex, axis, direction);
+}
+
+function handleControlButtonMouseUp(event) {
+    event.preventDefault();
+    
+    // Remove visual feedback class
+    if (event.target) {
+        event.target.classList.remove('long-pressing');
+    }
+    
+    // Clear all long press operations
+    clearAllLongPress();
+}
+
+function handleControlButtonMouseLeave(event) {
+    event.preventDefault();
+    
+    // Remove visual feedback class
+    if (event.target) {
+        event.target.classList.remove('long-pressing');
+    }
+    
+    // Clear all long press operations when mouse leaves the button
+    clearAllLongPress();
+}
+
+// Initialize long press functionality when page loads
+function initializeLongPressControls() {
+    console.log('Initializing long press controls...');
+    
+    // Add event listeners for joint control buttons
+    for (let jointIndex = 1; jointIndex <= 6; jointIndex++) {
+        // Decrease buttons
+        const decreaseBtn = document.querySelector(`button[onclick="adjustJoint(${jointIndex}, -1)"]`);
+        if (decreaseBtn) {
+            // Add data attributes for identification
+            decreaseBtn.setAttribute('data-action', 'adjustJoint');
+            decreaseBtn.setAttribute('data-joint', jointIndex);
+            decreaseBtn.setAttribute('data-direction', '-1');
+            
+            decreaseBtn.addEventListener('mousedown', (e) => handleControlButtonMouseDown(e, 'joint', jointIndex, null, -1));
+            decreaseBtn.addEventListener('mouseup', handleControlButtonMouseUp);
+            decreaseBtn.addEventListener('mouseleave', handleControlButtonMouseLeave);
+            decreaseBtn.addEventListener('touchstart', (e) => handleControlButtonMouseDown(e, 'joint', jointIndex, null, -1));
+            decreaseBtn.addEventListener('touchend', handleControlButtonMouseUp);
+            decreaseBtn.addEventListener('touchcancel', handleControlButtonMouseUp);
+            
+            // Remove onclick to prevent double execution
+            decreaseBtn.removeAttribute('onclick');
+        }
+        
+        // Increase buttons
+        const increaseBtn = document.querySelector(`button[onclick="adjustJoint(${jointIndex}, 1)"]`);
+        if (increaseBtn) {
+            // Add data attributes for identification
+            increaseBtn.setAttribute('data-action', 'adjustJoint');
+            increaseBtn.setAttribute('data-joint', jointIndex);
+            increaseBtn.setAttribute('data-direction', '1');
+            
+            increaseBtn.addEventListener('mousedown', (e) => handleControlButtonMouseDown(e, 'joint', jointIndex, null, 1));
+            increaseBtn.addEventListener('mouseup', handleControlButtonMouseUp);
+            increaseBtn.addEventListener('mouseleave', handleControlButtonMouseLeave);
+            increaseBtn.addEventListener('touchstart', (e) => handleControlButtonMouseDown(e, 'joint', jointIndex, null, 1));
+            increaseBtn.addEventListener('touchend', handleControlButtonMouseUp);
+            increaseBtn.addEventListener('touchcancel', handleControlButtonMouseUp);
+            
+            // Remove onclick to prevent double execution
+            increaseBtn.removeAttribute('onclick');
+        }
+    }
+    
+    // Add event listeners for TCP control buttons
+    const tcpAxes = ['x', 'y', 'z', 'rx', 'ry', 'rz'];
+    tcpAxes.forEach(axis => {
+        // Decrease buttons
+        const decreaseBtn = document.querySelector(`button[onclick="adjustTcp('${axis}', -1)"]`);
+        if (decreaseBtn) {
+            // Add data attributes for identification
+            decreaseBtn.setAttribute('data-action', 'adjustTcp');
+            decreaseBtn.setAttribute('data-axis', axis);
+            decreaseBtn.setAttribute('data-direction', '-1');
+            
+            decreaseBtn.addEventListener('mousedown', (e) => handleControlButtonMouseDown(e, 'tcp', null, axis, -1));
+            decreaseBtn.addEventListener('mouseup', handleControlButtonMouseUp);
+            decreaseBtn.addEventListener('mouseleave', handleControlButtonMouseLeave);
+            decreaseBtn.addEventListener('touchstart', (e) => handleControlButtonMouseDown(e, 'tcp', null, axis, -1));
+            decreaseBtn.addEventListener('touchend', handleControlButtonMouseUp);
+            decreaseBtn.addEventListener('touchcancel', handleControlButtonMouseUp);
+            
+            // Remove onclick to prevent double execution
+            decreaseBtn.removeAttribute('onclick');
+        }
+        
+        // Increase buttons
+        const increaseBtn = document.querySelector(`button[onclick="adjustTcp('${axis}', 1)"]`);
+        if (increaseBtn) {
+            // Add data attributes for identification
+            increaseBtn.setAttribute('data-action', 'adjustTcp');
+            increaseBtn.setAttribute('data-axis', axis);
+            increaseBtn.setAttribute('data-direction', '1');
+            
+            increaseBtn.addEventListener('mousedown', (e) => handleControlButtonMouseDown(e, 'tcp', null, axis, 1));
+            increaseBtn.addEventListener('mouseup', handleControlButtonMouseUp);
+            increaseBtn.addEventListener('mouseleave', handleControlButtonMouseLeave);
+            increaseBtn.addEventListener('touchstart', (e) => handleControlButtonMouseDown(e, 'tcp', null, axis, 1));
+            increaseBtn.addEventListener('touchend', handleControlButtonMouseUp);
+            increaseBtn.addEventListener('touchcancel', handleControlButtonMouseUp);
+            
+            // Remove onclick to prevent double execution
+            increaseBtn.removeAttribute('onclick');
+        }
+    });
+    
+    console.log('Long press controls initialized successfully');
+}
+
+// Function to handle joint input changes
+function updateJointFromInput(jointIndex) {
+    const elementId = `moveJoint${jointIndex}`;
+    const element = document.getElementById(elementId);
+    
+    if (!element) return;
+    
+    let inputValue = parseFloat(element.value) || 0;
+    
+    // Store the value
+    currentJointValues[jointIndex - 1] = inputValue;
+    
+    // Log the action
+    logCommand('Move Control', `Joint ${jointIndex} set to ${inputValue.toFixed(1)}° (direct input)`);
+    
+    // Send servoj command to robot
+    sendServoJCommand();
+}
+
+// Function to handle TCP input changes
+function updateTcpFromInput(axis) {
+    const elementId = `moveTcp${axis.charAt(0).toUpperCase() + axis.slice(1)}`;
+    const element = document.getElementById(elementId);
+    
+    if (!element) return;
+    
+    let inputValue = parseFloat(element.value) || 0;
+    
+    // Store the value
+    currentTcpValues[axis] = inputValue;
+    
+    // Log the action
+    const unit = (axis === 'x' || axis === 'y' || axis === 'z') ? 'mm' : '°';
+    logCommand('Move Control', `TCP ${axis.toUpperCase()} set to ${inputValue.toFixed(1)}${unit} (direct input)`);
+    
+    // Send servo_tcp command to robot with absolute position
+    sendServoTcpCommandAbsolute();
+}
+
+// Function to handle keydown events in input fields
+function handleInputKeydown(event, type, indexOrAxis) {
+    // Allow Enter key to confirm input
+    if (event.key === 'Enter') {
+        event.target.blur(); // Remove focus to trigger onchange
+        return;
+    }
+    
+    // Allow arrow keys for fine adjustments
+    if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (type === 'joint') {
+            adjustJoint(indexOrAxis, 1);
+        } else if (type === 'tcp') {
+            adjustTcp(indexOrAxis, 1);
+        }
+    } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (type === 'joint') {
+            adjustJoint(indexOrAxis, -1);
+        } else if (type === 'tcp') {
+            adjustTcp(indexOrAxis, -1);
+        }
+    }
+}
+
+// Function to send servo_tcp command with offset positioning
+async function sendServoTcpCommandAbsolute() {
+    try {
+        // Check if we have current robot state data
+        if (!robotStateData || !robotStateData.TCPActualPosition || robotStateData.TCPActualPosition.length < 6) {
+            logCommand('Move Control', '❌ Cannot get current TCP position for offset calculation', 'error');
+            return;
+        }
+        
+        const currentTcp = robotStateData.TCPActualPosition;
+        
+        // Calculate offset between input values and current position
+        // Position: convert current from meters to mm, calculate offset in mm, then convert to meters
+        const currentXmm = currentTcp[0] * 1000; // Current X in mm
+        const currentYmm = currentTcp[1] * 1000; // Current Y in mm  
+        const currentZmm = currentTcp[2] * 1000; // Current Z in mm
+        
+        // Special offset calculation logic: for positive values use -(target - current), for negative values use (target - current)
+        let offsetX, offsetY, offsetZ;
+        if (currentTcpValues.x >= 0) {
+            offsetX = -(currentTcpValues.x - currentXmm) / 1000; // For positive values: -(target - current) in meters
+        } else {
+            offsetX = (currentTcpValues.x - currentXmm) / 1000; // For negative values: (target - current) in meters
+        }
+        
+        if (currentTcpValues.y >= 0) {
+            offsetY = -(currentTcpValues.y - currentYmm) / 1000; // For positive values: -(target - current) in meters
+        } else {
+            offsetY = (currentTcpValues.y - currentYmm) / 1000; // For negative values: (target - current) in meters
+        }
+        
+        if (currentTcpValues.z >= 0) {
+            offsetZ = -(currentTcpValues.z - currentZmm) / 1000; // For positive values: -(target - current) in meters
+        } else {
+            offsetZ = (currentTcpValues.z - currentZmm) / 1000; // For negative values: (target - current) in meters
+        }
+        
+        // Rotation: convert current from radians to degrees, calculate offset in degrees, then convert to radians
+        const currentRxDeg = currentTcp[3] * 180 / Math.PI; // Current Rx in degrees
+        const currentRyDeg = currentTcp[4] * 180 / Math.PI; // Current Ry in degrees
+        const currentRzDeg = currentTcp[5] * 180 / Math.PI; // Current Rz in degrees
+        
+        // Special offset calculation logic for rotation: for positive values use -(target - current), for negative values use (target - current)
+        let offsetRx, offsetRy, offsetRz;
+        if (currentTcpValues.rx >= 0) {
+            offsetRx = -(currentTcpValues.rx - currentRxDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
+        } else {
+            offsetRx = (currentTcpValues.rx - currentRxDeg) * Math.PI / 180; // For negative values: (target - current) in radians
+        }
+        
+        if (currentTcpValues.ry >= 0) {
+            offsetRy = -(currentTcpValues.ry - currentRyDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
+        } else {
+            offsetRy = (currentTcpValues.ry - currentRyDeg) * Math.PI / 180; // For negative values: (target - current) in radians
+        }
+        
+        if (currentTcpValues.rz >= 0) {
+            offsetRz = -(currentTcpValues.rz - currentRzDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
+        } else {
+            offsetRz = (currentTcpValues.rz - currentRzDeg) * Math.PI / 180; // For negative values: (target - current) in radians
+        }
+        
+        // Create servo_tcp command with offset parameters
+        const command = `servo_tcp [${offsetX},${offsetY},${offsetZ},${offsetRx},${offsetRy},${offsetRz}] 1.0 1.0 "" False 150 35`;
+        
+        console.log('Current TCP (raw):', currentTcp);
+        console.log('Current TCP (converted):', {
+            x: currentXmm, y: currentYmm, z: currentZmm,
+            rx: currentRxDeg, ry: currentRyDeg, rz: currentRzDeg
+        });
+        console.log('Target values:', currentTcpValues);
+        console.log('Calculated offsets:', {offsetX, offsetY, offsetZ, offsetRx, offsetRy, offsetRz});
+        console.log('Sending servo_tcp command:', command);
+
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to send servo_tcp command: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        logCommand('Move Control', `TCP moved with offsets: X=${offsetX.toFixed(3)}m, Y=${offsetY.toFixed(3)}m, Z=${offsetZ.toFixed(3)}m, Rx=${(offsetRx*180/Math.PI).toFixed(2)}°, Ry=${(offsetRy*180/Math.PI).toFixed(2)}°, Rz=${(offsetRz*180/Math.PI).toFixed(2)}°`);
+        
+    } catch (error) {
+        console.error('Error sending servo_tcp command:', error);
+        logCommand('Move Control', `❌ Error sending servo_tcp command: ${error.message}`, 'error');
+    }
+}
+
+// Move to Target Position Dialog Functions
+function openMoveToTargetDialog() {
+    const modal = document.getElementById('moveToTargetModal');
+    
+    // Initialize with current joint positions if available
+    if (robotStateData && robotStateData.joint_actual_position) {
+        for (let i = 1; i <= 6; i++) {
+            const input = document.getElementById(`targetJoint${i}`);
+            const currentAngleRad = robotStateData.joint_actual_position[i - 1];
+            const currentAngleDeg = currentAngleRad * 180 / Math.PI;
+            input.value = currentAngleDeg.toFixed(1);
+        }
+    } else {
+        // Use current move control values as fallback
+        for (let i = 1; i <= 6; i++) {
+            const moveInput = document.getElementById(`moveJoint${i}`);
+            const targetInput = document.getElementById(`targetJoint${i}`);
+            targetInput.value = moveInput.value;
+        }
+    }
+    
+    modal.style.display = 'flex';
+    
+    // Focus on first input
+    document.getElementById('targetJoint1').focus();
+    
+    // Add escape key listener
+    document.addEventListener('keydown', handleModalKeydown);
+}
+
+function closeMoveToTargetDialog() {
+    const modal = document.getElementById('moveToTargetModal');
+    modal.style.display = 'none';
+    
+    // Remove escape key listener
+    document.removeEventListener('keydown', handleModalKeydown);
+}
+
+function handleModalKeydown(event) {
+    if (event.key === 'Escape') {
+        closeMoveToTargetDialog();
+    }
+}
+
+async function confirmMoveToTarget() {
+    try {
+        // Get target joint angles from inputs
+        const targetAngles = [];
+        for (let i = 1; i <= 6; i++) {
+            const input = document.getElementById(`targetJoint${i}`);
+            const angleDeg = parseFloat(input.value);
+            if (isNaN(angleDeg)) {
+                throw new Error(`Invalid value for Joint ${i}: ${input.value}`);
+            }
+            // Convert degrees to radians for the command
+            const angleRad = angleDeg * Math.PI / 180;
+            targetAngles.push(angleRad);
+        }
+        
+        // Create servoj command with target joint angles
+        const jointAnglesStr = targetAngles.map(angle => angle.toFixed(6)).join(',');
+        const command = `servoj [${jointAnglesStr}] 1.0 1.0 False 200 65`;
+        
+        console.log('Target joint angles (degrees):', targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1)));
+        console.log('Sending servoj command:', command);
+
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to send servoj command: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        // Log the successful command
+        const targetAnglesDeg = targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1));
+        logCommand('Move to Target Angle', `Moving to position: J1=${targetAnglesDeg[0]}°, J2=${targetAnglesDeg[1]}°, J3=${targetAnglesDeg[2]}°, J4=${targetAnglesDeg[3]}°, J5=${targetAnglesDeg[4]}°, J6=${targetAnglesDeg[5]}°`);
+        
+        // Close the dialog
+        closeMoveToTargetDialog();
+        
+    } catch (error) {
+        console.error('Error sending movej command:', error);
+        logCommand('Move to Target Angle', `❌ Error: ${error.message}`, 'error');
+        
+        // Show error to user but don't close dialog
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Add click outside to close modal functionality
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('moveToTargetModal');
+    if (event.target === modal) {
+        closeMoveToTargetDialog();
+    }
+    
+    const tcpModal = document.getElementById('moveToTargetTcpModal');
+    if (event.target === tcpModal) {
+        closeMoveToTargetTcpDialog();
+    }
+});
+
+// Move to Target TCP Position Dialog Functions
+function openMoveToTargetTcpDialog() {
+    const modal = document.getElementById('moveToTargetTcpModal');
+    
+    // Initialize with current TCP position if available
+    if (robotStateData && robotStateData.TCPActualPosition && robotStateData.TCPActualPosition.length >= 6) {
+        const currentTcp = robotStateData.TCPActualPosition;
+        
+        // Position values (convert from meters to mm)
+        document.getElementById('targetTcpX').value = (currentTcp[0] * 1000).toFixed(1);
+        document.getElementById('targetTcpY').value = (currentTcp[1] * 1000).toFixed(1);
+        document.getElementById('targetTcpZ').value = (currentTcp[2] * 1000).toFixed(1);
+        
+        // Orientation values (convert from radians to degrees)
+        document.getElementById('targetTcpRx').value = (currentTcp[3] * 180 / Math.PI).toFixed(1);
+        document.getElementById('targetTcpRy').value = (currentTcp[4] * 180 / Math.PI).toFixed(1);
+        document.getElementById('targetTcpRz').value = (currentTcp[5] * 180 / Math.PI).toFixed(1);
+    } else {
+        // Use current move control values as fallback
+        document.getElementById('targetTcpX').value = currentTcpValues.x.toFixed(1);
+        document.getElementById('targetTcpY').value = currentTcpValues.y.toFixed(1);
+        document.getElementById('targetTcpZ').value = currentTcpValues.z.toFixed(1);
+        document.getElementById('targetTcpRx').value = currentTcpValues.rx.toFixed(1);
+        document.getElementById('targetTcpRy').value = currentTcpValues.ry.toFixed(1);
+        document.getElementById('targetTcpRz').value = currentTcpValues.rz.toFixed(1);
+    }
+    
+    modal.style.display = 'flex';
+    
+    // Focus on first input
+    document.getElementById('targetTcpX').focus();
+    
+    // Add escape key listener
+    document.addEventListener('keydown', handleTcpModalKeydown);
+}
+
+function closeMoveToTargetTcpDialog() {
+    const modal = document.getElementById('moveToTargetTcpModal');
+    modal.style.display = 'none';
+    
+    // Remove escape key listener
+    document.removeEventListener('keydown', handleTcpModalKeydown);
+}
+
+function handleTcpModalKeydown(event) {
+    if (event.key === 'Escape') {
+        closeMoveToTargetTcpDialog();
+    }
+}
+
+async function confirmMoveToTargetTcp() {
+    try {
+        // Check if we have current robot state data
+        if (!robotStateData || !robotStateData.TCPActualPosition || robotStateData.TCPActualPosition.length < 6) {
+            throw new Error('Cannot get current TCP position for offset calculation');
+        }
+        
+        const currentTcp = robotStateData.TCPActualPosition;
+        
+        // Get target TCP values from inputs
+        const targetTcpX = parseFloat(document.getElementById('targetTcpX').value);
+        const targetTcpY = parseFloat(document.getElementById('targetTcpY').value);
+        const targetTcpZ = parseFloat(document.getElementById('targetTcpZ').value);
+        const targetTcpRx = parseFloat(document.getElementById('targetTcpRx').value);
+        const targetTcpRy = parseFloat(document.getElementById('targetTcpRy').value);
+        const targetTcpRz = parseFloat(document.getElementById('targetTcpRz').value);
+        
+        // Validate inputs
+        if (isNaN(targetTcpX) || isNaN(targetTcpY) || isNaN(targetTcpZ) || 
+            isNaN(targetTcpRx) || isNaN(targetTcpRy) || isNaN(targetTcpRz)) {
+            throw new Error('Invalid TCP position values. Please check your inputs.');
+        }
+        
+        // Calculate offset between target and current position
+        // Position: convert current from meters to mm, calculate offset in mm, then convert to meters
+        const currentXmm = currentTcp[0] * 1000;
+        const currentYmm = currentTcp[1] * 1000;
+        const currentZmm = currentTcp[2] * 1000;
+        
+        // Special offset calculation logic: for positive values use -(target - current), for negative values use (target - current)
+        let offsetX, offsetY, offsetZ;
+        if (targetTcpX >= 0) {
+            offsetX = -(targetTcpX - currentXmm) / 1000; // For positive values: -(target - current) in meters
+        } else {
+            offsetX = (targetTcpX - currentXmm) / 1000; // For negative values: (target - current) in meters
+        }
+        
+        if (targetTcpY >= 0) {
+            offsetY = -(targetTcpY - currentYmm) / 1000; // For positive values: -(target - current) in meters
+        } else {
+            offsetY = (targetTcpY - currentYmm) / 1000; // For negative values: (target - current) in meters
+        }
+        
+        if (targetTcpZ >= 0) {
+            offsetZ = -(targetTcpZ - currentZmm) / 1000; // For positive values: -(target - current) in meters
+        } else {
+            offsetZ = (targetTcpZ - currentZmm) / 1000; // For negative values: (target - current) in meters
+        }
+        
+        // Rotation: convert current from radians to degrees, calculate offset in degrees, then convert to radians
+        const currentRxDeg = currentTcp[3] * 180 / Math.PI;
+        const currentRyDeg = currentTcp[4] * 180 / Math.PI;
+        const currentRzDeg = currentTcp[5] * 180 / Math.PI;
+        
+        // Special offset calculation logic for rotation: for positive values use -(target - current), for negative values use (target - current)
+        let offsetRx, offsetRy, offsetRz;
+        if (targetTcpRx >= 0) {
+            offsetRx = -(targetTcpRx - currentRxDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
+        } else {
+            offsetRx = (targetTcpRx - currentRxDeg) * Math.PI / 180; // For negative values: (target - current) in radians
+        }
+        
+        if (targetTcpRy >= 0) {
+            offsetRy = -(targetTcpRy - currentRyDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
+        } else {
+            offsetRy = (targetTcpRy - currentRyDeg) * Math.PI / 180; // For negative values: (target - current) in radians
+        }
+        
+        if (targetTcpRz >= 0) {
+            offsetRz = -(targetTcpRz - currentRzDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
+        } else {
+            offsetRz = (targetTcpRz - currentRzDeg) * Math.PI / 180; // For negative values: (target - current) in radians
+        }
+        
+        // Create servo_tcp command with offset parameters
+        const command = `servo_tcp [${offsetX.toFixed(6)},${offsetY.toFixed(6)},${offsetZ.toFixed(6)},${offsetRx.toFixed(6)},${offsetRy.toFixed(6)},${offsetRz.toFixed(6)}] 1.0 1.0 "" False 150 35`;
+        
+        console.log('Current TCP (raw):', currentTcp);
+        console.log('Current TCP (converted):', {
+            x: currentXmm, y: currentYmm, z: currentZmm,
+            rx: currentRxDeg, ry: currentRyDeg, rz: currentRzDeg
+        });
+        console.log('Target TCP values:', {
+            x: targetTcpX, y: targetTcpY, z: targetTcpZ,
+            rx: targetTcpRx, ry: targetTcpRy, rz: targetTcpRz
+        });
+        console.log('Calculated offsets:', {offsetX, offsetY, offsetZ, offsetRx, offsetRy, offsetRz});
+        console.log('Sending servo_tcp command:', command);
+
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to send servo_tcp command: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        // Log the successful command
+        logCommand('Move to Target Position', `Moving to TCP position: X=${targetTcpX.toFixed(1)}mm, Y=${targetTcpY.toFixed(1)}mm, Z=${targetTcpZ.toFixed(1)}mm, Rx=${targetTcpRx.toFixed(1)}°, Ry=${targetTcpRy.toFixed(1)}°, Rz=${targetTcpRz.toFixed(1)}°`);
+        
+        // Close the dialog
+        closeMoveToTargetTcpDialog();
+        
+    } catch (error) {
+        console.error('Error sending servo_tcp command:', error);
+        logCommand('Move to Target Position', `❌ Error: ${error.message}`, 'error');
+        
+        // Show error to user but don't close dialog
+        alert(`Error: ${error.message}`);
+    }
 }
