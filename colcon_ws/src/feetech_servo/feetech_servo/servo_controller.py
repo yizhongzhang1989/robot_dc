@@ -24,9 +24,9 @@ class FeetechServo(ModbusDevice):
 
     def initialize(self):
         self.set_target_position(2048)  # Set initial target position to midpoint
-        self.set_enable_torque(True)     # Enable torque
+        self.set_enable_torque(False)    # Disable torque by default
         self.set_target_acceleration(10) # Set target acceleration
-        self.set_target_velocity(5)     # Set target velocity
+        self.set_target_velocity(5)      # Set target velocity
         self.set_target_torque_limit(1000) # Set target torque limit
 
     def stop(self, seq_id=None):
@@ -75,3 +75,25 @@ class FeetechServo(ModbusDevice):
     def set_target_torque_limit(self, torque_limit):
         self.target_torque_limit = torque_limit
         self.send(6, 0x0084, [torque_limit])
+
+    def get_position(self, callback=None):
+        # Read position from 0x0101 (257), 1 uint16, unit: step
+        def default_callback(response):
+            if response:
+                self.curr_position = response[0]
+            else:
+                raise ValueError("Failed to read position")
+        self.recv(3, 0x0101, 1, callback or default_callback)
+
+    def get_torque(self, callback=None):
+        # Read PWM from 0x0103 (259), 1 uint16, unit: 0.1%
+        def default_callback(response):
+            if response:
+                raw = response[0]
+                pwm_signed = raw - 0x10000 if raw >= 0x8000 else raw
+                pwm_percent = pwm_signed * 0.1
+                self.curr_PWM = pwm_signed
+                self.curr_PWM_percent = pwm_percent
+            else:
+                raise ValueError("Failed to read torque (PWM)")
+        self.recv(3, 0x0103, 1, callback or default_callback)

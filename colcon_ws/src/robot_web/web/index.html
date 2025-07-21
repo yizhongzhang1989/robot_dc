@@ -27,16 +27,118 @@
       outline-offset: 2px;
     }
     .motor-card {
-      min-width: 380px;
-      max-width: 400px;
+      min-width: 500px;
+      max-width: 600px;
+    }
+    .platform-card {
+      min-width: 600px;
+      max-width: 800px;
     }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
   <div class="container mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-4 text-center">Robot Motor Control</h1>
-    <div id="motor-container" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: min-content;">
-      <!-- Motor cards will be inserted here -->
+    <h1 class="text-2xl font-bold mb-4 text-center">Robot Motor Dashboard</h1>
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold mb-2">Motor Motion Control</h2>
+      <div id="motor-container" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: min-content;"></div>
+      <div id="motor-group-control" class="flex flex-wrap gap-2 mt-4">
+        <input id="sync-vel-input" type="number" class="border px-2 py-1 w-24" placeholder="Sync Speed" style="margin-right:8px;">
+        <button class="motor-button" onclick="homeBack()">Home Back</button>
+        <button class="motor-button" onclick="homePositive()">Home Positive</button>
+        <button class="motor-button" onclick="homeNegative()">Home Negative</button>
+        <button class="motor-button" onclick="setZero()">Set Zero</button>
+        <button class="motor-button" onclick="setLimit()">Set Limit</button>
+        <button class="motor-button" onclick="resetLimit()">Reset Limit</button>
+        <button class="motor-button" onclick="syncForward()">Sync Forward</button>
+        <button class="motor-button" onclick="syncBackward()">Sync Backward</button>
+        <button class="motor-button bg-red-200" onclick="allMotorStop()">All Motor Stop</button>
+      </div>
+    </div>
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold mb-2">Servo Motion Control</h2>
+      <div id="servo-container" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: min-content;"></div>
+      <div class="flex flex-wrap gap-2 mt-2">
+        <button class="motor-button bg-red-200" onclick="allServoStop()">All Servo Stop</button>
+      </div>
+    </div>
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold mb-2">Platform Motion Control</h2>
+      <div class="bg-white rounded shadow p-6 platform-card flex flex-col gap-4" id="platform-card">
+        <h3 class="text-lg font-medium mb-2">Manual Control</h3>
+        <div class="grid grid-cols-2 gap-8 mb-4">
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-center">Forward/Backward Movement</label>
+            <div class="flex flex-wrap gap-2 justify-center">
+              <button class="motor-button" onclick="platformMove('forward', 1)">Forward</button>
+              <button class="motor-button" onclick="platformMove('forward', 0)">Stop Forward</button>
+              <button class="motor-button" onclick="platformMove('backward', 1)">Backward</button>
+              <button class="motor-button" onclick="platformMove('backward', 0)">Stop Backward</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-center">Up/Down Movement</label>
+            <div class="flex flex-wrap gap-2 justify-center">
+              <button class="motor-button" onclick="platformMove('up', 1)">Up</button>
+              <button class="motor-button" onclick="platformMove('up', 0)">Stop Up</button>
+              <button class="motor-button" onclick="platformMove('down', 1)">Down</button>
+              <button class="motor-button" onclick="platformMove('down', 0)">Stop Down</button>
+            </div>
+          </div>
+        </div>
+        
+        <h3 class="text-lg font-medium mb-2">Timed Control</h3>
+        <div class="grid grid-cols-2 gap-8 mb-4">
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-center">Forward/Backward (seconds)</label>
+            <div class="flex gap-2 justify-center">
+              <input type="number" id="forward-time" class="border px-2 py-1 w-20" placeholder="5.0" step="0.1" min="0.1">
+              <button class="motor-button" onclick="platformTimedMove('forward')">Forward</button>
+              <button class="motor-button" onclick="platformTimedMove('backward')">Backward</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-center">Up/Down (seconds)</label>
+            <div class="flex gap-2 justify-center">
+              <input type="number" id="updown-time" class="border px-2 py-1 w-20" placeholder="3.0" step="0.1" min="0.1">
+              <button class="motor-button" onclick="platformTimedMove('up')">Up</button>
+              <button class="motor-button" onclick="platformTimedMove('down')">Down</button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="flex justify-center gap-2 mt-4">
+          <button class="motor-button bg-red-200" onclick="stopAllTimedMovements()">Stop All Timed Movements</button>
+        </div>
+        
+        <div class="text-sm text-gray-500 mt-2 text-center" id="platform-cmd-result"></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="text-xl font-semibold mb-2">Motor/Servo Observation</h2>
+      <div class="mb-4 flex gap-4">
+        <button id="monitor-start" class="motor-button">Start Monitoring</button>
+        <button id="monitor-stop" class="motor-button">Stop Monitoring</button>
+      </div>
+      <div class="mb-4 flex gap-4">
+        <button id="snapshot-btn" class="motor-button">Take Snapshot</button>
+        <button id="restart-cam-btn" class="motor-button">Restart Camera Node</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="observation-grid">
+        <!-- Real-time data and observation toggle buttons will be inserted here -->
+      </div>
+      <div class="mt-6 flex gap-8" id="snapshot-area" style="display:none;">
+        <div>
+          <h3 class="font-semibold mb-2">100</h3>
+          <img id="img-100" src="" style="max-width:400px;max-height:300px; border: 1px solid #ccc;"/>
+          <div id="time-100" class="text-sm text-gray-600 mt-2"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">101</h3>
+          <img id="img-101" src="" style="max-width:400px;max-height:300px; border: 1px solid #ccc;"/>
+          <div id="time-101" class="text-sm text-gray-600 mt-2"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -130,10 +232,10 @@
       }
     }
 
-    async function init() {
+    async function initMotorCards() {
       try {
         const data = await fetchMotors();
-        const motors = data.motors;
+        const motors = data.motors.filter(m => m === 'motor1' || m === 'motor2');
         const container = document.getElementById("motor-container");
 
         for (const motor_id of motors) {
@@ -146,7 +248,353 @@
       }
     }
 
-    init();
+    async function loadServoCard(servo_id) {
+      const card = document.createElement('div');
+      card.className = 'bg-white rounded shadow p-4 motor-card flex flex-col gap-2';
+      card.innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+          <span class="font-semibold text-lg">${servo_id}</span>
+        </div>
+        <div class="flex flex-col gap-1 mb-2">
+          <div>Position: <span id="${servo_id}-pos">--</span></div>
+          <div>PWM: <span id="${servo_id}-pwm">--</span></div>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <input type="number" class="servo-pos border px-2 py-1 w-24" placeholder="Set Position">
+          <button class="set-pos motor-button">Set Position</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <input type="number" class="servo-vel border px-2 py-1 w-24" placeholder="Set Velocity">
+          <button class="set-vel motor-button">Set Velocity</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <input type="number" class="servo-acc border px-2 py-1 w-24" placeholder="Set Acceleration">
+          <button class="set-acc motor-button">Set Acceleration</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <button class="enable-torque motor-button">Enable Torque</button>
+          <button class="disable-torque motor-button">Disable Torque</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <button class="stop motor-button">Stop</button>
+        </div>
+        <div class="text-sm text-gray-500 mt-1" id="${servo_id}-cmd"></div>
+      `;
+      card.querySelector(".set-pos").onclick = () => {
+        const val = card.querySelector(".servo-pos").value;
+        sendServoCommand(servo_id, "set_pos", val);
+      };
+      card.querySelector(".set-vel").onclick = () => {
+        const val = card.querySelector(".servo-vel").value;
+        sendServoCommand(servo_id, "set_vel", val);
+      };
+      card.querySelector(".set-acc").onclick = () => {
+        const val = card.querySelector(".servo-acc").value;
+        sendServoCommand(servo_id, "set_acc", val);
+      };
+      card.querySelector(".enable-torque").onclick = () => sendServoCommand(servo_id, "set_enable_torque", 1);
+      card.querySelector(".disable-torque").onclick = () => sendServoCommand(servo_id, "set_enable_torque", 0);
+      card.querySelector(".stop").onclick = () => sendServoCommand(servo_id, "stop");
+      return card;
+    }
+    async function sendServoCommand(servo_id, command, value = null) {
+      const payload = value !== null && value !== '' ? { command, value } : { command };
+      const res = await fetch(`/api/${servo_id}/cmd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const resp = await res.json();
+      document.getElementById(`${servo_id}-cmd`).innerText = JSON.stringify(resp);
+      setTimeout(() => updateServoState(servo_id), 500);
+    }
+    async function updateServoState(servo_id) {
+      try {
+        const res = await fetch(`/api/${servo_id}/status`);
+        const data = await res.json();
+        if (data.position !== undefined)
+          document.getElementById(`${servo_id}-pos`).innerText = data.position;
+        if (data.torque !== undefined)
+          document.getElementById(`${servo_id}-pwm`).innerText = data.torque;
+      } catch (err) {}
+    }
+    async function initServoCards() {
+      try {
+        const data = await fetchMotors();
+        const servos = data.motors.filter(m => m === 'motor17' || m === 'motor18');
+        const container = document.getElementById("servo-container");
+        for (const servo_id of servos) {
+          const card = await loadServoCard(servo_id);
+          container.appendChild(card);
+          setInterval(() => updateServoState(servo_id), 1000);
+        }
+      } catch (err) {
+        console.error("Error initializing servos:", err);
+      }
+    }
+
+    // Observation area logic
+    const observationTargets = [
+      { key: 'motor1', label: 'Motor 1' },
+      { key: 'motor2', label: 'Motor 2' },
+      { key: 'servo17', label: 'Servo 17' },
+      { key: 'servo18', label: 'Servo 18' },
+    ];
+
+    function createObservationCard(target) {
+      const card = document.createElement('div');
+      card.className = 'bg-white rounded shadow p-4 motor-card flex flex-col gap-2';
+      card.innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+          <span class="font-semibold text-lg">${target.label}</span>
+        </div>
+        <div class="flex flex-col gap-1">
+          <div>Position: <span id="${target.key}-position">--</span></div>
+          <div>Torque: <span id="${target.key}-torque">--</span></div>
+        </div>
+        <div class="text-sm text-gray-500 mt-1" id="${target.key}-status"></div>
+      `;
+      return card;
+    }
+
+    async function sendObservationControl(target, action) {
+      try {
+        const res = await fetch(`/api/observation/${target}/${action}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.error) {
+          alert(`Operation failed: ${data.error}`);
+        }
+      } catch (err) {
+        alert('Network error, operation failed');
+      }
+    }
+
+    function updateObservationUI(statusMap) {
+      for (const target of observationTargets) {
+        const s = statusMap[target.key] || {};
+        document.getElementById(`${target.key}-position`).textContent = s.position !== undefined ? s.position : '--';
+        document.getElementById(`${target.key}-torque`).textContent = s.torque !== undefined ? s.torque : '--';
+      }
+    }
+
+    function setupObservationGrid() {
+      const grid = document.getElementById('observation-grid');
+      observationTargets.forEach(target => {
+        const card = createObservationCard(target);
+        grid.appendChild(card);
+      });
+      // Unified monitoring button events
+      document.getElementById('monitor-start').onclick = () => {
+        fetch('/monitor_control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'start' })
+        });
+      };
+      document.getElementById('monitor-stop').onclick = () => {
+        fetch('/monitor_control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'stop' })
+        });
+      };
+      
+      // Snapshot button event
+      document.getElementById('snapshot-btn').onclick = async () => {
+        const btn = document.getElementById('snapshot-btn');
+        const area = document.getElementById('snapshot-area');
+        
+        btn.disabled = true;
+        btn.innerText = 'Taking Snapshot...';
+        
+        // Show the snapshot area and clear previous images
+        area.style.display = 'flex';
+        document.getElementById('img-100').src = '';
+        document.getElementById('img-101').src = '';
+        document.getElementById('time-100').innerText = 'Loading...';
+        document.getElementById('time-101').innerText = 'Loading...';
+        
+        try {
+          const res = await fetch('/snapshot', { method: 'POST' });
+          const data = await res.json();
+          
+          if (data.error) {
+            document.getElementById('time-100').innerText = 'Error: ' + data.error;
+            document.getElementById('time-101').innerText = 'Error: ' + data.error;
+          } else {
+            // Handle camera 100
+            if (data['100'] && data['100'].img) {
+              const img100 = document.getElementById('img-100');
+              // Set the base64 image data directly
+              img100.src = 'data:image/jpeg;base64,' + data['100'].img;
+              document.getElementById('time-100').innerText = 'Captured: ' + data['100'].timestamp;
+            } else {
+              document.getElementById('time-100').innerText = 'No image available';
+            }
+            
+            // Handle camera 101
+            if (data['101'] && data['101'].img) {
+              const img101 = document.getElementById('img-101');
+              // Set the base64 image data directly
+              img101.src = 'data:image/jpeg;base64,' + data['101'].img;
+              document.getElementById('time-101').innerText = 'Captured: ' + data['101'].timestamp;
+            } else {
+              document.getElementById('time-101').innerText = 'No image available';
+            }
+          }
+        } catch (err) {
+          document.getElementById('time-100').innerText = 'Network error';
+          document.getElementById('time-101').innerText = 'Network error';
+        } finally {
+          btn.disabled = false;
+          btn.innerText = 'Take Snapshot';
+        }
+      };
+
+      // Restart Camera Node button event
+      document.getElementById('restart-cam-btn').onclick = async () => {
+        const btn = document.getElementById('restart-cam-btn');
+        
+        btn.disabled = true;
+        btn.innerText = 'Restarting...';
+        
+        try {
+          const res = await fetch('/restart_camera', { method: 'POST' });
+          const data = await res.json();
+          
+          if (data.success) {
+            alert('Camera node restart initiated successfully!');
+          } else {
+            alert('Failed to restart camera node: ' + data.message);
+          }
+        } catch (error) {
+          console.error('Error restarting camera node:', error);
+          alert('Error restarting camera node: ' + error.message);
+        } finally {
+          btn.disabled = false;
+          btn.innerText = 'Restart Camera Node';
+        }
+      };
+    }
+
+    async function pollObservationStatus() {
+      try {
+        const res = await fetch('/api/all_status');
+        const data = await res.json();
+        updateObservationUI(data);
+      } catch (err) {
+        // Do not prompt on network error
+      }
+    }
+
+    // Motor Group Control JS
+    function homeBack() {
+      sendCommand('motor1', 'home_back');
+      sendCommand('motor2', 'home_back');
+    }
+    function homePositive() {
+      sendCommand('motor1', 'set_home 1000 30 250 250 200 200');
+      sendCommand('motor2', 'set_home 1000 30 250 250 200 200');
+      sendCommand('motor1', 'home_pos');
+      sendCommand('motor2', 'home_pos');
+    }
+    function homeNegative() {
+      sendCommand('motor1', 'set_home 1000 30 250 250 200 200');
+      sendCommand('motor2', 'set_home 1000 30 250 250 200 200');
+      sendCommand('motor1', 'home_neg');
+      sendCommand('motor2', 'home_neg');
+    }
+    function setZero() {
+      sendCommand('motor1', 'set_zero');
+      sendCommand('motor2', 'set_zero');
+    }
+    function setLimit() {
+      sendCommand('motor1', 'set_limit 100 -902000');
+      sendCommand('motor2', 'set_limit 100 -902000');
+    }
+    function resetLimit() {
+      sendCommand('motor1', 'reset_limit');
+      sendCommand('motor2', 'reset_limit');
+    }
+    function syncForward() {
+      const v = Math.abs(Number(document.getElementById('sync-vel-input').value));
+      sendCommand('motor1', `set_vel ${v}`);
+      sendCommand('motor2', `set_vel ${v}`);
+      sendCommand('motor1', 'move_vel');
+      sendCommand('motor2', 'move_vel');
+    }
+    function syncBackward() {
+      const v = Math.abs(Number(document.getElementById('sync-vel-input').value));
+      sendCommand('motor1', `set_vel -${v}`);
+      sendCommand('motor2', `set_vel -${v}`);
+      sendCommand('motor1', 'move_vel');
+      sendCommand('motor2', 'move_vel');
+    }
+
+    // All Motor Stop
+    function allMotorStop() {
+      sendCommand('motor1', 'stop');
+      sendCommand('motor2', 'stop');
+    }
+
+    function platformMove(cmd, val) {
+      fetch('/api/platform/cmd', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({command: cmd, value: val})
+      })
+      .then(res => res.json())
+      .then(resp => {
+        document.getElementById('platform-cmd-result').innerText = JSON.stringify(resp);
+      });
+    }
+
+    function platformTimedMove(direction) {
+      let duration;
+      
+      // Get duration based on direction
+      if (direction === 'forward' || direction === 'backward') {
+        duration = document.getElementById('forward-time').value;
+      } else if (direction === 'up' || direction === 'down') {
+        duration = document.getElementById('updown-time').value;
+      }
+      
+      if (!duration || duration <= 0) {
+        document.getElementById('platform-cmd-result').innerText = 'Please enter a valid duration > 0';
+        return;
+      }
+      
+      fetch('/api/platform/timed_move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({direction: direction, duration: parseFloat(duration)})
+      })
+      .then(res => res.json())
+      .then(resp => {
+        document.getElementById('platform-cmd-result').innerText = 
+          `Timed ${direction} for ${duration}s: ${JSON.stringify(resp)}`;
+      })
+      .catch(err => {
+        document.getElementById('platform-cmd-result').innerText = 'Error: ' + err.message;
+      });
+    }
+
+    function stopAllTimedMovements() {
+      // Send stop commands for all directions
+      const directions = ['forward', 'backward', 'up', 'down'];
+      directions.forEach(dir => {
+        platformMove(dir, 0);
+      });
+      document.getElementById('platform-cmd-result').innerText = 'Stopping all timed movements...';
+    }
+
+    // Initialize
+    window.addEventListener('DOMContentLoaded', () => {
+      initMotorCards();
+      initServoCards();
+      setupObservationGrid();
+      setInterval(pollObservationStatus, 200);
+    });
   </script>
 </body>
 </html>
