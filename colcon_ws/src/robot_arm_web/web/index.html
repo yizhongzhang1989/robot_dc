@@ -488,6 +488,240 @@
       width: 4rem;
       text-align: right;
     }
+    
+    /* Move Control specific styles */
+    .move-control-value {
+      color: #3b82f6 !important; /* Blue color for joint angles */
+      font-weight: 700;
+      text-shadow: 0 1px 2px rgba(59, 130, 246, 0.1);
+    }
+    
+    .move-control-tcp-pos {
+      color: #3b82f6 !important; /* Changed to blue to match joint angles */
+      font-weight: 700;
+      text-shadow: 0 1px 2px rgba(59, 130, 246, 0.1);
+    }
+    
+    .move-control-tcp-rot {
+      color: #3b82f6 !important; /* Changed to blue to match joint angles */
+      font-weight: 700;
+      text-shadow: 0 1px 2px rgba(59, 130, 246, 0.1);
+    }
+    
+    /* Input field styles for move control */
+    .move-control-input {
+      border: 2px solid #e5e7eb;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #3b82f6 !important; /* Blue color to match the original design */
+      font-weight: 700;
+      text-align: center;
+      outline: none;
+      transition: all 0.2s;
+      padding: 4px 8px;
+      min-width: 100px;
+      max-width: 100px;
+    }
+    
+    .move-control-input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      background: #f8faff;
+    }
+    
+    .move-control-input:hover {
+      border-color: #9ca3af;
+    }
+    
+    /* Hide number input spinners */
+    .move-control-input::-webkit-outer-spin-button,
+    .move-control-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    
+    .move-control-input[type=number] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    
+    /* Control buttons for move section */
+    .control-button {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      background: #f9fafb;
+      color: #374151; /* Black color for both + and - */
+      font-size: 18px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+      flex-shrink: 0; /* Prevent buttons from shrinking */
+    }
+    
+    .control-button:hover {
+      background: #f3f4f6;
+      border-color: #9ca3af;
+      transform: translateY(-1px);
+    }
+    
+    .control-button:active,
+    .control-button.long-pressing {
+      background: #e5e7eb;
+      transform: translateY(0);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    .control-button.long-pressing {
+      background: #dbeafe; /* Light blue background during long press */
+      border-color: #3b82f6;
+      animation: pulse-long-press 0.8s infinite;
+    }
+    
+    @keyframes pulse-long-press {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+    
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0; /* Allow flex items to shrink */
+    }
+    
+    .control-value-container {
+      min-width: 100px; /* Increased width to accommodate negative signs */
+      text-align: center;
+      flex-shrink: 0;
+    }
+    
+    /* Modal styles for joint position dialog */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      min-width: 400px;
+      max-width: 500px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    
+    .modal-header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 8px;
+    }
+    
+    .modal-subtitle {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+    
+    .modal-joint-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    
+    .modal-joint-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+    
+    .modal-joint-label {
+      font-weight: 500;
+      color: #374151;
+      min-width: 80px;
+    }
+    
+    .modal-joint-input {
+      border: 2px solid #e5e7eb;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #3b82f6;
+      font-weight: 600;
+      text-align: center;
+      outline: none;
+      transition: all 0.2s;
+      padding: 8px 12px;
+      width: 120px;
+      font-size: 0.9rem;
+    }
+    
+    .modal-joint-input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      background: #f8faff;
+    }
+    
+    .modal-joint-input:hover {
+      border-color: #9ca3af;
+    }
+    
+    .modal-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    
+    .modal-button {
+      padding: 10px 24px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      font-size: 0.9rem;
+    }
+    
+    .modal-button-primary {
+      background: #3b82f6;
+      color: white;
+    }
+    
+    .modal-button-primary:hover {
+      background: #2563eb;
+      transform: translateY(-1px);
+    }
+    
+    .modal-button-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    
+    .modal-button-secondary:hover {
+      background: #e5e7eb;
+      transform: translateY(-1px);
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
@@ -595,6 +829,169 @@
       <!-- Command Status -->
       <div class="mt-6 text-center">
         <div id="commandStatus" class="text-sm text-gray-600">Ready to send commands</div>
+      </div>
+    </div>
+
+    <!-- Move Control Section -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-6">🎮 Move Control</h2>
+      
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Joint Angles -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-4 text-base">🔗 Joint Angles</h3>
+          <div class="space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Joint 1:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustJoint(1, -1)" title="Decrease Joint 1">−</button>
+                <input type="number" id="moveJoint1" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateJointFromInput(1)" 
+                       onkeydown="handleInputKeydown(event, 'joint', 1)" title="Enter joint angle in degrees">
+                <button class="control-button increase" onclick="adjustJoint(1, 1)" title="Increase Joint 1">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Joint 2:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustJoint(2, -1)" title="Decrease Joint 2">−</button>
+                <input type="number" id="moveJoint2" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateJointFromInput(2)" 
+                       onkeydown="handleInputKeydown(event, 'joint', 2)" title="Enter joint angle in degrees">
+                <button class="control-button increase" onclick="adjustJoint(2, 1)" title="Increase Joint 2">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Joint 3:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustJoint(3, -1)" title="Decrease Joint 3">−</button>
+                <input type="number" id="moveJoint3" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateJointFromInput(3)" 
+                       onkeydown="handleInputKeydown(event, 'joint', 3)" title="Enter joint angle in degrees">
+                <button class="control-button increase" onclick="adjustJoint(3, 1)" title="Increase Joint 3">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Joint 4:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustJoint(4, -1)" title="Decrease Joint 4">−</button>
+                <input type="number" id="moveJoint4" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateJointFromInput(4)" 
+                       onkeydown="handleInputKeydown(event, 'joint', 4)" title="Enter joint angle in degrees">
+                <button class="control-button increase" onclick="adjustJoint(4, 1)" title="Increase Joint 4">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Joint 5:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustJoint(5, -1)" title="Decrease Joint 5">−</button>
+                <input type="number" id="moveJoint5" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateJointFromInput(5)" 
+                       onkeydown="handleInputKeydown(event, 'joint', 5)" title="Enter joint angle in degrees">
+                <button class="control-button increase" onclick="adjustJoint(5, 1)" title="Increase Joint 5">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Joint 6:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustJoint(6, -1)" title="Decrease Joint 6">−</button>
+                <input type="number" id="moveJoint6" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateJointFromInput(6)" 
+                       onkeydown="handleInputKeydown(event, 'joint', 6)" title="Enter joint angle in degrees">
+                <button class="control-button increase" onclick="adjustJoint(6, 1)" title="Increase Joint 6">+</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Move to Target Angle Button -->
+          <div class="mt-4 text-center">
+            <button 
+              id="moveToTargetBtn"
+              class="robot-arm-button bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg text-sm"
+              onclick="openMoveToTargetDialog()"
+            >
+              🎯 Move to Target Angle
+            </button>
+          </div>
+        </div>
+
+        <!-- TCP Position -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-4 text-base">📍 TCP Position</h3>
+          <div class="space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">X:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustTcp('x', -1)" title="Decrease X">−</button>
+                <input type="number" id="moveTcpX" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateTcpFromInput('x')" 
+                       onkeydown="handleInputKeydown(event, 'tcp', 'x')" title="Enter X position in mm">
+                <button class="control-button increase" onclick="adjustTcp('x', 1)" title="Increase X">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Y:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustTcp('y', -1)" title="Decrease Y">−</button>
+                <input type="number" id="moveTcpY" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateTcpFromInput('y')" 
+                       onkeydown="handleInputKeydown(event, 'tcp', 'y')" title="Enter Y position in mm">
+                <button class="control-button increase" onclick="adjustTcp('y', 1)" title="Increase Y">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Z:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustTcp('z', -1)" title="Decrease Z">−</button>
+                <input type="number" id="moveTcpZ" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateTcpFromInput('z')" 
+                       onkeydown="handleInputKeydown(event, 'tcp', 'z')" title="Enter Z position in mm">
+                <button class="control-button increase" onclick="adjustTcp('z', 1)" title="Increase Z">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Rx:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustTcp('rx', -1)" title="Decrease Rx">−</button>
+                <input type="number" id="moveTcpRx" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateTcpFromInput('rx')" 
+                       onkeydown="handleInputKeydown(event, 'tcp', 'rx')" title="Enter Rx rotation in degrees">
+                <button class="control-button increase" onclick="adjustTcp('rx', 1)" title="Increase Rx">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Ry:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustTcp('ry', -1)" title="Decrease Ry">−</button>
+                <input type="number" id="moveTcpRy" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateTcpFromInput('ry')" 
+                       onkeydown="handleInputKeydown(event, 'tcp', 'ry')" title="Enter Ry rotation in degrees">
+                <button class="control-button increase" onclick="adjustTcp('ry', 1)" title="Increase Ry">+</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="data-label text-sm">Rz:</span>
+              <div class="control-group">
+                <button class="control-button decrease" onclick="adjustTcp('rz', -1)" title="Decrease Rz">−</button>
+                <input type="number" id="moveTcpRz" class="move-control-input font-mono text-lg control-value-container" 
+                       value="0" step="0.1" onchange="updateTcpFromInput('rz')" 
+                       onkeydown="handleInputKeydown(event, 'tcp', 'rz')" title="Enter Rz rotation in degrees">
+                <button class="control-button increase" onclick="adjustTcp('rz', 1)" title="Increase Rz">+</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Move to Target Position Button -->
+          <div class="mt-4 text-center">
+            <button 
+              id="moveToTargetTcpBtn"
+              class="robot-arm-button bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg text-sm"
+              onclick="openMoveToTargetTcpDialog()"
+            >
+              📍 Move to Target Position
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -779,6 +1176,98 @@
           class="text-gray-500 hover:text-gray-700 text-sm"
         >
           Clear Log
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move to Target Angle Modal -->
+  <div id="moveToTargetModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">🎯 Move to Target Angle</h3>
+        <p class="modal-subtitle">Set target joint angles (degrees)</p>
+      </div>
+      
+      <div class="modal-joint-grid">
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 1:</label>
+          <input type="number" id="targetJoint1" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 2:</label>
+          <input type="number" id="targetJoint2" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 3:</label>
+          <input type="number" id="targetJoint3" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 4:</label>
+          <input type="number" id="targetJoint4" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 5:</label>
+          <input type="number" id="targetJoint5" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 6:</label>
+          <input type="number" id="targetJoint6" class="modal-joint-input" value="0" step="0.1">
+        </div>
+      </div>
+      
+      <div class="modal-buttons">
+        <button class="modal-button modal-button-secondary" onclick="closeMoveToTargetDialog()">
+          Cancel
+        </button>
+        <button class="modal-button modal-button-primary" onclick="confirmMoveToTarget()">
+          Move to Position
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move to Target TCP Position Modal -->
+  <div id="moveToTargetTcpModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">📍 Move to Target Position</h3>
+        <p class="modal-subtitle">Set target TCP position and orientation</p>
+      </div>
+      
+      <div class="modal-joint-grid">
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">X (mm):</label>
+          <input type="number" id="targetTcpX" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Y (mm):</label>
+          <input type="number" id="targetTcpY" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Z (mm):</label>
+          <input type="number" id="targetTcpZ" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Rx (°):</label>
+          <input type="number" id="targetTcpRx" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Ry (°):</label>
+          <input type="number" id="targetTcpRy" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Rz (°):</label>
+          <input type="number" id="targetTcpRz" class="modal-joint-input" value="0" step="0.1">
+        </div>
+      </div>
+      
+      <div class="modal-buttons">
+        <button class="modal-button modal-button-secondary" onclick="closeMoveToTargetTcpDialog()">
+          Cancel
+        </button>
+        <button class="modal-button modal-button-primary" onclick="confirmMoveToTargetTcp()">
+          Move to Position
         </button>
       </div>
     </div>
