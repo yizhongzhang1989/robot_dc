@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="duco_gcr5_910_urdf">
+  <link name="rotated_base"/>  <!-- dummy root frame -->
+  <joint name="base_rotation" type="fixed">
+    <parent link="rotated_base"/>
+    <child link="base_link"/>
+    <origin rpy="0 0 -1.5708" xyz="0 0 0"/>  <!-- -90° in radians -->
+  </joint>
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-0.0040486524025784 0.0198244231719463 -2.12214937475776E-05"
+        rpy="0 0 0" />
+      <mass
+        value="0.729857387154036" />
+      <inertia
+        ixx="0.0013739098152086"
+        ixy="-2.29528040086667E-05"
+        ixz="4.44203950037753E-06"
+        iyy="0.00232503532405019"
+        iyz="-2.05595022856961E-07"
+        izz="0.00115595774024397" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="link1">
+    <inertial>
+      <origin
+        xyz="0.118567595867793 0.0138158279334277 7.82435878153987E-07"
+        rpy="0 0 0" />
+      <mass
+        value="0.424385142287687" />
+      <inertia
+        ixx="0.00100544373455375"
+        ixy="-7.22022716969082E-05"
+        ixz="-4.12562825823038E-09"
+        iyy="0.000748014346167276"
+        iyz="-1.86361251641312E-08"
+        izz="0.000757772987773269" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint1"
+    type="continuous">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5707963267949 -1.5707963267949 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="link1" />
+    <axis
+      xyz="1 0 0" />
+  </joint>
+  <link
+    name="link2">
+    <inertial>
+      <origin
+        xyz="0.134183947239288 0.212437902022544 2.31844805023096E-06"
+        rpy="0 0 0" />
+      <mass
+        value="1.10092744951388" />
+      <inertia
+        ixx="0.00554563963586187"
+        ixy="7.62928404555415E-08"
+        ixz="-2.1404437878973E-08"
+        iyy="0.00196578074419503"
+        iyz="-1.78319054858153E-08"
+        izz="0.00501514587586295" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint2"
+    type="continuous">
+    <origin
+      xyz="0.122 0.00524417868977412 0"
+      rpy="-3.14159265358979 0 1.5707963267949" />
+    <parent
+      link="link1" />
+    <child
+      link="link2" />
+    <axis
+      xyz="1 0 0" />
+  </joint>
+  <link
+    name="link3">
+    <inertial>
+      <origin
+        xyz="0.0113516326815518 0.205293053790333 6.71353674407625E-07"
+        rpy="0 0 0" />
+      <mass
+        value="0.330047308889306" />
+      <inertia
+        ixx="0.0011527832445708"
+        ixy="3.99805820469894E-06"
+        ixz="-1.58694662552021E-09"
+        iyy="0.000492016622584404"
+        iyz="7.63783990242803E-09"
+        izz="0.00111416047705986" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint3"
+    type="continuous">
+    <origin
+      xyz="0 0.425000000002073 0"
+      rpy="0 0 0" />
+    <parent
+      link="link2" />
+    <child
+      link="link3" />
+    <axis
+      xyz="1 0 0" />
+  </joint>
+  <link
+    name="link4">
+    <inertial>
+      <origin
+        xyz="0.102362611254899 -0.00629089560977347 -2.19459952688426E-06"
+        rpy="0 0 0" />
+      <mass
+        value="0.165024183426076" />
+      <inertia
+        ixx="0.000186683227385903"
+        ixy="-1.53079413918135E-05"
+        ixz="1.99509573836181E-09"
+        iyy="0.000162469280434025"
+        iyz="-1.77284546933651E-09"
+        izz="0.000151984362418302" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link4.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint4"
+    type="continuous">
+    <origin
+      xyz="0.00701337927126169 0.391999999998075 0"
+      rpy="0 0 0" />
+    <parent
+      link="link3" />
+    <child
+      link="link4" />
+    <axis
+      xyz="1 0 0" />
+  </joint>
+  <link
+    name="link5">
+    <inertial>
+      <origin
+        xyz="-2.00659942386226E-06 -0.00700040373361224 -0.0857343335014117"
+        rpy="0 0 0" />
+      <mass
+        value="0.148289061509009" />
+      <inertia
+        ixx="0.0001380045055437"
+        ixy="-3.70655324366817E-09"
+        ixz="-4.29317234540819E-10"
+        iyy="0.000148483393347191"
+        iyz="1.53021079041649E-05"
+        izz="0.000163207790649944" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link5.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link5.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint5"
+    type="continuous">
+    <origin
+      xyz="0.128242442033315 0 0"
+      rpy="1.5707963267949 1.5707963267949 0" />
+    <parent
+      link="link4" />
+    <child
+      link="link5" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="link6">
+    <inertial>
+      <origin
+        xyz="2.34165677137957E-05 -0.0266268928716875 6.87422783407499E-05"
+        rpy="0 0 0" />
+      <mass
+        value="0.270719809172517" />
+      <inertia
+        ixx="0.000141068608415596"
+        ixy="3.17379558832912E-10"
+        ixz="-1.97882858209713E-09"
+        iyy="0.000209132460728801"
+        iyz="9.39235554866729E-08"
+        izz="0.000140908406420681" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link6.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_gcr5_910_urdf/meshes/link6.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint6"
+    type="continuous">
+    <origin
+      xyz="0 0.0480000000046998 -0.0999999999991573"
+      rpy="0 0 -3.14159265358979" />
+    <parent
+      link="link5" />
+    <child
+      link="link6" />
+    <axis
+      xyz="0 -1 0" />
+  </joint>
+</robot>

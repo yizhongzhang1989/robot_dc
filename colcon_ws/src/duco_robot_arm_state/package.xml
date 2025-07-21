@@ -1,18 +1,14 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>robot_bringup</name>
+  <name>duco_robot_arm_state</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="yizhongzhang1989@gmail.com">jetson</maintainer>
+  <description>ROS2 package for monitoring Duco robot arm state via TCP port 2001</description>
+  <maintainer email="yizhongzhang1989@gmail.com">a</maintainer>
   <license>TODO: License declaration</license>
 
-  <exec_depend>launch</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
-  <exec_depend>modbus_driver</exec_depend>
-  <exec_depend>leadshine_motor</exec_depend>
-  <exec_depend>duco_robot_arm</exec_depend>
-  <exec_depend>robot_arm_web</exec_depend>
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
