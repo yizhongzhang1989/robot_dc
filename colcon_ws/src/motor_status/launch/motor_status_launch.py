@@ -4,9 +4,9 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package='detector',
-            executable='detector_node',
-            name='detector_node',
+            package='motor_status',
+            executable='motor_status_node',
+            name='motor_status_node',
             output='screen',
             emulate_tty=True,
         ),

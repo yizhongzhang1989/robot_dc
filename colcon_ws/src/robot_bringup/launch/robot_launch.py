@@ -37,10 +37,10 @@ def generate_launch_description():
         'launch',
         'web_server_launch.py'
     )
-    detector_path = os.path.join(
-        get_package_share_directory('detector'),
+    motor_status_path = os.path.join(
+        get_package_share_directory('motor_status'),
         'launch',
-        'detector_launch.py'
+        'motor_status_launch.py'
     )
     cam_node_path = os.path.join(
         get_package_share_directory('cam_node'),
@@ -78,9 +78,9 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(web_path))]
     )
 
-    detector_launch = TimerAction(
+    motor_status_launch = TimerAction(
         period=7.0,
-        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(detector_path))]
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(motor_status_path))]
     )
 
     cam_node_launch = TimerAction(
@@ -95,6 +95,6 @@ def generate_launch_description():
         platform_launch,
         teleop_launch,
         web_launch,
-        detector_launch,
+        motor_status_launch,
         cam_node_launch
     ])

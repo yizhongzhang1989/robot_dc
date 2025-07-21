@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = 'detector'
+package_name = 'motor_status'
 
 setup(
     name=package_name,
@@ -9,7 +9,7 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/detector_launch.py']),
+        ('share/' + package_name + '/launch', ['launch/motor_status_launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'detector_node = detector.detector_node:main',
+            'motor_status_node = motor_status.motor_status_node:main',
         ],
     },
 ) 

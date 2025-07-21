@@ -8,9 +8,9 @@ import threading
 from typing import Optional, List
 from rclpy.timer import Timer
 
-class DetectorNode(Node):
+class MotorStatusNode(Node):
     def __init__(self):
-        super().__init__('detector_node')
+        super().__init__('motor_status_node')
         self.motor_ids = [1, 2]
         self.servo_ids = [17, 18]
         self.use_ack_patch = 1
@@ -95,7 +95,7 @@ class DetectorNode(Node):
 
 def main():
     rclpy.init()
-    node = DetectorNode()
+    node = MotorStatusNode()
     try:
         rclpy.spin(node)
     finally:
