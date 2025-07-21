@@ -1,29 +1,155 @@
 import requests
 import json
 from math import pi
+import time
 
 # 机器人臂Web服务器地址
 BASE_URL = "http://localhost:8080"
 
+# 新增函数：获取实际关节角度和TCP位置
+def get_actual_joint_angles_and_tcp_position():
+    """
+    通过HTTP POST获取机器人实际关节角度和TCP位置
+    
+    对应网页API: GET /api/robot_arm/state
+    返回机器人当前实际状态，包括：
+    - jointActualPosition: 实际关节角度 (弧度)
+    - TCPActualPosition: 实际TCP位置 [X, Y, Z, Rx, Ry, Rz] (米, 弧度)
+    
+    Returns:
+        dict: 包含关节角度和TCP位置的字典，如果失败返回None
+        {
+            'joint_angles_deg': [j1, j2, j3, j4, j5, j6],  # 关节角度(度)
+            'joint_angles_rad': [j1, j2, j3, j4, j5, j6],  # 关节角度(弧度)
+            'tcp_position_mm': [x, y, z, rx, ry, rz],      # TCP位置(毫米, 度)
+            'tcp_position_raw': [x, y, z, rx, ry, rz],     # TCP位置(米, 弧度)
+            'success': True/False
+        }
+    """
+    # GET 请求获取机器人状态
+    url_getRobotState = f"{BASE_URL}/api/robot_arm/state"
+    headers = {'Content-Type': 'application/json'}
+    
+    try:
+        response = requests.get(url_getRobotState, headers=headers)
+        
+        if response.ok:
+            robot_state = response.json()
+            
+            # 提取关节实际位置 (弧度)
+            joint_angles_rad = robot_state.get('jointActualPosition', [])
+            if not joint_angles_rad or len(joint_angles_rad) < 6:
+                print("❌ 无法获取关节实际位置数据")
+                return {
+                    'joint_angles_deg': [],
+                    'joint_angles_rad': [],
+                    'tcp_position_mm': [],
+                    'tcp_position_raw': [],
+                    'success': False,
+                    'error': '关节位置数据无效'
+                }
+            
+            # 提取TCP实际位置 (米, 弧度)
+            tcp_position_raw = robot_state.get('TCPActualPosition', [])
+            if not tcp_position_raw or len(tcp_position_raw) < 6:
+                print("❌ 无法获取TCP实际位置数据")
+                return {
+                    'joint_angles_deg': [],
+                    'joint_angles_rad': [],
+                    'tcp_position_mm': [],
+                    'tcp_position_raw': [],
+                    'success': False,
+                    'error': 'TCP位置数据无效'
+                }
+            
+            # 只取前6个关节 (第7个关节是保留的)
+            joint_angles_rad_6dof = joint_angles_rad[:6]
+            
+            # 转换关节角度：弧度 -> 度
+            joint_angles_deg = [angle * 180 / pi for angle in joint_angles_rad_6dof]
+            
+            # 转换TCP位置：米 -> 毫米，弧度 -> 度
+            tcp_position_mm = [
+                tcp_position_raw[0] * 1000,  # X: 米 -> 毫米
+                tcp_position_raw[1] * 1000,  # Y: 米 -> 毫米  
+                tcp_position_raw[2] * 1000,  # Z: 米 -> 毫米
+                tcp_position_raw[3] * 180 / pi,  # Rx: 弧度 -> 度
+                tcp_position_raw[4] * 180 / pi,  # Ry: 弧度 -> 度
+                tcp_position_raw[5] * 180 / pi,  # Rz: 弧度 -> 度
+            ]
+            
+            result = {
+                'joint_angles_deg': joint_angles_deg,
+                'joint_angles_rad': joint_angles_rad_6dof,
+                'tcp_position_mm': tcp_position_mm,
+                'tcp_position_raw': tcp_position_raw,
+                'success': True
+            }
+            
+            # # 打印结果
+            # print("✅ 成功获取机器人实际状态:")
+            # print(f"关节角度 (度): {[f'{angle:.2f}' for angle in joint_angles_deg]}")
+            # print(f"关节角度 (弧度): {[f'{angle:.4f}' for angle in joint_angles_rad_6dof]}")
+            # print(f"TCP位置 (mm, °): X={tcp_position_mm[0]:.1f}, Y={tcp_position_mm[1]:.1f}, Z={tcp_position_mm[2]:.1f}")
+            # print(f"TCP姿态 (°): Rx={tcp_position_mm[3]:.2f}, Ry={tcp_position_mm[4]:.2f}, Rz={tcp_position_mm[5]:.2f}")
+            # print(f"TCP位置 (m, rad): X={tcp_position_raw[0]:.4f}, Y={tcp_position_raw[1]:.4f}, Z={tcp_position_raw[2]:.4f}")
+            # print(f"TCP姿态 (rad): Rx={tcp_position_raw[3]:.4f}, Ry={tcp_position_raw[4]:.4f}, Rz={tcp_position_raw[5]:.4f}")
+            
+            return joint_angles_deg,tcp_position_mm
+            
+        else:
+            print(f"❌ 获取机器人状态失败: HTTP {response.status_code}")
+            print(f"响应内容: {response.text}")
+            return {
+                'joint_angles_deg': [],
+                'joint_angles_rad': [],
+                'tcp_position_mm': [],
+                'tcp_position_raw': [],
+                'success': False,
+                'error': f'HTTP {response.status_code}: {response.text}'
+            }
+            
+    except requests.exceptions.ConnectionError:
+        print("❌ 无法连接到机器人Web服务器，请确保服务器正在运行")
+        return {
+            'joint_angles_deg': [],
+            'joint_angles_rad': [],
+            'tcp_position_mm': [],
+            'tcp_position_raw': [],
+            'success': False,
+            'error': '无法连接到Web服务器'
+        }
+    except Exception as e:
+        print(f"❌ 获取机器人状态时发生错误: {e}")
+        return {
+            'joint_angles_deg': [],
+            'joint_angles_rad': [],
+            'tcp_position_mm': [],
+            'tcp_position_raw': [],
+            'success': False,
+            'error': str(e)
+        }
+
 # Move to Target Joint Position (关节角度位置移动)
-def move_to_target_joint_position():
+def move_to_target_joint_position(target_angles_deg):
     """
     网页按钮: Move to Target Angle
     对应 confirmMoveToTarget() 函数
     url_moveToTargetJoint = "http://localhost:8080/api/robot_arm/cmd"
-    params_moveToTargetJoint = {"command": "servoj [0.000000,-1.570796,1.570796,0.000000,1.570796,0.000000] 1.0 1.0 False 200 65"}
+    params_moveToTargetJoint = {"command": "servoj [0.000000,-1.570796,1.570796,0.000000,1.570796,0.000000] 0.5 0.5 False 150 35"}
     headers = {'Content-Type': 'application/json'}
     """
     # 目标关节角度 (度)
     # target_joint_angles_deg = [0,0,0,0,0,0]
-    target_joint_angles_deg = [-47.34, 6.09, -103.28, 11.85, 88.99, 40.72]
+    # target_joint_angles_deg = [-47.34, 6.09, -103.28, 11.85, 88.99, 40.72]
+    target_joint_angles_deg = target_angles_deg  # 传入的目标角度
     
     # 转换为弧度
     target_joint_angles_rad = [angle * pi / 180 for angle in target_joint_angles_deg]
     
     # 生成 servoj 命令
     joint_angles_str = ','.join([f"{angle:.6f}" for angle in target_joint_angles_rad])
-    servoj_command = f"servoj [{joint_angles_str}] 0.5 0.5 False 200 65"
+    servoj_command = f"servoj [{joint_angles_str}] 0.5 0.5 False 150 35"
     
     # POST 请求设置
     url_moveToTargetJoint = f"{BASE_URL}/api/robot_arm/cmd"
@@ -34,47 +160,46 @@ def move_to_target_joint_position():
     
     try:
         response = requests.post(url_moveToTargetJoint, json=params_moveToTargetJoint, headers=headers)
+        time.sleep(2)  # 等待2秒以确保命令发送成功
         if response.ok:
             result = response.json()
             print(f"✅ Move to target joint position success: {result}")
-            print(f"Target angles (deg): {target_joint_angles_deg}")
+            # print(f"Target angles (deg): {target_joint_angles_deg}")
         else:
             print(f"❌ Failed to move to target joint position: {response.status_text}")
     except Exception as e:
         print(f"❌ Error sending move to target joint command: {e}")
 
 # Move to Target TCP Position (TCP位置移动)
-def move_to_target_tcp_position():
+def move_to_target_tcp_position(target_position_mm):
     """
     网页按钮: Move to Target Position
     对应 confirmMoveToTargetTcp() 函数
     注意: 这个需要先获取当前TCP位置来计算偏移量
     url_moveToTargetTcp = "http://localhost:8080/api/robot_arm/cmd"
-    params_moveToTargetTcp = {"command": "servo_tcp [0.100000,-0.050000,0.050000,-3.141593,0.000000,0.000000] 1.0 1.0 \"\" False 150 35"}
+    params_moveToTargetTcp = {"command": "servo_tcp [0.100000,-0.050000,0.050000,-3.141593,0.000000,0.000000] 0.5 0.5 \"\" False 150 35"}
     headers = {'Content-Type': 'application/json'}
     """
     # 目标TCP位置 (mm 和 度)
     target_tcp_position = {
-        'x': 500.0,    # mm
-        'y': 200.0,    # mm  
-        'z': 400.0,    # mm
-        'rx': 180.0,   # 度
-        'ry': 0.0,     # 度
-        'rz': 0.0      # 度
+        'x': target_position_mm[0],    # mm
+        'y': target_position_mm[1],    # mm  
+        'z': target_position_mm[2],    # mm
+        'rx': target_position_mm[3],   # 度
+        'ry': target_position_mm[4],     # 度
+        'rz': target_position_mm[5]      # 度
     }
     
     # 首先获取当前机器人状态来计算偏移量
-    # 注意: 实际使用时需要先获取当前TCP位置
-    # 这里为示例使用假设的当前位置
-    current_tcp_position = [0.4, 0.15, 0.35, pi, 0.0, 0.0]  # [x(m), y(m), z(m), rx(rad), ry(rad), rz(rad)]
-    
+    current_tcp_position = get_actual_joint_angles_and_tcp_position()[1]
+
     # 计算偏移量 (使用网页中的特殊偏移计算逻辑)
-    current_x_mm = current_tcp_position[0] * 1000
-    current_y_mm = current_tcp_position[1] * 1000  
-    current_z_mm = current_tcp_position[2] * 1000
-    current_rx_deg = current_tcp_position[3] * 180 / pi
-    current_ry_deg = current_tcp_position[4] * 180 / pi
-    current_rz_deg = current_tcp_position[5] * 180 / pi
+    current_x_mm = current_tcp_position[0]
+    current_y_mm = current_tcp_position[1]
+    current_z_mm = current_tcp_position[2]
+    current_rx_deg = current_tcp_position[3]
+    current_ry_deg = current_tcp_position[4]
+    current_rz_deg = current_tcp_position[5]
     
     # 特殊偏移计算逻辑: 正值用 -(target - current), 负值用 (target - current)
     if target_tcp_position['x'] >= 0:
@@ -120,166 +245,26 @@ def move_to_target_tcp_position():
     
     try:
         response = requests.post(url_moveToTargetTcp, json=params_moveToTargetTcp, headers=headers)
+        time.sleep(2)  # 等待2秒以确保命令发送成功
         if response.ok:
             result = response.json()
             print(f"✅ Move to target TCP position success: {result}")
-            print(f"Target TCP: X={target_tcp_position['x']}mm, Y={target_tcp_position['y']}mm, Z={target_tcp_position['z']}mm")
-            print(f"Target orientation: Rx={target_tcp_position['rx']}°, Ry={target_tcp_position['ry']}°, Rz={target_tcp_position['rz']}°")
+            # print(f"Target TCP: X={target_tcp_position['x']}mm, Y={target_tcp_position['y']}mm, Z={target_tcp_position['z']}mm")
+            # print(f"Target orientation: Rx={target_tcp_position['rx']}°, Ry={target_tcp_position['ry']}°, Rz={target_tcp_position['rz']}°")
         else:
             print(f"❌ Failed to move to target TCP position: {response.status_text}")
     except Exception as e:
         print(f"❌ Error sending move to target TCP command: {e}")
 
-# 增量移动关节 (对应网页的 adjustJoint 功能)
-def adjust_joint_position():
-    """
-    网页按钮: Joint +/- 按钮
-    对应 adjustJoint() 和 sendServoJCommand() 函数
-    url_adjustJoint = "http://localhost:8080/api/robot_arm/cmd"
-    params_adjustJoint = {"command": "servoj [0.087266,0.000000,0.000000,0.000000,0.000000,0.000000] 1.0 1.0 False 200 65"}
-    headers = {'Content-Type': 'application/json'}
-    """
-    # 当前关节角度 (度) - 实际使用时应该从机器人状态获取
-    current_joint_angles_deg = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    
-    # 调整第1个关节增加5度
-    joint_index = 1  # 关节1 (1-6)
-    adjustment_deg = 5.0  # 增加5度
-    
-    current_joint_angles_deg[joint_index - 1] += adjustment_deg
-    
-    # 转换为弧度
-    current_joint_angles_rad = [angle * pi / 180 for angle in current_joint_angles_deg]
-    
-    # 生成 servoj 命令
-    joint_angles_str = ','.join([f"{angle:.6f}" for angle in current_joint_angles_rad])
-    servoj_command = f"servoj [{joint_angles_str}] 1.0 1.0 False 200 65"
-    
-    # POST 请求设置
-    url_adjustJoint = f"{BASE_URL}/api/robot_arm/cmd"
-    params_adjustJoint = {
-        "command": servoj_command
-    }
-    headers = {'Content-Type': 'application/json'}
-    
-    try:
-        response = requests.post(url_adjustJoint, json=params_adjustJoint, headers=headers)
-        if response.ok:
-            result = response.json()
-            print(f"✅ Adjust joint {joint_index} success: {result}")
-            print(f"Joint {joint_index} adjusted by {adjustment_deg}° to {current_joint_angles_deg[joint_index-1]}°")
-        else:
-            print(f"❌ Failed to adjust joint: {response.status_text}")
-    except Exception as e:
-        print(f"❌ Error sending adjust joint command: {e}")
-
-# 增量移动TCP (对应网页的 adjustTcp 功能)
-def adjust_tcp_position():
-    """
-    网页按钮: TCP +/- 按钮  
-    对应 adjustTcp() 和 sendServoTcpCommandIncremental() 函数
-    url_adjustTcp = "http://localhost:8080/api/robot_arm/cmd"
-    params_adjustTcp = {"command": "servo_tcp [0.005000,0.000000,0.000000,0.000000,0.000000,0.000000] 1.0 1.0 \"\" False 150 35"}
-    headers = {'Content-Type': 'application/json'}
-    """
-    # TCP轴和方向
-    axis = 'x'  # 'x', 'y', 'z', 'rx', 'ry', 'rz'
-    direction = 1  # 1 为正方向, -1 为负方向
-    
-    # 步长设置
-    position_step_size = 5.0  # mm
-    rotation_step_size = 2.0  # 度
-    
-    # 创建偏移量数组
-    pose_offset = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    
-    if axis in ['x', 'y', 'z']:
-        # 位置移动 - 转换mm到米
-        axis_index = {'x': 0, 'y': 1, 'z': 2}[axis]
-        pose_offset[axis_index] = direction * position_step_size / 1000  # 转换mm到米
-    else:
-        # 旋转移动 - 转换度到弧度  
-        axis_index = {'rx': 3, 'ry': 4, 'rz': 5}[axis]
-        pose_offset[axis_index] = direction * rotation_step_size * pi / 180  # 转换度到弧度
-    
-    # 生成 servo_tcp 命令
-    pose_offset_str = ','.join([f"{offset:.6f}" for offset in pose_offset])
-    servo_tcp_command = f"servo_tcp [{pose_offset_str}] 1.0 1.0 \"\" False 150 35"
-    
-    # POST 请求设置
-    url_adjustTcp = f"{BASE_URL}/api/robot_arm/cmd"
-    params_adjustTcp = {
-        "command": servo_tcp_command
-    }
-    headers = {'Content-Type': 'application/json'}
-    
-    try:
-        response = requests.post(url_adjustTcp, json=params_adjustTcp, headers=headers)
-        if response.ok:
-            result = response.json()
-            print(f"✅ Adjust TCP {axis} success: {result}")
-            if axis in ['x', 'y', 'z']:
-                print(f"TCP {axis.upper()} adjusted by {direction * position_step_size}mm")
-            else:
-                print(f"TCP {axis.upper()} adjusted by {direction * rotation_step_size}°")
-        else:
-            print(f"❌ Failed to adjust TCP: {response.status_text}")
-    except Exception as e:
-        print(f"❌ Error sending adjust TCP command: {e}")
-
-# 基本机器人控制命令
-def robot_basic_commands():
-    """
-    网页基本控制按钮: Power On/Off, Enable/Disable
-    对应 sendCommand() 函数
-    url_basicCmd = "http://localhost:8080/api/robot_arm/cmd"
-    params_basicCmd = {"command": "power_on"}  # 或 "power_off", "enable", "disable"
-    headers = {'Content-Type': 'application/json'}
-    """
-    commands = ['power_on', 'power_off', 'enable', 'disable']
-    
-    for cmd in commands:
-        # POST 请求设置
-        url_basicCmd = f"{BASE_URL}/api/robot_arm/cmd"
-        params_basicCmd = {
-            "command": cmd
-        }
-        headers = {'Content-Type': 'application/json'}
-        
-        try:
-            response = requests.post(url_basicCmd, json=params_basicCmd, headers=headers)
-            if response.ok:
-                result = response.json()
-                print(f"✅ {cmd} command success: {result}")
-            else:
-                print(f"❌ Failed to send {cmd} command: {response.status_text}")
-        except Exception as e:
-            print(f"❌ Error sending {cmd} command: {e}")
 
 if __name__ == "__main__":
-    print("=== 机器人移动控制 POST 请求示例 ===\n")
-    
-    # 示例1: 移动到目标关节位置
-    print("1. Move to Target Joint Position:")
-    move_to_target_joint_position()
-    print()
-    
-    # 示例2: 移动到目标TCP位置  
-    print("2. Move to Target TCP Position:")
-    move_to_target_tcp_position()
-    print()
-    
-    # 示例3: 增量调整关节
-    print("3. Adjust Joint Position:")
-    adjust_joint_position()
-    print()
-    
-    # 示例4: 增量调整TCP
-    print("4. Adjust TCP Position:")
-    adjust_tcp_position()
-    print()
-    
-    # 示例5: 基本机器人命令
-    print("5. Basic Robot Commands:")
-    # robot_basic_commands()  # 注释掉避免意外执行
-    print("(Commented out for safety)")
+    # result1, result2 = joint_angles_deg , tcp_position_mm
+    result1,result2 = get_actual_joint_angles_and_tcp_position()
+    print(result1,'\n',result2)
+
+    result2 = [result2[0], result2[1]-100, result2[2], result2[3], result2[4], result2[5]]  # 确保是6个元素
+    move_to_target_tcp_position(result2)
+    time.sleep(5)  # 等待2秒以确保TCP移动完成
+    move_to_target_joint_position(result1)
+    time.sleep(5)  # 等待2秒以确保TCP移动完成
+
