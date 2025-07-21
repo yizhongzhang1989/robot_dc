@@ -27,8 +27,12 @@
       outline-offset: 2px;
     }
     .motor-card {
-      min-width: 380px;
-      max-width: 400px;
+      min-width: 500px;
+      max-width: 600px;
+    }
+    .platform-card {
+      min-width: 600px;
+      max-width: 800px;
     }
   </style>
 </head>
@@ -60,20 +64,54 @@
     </div>
     <div class="mb-8">
       <h2 class="text-xl font-semibold mb-2">Platform Motion Control</h2>
-      <div class="bg-white rounded shadow p-4 motor-card flex flex-col gap-2" id="platform-card">
-        <div class="flex flex-wrap gap-2 mb-2">
-          <button class="motor-button" onclick="platformMove('forward', 1)">Forward</button>
-          <button class="motor-button" onclick="platformMove('forward', 0)">Stop Forward</button>
-          <button class="motor-button" onclick="platformMove('backward', 1)">Backward</button>
-          <button class="motor-button" onclick="platformMove('backward', 0)">Stop Backward</button>
+      <div class="bg-white rounded shadow p-6 platform-card flex flex-col gap-4" id="platform-card">
+        <h3 class="text-lg font-medium mb-2">Manual Control</h3>
+        <div class="grid grid-cols-2 gap-8 mb-4">
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-center">Forward/Backward Movement</label>
+            <div class="flex flex-wrap gap-2 justify-center">
+              <button class="motor-button" onclick="platformMove('forward', 1)">Forward</button>
+              <button class="motor-button" onclick="platformMove('forward', 0)">Stop Forward</button>
+              <button class="motor-button" onclick="platformMove('backward', 1)">Backward</button>
+              <button class="motor-button" onclick="platformMove('backward', 0)">Stop Backward</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-center">Up/Down Movement</label>
+            <div class="flex flex-wrap gap-2 justify-center">
+              <button class="motor-button" onclick="platformMove('up', 1)">Up</button>
+              <button class="motor-button" onclick="platformMove('up', 0)">Stop Up</button>
+              <button class="motor-button" onclick="platformMove('down', 1)">Down</button>
+              <button class="motor-button" onclick="platformMove('down', 0)">Stop Down</button>
+            </div>
+          </div>
         </div>
-        <div class="flex flex-wrap gap-2 mb-2">
-          <button class="motor-button" onclick="platformMove('up', 1)">Up</button>
-          <button class="motor-button" onclick="platformMove('up', 0)">Stop Up</button>
-          <button class="motor-button" onclick="platformMove('down', 1)">Down</button>
-          <button class="motor-button" onclick="platformMove('down', 0)">Stop Down</button>
+        
+        <h3 class="text-lg font-medium mb-2">Timed Control</h3>
+        <div class="grid grid-cols-2 gap-8 mb-4">
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-center">Forward/Backward (seconds)</label>
+            <div class="flex gap-2 justify-center">
+              <input type="number" id="forward-time" class="border px-2 py-1 w-20" placeholder="5.0" step="0.1" min="0.1">
+              <button class="motor-button" onclick="platformTimedMove('forward')">Forward</button>
+              <button class="motor-button" onclick="platformTimedMove('backward')">Backward</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-center">Up/Down (seconds)</label>
+            <div class="flex gap-2 justify-center">
+              <input type="number" id="updown-time" class="border px-2 py-1 w-20" placeholder="3.0" step="0.1" min="0.1">
+              <button class="motor-button" onclick="platformTimedMove('up')">Up</button>
+              <button class="motor-button" onclick="platformTimedMove('down')">Down</button>
+            </div>
+          </div>
         </div>
-        <div class="text-sm text-gray-500 mt-1" id="platform-cmd-result"></div>
+        
+        <div class="flex justify-center gap-2 mt-4">
+          <button class="motor-button bg-red-200" onclick="stopAllTimedMovements()">Stop All Timed Movements</button>
+        </div>
+        
+        <div class="text-sm text-gray-500 mt-2 text-center" id="platform-cmd-result"></div>
       </div>
     </div>
     <div>
@@ -509,6 +547,45 @@
       .then(resp => {
         document.getElementById('platform-cmd-result').innerText = JSON.stringify(resp);
       });
+    }
+
+    function platformTimedMove(direction) {
+      let duration;
+      
+      // Get duration based on direction
+      if (direction === 'forward' || direction === 'backward') {
+        duration = document.getElementById('forward-time').value;
+      } else if (direction === 'up' || direction === 'down') {
+        duration = document.getElementById('updown-time').value;
+      }
+      
+      if (!duration || duration <= 0) {
+        document.getElementById('platform-cmd-result').innerText = 'Please enter a valid duration > 0';
+        return;
+      }
+      
+      fetch('/api/platform/timed_move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({direction: direction, duration: parseFloat(duration)})
+      })
+      .then(res => res.json())
+      .then(resp => {
+        document.getElementById('platform-cmd-result').innerText = 
+          `Timed ${direction} for ${duration}s: ${JSON.stringify(resp)}`;
+      })
+      .catch(err => {
+        document.getElementById('platform-cmd-result').innerText = 'Error: ' + err.message;
+      });
+    }
+
+    function stopAllTimedMovements() {
+      // Send stop commands for all directions
+      const directions = ['forward', 'backward', 'up', 'down'];
+      directions.forEach(dir => {
+        platformMove(dir, 0);
+      });
+      document.getElementById('platform-cmd-result').innerText = 'Stopping all timed movements...';
     }
 
     // Initialize

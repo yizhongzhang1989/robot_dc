@@ -78,6 +78,9 @@ class WebROSClient:
             # Create camera restart client
             self.restart_client = self.node.create_client(Trigger, 'restart_cam_node')
             
+            # Create platform command publisher
+            self.platform_publisher = self.node.create_publisher(String, '/platform/cmd', 10)
+            
             # Wait for snapshot service to be available
             if not self.snapshot_client.wait_for_service(timeout_sec=5.0):
                 self.node.get_logger().warn("Snapshot service not available")
@@ -241,3 +244,21 @@ class WebROSClient:
         except Exception as e:
             self.node.get_logger().error(f"Exception during camera restart: {e}")
             return {"success": False, "message": f"Exception during restart: {str(e)}"}
+
+    def send_platform_command(self, command, value=None):
+        """Send command to platform controller."""
+        if self.platform_publisher is None:
+            return {"error": "Platform publisher not initialized"}
+        
+        try:
+            cmd_str = f"{command} {value}" if value is not None else command
+            msg = String()
+            msg.data = cmd_str
+            self.platform_publisher.publish(msg)
+            
+            self.node.get_logger().info(f"Sent platform command: {cmd_str}")
+            return {"success": True, "command": cmd_str}
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error sending platform command: {e}")
+            return {"error": str(e)}

@@ -101,6 +101,46 @@ async def restart_camera():
     result = ros_client.restart_camera_node()
     return JSONResponse(content=result)
 
+@app.post("/api/platform/cmd")
+async def platform_command(request: Request):
+    """Send command to platform controller."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    data = await request.json()
+    command = data.get("command")
+    value = data.get("value", None)
+    
+    if not command:
+        return JSONResponse(content={"error": "Command is required"}, status_code=400)
+    
+    result = ros_client.send_platform_command(command, value)
+    
+    if "error" in result:
+        return JSONResponse(content=result, status_code=400)
+    return JSONResponse(content=result)
+
+@app.post("/api/platform/timed_move")
+async def platform_timed_move(request: Request):
+    """Send timed movement command to platform controller."""
+    if ros_client is None:
+        return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
+    
+    data = await request.json()
+    direction = data.get("direction")
+    duration = data.get("duration")
+    
+    if not direction or duration is None:
+        return JSONResponse(content={"error": "Direction and duration are required"}, status_code=400)
+    
+    # Send the timed movement command
+    command = f"timed_{direction}"
+    result = ros_client.send_platform_command(command, duration)
+    
+    if "error" in result:
+        return JSONResponse(content=result, status_code=400)
+    return JSONResponse(content=result)
+
 app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")
 
 if __name__ == "__main__":
