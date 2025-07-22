@@ -478,60 +478,58 @@ function updateRobotStateDisplay(state) {
 
     // Update Joint Actual Position
     if (state.jointActualPosition) {
-        document.getElementById('jointActualPositions').innerHTML = createCompactJointGrid(state.jointActualPosition, ' rad');
+        document.getElementById('jointActualPositions').innerHTML = createCompactJointGrid(state.jointActualPosition);
         // Update URDF joint states from actual joint positions
         updateURDFFromActualJoints(state.jointActualPosition);
     }
 
     // Update Joint Actual Velocity
     if (state.jointActualVelocity) {
-        document.getElementById('jointActualVelocities').innerHTML = createCompactJointGrid(state.jointActualVelocity, ' rad/s');
+        document.getElementById('jointActualVelocities').innerHTML = createCompactJointGrid(state.jointActualVelocity);
     }
 
     // Update Joint Actual Acceleration
     if (state.jointActualAccelera) {
-        document.getElementById('jointActualAccelerations').innerHTML = createCompactJointGrid(state.jointActualAccelera, ' rad/s²');
+        document.getElementById('jointActualAccelerations').innerHTML = createCompactJointGrid(state.jointActualAccelera);
     }
 
     // Update Joint Actual Torque
     if (state.jointActualTorque) {
-        document.getElementById('jointActualTorques').innerHTML = createCompactJointGrid(state.jointActualTorque, ' Nm');
+        document.getElementById('jointActualTorques').innerHTML = createCompactJointGrid(state.jointActualTorque);
     }
 
     // Update Joint Expected Position
     if (state.jointExpectPosition) {
-        document.getElementById('jointExpectedPositions').innerHTML = createCompactJointGrid(state.jointExpectPosition, ' rad');
+        document.getElementById('jointExpectedPositions').innerHTML = createCompactJointGrid(state.jointExpectPosition);
     }
 
     // Update Joint Expected Velocity
     if (state.jointExpectVelocity) {
-        document.getElementById('jointExpectedVelocities').innerHTML = createCompactJointGrid(state.jointExpectVelocity, ' rad/s');
+        document.getElementById('jointExpectedVelocities').innerHTML = createCompactJointGrid(state.jointExpectVelocity);
     }
 
     // Update Joint Temperatures
     if (state.jointActualTemperature) {
-        // Only show first 6 joints for temperature with color coding
+        // Only show first 6 joints for temperature
         const jointsToShow = state.jointActualTemperature.slice(0, 6);
         const tempHtml = jointsToShow.map((temp, index) => {
-            const tempClass = temp > 50 ? 'error-indicator' : (temp > 40 ? 'warning-indicator' : 'normal-indicator');
-            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="${tempClass}">${formatValue(temp, 1)}°C</span></div>`;
+            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="data-value">${formatValue(temp, 1)}</span></div>`;
         }).join('');
         document.getElementById('jointTemperatures').innerHTML = tempHtml;
     }
 
     // Update Joint Currents
     if (state.jointActualCurrent) {
-        // Only show first 6 joints for current with color coding
+        // Only show first 6 joints for current
         const jointsToShow = state.jointActualCurrent.slice(0, 6);
         const currentHtml = jointsToShow.map((current, index) => {
-            const currentClass = current > 800 ? 'error-indicator' : (current > 600 ? 'warning-indicator' : 'normal-indicator');
-            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="${currentClass}">${formatValue(current, 0)}‰</span></div>`;
+            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="data-value">${formatValue(current, 0)}</span></div>`;
         }).join('');
         document.getElementById('jointCurrents').innerHTML = currentHtml;
     }
 
     // Update Driver Status
-    if (state.driverErrorID && state.driverState) {
+    if (state.driverErrorID) {
         const hasErrors = state.driverErrorID.some(error => error !== 0);
         const errorElement = document.getElementById('driverErrors');
         if (hasErrors) {
@@ -545,13 +543,201 @@ function updateRobotStateDisplay(state) {
         // Show error IDs
         const errorIds = state.driverErrorID.filter(id => id !== 0);
         document.getElementById('driverErrorIds').textContent = errorIds.length > 0 ? errorIds.join(', ') : 'None';
-        
-        // Show driver states
-        document.getElementById('driverStates').textContent = state.driverState.join(', ');
     }
 
     // Update Move Control Section
     updateMoveControlDisplay(state);
+
+    // Update Coordinate Systems
+    if (state.activeToolCoordSystem && state.activeToolCoordSystem.length >= 6) {
+        const coordHtml = state.activeToolCoordSystem.map((value, index) => {
+            const label = index < 3 ? ['X', 'Y', 'Z'][index] : ['Rx', 'Ry', 'Rz'][index - 3];
+            return `<div class="compact-item"><span class="data-label">${label}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('activeToolCoordSystem').innerHTML = coordHtml;
+    }
+
+    if (state.activeWorkpieceCoordSystem && state.activeWorkpieceCoordSystem.length >= 6) {
+        const coordHtml = state.activeWorkpieceCoordSystem.map((value, index) => {
+            const label = index < 3 ? ['X', 'Y', 'Z'][index] : ['Rx', 'Ry', 'Rz'][index - 3];
+            return `<div class="compact-item"><span class="data-label">${label}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('activeWorkpieceCoordSystem').innerHTML = coordHtml;
+    }
+
+    // Update Speed Settings
+    if (state.blendedSpeed !== undefined) {
+        // Store blendedSpeed value but don't display it (keep for data continuity)
+        window.blendedSpeedValue = state.blendedSpeed;
+    }
+    if (state.globalSpeed !== undefined) {
+        document.getElementById('globalSpeed').textContent = state.globalSpeed + '%';
+        document.getElementById('globalSpeed').className = 'data-value';
+    }
+    if (state.jogSpeed !== undefined) {
+        document.getElementById('jogSpeed').textContent = state.jogSpeed + '%';
+        document.getElementById('jogSpeed').className = 'data-value';
+    }
+
+    // Update Digital IO
+    if (state.functionalDigitalIOInput && Array.isArray(state.functionalDigitalIOInput)) {
+        const ioHtml = state.functionalDigitalIOInput.map((value, index) => {
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">FDI${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('functionalDigitalIOInput').innerHTML = ioHtml;
+    }
+
+    if (state.functionalDigitalIOOutput && Array.isArray(state.functionalDigitalIOOutput)) {
+        const ioHtml = state.functionalDigitalIOOutput.map((value, index) => {
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">FDO${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('functionalDigitalIOOutput').innerHTML = ioHtml;
+    }
+
+    if (state.digitalIOInput && Array.isArray(state.digitalIOInput)) {
+        // Show first 16 DI inputs
+        const ioHtml = state.digitalIOInput.slice(0, 16).map((value, index) => {
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">DI${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('digitalIOInput').innerHTML = ioHtml;
+    }
+
+    if (state.digitalIOOutput && Array.isArray(state.digitalIOOutput)) {
+        // Show first 16 DO outputs
+        const ioHtml = state.digitalIOOutput.slice(0, 16).map((value, index) => {
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">DO${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('digitalIOOutput').innerHTML = ioHtml;
+    }
+
+    // Update Analog IO
+    if (state.analogInput && Array.isArray(state.analogInput)) {
+        const analogHtml = state.analogInput.map((value, index) => {
+            return `<div class="compact-item"><span class="data-label">AI${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('analogInput').innerHTML = analogHtml;
+    }
+
+    if (state.analogOutput && Array.isArray(state.analogOutput)) {
+        const analogHtml = state.analogOutput.map((value, index) => {
+            return `<div class="compact-item"><span class="data-label">AO${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('analogOutput').innerHTML = analogHtml;
+    }
+
+    // Update Tool IO
+    if (state.toolIOInput && Array.isArray(state.toolIOInput)) {
+        const toolIOHtml = Array.from({length: 8}, (_, index) => {
+            const value = state.toolIOInput[index] !== undefined ? state.toolIOInput[index] : false;
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">TI${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('toolIOInput').innerHTML = toolIOHtml;
+    }
+
+    if (state.toolIOOutput && Array.isArray(state.toolIOOutput)) {
+        const toolIOHtml = Array.from({length: 8}, (_, index) => {
+            const value = state.toolIOOutput[index] !== undefined ? state.toolIOOutput[index] : 0;
+            return `<div class="compact-item"><span class="data-label">TO${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('toolIOOutput').innerHTML = toolIOHtml;
+    }
+
+    if (state.toolAnalogInput && Array.isArray(state.toolAnalogInput)) {
+        const toolAnalogHtml = Array.from({length: 8}, (_, index) => {
+            const value = state.toolAnalogInput[index] !== undefined ? state.toolAnalogInput[index] : 0;
+            return `<div class="compact-item"><span class="data-label">TAI${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('toolAnalogInput').innerHTML = toolAnalogHtml;
+    }
+
+    if (state.toolAnalogOutput && Array.isArray(state.toolAnalogOutput)) {
+        const toolAnalogHtml = Array.from({length: 8}, (_, index) => {
+            const value = state.toolAnalogOutput[index] !== undefined ? state.toolAnalogOutput[index] : 0;
+            return `<div class="compact-item"><span class="data-label">TAO${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('toolAnalogOutput').innerHTML = toolAnalogHtml;
+    }
+
+    if (state.toolButtonStatus && Array.isArray(state.toolButtonStatus)) {
+        const buttonHtml = state.toolButtonStatus.map((value, index) => {
+            const status = value ? '🔴' : '⚪';
+            return `<div class="compact-item"><span class="data-label">Button${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('toolButtonStatus').innerHTML = buttonHtml;
+    }
+
+    // Update Robot Status
+    if (state.simulationMode !== undefined) {
+        document.getElementById('simulationMode').textContent = state.simulationMode ? 'Simulation' : 'Real Robot';
+        document.getElementById('simulationMode').className = state.simulationMode ? 'warning-indicator' : 'normal-indicator';
+    }
+
+    if (state.robotOperationMode !== undefined) {
+        const operationModes = {0: "Manual", 1: "Auto", 2: "Remote"};
+        document.getElementById('robotOperationMode').textContent = operationModes[state.robotOperationMode] || `Unknown (${state.robotOperationMode})`;
+        document.getElementById('robotOperationMode').className = 'data-value';
+    }
+
+    if (state.robotStatus !== undefined) {
+        const robotStates = {0: "Start", 1: "Initialize", 2: "Logout", 3: "Login", 
+                           4: "PowerOff", 5: "Disable/PowerOn", 6: "Enable"};
+        const statusText = robotStates[state.robotStatus] || `Unknown (${state.robotStatus})`;
+        document.getElementById('robotStatus').textContent = statusText;
+        document.getElementById('robotStatus').className = state.robotStatus === 6 ? 'normal-indicator' : 'warning-indicator';
+    }
+
+    if (state.robotProgramRunStatus !== undefined) {
+        const programStates = {0: "Stopped", 1: "Stopping", 2: "Running", 
+                             3: "Paused", 4: "Pausing", 5: "TaskRunning"};
+        const statusText = programStates[state.robotProgramRunStatus] || `Unknown (${state.robotProgramRunStatus})`;
+        document.getElementById('robotProgramRunStatus').textContent = statusText;
+        document.getElementById('robotProgramRunStatus').className = [2, 5].includes(state.robotProgramRunStatus) ? 'normal-indicator' : 'data-value';
+    }
+
+    if (state.safetyMonitorStatus !== undefined) {
+        const safetyStates = {0: "INIT", 2: "WAIT", 3: "CONFIG", 4: "POWER_OFF", 
+                           5: "RUN", 6: "RECOVERY", 7: "STOP2", 8: "STOP1", 
+                           9: "STOP0", 10: "MODEL", 12: "REDUCE", 13: "BOOT", 
+                           14: "FAIL", 15: "UPDATE"};
+        const statusText = safetyStates[state.safetyMonitorStatus] || `Unknown (${state.safetyMonitorStatus})`;
+        document.getElementById('safetyMonitorStatus').textContent = statusText;
+        document.getElementById('safetyMonitorStatus').className = state.safetyMonitorStatus === 5 ? 'normal-indicator' : 'warning-indicator';
+    }
+
+    if (state.collisionDetectionTrigger !== undefined) {
+        document.getElementById('collisionDetectionTrigger').textContent = state.collisionDetectionTrigger ? 'Triggered' : 'Normal';
+        document.getElementById('collisionDetectionTrigger').className = state.collisionDetectionTrigger ? 'error-indicator' : 'normal-indicator';
+    }
+
+    if (state.collisionAxis !== undefined) {
+        document.getElementById('collisionAxis').textContent = state.collisionAxis === 0 ? 'None' : `Joint ${state.collisionAxis}`;
+        document.getElementById('collisionAxis').className = state.collisionAxis === 0 ? 'normal-indicator' : 'error-indicator';
+    }
+
+    if (state.robotErrorCode !== undefined) {
+        document.getElementById('robotErrorCode').textContent = state.robotErrorCode === 0 ? 'None' : `0x${state.robotErrorCode.toString(16).toUpperCase()}`;
+        document.getElementById('robotErrorCode').className = state.robotErrorCode === 0 ? 'normal-indicator' : 'error-indicator';
+    }
+
+    // Update Float Registers (first 8 values)
+    if (state.floatRegisterInput && Array.isArray(state.floatRegisterInput)) {
+        const regHtml = state.floatRegisterInput.slice(0, 8).map((value, index) => {
+            return `<div class="compact-item"><span class="data-label">FR_I${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('floatRegisterInput').innerHTML = regHtml;
+    }
+
+    if (state.floatRegisterOutput && Array.isArray(state.floatRegisterOutput)) {
+        const regHtml = state.floatRegisterOutput.slice(0, 8).map((value, index) => {
+            return `<div class="compact-item"><span class="data-label">FR_O${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('floatRegisterOutput').innerHTML = regHtml;
+    }
 
     // Update last update time
     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();

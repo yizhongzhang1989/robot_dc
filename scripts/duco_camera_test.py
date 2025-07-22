@@ -84,13 +84,11 @@ def resize_frame(frame, max_width):
     return frame
 
 
-# Setup RTSP URLs
-HIGH_URL = "rtsp://admin:123456@192.168.1.100/stream0"
-LOW_URL = "rtsp://admin:123456@192.168.1.102/stream0"
+# Setup RTSP URL
+CAMERA_URL = "rtsp://admin:123456@192.168.1.102/stream0"
 
-# Start streams
-stream_high = RTSPStream("High", HIGH_URL)
-stream_low = RTSPStream("Low", LOW_URL)
+# Start stream
+camera_stream = RTSPStream("Camera", CAMERA_URL)
 
 
 def generate_stream(stream: RTSPStream):
@@ -115,26 +113,18 @@ def generate_stream(stream: RTSPStream):
 def index():
     return '''
     <html>
-        <head><title>Dual RTSP Streams</title></head>
+        <head><title>RTSP Camera Stream</title></head>
         <body>
-            <h1>High Stream</h1>
-            <img src="/video_feed/high">
-            <h1>Low Stream</h1>
-            <img src="/video_feed/low">
+            <h1>Camera Stream</h1>
+            <img src="/video_feed">
         </body>
     </html>
     '''
 
 
-@app.route('/video_feed/high')
-def video_feed_high():
-    return Response(stream_with_context(generate_stream(stream_high)),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-@app.route('/video_feed/low')
-def video_feed_low():
-    return Response(stream_with_context(generate_stream(stream_low)),
+@app.route('/video_feed')
+def video_feed():
+    return Response(stream_with_context(generate_stream(camera_stream)),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 

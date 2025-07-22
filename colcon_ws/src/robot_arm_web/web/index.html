@@ -722,6 +722,99 @@
       background: #e5e7eb;
       transform: translateY(-1px);
     }
+    
+    /* Status Bar Styles */
+    .status-bar {
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 0.75rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      display: flex;
+      gap: 0.75rem;
+    }
+    
+    .status-bar-title {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: white;
+      background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
+      padding: 0.75rem 0.5rem;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+      letter-spacing: 0.05em;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    
+    .status-bar-content {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .status-bar-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+    
+    .status-bar-item {
+      padding: 0.5rem;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 6px;
+      border: 1px solid rgba(226, 232, 240, 0.8);
+      transition: all 0.2s;
+      position: relative;
+      min-height: 60px;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .status-bar-item:hover {
+      background: rgba(255, 255, 255, 0.95);
+      border-color: rgba(59, 130, 246, 0.3);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    .status-bar-label {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+      font-weight: 500;
+      color: #64748b;
+      font-size: 0.7rem;
+      line-height: 1;
+      margin-bottom: 0.25rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .status-bar-value {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+      font-weight: 700;
+      color: #1e293b;
+      font-size: 1rem;
+      text-align: left;
+      flex-grow: 1;
+      display: flex;
+      align-items: center;
+      line-height: 1.2;
+    }
+    
+    /* Connection status colors */
+    .status-bar-value.connected {
+      color: #10b981 !important; /* Green for connected */
+    }
+    
+    .status-bar-value.disconnected {
+      color: #ef4444 !important; /* Red for disconnected */
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
@@ -732,55 +825,92 @@
       <p class="text-gray-600">DUCO Collaborative Robot Arm Web Interface</p>
     </div>
 
-    <!-- Combined Status & 3D Visualization -->
+    <!-- Robot Status Bar -->
+    <div class="status-bar mb-6">
+      <div class="status-bar-title">
+        Status
+      </div>
+      <div class="status-bar-content">
+        <div class="status-bar-grid">
+          <div class="status-bar-item">
+            <div class="status-bar-label">Robot</div>
+            <div id="robotStatus" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Web</div>
+            <div id="connectionText" class="status-bar-value connected">Web</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Data</div>
+            <div id="stateStatus" class="status-bar-value">Monitoring</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">System</div>
+            <div id="dataStatus" class="status-bar-value">Active</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Program</div>
+            <div id="robotProgramRunStatus" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Mode</div>
+            <div id="simulationMode" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Operation</div>
+            <div id="robotOperationMode" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Rate (Hz)</div>
+            <div id="updateRate" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Updated</div>
+            <div id="lastUpdate" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Global Speed</div>
+            <div id="globalSpeed" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Jog Speed</div>
+            <div id="jogSpeed" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Device ID</div>
+            <div id="deviceId" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Safety</div>
+            <div id="safetyMonitorStatus" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Collision</div>
+            <div id="collisionDetectionTrigger" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Axis</div>
+            <div id="collisionAxis" class="status-bar-value">-</div>
+          </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Error</div>
+            <div id="robotErrorCode" class="status-bar-value">-</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3D Visualization -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Status Section -->
-        <div>
-          <h2 class="text-xl font-semibold mb-4">📊 Status</h2>
-          <div class="flex items-center mb-3">
-            <span class="status-indicator status-connected" id="connectionStatus"></span>
-            <span id="connectionText">Connected</span>
-          </div>
-          <div class="text-sm text-gray-600 mb-4">
-            <div class="mb-1">Device ID: <span id="deviceId">-</span></div>
-            <div class="mb-1">Topic: <span id="topicName">-</span></div>
-            <div>State: <span id="stateStatus" class="normal-indicator">Monitoring</span></div>
-          </div>
-          
-          <!-- System Info moved here from state monitor -->
-          <div class="bg-gray-50 p-3 rounded">
-            <h3 class="font-medium text-gray-700 mb-2 text-sm">📊 System Info</h3>
-            <div class="text-sm">
-              <div class="flex justify-between mb-1">
-                <span class="data-label">Rate:</span> 
-                <span id="updateRate" class="data-value">-</span> Hz
-              </div>
-              <div class="flex justify-between mb-1">
-                <span class="data-label">Updated:</span> 
-                <span id="lastUpdate" class="data-value">-</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="data-label">Status:</span> 
-                <span id="dataStatus" class="normal-indicator">Active</span>
-              </div>
-            </div>
-          </div>
+      <h2 class="text-xl font-semibold mb-4">🎯 3D Robot Visualization</h2>
+      <div class="viewer-3d" id="viewer3d">
+        <div class="viewer-controls">
+          <div>Left click: Rotate</div>
+          <div>Right click: Pan</div>
+          <div>Wheel: Zoom</div>
+          <div>R key: Reset view</div>
         </div>
-        
-        <!-- 3D Visualization Section -->
-        <div>
-          <h2 class="text-xl font-semibold mb-4">🎯 3D Robot Visualization</h2>
-          <div class="viewer-3d" id="viewer3d">
-            <div class="viewer-controls">
-              <div>Left click: Rotate</div>
-              <div>Right click: Pan</div>
-              <div>Wheel: Zoom</div>
-              <div>R key: Reset view</div>
-            </div>
-            <canvas id="robot3dCanvas"></canvas>
-          </div>
-        </div>
+        <canvas id="robot3dCanvas"></canvas>
       </div>
     </div>
     
@@ -1002,11 +1132,11 @@
       <div class="state-grid mt-3">
         <!-- TCP Actual Position -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">📍 TCP Actual Position</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📍 TCP Actual Position (m|rad)</h3>
           <div class="compact-grid">
-            <div class="compact-item"><span class="data-label">X:</span> <span id="tcpActualPosX" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Y:</span> <span id="tcpActualPosY" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Z:</span> <span id="tcpActualPosZ" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> X:</span> <span id="tcpActualPosX" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Y:</span> <span id="tcpActualPosY" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Z:</span> <span id="tcpActualPosZ" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rx:</span> <span id="tcpActualPosRx" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Ry:</span> <span id="tcpActualPosRy" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rz:</span> <span id="tcpActualPosRz" class="data-value">-</span></div>
@@ -1015,11 +1145,11 @@
 
         <!-- TCP Expected Position -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">📍 TCP Expected Position</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📍 TCP Expected Position (m|rad)</h3>
           <div class="compact-grid">
-            <div class="compact-item"><span class="data-label">X:</span> <span id="tcpExpectedPosX" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Y:</span> <span id="tcpExpectedPosY" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Z:</span> <span id="tcpExpectedPosZ" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> X:</span> <span id="tcpExpectedPosX" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Y:</span> <span id="tcpExpectedPosY" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Z:</span> <span id="tcpExpectedPosZ" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rx:</span> <span id="tcpExpectedPosRx" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Ry:</span> <span id="tcpExpectedPosRy" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rz:</span> <span id="tcpExpectedPosRz" class="data-value">-</span></div>
@@ -1028,11 +1158,11 @@
 
         <!-- TCP Actual Velocity -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">� TCP Actual Velocity</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📍 TCP Actual Velocity (m|rad/s)</h3>
           <div class="compact-grid">
-            <div class="compact-item"><span class="data-label">X:</span> <span id="tcpActualVelX" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Y:</span> <span id="tcpActualVelY" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Z:</span> <span id="tcpActualVelZ" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> X:</span> <span id="tcpActualVelX" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Y:</span> <span id="tcpActualVelY" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Z:</span> <span id="tcpActualVelZ" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rx:</span> <span id="tcpActualVelRx" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Ry:</span> <span id="tcpActualVelRy" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rz:</span> <span id="tcpActualVelRz" class="data-value">-</span></div>
@@ -1041,11 +1171,11 @@
 
         <!-- TCP Actual Acceleration -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚡ TCP Actual Acceleration</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📍 TCP Actual Acceleration (m|rad/s²)</h3>
           <div class="compact-grid">
-            <div class="compact-item"><span class="data-label">X:</span> <span id="tcpActualAccX" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Y:</span> <span id="tcpActualAccY" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Z:</span> <span id="tcpActualAccZ" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> X:</span> <span id="tcpActualAccX" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Y:</span> <span id="tcpActualAccY" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Z:</span> <span id="tcpActualAccZ" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rx:</span> <span id="tcpActualAccRx" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Ry:</span> <span id="tcpActualAccRy" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rz:</span> <span id="tcpActualAccRz" class="data-value">-</span></div>
@@ -1054,11 +1184,11 @@
 
         <!-- TCP Actual Torque -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔧 TCP Actual Torque</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📍 TCP Actual Torque (N·m)</h3>
           <div class="compact-grid">
-            <div class="compact-item"><span class="data-label">X:</span> <span id="tcpActualTorqueX" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Y:</span> <span id="tcpActualTorqueY" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Z:</span> <span id="tcpActualTorqueZ" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> X:</span> <span id="tcpActualTorqueX" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Y:</span> <span id="tcpActualTorqueY" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Z:</span> <span id="tcpActualTorqueZ" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rx:</span> <span id="tcpActualTorqueRx" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Ry:</span> <span id="tcpActualTorqueRy" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rz:</span> <span id="tcpActualTorqueRz" class="data-value">-</span></div>
@@ -1067,11 +1197,11 @@
 
         <!-- Base Actual Torque -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🏗️ Base Actual Torque</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔩 Base Actual Torque (N·m)</h3>
           <div class="compact-grid">
-            <div class="compact-item"><span class="data-label">X:</span> <span id="baseActualTorqueX" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Y:</span> <span id="baseActualTorqueY" class="data-value">-</span></div>
-            <div class="compact-item"><span class="data-label">Z:</span> <span id="baseActualTorqueZ" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> X:</span> <span id="baseActualTorqueX" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Y:</span> <span id="baseActualTorqueY" class="data-value">-</span></div>
+            <div class="compact-item"><span class="data-label"> Z:</span> <span id="baseActualTorqueZ" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rx:</span> <span id="baseActualTorqueRx" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Ry:</span> <span id="baseActualTorqueRy" class="data-value">-</span></div>
             <div class="compact-item"><span class="data-label">Rz:</span> <span id="baseActualTorqueRz" class="data-value">-</span></div>
@@ -1080,7 +1210,7 @@
 
         <!-- Joint Actual Position -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔗 Joint Actual Position</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚙️ Joint Actual Position (rad)</h3>
           <div class="compact-grid" id="jointActualPositions">
             Loading...
           </div>
@@ -1088,7 +1218,7 @@
 
         <!-- Joint Actual Velocity -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🏃 Joint Actual Velocity</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚙️ Joint Actual Velocity (rad/s)</h3>
           <div class="compact-grid" id="jointActualVelocities">
             Loading...
           </div>
@@ -1096,7 +1226,7 @@
 
         <!-- Joint Actual Acceleration -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚡ Joint Actual Acceleration</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚙️ Joint Actual Acceleration (rad/s²)</h3>
           <div class="compact-grid" id="jointActualAccelerations">
             Loading...
           </div>
@@ -1104,7 +1234,7 @@
 
         <!-- Joint Actual Torque -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔧 Joint Actual Torque</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚙️ Joint Actual Torque (N·m)</h3>
           <div class="compact-grid" id="jointActualTorques">
             Loading...
           </div>
@@ -1112,7 +1242,7 @@
 
         <!-- Joint Expected Position -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🎯 Joint Expected Position</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚙️ Joint Expected Position (rad)</h3>
           <div class="compact-grid" id="jointExpectedPositions">
             Loading...
           </div>
@@ -1120,7 +1250,7 @@
 
         <!-- Joint Expected Velocity -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🎯 Joint Expected Velocity</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚙️ Joint Expected Velocity (rad/s)</h3>
           <div class="compact-grid" id="jointExpectedVelocities">
             Loading...
           </div>
@@ -1128,7 +1258,7 @@
 
         <!-- Joint Temperatures -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🌡️ Joint Temperatures</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🌡️ Joint Temperatures (°C)</h3>
           <div class="compact-grid" id="jointTemperatures">
             Loading...
           </div>
@@ -1136,7 +1266,7 @@
 
         <!-- Joint Currents -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚡ Joint Currents</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">⚡ Joint Currents (‰)</h3>
           <div class="compact-grid" id="jointCurrents">
             Loading...
           </div>
@@ -1144,7 +1274,7 @@
 
         <!-- Driver Status -->
         <div class="state-card">
-          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔧 Driver Status</h3>
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">💻 Driver Status</h3>
           <div class="state-value">
             <div class="compact-item">
               <span class="data-label">Errors:</span> 
@@ -1154,10 +1284,120 @@
               <span class="data-label">Error IDs:</span> 
               <span id="driverErrorIds" class="data-value">-</span>
             </div>
-            <div class="compact-item">
-              <span class="data-label">States:</span> 
-              <span id="driverStates" class="data-value">-</span>
-            </div>
+          </div>
+        </div>
+
+        <!-- Functional Digital IO -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🎛️ Functional Digital IO Input</h3>
+          <div class="compact-grid-2col" id="functionalDigitalIOInput">
+            Loading...
+          </div>
+        </div>
+
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🎛️ Functional Digital IO Output</h3>
+          <div class="compact-grid-2col" id="functionalDigitalIOOutput">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Tool IO -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔧 Tool IO Input</h3>
+          <div class="compact-grid-2col" id="toolIOInput">
+            Loading...
+          </div>
+        </div>
+
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔧 Tool IO Output</h3>
+          <div class="compact-grid-2col" id="toolIOOutput">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Float Registers Input -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📝 Float Registers Input</h3>
+          <div class="compact-grid-2col" id="floatRegisterInput">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Analog IO -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📉 Analog Input</h3>
+          <div class="compact-grid-2col" id="analogInput">
+            Loading...
+          </div>
+        </div>
+
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📉 Analog Output</h3>
+          <div class="compact-grid-2col" id="analogOutput">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Tool Analog IO -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔧 Tool Analog Input</h3>
+          <div class="compact-grid-2col" id="toolAnalogInput">
+            Loading...
+          </div>
+        </div>
+
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔧 Tool Analog Output</h3>
+          <div class="compact-grid-2col" id="toolAnalogOutput">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Float Registers Output -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📝 Float Registers Output</h3>
+          <div class="compact-grid-2col" id="floatRegisterOutput">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Coordinate Systems -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔗 Active Tool Coordinate</h3>
+          <div class="compact-grid" id="activeToolCoordSystem">
+            Loading...
+          </div>
+        </div>
+
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">🔗 Active Workpiece Coordinate</h3>
+          <div class="compact-grid" id="activeWorkpieceCoordSystem">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Tool Button Status -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">📡 Tool Button Status</h3>
+          <div class="state-value" id="toolButtonStatus">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Digital IO -->
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">💡 Digital IO Input</h3>
+          <div class="compact-grid-2col" id="digitalIOInput">
+            Loading...
+          </div>
+        </div>
+
+        <div class="state-card">
+          <h3 class="font-medium text-gray-700 mb-2 text-sm">💡 Digital IO Output</h3>
+          <div class="compact-grid-2col" id="digitalIOOutput">
+            Loading...
           </div>
         </div>
 
@@ -1271,6 +1511,12 @@
         </button>
       </div>
     </div>
+  </div>
+
+  <!-- Hidden elements for JavaScript compatibility -->
+  <div style="display: none;">
+    <span id="connectionStatus"></span>
+    <span id="topicName"></span>
   </div>
 
       <script src="/js/robot_arm_control.js?v=4&ts=1752776600"></script>

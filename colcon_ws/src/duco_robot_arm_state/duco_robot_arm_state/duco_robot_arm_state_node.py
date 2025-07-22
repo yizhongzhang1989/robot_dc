@@ -154,6 +154,52 @@ class DucoRobotArmStateNode(Node):
             "baseActualTorque": robot_data.baseActualTorque,
             "baseExpectTorque": robot_data.baseExpectTorque,
             
+            # Extended coordinate system data
+            "activeToolCoordSystem": robot_data.activeToolCoordSystem,
+            "activeWorkpieceCoordSystem": robot_data.activeWorkpieceCoordSystem,
+            
+            # Speed and control data
+            "blendedSpeed": robot_data.blendedSpeed,
+            "globalSpeed": robot_data.globalSpeed,
+            "jogSpeed": robot_data.jogSpeed,
+            
+            # Digital I/O data
+            "functionalDigitalIOInput": robot_data.functionalDigitalIOInput,
+            "functionalDigitalIOOutput": robot_data.functionalDigitalIOOutput,
+            "digitalIOInput": robot_data.digitalIOInput,
+            "digitalIOOutput": robot_data.digitalIOOutput,
+            
+            # Analog I/O data
+            "analogInput": robot_data.analogInput,
+            "analogOutput": robot_data.analogOutput,
+            
+            # Register data
+            "floatRegisterInput": robot_data.floatRegisterInput,
+            "floatRegisterOutput": robot_data.floatRegisterOutput,
+            "functionalBoolRegisterInput": robot_data.functionalBoolRegisterInput,
+            "functionalBoolRegisterOutput": robot_data.functionalBoolRegisterOutput,
+            "boolRegisterInput": robot_data.boolRegisterInput,
+            "boolRegisterOutput": robot_data.boolRegisterOutput,
+            "wordRegisterInput": robot_data.wordRegisterInput,
+            "wordRegisterOutput": robot_data.wordRegisterOutput,
+            
+            # Tool IO
+            "toolIOInput": robot_data.toolIOInput,
+            "toolIOOutput": robot_data.toolIOOutput,
+            "toolAnalogInput": robot_data.toolAnalogInput,
+            "toolAnalogOutput": robot_data.toolAnalogOutput,
+            "toolButtonStatus": robot_data.toolButtonStatus,
+            
+            # Robot status (using correct field names)
+            "simulationMode": robot_data.simulationMode,
+            "robotOperationMode": robot_data.robotOperationMode,
+            "robotStatus": robot_data.robotStatus,
+            "robotProgramRunStatus": robot_data.robotProgramRunStatus,
+            "safetyMonitorStatus": robot_data.safetyMonitorStatus,
+            "collisionDetectionTrigger": robot_data.collisionDetectionTrigger,
+            "collisionAxis": robot_data.collisionAxis,
+            "robotErrorCode": robot_data.robotErrorCode,
+            
             # Timestamp for reference
             "timestamp": self.get_clock().now().to_msg()
         }

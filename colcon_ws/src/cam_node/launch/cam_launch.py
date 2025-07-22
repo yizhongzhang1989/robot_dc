@@ -35,4 +35,20 @@ def generate_launch_description():
                 'max_width': 480  # Even smaller for minimal latency
             }]
         ),
+        # Camera 102 - Similar settings for consistency
+        Node(
+            package='cam_node',
+            executable='cam_node',
+            name='cam_node_102',
+            output='screen',
+            parameters=[{
+                'camera_name': 'cam102',
+                'rtsp_url': 'rtsp://admin:123456@192.168.1.102/stream0',
+                'camera_ip': '192.168.1.102',
+                'stream_port': 8012,
+                'stream_fps': 10,  # Lower FPS for less latency
+                'jpeg_quality': 40,  # Lower quality for faster encoding
+                'max_width': 480  # Smaller resolution for minimal latency
+            }]
+        ),
     ])
