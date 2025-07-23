@@ -92,6 +92,47 @@ class RobotArmWebServer(Node):
         # Start FastAPI server in a separate thread
         self.start_web_server()
     
+    def add_scripts_to_path(self):
+        """Add the scripts directory to Python path for importing FTC modules"""
+        import sys
+        import os
+        # Find the robot_dc2 directory and add scripts to path
+        current_file = os.path.abspath(__file__)
+        self.get_logger().info(f"Current file path: {current_file}")
+        
+        scripts_dir = None
+        path_parts = current_file.split(os.sep)
+        self.get_logger().info(f"Path parts: {path_parts}")
+        
+        for i, part in enumerate(path_parts):
+            if part == 'robot_dc2':
+                scripts_dir = os.sep.join(path_parts[:i+1] + ['scripts'])
+                break
+        
+        if scripts_dir is None:
+            # Fallback: try different approach 
+            # Look for robot_dc2 in the path more flexibly
+            for i, part in enumerate(path_parts):
+                if 'robot_dc2' in part:
+                    base_dir = os.sep.join(path_parts[:i+1])
+                    if part != 'robot_dc2':
+                        # If the directory contains robot_dc2 but has different name
+                        base_dir = os.path.dirname(base_dir)
+                    scripts_dir = os.path.join(base_dir, 'scripts')
+                    break
+        
+        self.get_logger().info(f"Computed scripts directory: {scripts_dir}")
+        
+        if scripts_dir and os.path.exists(scripts_dir):
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            self.get_logger().info(f"Added scripts directory to path: {scripts_dir}")
+            self.get_logger().info(f"Files in scripts directory: {os.listdir(scripts_dir)}")
+            return True
+        else:
+            self.get_logger().error(f"Scripts directory not found or doesn't exist: {scripts_dir}")
+            return False
+    
     def robot_state_callback(self, msg):
         """Handle incoming robot state messages"""
         with self.robot_state_lock:
@@ -291,6 +332,131 @@ class RobotArmWebServer(Node):
                     return JSONResponse(content={'status': 'success'})
                 except Exception as e:
                     return JSONResponse(content={'error': str(e)}, status_code=400)
+            
+            # FTC-related endpoints
+            @app.post("/api/ftc/start")
+            async def ftc_start(request: Request):
+                """Start FTC"""
+                try:
+                    if not self.add_scripts_to_path():
+                        return JSONResponse(content={'error': 'Scripts directory not found'}, status_code=500)
+                    
+                    from duco_FTCApiPost import FTC_start
+                    FTC_start()
+                    self.get_logger().info("FTC start command executed")
+                    return JSONResponse(content={'status': 'success', 'message': 'FTC started'})
+                except Exception as e:
+                    self.get_logger().error(f"Error executing FTC start: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            @app.post("/api/ftc/stop")
+            async def ftc_stop(request: Request):
+                """Stop FTC"""
+                try:
+                    if not self.add_scripts_to_path():
+                        return JSONResponse(content={'error': 'Scripts directory not found'}, status_code=500)
+                    
+                    from duco_FTCApiPost import FTC_stop
+                    FTC_stop()
+                    self.get_logger().info("FTC stop command executed")
+                    return JSONResponse(content={'status': 'success', 'message': 'FTC stopped'})
+                except Exception as e:
+                    self.get_logger().error(f"Error executing FTC stop: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            @app.post("/api/ftc/setindex")
+            async def ftc_setindex(request: Request):
+                """Set FTC index"""
+                try:
+                    data = await request.json()
+                    index = data.get('index', 0)
+                    
+                    if not self.add_scripts_to_path():
+                        return JSONResponse(content={'error': 'Scripts directory not found'}, status_code=500)
+                    
+                    from duco_FTCApiPost import FTC_SetIndex
+                    FTC_SetIndex(index)
+                    self.get_logger().info(f"FTC set index command executed with index: {index}")
+                    return JSONResponse(content={'status': 'success', 'message': f'FTC index set to {index}'})
+                except Exception as e:
+                    self.get_logger().error(f"Error executing FTC set index: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            @app.post("/api/ftc/setdkassemflag")
+            async def ftc_setdkassemflag(request: Request):
+                """Set FTC DK assembly flag"""
+                try:
+                    data = await request.json()
+                    flag = data.get('flag', 0)
+                    
+                    if not self.add_scripts_to_path():
+                        return JSONResponse(content={'error': 'Scripts directory not found'}, status_code=500)
+                    
+                    from duco_FTCApiPost import FTC_SetDKAssemFlag
+                    FTC_SetDKAssemFlag(flag)
+                    action = "enabled" if flag == 1 else "disabled"
+                    self.get_logger().info(f"FTC DK assembly flag set to {flag} (program {action})")
+                    return JSONResponse(content={'status': 'success', 'message': f'Program {action}'})
+                except Exception as e:
+                    self.get_logger().error(f"Error executing FTC set DK assembly flag: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            @app.post("/api/ftc/setftsetallrt")
+            async def ftc_setftsetallrt(request: Request):
+                """Set FTC Real-Time parameters"""
+                try:
+                    data = await request.json()
+                    
+                    if not self.add_scripts_to_path():
+                        return JSONResponse(content={'error': 'Scripts directory not found'}, status_code=500)
+                    
+                    from duco_FTCApiPost import FTC_setFTsetAllRT
+                    
+                    # Extract all parameters from the request data
+                    params = data.get('parameters', {})
+                    
+                    # Convert ftcSetGroup to array format if it's a string
+                    ftcSetGroup = params.get('ftcSetGroup', '17')
+                    if isinstance(ftcSetGroup, str):
+                        ftcSetGroup = [int(ftcSetGroup)] if ftcSetGroup.isdigit() else [0]
+                    
+                    FTC_setFTsetAllRT(
+                        isProgram=params.get('isProgram', True),
+                        ftcProgram=params.get('ftcProgram', None),
+                        onlyMonitor=params.get('onlyMonitor', False),
+                        graCalcIndex=params.get('graCalcIndex', 0),
+                        ftEnabled=params.get('ftEnabled', [True,True,True,True,True,True]),
+                        ftSet=params.get('ftSet', [0,0,0,0,0,0]),
+                        dead_zone=params.get('deadZone', [1,1,1,0.1,0.1,0.1]),
+                        disEndLimit=params.get('disEndLimit', 0.0),
+                        timeEndLimit=params.get('timeEndLimit', 0.0),
+                        ftEndLimit=params.get('ftEndLimit', [0,0,0,0,0,0]),
+                        disAng6D_EndLimit=params.get('disAng6DEndLimit', [0,0,0,0,0,0]),
+                        ftcEndType=params.get('ftcEndType', 0),
+                        quickSetIndex=params.get('quickSetIndex', [0,0,0,0,0,0]),
+                        B=params.get('B', [6000,6000,6000,4500,4500,4500]),
+                        M=params.get('M', [20,20,20,25,25,25]),
+                        vel_limit=params.get('velLimit', [500,500,500,500,500,500]),
+                        cor_pos_limit=params.get('corPosLimit', [10,10,10,5,5,5]),
+                        maxForce_1=params.get('maxForce1', [0,0,0,0,0,0]),
+                        ifDKStopOnMaxForce_1=params.get('ifDKStopOnMaxForce1', False),
+                        ifRobotStopOnMaxForce_1=params.get('ifRobotStopOnMaxForce1', False),
+                        maxForce_2=params.get('maxForce2', [0,0,0,0,0,0]),
+                        ifDKStopOnMaxForce_2=params.get('ifDKStopOnMaxForce2', False),
+                        ifRobotStopOnMaxForce_2=params.get('ifRobotStopOnMaxForce2', False),
+                        ifDKStopOnTimeDisMon=params.get('ifDKStopOnTimeDisMon', False),
+                        ifRobotStopOnTimeDisMon=params.get('ifRobotStopOnTimeDisMon', False),
+                        ifNeedInit=params.get('ifNeedInit', True),
+                        withGroup=params.get('withGroup', False),
+                        ftcSetGroup=ftcSetGroup,
+                        ignoreSensor=params.get('ignoreSensor', False)
+                    )
+                    
+                    self.get_logger().info("FTC setFTSetAllRT command executed with custom parameters")
+                    return JSONResponse(content={'status': 'success', 'message': 'FTC RT parameters set successfully'})
+                except Exception as e:
+                    self.get_logger().error(f"Error executing FTC setFTSetAllRT: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
             
             # Static file serving for urdf-loaders library
             @app.get("/third_party/{path:path}")

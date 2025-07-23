@@ -1454,6 +1454,97 @@ async function sendCommand(command) {
     }
 }
 
+// Send FTC command to robot arm
+async function sendFTCCommand(command, parameter = null) {
+    const statusElement = document.getElementById('ftcCommandStatus');
+    const button = document.getElementById(getFTCButtonId(command, parameter));
+    
+    // Disable button and show loading state
+    if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.6';
+    }
+    
+    statusElement.textContent = `Sending FTC command: ${command}...`;
+    statusElement.className = 'text-sm text-blue-600';
+    
+    try {
+        let endpoint;
+        let body;
+        
+        // Determine endpoint and body based on command
+        switch(command) {
+            case 'FTC_start':
+                endpoint = '/api/ftc/start';
+                body = JSON.stringify({ command: 'start' });
+                break;
+            case 'FTC_stop':
+                endpoint = '/api/ftc/stop';
+                body = JSON.stringify({ command: 'stop' });
+                break;
+            case 'FTC_setindex':
+                endpoint = '/api/ftc/setindex';
+                body = JSON.stringify({ command: 'setindex', index: 0 }); // Default index
+                break;
+            case 'FTC_SetDKAssemFlag':
+                endpoint = '/api/ftc/setdkassemflag';
+                body = JSON.stringify({ command: 'setdkassemflag', flag: parameter });
+                break;
+            default:
+                throw new Error(`Unknown FTC command: ${command}`);
+        }
+        
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: body
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            const commandText = parameter !== null ? `${command}(${parameter})` : command;
+            statusElement.textContent = `FTC command sent successfully: ${commandText}`;
+            statusElement.className = 'text-sm text-green-600';
+            logCommand('FTC', commandText, 'success');
+        } else {
+            statusElement.textContent = `Error: ${result.error || 'Unknown error'}`;
+            statusElement.className = 'text-sm text-red-600';
+            logCommand('FTC', command, 'error');
+        }
+    } catch (error) {
+        console.error('Error sending FTC command:', error);
+        statusElement.textContent = `Network error: ${error.message}`;
+        statusElement.className = 'text-sm text-red-600';
+        logCommand('FTC', command, 'error');
+    } finally {
+        // Re-enable button
+        if (button) {
+            button.disabled = false;
+            button.style.opacity = '1';
+        }
+        
+        // Clear status after 3 seconds
+        setTimeout(() => {
+            statusElement.textContent = 'Ready to send FTC commands';
+            statusElement.className = 'text-sm text-gray-600';
+        }, 3000);
+    }
+}
+
+// Get button ID for FTC commands
+function getFTCButtonId(command, parameter = null) {
+    const buttonMap = {
+        'FTC_start': 'ftcStartBtn',
+        'FTC_stop': 'ftcStopBtn',
+        'FTC_setindex': 'ftcSetIndexBtn',
+        'FTC_SetDKAssemFlag': parameter === 1 ? 'ftcEnableProgramBtn' : 'ftcStopProgramBtn'
+    };
+    return buttonMap[command];
+}
+
 // Get button ID for a command
 function getButtonId(command) {
     const buttonMap = {
@@ -1561,6 +1652,31 @@ document.addEventListener('keydown', function(event) {
                 event.preventDefault();
                 sendCommand('disable');
                 break;
+            // FTC shortcuts
+            case '5':
+                event.preventDefault();
+                sendFTCCommand('FTC_start');
+                break;
+            case '6':
+                event.preventDefault();
+                sendFTCCommand('FTC_stop');
+                break;
+            case '7':
+                event.preventDefault();
+                openSetIndexDialog();
+                break;
+            case '8':
+                event.preventDefault();
+                sendFTCCommand('FTC_SetDKAssemFlag', 1);
+                break;
+            case '9':
+                event.preventDefault();
+                sendFTCCommand('FTC_SetDKAssemFlag', 0);
+                break;
+            case '0':
+                event.preventDefault();
+                openSetRTDialog();
+                break;
         }
     }
 });
@@ -1571,7 +1687,13 @@ document.addEventListener('DOMContentLoaded', function() {
         {id: 'powerOnBtn', shortcut: 'Ctrl+1'},
         {id: 'powerOffBtn', shortcut: 'Ctrl+2'},
         {id: 'enableBtn', shortcut: 'Ctrl+3'},
-        {id: 'disableBtn', shortcut: 'Ctrl+4'}
+        {id: 'disableBtn', shortcut: 'Ctrl+4'},
+        {id: 'ftcStartBtn', shortcut: 'Ctrl+5'},
+        {id: 'ftcStopBtn', shortcut: 'Ctrl+6'},
+        {id: 'ftcSetIndexBtn', shortcut: 'Ctrl+7'},
+        {id: 'ftcEnableProgramBtn', shortcut: 'Ctrl+8'},
+        {id: 'ftcStopProgramBtn', shortcut: 'Ctrl+9'},
+        {id: 'ftcSetRTBtn', shortcut: 'Ctrl+0'}
     ];
     
     buttons.forEach(button => {
@@ -1583,7 +1705,372 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize move control input fields with default values
     initializeMoveControlInputs();
+    
+    // Add event listeners for Set Index dialog
+    const indexInput = document.getElementById('ftcIndexInput');
+    if (indexInput) {
+        indexInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                confirmSetIndex();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeSetIndexDialog();
+            }
+        });
+    }
+    
+    // Close modal when clicking outside
+    const setIndexModal = document.getElementById('setIndexModal');
+    if (setIndexModal) {
+        setIndexModal.addEventListener('click', function(event) {
+            if (event.target === setIndexModal) {
+                closeSetIndexDialog();
+            }
+        });
+    }
+    
+    // Close Set RT modal when clicking outside
+    const setRTModal = document.getElementById('setRTModal');
+    if (setRTModal) {
+        setRTModal.addEventListener('click', function(event) {
+            if (event.target === setRTModal) {
+                closeSetRTDialog();
+            }
+        });
+        
+        // Add Escape key listener for Set RT modal
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape' && setRTModal.style.display === 'flex') {
+                closeSetRTDialog();
+            }
+        });
+    }
 });
+
+// Set RT Dialog Functions
+let rtParametersInitialized = false; // Flag to track if RT parameters have been initialized
+
+function openSetRTDialog() {
+    const modal = document.getElementById('setRTModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Only initialize with default values on first open or if no saved parameters exist
+        if (!rtParametersInitialized) {
+            const loaded = loadRTParameters();
+            if (!loaded) {
+                initializeRTDefaults();
+            }
+            rtParametersInitialized = true;
+        }
+    }
+}
+
+function closeSetRTDialog() {
+    const modal = document.getElementById('setRTModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Function to reset RT parameters to default values
+function resetRTToDefaults() {
+    if (confirm('Are you sure you want to reset all parameters to default values? This will overwrite your current settings.')) {
+        initializeRTDefaults();
+        saveRTParameters(); // Save the reset values
+    }
+}
+
+// Function to save current RT parameters to localStorage
+function saveRTParameters() {
+    try {
+        const parameters = {};
+        
+        // Save single element values
+        const singleElementIds = [
+            'rtIsProgram', 'rtFtcProgram', 'rtOnlyMonitor', 'rtGraCalcIndex',
+            'rtDisEndLimit', 'rtTimeEndLimit', 'rtFtcEndType',
+            'rtIfDKStopOnMaxForce1', 'rtIfRobotStopOnMaxForce1',
+            'rtIfDKStopOnMaxForce2', 'rtIfRobotStopOnMaxForce2',
+            'rtIfDKStopOnTimeDisMon', 'rtIfRobotStopOnTimeDisMon',
+            'rtIfNeedInit', 'rtWithGroup', 'rtFtcSetGroup', 'rtIgnoreSensor'
+        ];
+        
+        singleElementIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                parameters[id] = element.value;
+            }
+        });
+        
+        // Save 6-dimensional array values
+        const array6DPrefixes = [
+            'rtFtEnabled', 'rtFtSet', 'rtDeadZone', 'rtQuickSetIndex',
+            'rtFtEndLimit', 'rtDisAng6DEndLimit', 'rtB', 'rtM',
+            'rtVelLimit', 'rtCorPosLimit', 'rtMaxForce1', 'rtMaxForce2'
+        ];
+        
+        array6DPrefixes.forEach(prefix => {
+            const values = [];
+            for (let i = 0; i < 6; i++) {
+                const element = document.getElementById(`${prefix}${i}`) || 
+                              document.getElementById(`${prefix}_${i}`);
+                if (element) {
+                    values.push(element.value);
+                }
+            }
+            parameters[prefix] = values;
+        });
+        
+        localStorage.setItem('ftcRTParameters', JSON.stringify(parameters));
+        console.log('RT parameters saved to localStorage');
+    } catch (error) {
+        console.error('Error saving RT parameters:', error);
+    }
+}
+
+// Function to load RT parameters from localStorage
+function loadRTParameters() {
+    try {
+        const saved = localStorage.getItem('ftcRTParameters');
+        if (!saved) return false;
+        
+        const parameters = JSON.parse(saved);
+        
+        // Load single element values
+        Object.entries(parameters).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+                // Handle 6-dimensional arrays
+                for (let i = 0; i < 6; i++) {
+                    const element = document.getElementById(`${key}${i}`) || 
+                                  document.getElementById(`${key}_${i}`);
+                    if (element && value[i] !== undefined) {
+                        element.value = value[i];
+                    }
+                }
+            } else {
+                // Handle single values
+                const element = document.getElementById(key);
+                if (element) {
+                    element.value = value;
+                }
+            }
+        });
+        
+        console.log('RT parameters loaded from localStorage');
+        return true;
+    } catch (error) {
+        console.error('Error loading RT parameters:', error);
+        return false;
+    }
+}
+
+function initializeRTDefaults() {
+    // Set default values for the RT parameters form based on user configuration
+    const singleElements = {
+        'rtIsProgram': 'false',
+        'rtFtcProgram': '',
+        'rtOnlyMonitor': 'false',
+        'rtGraCalcIndex': '5',
+        'rtDisEndLimit': '5000',
+        'rtTimeEndLimit': '60',
+        'rtFtcEndType': '6',
+        'rtIfDKStopOnMaxForce1': 'false',
+        'rtIfRobotStopOnMaxForce1': 'false',
+        'rtIfDKStopOnMaxForce2': 'false',
+        'rtIfRobotStopOnMaxForce2': 'false',
+        'rtIfDKStopOnTimeDisMon': 'false',
+        'rtIfRobotStopOnTimeDisMon': 'false',
+        'rtIfNeedInit': 'true',
+        'rtWithGroup': 'false',
+        'rtFtcSetGroup': '17',
+        'rtIgnoreSensor': 'false'
+    };
+    
+    // 6-dimensional arrays with their default values
+    const array6DElements = {
+        'rtFtEnabled': [true, true, true, true, true, true],
+        'rtFtSet': [0, 0, 0, 0, 0, 0],
+        'rtDeadZone': [1, 1, 1, 0.1, 0.1, 0.1],
+        'rtQuickSetIndex': [0, 0, 0, 0, 0, 0],
+        'rtFtEndLimit': [0, 0, 0, 0, 0, 0],
+        'rtDisAng6DEndLimit': [0, 0, 0, 0, 0, 0],
+        'rtB': [6000, 6000, 6000, 4500, 4500, 4500],
+        'rtM': [20, 20, 20, 25, 25, 25],
+        'rtVelLimit': [500, 500, 500, 500, 500, 500],
+        'rtCorPosLimit': [10, 10, 10, 5, 5, 5],
+        'rtMaxForce1': [0, 0, 0, 0, 0, 0],
+        'rtMaxForce2': [0, 0, 0, 0, 0, 0]
+    };
+    
+    // Set single element values
+    Object.entries(singleElements).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.value = value;
+        }
+    });
+    
+    // Set 6-dimensional array values
+    Object.entries(array6DElements).forEach(([prefix, values]) => {
+        for (let i = 0; i < 6; i++) {
+            const element = document.getElementById(`${prefix}${i}`) || 
+                          document.getElementById(`${prefix}_${i}`);
+            if (element) {
+                if (element.tagName === 'SELECT' && prefix === 'rtFtEnabled') {
+                    element.value = values[i] ? 'true' : 'false';
+                } else {
+                    element.value = values[i];
+                }
+            }
+        }
+    });
+}
+
+function parseArrayString(str) {
+    try {
+        // Remove whitespace and parse as JSON array
+        const cleanStr = str.trim();
+        if (cleanStr.startsWith('[') && cleanStr.endsWith(']')) {
+            return JSON.parse(cleanStr);
+        } else {
+            // If not in array format, try to split by comma
+            return cleanStr.split(',').map(x => parseFloat(x.trim())).filter(x => !isNaN(x));
+        }
+    } catch (e) {
+        console.warn('Failed to parse array string:', str);
+        return [0,0,0,0,0,0]; // Default array
+    }
+}
+
+async function confirmSetRT() {
+    try {
+        // Helper function to collect 6D array values
+        function collect6DArray(prefix) {
+            const values = [];
+            for (let i = 0; i < 6; i++) {
+                const element = document.getElementById(`${prefix}${i}`) || 
+                              document.getElementById(`${prefix}_${i}`);
+                if (element) {
+                    if (element.type === 'checkbox') {
+                        values.push(element.checked);
+                    } else if (element.tagName === 'SELECT') {
+                        if (prefix === 'rtFtEnabled') {
+                            values.push(element.value === 'true');
+                        } else {
+                            values.push(parseFloat(element.value) || 0);
+                        }
+                    } else {
+                        values.push(parseFloat(element.value) || 0);
+                    }
+                } else {
+                    values.push(0);
+                }
+            }
+            return values;
+        }
+
+        // Collect all parameters from the form
+        const parameters = {
+            isProgram: document.getElementById('rtIsProgram').value === 'true',
+            ftcProgram: document.getElementById('rtFtcProgram').value.trim() === '' ? null : document.getElementById('rtFtcProgram').value,
+            onlyMonitor: document.getElementById('rtOnlyMonitor').value === 'true',
+            graCalcIndex: parseInt(document.getElementById('rtGraCalcIndex').value) || 0,
+            ftEnabled: collect6DArray('rtFtEnabled'),
+            ftSet: collect6DArray('rtFtSet'),
+            deadZone: collect6DArray('rtDeadZone'),
+            disEndLimit: parseFloat(document.getElementById('rtDisEndLimit').value) || 0.0,
+            timeEndLimit: parseFloat(document.getElementById('rtTimeEndLimit').value) || 0.0,
+            ftEndLimit: collect6DArray('rtFtEndLimit'),
+            disAng6DEndLimit: collect6DArray('rtDisAng6DEndLimit'),
+            ftcEndType: parseInt(document.getElementById('rtFtcEndType').value) || 0,
+            quickSetIndex: collect6DArray('rtQuickSetIndex'),
+            B: collect6DArray('rtB'),
+            M: collect6DArray('rtM'),
+            velLimit: collect6DArray('rtVelLimit'),
+            corPosLimit: collect6DArray('rtCorPosLimit'),
+            maxForce1: collect6DArray('rtMaxForce1'),
+            ifDKStopOnMaxForce1: document.getElementById('rtIfDKStopOnMaxForce1').value === 'true',
+            ifRobotStopOnMaxForce1: document.getElementById('rtIfRobotStopOnMaxForce1').value === 'true',
+            maxForce2: collect6DArray('rtMaxForce2'),
+            ifDKStopOnMaxForce2: document.getElementById('rtIfDKStopOnMaxForce2').value === 'true',
+            ifRobotStopOnMaxForce2: document.getElementById('rtIfRobotStopOnMaxForce2').value === 'true',
+            ifDKStopOnTimeDisMon: document.getElementById('rtIfDKStopOnTimeDisMon').value === 'true',
+            ifRobotStopOnTimeDisMon: document.getElementById('rtIfRobotStopOnTimeDisMon').value === 'true',
+            ifNeedInit: document.getElementById('rtIfNeedInit').value === 'true',
+            withGroup: document.getElementById('rtWithGroup').value === 'true',
+            ftcSetGroup: document.getElementById('rtFtcSetGroup').value,
+            ignoreSensor: document.getElementById('rtIgnoreSensor').value === 'true'
+        };
+        
+        // Save current parameters before closing dialog
+        saveRTParameters();
+        
+        // Close the dialog first
+        closeSetRTDialog();
+        
+        // Send the FTC set RT command with all parameters
+        await sendFTCRTCommand(parameters);
+        
+    } catch (error) {
+        console.error('Error setting FTC RT parameters:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// FTC RT command function
+async function sendFTCRTCommand(parameters) {
+    const statusElement = document.getElementById('ftcCommandStatus');
+    const button = document.getElementById('ftcSetRTBtn');
+    
+    // Disable button and show loading state
+    if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.6';
+    }
+    
+    statusElement.textContent = 'Sending FTC RT parameters...';
+    statusElement.className = 'text-sm text-blue-600';
+    
+    try {
+        const response = await fetch('/api/ftc/setftsetallrt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ parameters: parameters })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            statusElement.textContent = 'FTC RT parameters set successfully';
+            statusElement.className = 'text-sm text-green-600';
+            logCommand('FTC', 'Set RT Parameters', 'success');
+        } else {
+            statusElement.textContent = `Error: ${result.error || 'Unknown error'}`;
+            statusElement.className = 'text-sm text-red-600';
+            logCommand('FTC', 'Set RT Parameters', 'error');
+        }
+    } catch (error) {
+        console.error('Error sending FTC RT command:', error);
+        statusElement.textContent = `Network error: ${error.message}`;
+        statusElement.className = 'text-sm text-red-600';
+        logCommand('FTC', 'Set RT Parameters', 'error');
+    } finally {
+        // Re-enable button
+        if (button) {
+            button.disabled = false;
+            button.style.opacity = '1';
+        }
+        
+        // Clear status after 3 seconds
+        setTimeout(() => {
+            statusElement.textContent = 'Ready to send FTC commands';
+            statusElement.className = 'text-sm text-gray-600';
+        }, 3000);
+    }
+}
 
 // Function to initialize move control input fields
 function initializeMoveControlInputs() {
@@ -2492,5 +2979,105 @@ async function confirmMoveToTargetTcp() {
         
         // Show error to user but don't close dialog
         alert(`Error: ${error.message}`);
+    }
+}
+
+// Set Index Dialog Functions
+function openSetIndexDialog() {
+    const modal = document.getElementById('setIndexModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Focus on the input field
+        const input = document.getElementById('ftcIndexInput');
+        if (input) {
+            input.focus();
+            input.select();
+        }
+    }
+}
+
+function closeSetIndexDialog() {
+    const modal = document.getElementById('setIndexModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+async function confirmSetIndex() {
+    try {
+        const indexInput = document.getElementById('ftcIndexInput');
+        if (!indexInput) {
+            throw new Error('Index input field not found');
+        }
+        
+        const index = parseInt(indexInput.value);
+        if (isNaN(index) || index < 0) {
+            throw new Error('Please enter a valid non-negative integer for index');
+        }
+        
+        // Close the dialog first
+        closeSetIndexDialog();
+        
+        // Send the FTC set index command with the specified index
+        await sendFTCCommandWithIndex('FTC_setindex', index);
+        
+    } catch (error) {
+        console.error('Error setting FTC index:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Enhanced FTC command function that accepts index parameter
+async function sendFTCCommandWithIndex(command, index) {
+    const statusElement = document.getElementById('ftcCommandStatus');
+    const button = document.getElementById('ftcSetIndexBtn');
+    
+    // Disable button and show loading state
+    if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.6';
+    }
+    
+    statusElement.textContent = `Sending FTC command: ${command} with index ${index}...`;
+    statusElement.className = 'text-sm text-blue-600';
+    
+    try {
+        const response = await fetch('/api/ftc/setindex', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: 'setindex', index: index })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            const commandText = `${command}(${index})`;
+            statusElement.textContent = `FTC command sent successfully: ${commandText}`;
+            statusElement.className = 'text-sm text-green-600';
+            logCommand('FTC', commandText, 'success');
+        } else {
+            statusElement.textContent = `Error: ${result.error || 'Unknown error'}`;
+            statusElement.className = 'text-sm text-red-600';
+            logCommand('FTC', command, 'error');
+        }
+    } catch (error) {
+        console.error('Error sending FTC command:', error);
+        statusElement.textContent = `Network error: ${error.message}`;
+        statusElement.className = 'text-sm text-red-600';
+        logCommand('FTC', command, 'error');
+    } finally {
+        // Re-enable button
+        if (button) {
+            button.disabled = false;
+            button.style.opacity = '1';
+        }
+        
+        // Clear status after 3 seconds
+        setTimeout(() => {
+            statusElement.textContent = 'Ready to send FTC commands';
+            statusElement.className = 'text-sm text-gray-600';
+        }, 3000);
     }
 }
