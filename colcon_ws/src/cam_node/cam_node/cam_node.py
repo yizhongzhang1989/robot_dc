@@ -91,6 +91,9 @@ class RTSPStream:
         print(f"Starting FFmpeg process for {name}...")
         # Add retry mechanism for FFmpeg process startup
         max_ffmpeg_retries = 3
+        self.proc = None
+        self.available = False
+        
         for attempt in range(max_ffmpeg_retries):
             try:
                 self.proc = subprocess.Popen(
@@ -111,6 +114,7 @@ class RTSPStream:
                 # Give FFmpeg a moment to start
                 time.sleep(1)
                 if self.proc.poll() is None:  # Process is still running
+                    self.available = True
                     break
                 else:
                     print(f"FFmpeg process failed for {name}, attempt {attempt + 1}/{max_ffmpeg_retries}")
@@ -122,26 +126,39 @@ class RTSPStream:
                 if attempt < max_ffmpeg_retries - 1:
                     time.sleep(2)
                     continue
-                else:
-                    raise
+        
+        if not self.available:
+            print(f"Failed to start FFmpeg for {name} after {max_ffmpeg_retries} attempts. Stream will be unavailable.")
+            self.proc = None
         
         self.thread = threading.Thread(target=self.update, daemon=True)
         self.thread.start()
-        print(f"Started {name} stream successfully")
+        
+        if self.available:
+            print(f"Started {name} stream successfully")
+        else:
+            print(f"Stream {name} is not available - will show error message")
 
     def update(self):
+        if not self.available or self.proc is None:
+            return
+            
         frame_size = self.width * self.height * 3
-        while self.running:
-            if self.proc.stdout is None:
-                continue
-            raw = self.proc.stdout.read(frame_size)
-            if len(raw) != frame_size:
-                continue
-            frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.height, self.width, 3))
-            with self.lock:
-                self.frame = frame
-                self.frame_count += 1
-                self.last_frame_update = time.time()
+        while self.running and self.available:
+            try:
+                if self.proc.stdout is None:
+                    break
+                raw = self.proc.stdout.read(frame_size)
+                if len(raw) != frame_size:
+                    continue
+                frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.height, self.width, 3))
+                with self.lock:
+                    self.frame = frame
+                    self.frame_count += 1
+                    self.last_frame_update = time.time()
+            except Exception as e:
+                print(f"Error reading frame for {self.name}: {e}")
+                break
 
     def get_frame(self):
         with self.lock:
@@ -156,6 +173,28 @@ class RTSPStream:
         
         try:
             while True:
+                if not self.available:
+                    # Generate error image for unavailable stream
+                    error_img = np.zeros((240, 320, 3), dtype=np.uint8)
+                    error_img[:] = (50, 50, 50)  # Dark gray background
+                    
+                    # Add text
+                    cv2.putText(error_img, f"{self.name} Stream", (20, 80), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.putText(error_img, "Not Available", (20, 125), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.putText(error_img, self.url, (20, 170), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                    
+                    _, buffer = cv2.imencode('.jpg', error_img)
+                    frame_bytes = buffer.tobytes()
+                    
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                    time.sleep(1)  # Update error message every second
+                    continue
+                
+                resized_frame = None
                 with self.lock:
                     # Check if we have a new frame
                     if self.frame is not None and self.frame_count != last_frame_id:
@@ -172,19 +211,18 @@ class RTSPStream:
                         last_frame_id = self.frame_count
                 
                 # Only encode and send if we have a new frame
-                if 'resized_frame' in locals():
+                if resized_frame is not None:
                     try:
                         # Use lower quality for faster encoding
                         _, buffer = cv2.imencode('.jpg', resized_frame, [cv2.IMWRITE_JPEG_QUALITY, max(quality - 20, 30)])
                         frame_bytes = buffer.tobytes()
                         yield (b'--frame\r\n'
                                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                        del resized_frame  # Clean up
                     except Exception as e:
                         print(f"Error encoding frame for {self.name}: {e}")
-                
-                # Very small sleep to prevent CPU spinning but maintain low latency
-                time.sleep(0.005)  # 5ms sleep
+                else:
+                    # No new frame, just wait a bit
+                    time.sleep(0.01)  # 10ms sleep when no new frame
                     
         except GeneratorExit:
             pass
@@ -203,8 +241,9 @@ class RTSPStream:
 
     def stop(self):
         self.running = False
-        self.proc.kill()
-        self.thread.join()
+        if self.available and self.proc:
+            self.proc.kill()
+            self.thread.join()
 
 class CamNode(Node):
     """ROS2 node for camera snapshot service."""
@@ -291,7 +330,15 @@ class CamNode(Node):
         
         @flask_app.route('/')
         def index():
-            return f'<h1>Camera Stream: {self.camera_name}</h1><img src="/video_feed" style="max-width:640px;">'
+            stream_status = "Available" if (self.stream and self.stream.available) else "Not Available"
+            frame_info = self.stream.get_frame_info() if self.stream else {}
+            return f'''
+            <h1>Camera Stream: {self.camera_name}</h1>
+            <p>Stream Status: {stream_status}</p>
+            <p>Frame Count: {frame_info.get('frame_count', 'N/A')}</p>
+            <p>Has Frame: {frame_info.get('has_frame', 'N/A')}</p>
+            <img src="/video_feed" style="max-width:640px;">
+            '''
 
         @flask_app.route('/video_feed')
         def video_feed():
@@ -303,6 +350,16 @@ class CamNode(Node):
                 quality=self.jpeg_quality,
                 max_width=self.max_width
             ), mimetype='multipart/x-mixed-replace; boundary=frame')
+        
+        @flask_app.route('/status')
+        def status():
+            stream_status = "Available" if (self.stream and self.stream.available) else "Not Available"
+            return {
+                'camera_name': self.camera_name,
+                'rtsp_url': self.rtsp_url,
+                'stream_status': stream_status,
+                'stream_port': self.stream_port
+            }
 
         def run_flask():
             try:
