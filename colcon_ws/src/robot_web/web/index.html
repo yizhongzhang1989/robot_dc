@@ -65,20 +65,20 @@
       <div class="flex gap-4 justify-center flex-wrap">
         <div class="bg-white rounded shadow p-4 stream-container">
           <h3 class="font-semibold mb-2 text-center">Camera 100</h3>
-          <img id="stream-100" src="/stream/cam100" 
-               style="border: 1px solid #ccc;"
+          <img id="stream-100" src="" 
+               style="border: 1px solid #ccc; display: none;"
                onerror="this.style.display='none'; document.getElementById('error-100').style.display='block';">
-          <div id="error-100" style="display:none; color:red; text-align:center; padding:20px;">
-            Stream not available
+          <div id="error-100" style="display:block; color:#666; text-align:center; padding:20px; background:#f5f5f5; border: 1px solid #ddd;">
+            Loading stream...
           </div>
         </div>
         <div class="bg-white rounded shadow p-4 stream-container">
           <h3 class="font-semibold mb-2 text-center">Camera 101</h3>
-          <img id="stream-101" src="/stream/cam101" 
-               style="border: 1px solid #ccc;"
+          <img id="stream-101" src="" 
+               style="border: 1px solid #ccc; display: none;"
                onerror="this.style.display='none'; document.getElementById('error-101').style.display='block';">
-          <div id="error-101" style="display:none; color:red; text-align:center; padding:20px;">
-            Stream not available
+          <div id="error-101" style="display:block; color:#666; text-align:center; padding:20px; background:#f5f5f5; border: 1px solid #ddd;">
+            Loading stream...
           </div>
         </div>
       </div>
@@ -647,6 +647,11 @@
         const errorDiv = document.getElementById(stream.errorId);
         
         if (img && errorDiv) {
+          // Show error initially
+          img.style.display = 'none';
+          errorDiv.style.display = 'block';
+          errorDiv.innerHTML = 'Loading stream...';
+          
           img.onload = function() {
             img.style.display = 'block';
             errorDiv.style.display = 'none';
@@ -655,12 +660,17 @@
           img.onerror = function() {
             img.style.display = 'none';
             errorDiv.style.display = 'block';
+            errorDiv.innerHTML = 'Stream not available<br><small>Retrying in 5 seconds...</small>';
             
             // Try to reconnect after 5 seconds
             setTimeout(() => {
+              errorDiv.innerHTML = 'Reconnecting...';
               img.src = stream.src + '?t=' + new Date().getTime();
             }, 5000);
           };
+          
+          // Initial load with timestamp to avoid caching
+          img.src = stream.src + '?t=' + new Date().getTime();
         }
       });
     }

@@ -176,19 +176,66 @@ async def stream_camera(camera_name: str):
     
     try:
         import requests
-        response = requests.get(stream_url, stream=True)
+        # Use a shorter timeout to avoid blocking
+        response = requests.get(stream_url, stream=True, timeout=3)
         
         def generate():
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    yield chunk
+            try:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:
+                        yield chunk
+            except Exception as e:
+                # Log error but don't crash the generator
+                print(f"Stream error for {camera_name}: {e}")
+                return
         
         return StreamingResponse(
             generate(),
             media_type="multipart/x-mixed-replace; boundary=frame"
         )
+    except requests.exceptions.ConnectionError:
+        # Return a placeholder image for connection errors
+        return _generate_error_stream(camera_name, "Connection failed")
+    except requests.exceptions.Timeout:
+        # Return a placeholder image for timeouts
+        return _generate_error_stream(camera_name, "Stream timeout")
     except Exception as e:
-        return JSONResponse(content={"error": f"Stream not available: {str(e)}"}, status_code=503)
+        # Return a placeholder image for other errors
+        return _generate_error_stream(camera_name, f"Stream error: {str(e)}")
+
+def _generate_error_stream(camera_name: str, error_message: str):
+    """Generate an error image stream when camera is not available."""
+    import cv2
+    import numpy as np
+    
+    def generate_error_frames():
+        # Create error image
+        error_img = np.zeros((240, 320, 3), dtype=np.uint8)
+        error_img[:] = (50, 50, 50)  # Dark gray background
+        
+        # Add text
+        cv2.putText(error_img, f"Camera {camera_name}", (20, 80), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(error_img, "Not Available", (20, 125), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(error_img, error_message, (20, 170), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        
+        # Encode as JPEG
+        _, buffer = cv2.imencode('.jpg', error_img)
+        frame_bytes = buffer.tobytes()
+        
+        # Return as MJPEG stream
+        while True:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            import time
+            time.sleep(1)  # Update every second
+    
+    return StreamingResponse(
+        generate_error_frames(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 app.mount("/web", StaticFiles(directory=STATIC_DIR), name="web")
 
