@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>modbus_driver_interfaces</name>
+    <name>modbus_driver_interfaces</name>
   <version>0.0.0</version>
   <description>Modbus Driver interface definitions</description>
   <maintainer email="you@example.com">Your Name</maintainer>
