@@ -1043,6 +1043,17 @@
               🎯 Move to Target Angle
             </button>
           </div>
+          
+          <!-- Move J2 Button -->
+          <div class="mt-3 text-center">
+            <button 
+              id="movej2Btn"
+              class="robot-arm-button bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg text-sm"
+              onclick="openMovej2Dialog()"
+            >
+              🔧 Move J2
+            </button>
+          </div>
         </div>
 
         <!-- TCP Position -->
@@ -1119,6 +1130,17 @@
               onclick="openMoveToTargetTcpDialog()"
             >
               📍 Move to Target Position
+            </button>
+          </div>
+          
+          <!-- Move TCP Button -->
+          <div class="mt-3 text-center">
+            <button 
+              id="moveTcpBtn"
+              class="robot-arm-button bg-teal-500 hover:bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg text-sm"
+              onclick="openMoveTcpDialog()"
+            >
+              🔧 Move TCP
             </button>
           </div>
         </div>
@@ -1574,6 +1596,98 @@
         </button>
         <button class="modal-button modal-button-primary" onclick="confirmMoveToTargetTcp()">
           Move to Position
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Movej2 Modal -->
+  <div id="movej2Modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">🔧 Move J2</h3>
+        <p class="modal-subtitle">Set joint angles for movej2 command (degrees)</p>
+      </div>
+      
+      <div class="modal-joint-grid">
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 1:</label>
+          <input type="number" id="movej2Joint1" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 2:</label>
+          <input type="number" id="movej2Joint2" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 3:</label>
+          <input type="number" id="movej2Joint3" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 4:</label>
+          <input type="number" id="movej2Joint4" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 5:</label>
+          <input type="number" id="movej2Joint5" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Joint 6:</label>
+          <input type="number" id="movej2Joint6" class="modal-joint-input" value="0" step="0.1">
+        </div>
+      </div>
+      
+      <div class="modal-buttons">
+        <button class="modal-button modal-button-secondary" onclick="closeMovej2Dialog()">
+          Cancel
+        </button>
+        <button class="modal-button modal-button-primary" onclick="confirmMovej2()">
+          Execute Movej2
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move TCP Modal -->
+  <div id="moveTcpModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">🔧 Move TCP</h3>
+        <p class="modal-subtitle">Set TCP offset values in workpiece coordinate system</p>
+      </div>
+      
+      <div class="modal-joint-grid">
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">X Offset (mm):</label>
+          <input type="number" id="moveTcpOffsetX" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Y Offset (mm):</label>
+          <input type="number" id="moveTcpOffsetY" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Z Offset (mm):</label>
+          <input type="number" id="moveTcpOffsetZ" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Rx Offset (°):</label>
+          <input type="number" id="moveTcpOffsetRx" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Ry Offset (°):</label>
+          <input type="number" id="moveTcpOffsetRy" class="modal-joint-input" value="0" step="0.1">
+        </div>
+        <div class="modal-joint-item">
+          <label class="modal-joint-label">Rz Offset (°):</label>
+          <input type="number" id="moveTcpOffsetRz" class="modal-joint-input" value="0" step="0.1">
+        </div>
+      </div>
+      
+      <div class="modal-buttons">
+        <button class="modal-button modal-button-secondary" onclick="closeMoveTcpDialog()">
+          Cancel
+        </button>
+        <button class="modal-button modal-button-primary" onclick="confirmMoveTcp()">
+          Execute TCP Move
         </button>
       </div>
     </div>

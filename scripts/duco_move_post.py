@@ -257,14 +257,121 @@ def move_to_target_tcp_position(target_position_mm):
         print(f"❌ Error sending move to target TCP command: {e}")
 
 
+# Movej2 Position (关节角度定位移动)
+def movej2(target_angles_deg, velocity=1.0, acceleration=1.0, radius=1.0, block=True):
+    """
+    网页按钮: movej2
+    对应 confirmMovej2() 函数
+    使用movej2指令进行关节角度定位移动
+    url_movej2 = "http://localhost:8080/api/robot_arm/cmd"
+    params_movej2 = {"command": "movej2 [0.000000,-1.570796,1.570796,0.000000,1.570796,0.000000] 1.0 1.0 1.0 True"}
+    headers = {'Content-Type': 'application/json'}
+    """
+    # 检查输入参数
+    if not isinstance(target_angles_deg, list) or len(target_angles_deg) != 6:
+        print("❌ Error: target_angles_deg must be a list of 6 joint angles")
+        return
+    
+    # 转换关节角度：度 -> 弧度
+    target_joint_angles_rad = [angle * pi / 180 for angle in target_angles_deg]
+    
+    # 生成 movej2 命令
+    joint_angles_str = ','.join([f"{angle:.6f}" for angle in target_joint_angles_rad])
+    movej2_command = f"movej2 [{joint_angles_str}] {velocity} {acceleration} {radius} {block}"
+    
+    # POST 请求设置
+    url_movej2 = f"{BASE_URL}/api/robot_arm/cmd"
+    params_movej2 = {
+        "command": movej2_command
+    }
+    headers = {'Content-Type': 'application/json'}
+    
+    try:
+        response = requests.post(url_movej2, json=params_movej2, headers=headers)
+        time.sleep(2)  # 等待2秒以确保命令发送成功
+        if response.ok:
+            result = response.json()
+            print(f"✅ Movej2 command success: {result}")
+            print(f"Target joint angles (deg): {target_angles_deg}")
+            print(f"Command sent: {movej2_command}")
+        else:
+            print(f"❌ Failed to send movej2 command: {response.status_text}")
+    except Exception as e:
+        print(f"❌ Error sending movej2 command: {e}")
+
+
+# TCP Move (TCP坐标系下的偏移移动)
+def tcp_move(offset_mm, velocity=0.3, acceleration=0.2, radius=0.0, tool="", block=True):
+    """
+    网页按钮: Move TCP
+    对应 confirmMoveTcp() 函数
+    使用tcp_move指令进行TCP坐标系下的偏移移动
+    url_tcp_move = "http://localhost:8080/api/robot_arm/cmd"
+    params_tcp_move = {"command": "tcp_move [0.100000,-0.050000,0.050000,-0.174533,0.087266,0.000000] 0.3 0.2 0.0 \"\" True"}
+    headers = {'Content-Type': 'application/json'}
+    """
+    # 检查输入参数
+    if not isinstance(offset_mm, list) or len(offset_mm) != 6:
+        print("❌ Error: offset_mm must be a list of 6 values [x_mm, y_mm, z_mm, rx_deg, ry_deg, rz_deg]")
+        return
+    
+    # 提取偏移量并转换单位
+    offset_x_m = offset_mm[0] / 1000.0      # mm -> m
+    offset_y_m = offset_mm[1] / 1000.0      # mm -> m
+    offset_z_m = offset_mm[2] / 1000.0      # mm -> m
+    offset_rx_rad = offset_mm[3] * pi / 180  # deg -> rad
+    offset_ry_rad = offset_mm[4] * pi / 180  # deg -> rad
+    offset_rz_rad = offset_mm[5] * pi / 180  # deg -> rad
+    
+    # 生成 tcp_move 命令
+    pose_offset_str = ','.join([
+        f"{offset_x_m:.6f}",
+        f"{offset_y_m:.6f}",
+        f"{offset_z_m:.6f}",
+        f"{offset_rx_rad:.6f}",
+        f"{offset_ry_rad:.6f}",
+        f"{offset_rz_rad:.6f}"
+    ])
+    tcp_move_command = f"tcp_move [{pose_offset_str}] {velocity} {acceleration} {radius} \"{tool}\" {block}"
+    
+    # POST 请求设置
+    url_tcp_move = f"{BASE_URL}/api/robot_arm/cmd"
+    params_tcp_move = {
+        "command": tcp_move_command
+    }
+    headers = {'Content-Type': 'application/json'}
+    
+    try:
+        response = requests.post(url_tcp_move, json=params_tcp_move, headers=headers)
+        time.sleep(2)  # 等待2秒以确保命令发送成功
+        if response.ok:
+            result = response.json()
+            print(f"✅ TCP Move command success: {result}")
+            print(f"TCP offset (mm, deg): X={offset_mm[0]}, Y={offset_mm[1]}, Z={offset_mm[2]}, Rx={offset_mm[3]}, Ry={offset_mm[4]}, Rz={offset_mm[5]}")
+            print(f"Command sent: {tcp_move_command}")
+        else:
+            print(f"❌ Failed to send tcp_move command: {response.status_text}")
+    except Exception as e:
+        print(f"❌ Error sending tcp_move command: {e}")
+
+
+
+
 if __name__ == "__main__":
-    # result1, result2 = joint_angles_deg , tcp_position_mm
-    result1,result2 = get_actual_joint_angles_and_tcp_position()
-    print(result1,'\n',result2)
+    # # result1, result2 = joint_angles_deg , tcp_position_mm
+    # result1,result2 = get_actual_joint_angles_and_tcp_position()
+    # print(result1,'\n',result2)
 
-    result2 = [result2[0], result2[1]-100, result2[2], result2[3], result2[4], result2[5]]  # 确保是6个元素
-    move_to_target_tcp_position(result2)
-    time.sleep(5)  # 等待2秒以确保TCP移动完成
-    move_to_target_joint_position(result1)
-    time.sleep(5)  # 等待2秒以确保TCP移动完成
+    # result2 = [result2[0], result2[1]-100, result2[2], result2[3], result2[4], result2[5]]  # 确保是6个元素
+    # move_to_target_tcp_position(result2)
+    # time.sleep(5)  # 等待2秒以确保TCP移动完成
+    # move_to_target_joint_position(result1)
+    # time.sleep(5)  # 等待2秒以确保TCP移动完成
 
+    # 测试movej2功能
+    # target_angles_deg = [0,0,0,0,0,0]
+    # movej2(target_angles_deg)
+    
+    
+    tcp_offset_mm = [0.0, 0.0, 20.0, 0.0, 0.0, 0.0]  # [x_mm, y_mm, z_mm, rx_deg, ry_deg, rz_deg]
+    tcp_move(tcp_offset_mm)

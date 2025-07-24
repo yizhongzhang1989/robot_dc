@@ -2801,6 +2801,204 @@ async function confirmMoveToTarget() {
     }
 }
 
+// Movej2 Dialog Functions
+function openMovej2Dialog() {
+    const modal = document.getElementById('movej2Modal');
+    
+    // Initialize with current joint positions if available
+    if (robotStateData && robotStateData.joint_actual_position) {
+        for (let i = 1; i <= 6; i++) {
+            const input = document.getElementById(`movej2Joint${i}`);
+            const currentAngleRad = robotStateData.joint_actual_position[i - 1];
+            const currentAngleDeg = currentAngleRad * 180 / Math.PI;
+            input.value = currentAngleDeg.toFixed(1);
+        }
+    } else {
+        // Use current move control values as fallback
+        for (let i = 1; i <= 6; i++) {
+            const moveInput = document.getElementById(`moveJoint${i}`);
+            const targetInput = document.getElementById(`movej2Joint${i}`);
+            if (moveInput) {
+                targetInput.value = moveInput.value;
+            } else {
+                targetInput.value = "0";
+            }
+        }
+    }
+    
+    modal.style.display = 'flex';
+    
+    // Focus on first input
+    document.getElementById('movej2Joint1').focus();
+    
+    // Add escape key listener
+    document.addEventListener('keydown', handleMovej2ModalKeydown);
+}
+
+function closeMovej2Dialog() {
+    const modal = document.getElementById('movej2Modal');
+    modal.style.display = 'none';
+    
+    // Remove escape key listener
+    document.removeEventListener('keydown', handleMovej2ModalKeydown);
+}
+
+function handleMovej2ModalKeydown(event) {
+    if (event.key === 'Escape') {
+        closeMovej2Dialog();
+    }
+}
+
+async function confirmMovej2() {
+    try {
+        // Get target joint angles from inputs
+        const targetAngles = [];
+        for (let i = 1; i <= 6; i++) {
+            const input = document.getElementById(`movej2Joint${i}`);
+            const angleDeg = parseFloat(input.value);
+            if (isNaN(angleDeg)) {
+                throw new Error(`Invalid value for Joint ${i}: ${input.value}`);
+            }
+            // Convert degrees to radians for the command
+            const angleRad = angleDeg * Math.PI / 180;
+            targetAngles.push(angleRad);
+        }
+        
+        // Create movej2 command with target joint angles
+        const jointAnglesStr = targetAngles.map(angle => angle.toFixed(6)).join(',');
+        const command = `movej2 [${jointAnglesStr}] 1.0 1.0 1.0 True`;
+        
+        console.log('Movej2 target joint angles (degrees):', targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1)));
+        console.log('Sending movej2 command:', command);
+
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to send movej2 command: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        // Log the successful command
+        const targetAnglesDeg = targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1));
+        logCommand('Movej2', `Moving to position: J1=${targetAnglesDeg[0]}°, J2=${targetAnglesDeg[1]}°, J3=${targetAnglesDeg[2]}°, J4=${targetAnglesDeg[3]}°, J5=${targetAnglesDeg[4]}°, J6=${targetAnglesDeg[5]}°`);
+        
+        // Close the dialog
+        closeMovej2Dialog();
+        
+    } catch (error) {
+        console.error('Error sending movej2 command:', error);
+        logCommand('Movej2', `❌ Error: ${error.message}`, 'error');
+        
+        // Show error to user but don't close dialog
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Move TCP Dialog Functions
+function openMoveTcpDialog() {
+    const modal = document.getElementById('moveTcpModal');
+    
+    // Initialize with zero offset values
+    const offsetIds = ['moveTcpOffsetX', 'moveTcpOffsetY', 'moveTcpOffsetZ', 'moveTcpOffsetRx', 'moveTcpOffsetRy', 'moveTcpOffsetRz'];
+    offsetIds.forEach(id => {
+        const input = document.getElementById(id);
+        input.value = "0";
+    });
+    
+    modal.style.display = 'flex';
+    
+    // Focus on first input
+    document.getElementById('moveTcpOffsetX').focus();
+    
+    // Add escape key listener
+    document.addEventListener('keydown', handleMoveTcpModalKeydown);
+}
+
+function closeMoveTcpDialog() {
+    const modal = document.getElementById('moveTcpModal');
+    modal.style.display = 'none';
+    
+    // Remove escape key listener
+    document.removeEventListener('keydown', handleMoveTcpModalKeydown);
+}
+
+function handleMoveTcpModalKeydown(event) {
+    if (event.key === 'Escape') {
+        closeMoveTcpDialog();
+    }
+}
+
+async function confirmMoveTcp() {
+    try {
+        // Get TCP offset values from inputs
+        const offsetX = parseFloat(document.getElementById('moveTcpOffsetX').value)/1000;
+        const offsetY = parseFloat(document.getElementById('moveTcpOffsetY').value)/1000;
+        const offsetZ = parseFloat(document.getElementById('moveTcpOffsetZ').value)/1000;
+        const offsetRx = parseFloat(document.getElementById('moveTcpOffsetRx').value);
+        const offsetRy = parseFloat(document.getElementById('moveTcpOffsetRy').value);
+        const offsetRz = parseFloat(document.getElementById('moveTcpOffsetRz').value);
+        
+        // Validate input values
+        const offsets = [offsetX, offsetY, offsetZ, offsetRx, offsetRy, offsetRz];
+        const labels = ['X', 'Y', 'Z', 'Rx', 'Ry', 'Rz'];
+        for (let i = 0; i < offsets.length; i++) {
+            if (isNaN(offsets[i])) {
+                throw new Error(`Invalid value for ${labels[i]} offset: ${offsets[i]}`);
+            }
+        }
+        
+        // Convert rotation offsets from degrees to radians
+        const offsetRxRad = offsetRx * Math.PI / 180;
+        const offsetRyRad = offsetRy * Math.PI / 180;
+        const offsetRzRad = offsetRz * Math.PI / 180;
+        
+        // Create tcp_move command with offset values
+        const poseOffsetStr = [offsetX, offsetY, offsetZ, offsetRxRad, offsetRyRad, offsetRzRad]
+            .map(val => val.toFixed(6)).join(',');
+        const command = `tcp_move [${poseOffsetStr}] 0.3 0.2 0.0 "" True`;
+        
+        console.log('TCP Move offset values:', {
+            position: `X=${offsetX}mm, Y=${offsetY}mm, Z=${offsetZ}mm`,
+            rotation: `Rx=${offsetRx}°, Ry=${offsetRy}°, Rz=${offsetRz}°`
+        });
+        console.log('Sending tcp_move command:', command);
+
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to send tcp_move command: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        // Log the successful command
+        logCommand('TCP Move', `Moving TCP by offset: X=${offsetX}mm, Y=${offsetY}mm, Z=${offsetZ}mm, Rx=${offsetRx}°, Ry=${offsetRy}°, Rz=${offsetRz}°`);
+        
+        // Close the dialog
+        closeMoveTcpDialog();
+        
+    } catch (error) {
+        console.error('Error sending tcp_move command:', error);
+        logCommand('TCP Move', `❌ Error: ${error.message}`, 'error');
+        
+        // Show error to user but don't close dialog
+        alert(`Error: ${error.message}`);
+    }
+}
+
 // Add click outside to close modal functionality
 document.addEventListener('click', function(event) {
     const modal = document.getElementById('moveToTargetModal');
@@ -2811,6 +3009,16 @@ document.addEventListener('click', function(event) {
     const tcpModal = document.getElementById('moveToTargetTcpModal');
     if (event.target === tcpModal) {
         closeMoveToTargetTcpDialog();
+    }
+    
+    const movej2Modal = document.getElementById('movej2Modal');
+    if (event.target === movej2Modal) {
+        closeMovej2Dialog();
+    }
+    
+    const moveTcpModal = document.getElementById('moveTcpModal');
+    if (event.target === moveTcpModal) {
+        closeMoveTcpDialog();
     }
 });
 
