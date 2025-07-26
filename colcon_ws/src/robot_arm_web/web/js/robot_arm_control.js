@@ -9,13 +9,31 @@ let updateRate = 0;
 let lastUIUpdate = 0;
 let robotStateData = null;
 
+// Force-Torque Sensor variables
+let ftSensorSocket = null;
+let ftSensorData = [];
+let ftSensorChart = null;
+let ftSensorCtx = null;
+let ftDataBuffer = {
+    timestamps: [],
+    forces: [[], [], []], // Fx, Fy, Fz
+    torques: [[], [], []]  // Tx, Ty, Tz
+};
+let ftUpdateCounter = 0;
+let ftLastUpdateTime = 0;
+let ftUpdateRate = 0;
+const FT_BUFFER_SIZE = 300; // Increased to 300 data points (about 3 seconds at 100Hz)
+const FT_COLORS = ['#FF4444', '#00AA00', '#4488FF', '#FF44FF', '#FF8800', '#00FFFF']; // Force: Red, Green, Blue; Torque: Magenta, Orange, Cyan
+
 // User configurable settings
 const settings = {
     dataRefreshRate: 100,     // How often to fetch data from API (ms)
     uiRefreshRate: 500,      // How often to update the UI elements (ms)
     render3DRate: 30,        // Target FPS for 3D rendering
     animationEnabled: true,  // Whether to enable continuous rendering
-    debug: false            // Enable debug mode
+    debug: false,            // Enable debug mode
+    ftSensorEnabled: true,   // Enable FT sensor data reception
+    ftUdpPort: 5566         // UDP port for FT sensor data
 };
 
 // 3D Visualization variables
@@ -47,6 +65,18 @@ window.addEventListener('load', function() {
     fetchRobotArmInfo();
     updateConnectionStatus(true);
     startStateMonitoring();
+    
+    // Initialize Force-Torque Sensor Chart
+    setTimeout(() => {
+        console.log('Initializing FT Sensor Chart...');
+        initFTSensorChart();
+    }, 50);
+    
+    // Initialize FT Sensor UDP connection
+    setTimeout(() => {
+        console.log('Starting FT Sensor data reception...');
+        startFTSensorUDP();
+    }, 200);
     
     // Initialize 3D viewer with a small delay to ensure DOM is ready
     setTimeout(() => {
@@ -119,6 +149,29 @@ window.addEventListener('load', function() {
             }
         });
     }, 500);
+    
+    // Initialize FT Sensor controls
+    setTimeout(() => {
+        console.log('Initializing FT Sensor controls...');
+        const ftEnabledCheckbox = document.getElementById('ftSensorEnabled');
+        if (ftEnabledCheckbox) {
+            ftEnabledCheckbox.addEventListener('change', function() {
+                settings.ftSensorEnabled = this.checked;
+                console.log('FT Sensor enabled:', settings.ftSensorEnabled);
+                if (settings.ftSensorEnabled) {
+                    // Start WebSocket connection
+                    startFTSensorUDP();
+                } else {
+                    // Close WebSocket connection and stop all FT sensor activity
+                    if (ftSensorSocket) {
+                        ftSensorSocket.close();
+                        ftSensorSocket = null;
+                    }
+                    console.log('FT Sensor disabled - connections closed');
+                }
+            });
+        }
+    }, 600);
     
     logCommand('System', 'Web interface initialized');
 });
@@ -816,6 +869,421 @@ function updateMoveControlDisplay(state) {
     }
 
     // Update Move Control status and timestamp - removed as requested
+}
+
+// ===== Force-Torque Sensor Functions =====
+
+// Initialize FT Sensor Chart
+function initFTSensorChart() {
+    try {
+        ftSensorChart = document.getElementById('ftSensorChart');
+        if (!ftSensorChart) {
+            console.error('FT Sensor chart canvas not found');
+            return;
+        }
+        
+        ftSensorCtx = ftSensorChart.getContext('2d');
+        
+        // Set canvas size
+        const container = ftSensorChart.parentElement;
+        const rect = container.getBoundingClientRect();
+        ftSensorChart.width = rect.width || 480;
+        ftSensorChart.height = 400;
+        
+        console.log('FT Sensor chart initialized successfully');
+        
+        // Start rendering loop
+        requestAnimationFrame(renderFTSensorChart);
+        
+    } catch (error) {
+        console.error('Failed to initialize FT Sensor chart:', error);
+    }
+}
+
+// Start FT Sensor UDP data reception
+function startFTSensorUDP() {
+    // Only try WebSocket if FT sensor is enabled
+    if ("WebSocket" in window && settings.ftSensorEnabled) {
+        console.log('Attempting to connect to FT Sensor WebSocket...');
+        connectFTSensorWebSocket();
+    } else {
+        console.log('FT Sensor disabled or WebSocket not supported, using simulation...');
+        startFTSensorSimulation();
+    }
+}
+
+// Connect to FT Sensor WebSocket
+function connectFTSensorWebSocket() {
+    // Close existing socket if any
+    if (ftSensorSocket) {
+        ftSensorSocket.close();
+    }
+    
+    // Create WebSocket connection for FT sensor data
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/ft_sensor`;
+    
+    ftSensorSocket = new WebSocket(wsUrl);
+    
+    ftSensorSocket.onopen = function(e) {
+        console.log('FT Sensor WebSocket connection opened');
+        // Request latest data
+        ftSensorSocket.send('get_latest');
+    };
+    
+    ftSensorSocket.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.FTSensorData) {
+                processFTSensorData(data);
+            }
+        } catch (error) {
+            console.error('Error parsing FT sensor data:', error);
+        }
+    };
+    
+    ftSensorSocket.onclose = function(event) {
+        console.log('FT Sensor WebSocket connection closed');
+        // Only attempt to reconnect if FT sensor is enabled and we're not using simulation
+        setTimeout(() => {
+            if (settings.ftSensorEnabled && !ftSensorSocket) {
+                console.log('Attempting to reconnect FT Sensor WebSocket...');
+                connectFTSensorWebSocket();
+            }
+        }, 5000); // Increased to 5 seconds to reduce log spam
+    };
+    
+    ftSensorSocket.onerror = function(error) {
+        console.error('FT Sensor WebSocket error:', error);
+        // Close the socket and fall back to simulation
+        if (ftSensorSocket) {
+            ftSensorSocket.close();
+            ftSensorSocket = null;
+        }
+        console.log('Falling back to FT sensor simulation...');
+        startFTSensorSimulation();
+    };
+}
+
+// Simulate FT Sensor data (for testing purposes)
+function startFTSensorSimulation() {
+    // Only start simulation if FT sensor is enabled and no WebSocket connection exists
+    if (!settings.ftSensorEnabled || (ftSensorSocket && ftSensorSocket.readyState === WebSocket.OPEN)) {
+        return;
+    }
+    
+    console.log('Starting FT Sensor data simulation...');
+    
+    const simulateData = () => {
+        // Stop simulation if FT sensor is disabled or WebSocket connection is established
+        if (!settings.ftSensorEnabled || (ftSensorSocket && ftSensorSocket.readyState === WebSocket.OPEN)) {
+            console.log('Stopping FT Sensor simulation');
+            return;
+        }
+        
+        const now = Date.now();
+        const time = now / 1000; // Convert to seconds
+        
+        // Simulate FT sensor data with some realistic patterns
+        const ftData = {
+            FTSensorData: [
+                Math.sin(time * 0.5) * 10 + Math.random() * 2,      // Fx
+                Math.cos(time * 0.3) * 15 + Math.random() * 2,      // Fy  
+                Math.sin(time * 0.2) * 8 + Math.random() * 1,       // Fz
+                Math.cos(time * 0.4) * 5 + Math.random() * 0.5,     // Tx
+                Math.sin(time * 0.6) * 7 + Math.random() * 0.5,     // Ty
+                Math.cos(time * 0.8) * 4 + Math.random() * 0.5      // Tz
+            ]
+        };
+        
+        processFTSensorData(ftData);
+        
+        setTimeout(simulateData, 50); // 20Hz simulation (reduced from 50Hz)
+    };
+    
+    simulateData();
+}
+
+// Process incoming FT Sensor data
+function processFTSensorData(data) {
+    if (!data.FTSensorData || !Array.isArray(data.FTSensorData)) {
+        return;
+    }
+    
+    const timestamp = Date.now();
+    const ftValues = data.FTSensorData;
+    
+    // Update data buffer
+    ftDataBuffer.timestamps.push(timestamp);
+    
+    // Add force data (first 3 values)
+    for (let i = 0; i < 3; i++) {
+        if (i < ftValues.length) {
+            ftDataBuffer.forces[i].push(ftValues[i]);
+        }
+    }
+    
+    // Add torque data (last 3 values)
+    for (let i = 0; i < 3; i++) {
+        if (i + 3 < ftValues.length) {
+            ftDataBuffer.torques[i].push(ftValues[i + 3]);
+        }
+    }
+    
+    // Trim buffer to max size with smooth removal (remove older data in batches)
+    if (ftDataBuffer.timestamps.length > FT_BUFFER_SIZE) {
+        const excessCount = ftDataBuffer.timestamps.length - FT_BUFFER_SIZE;
+        const removeCount = Math.min(excessCount, Math.max(1, Math.floor(FT_BUFFER_SIZE * 0.1))); // Remove 10% at most
+        
+        for (let j = 0; j < removeCount; j++) {
+            ftDataBuffer.timestamps.shift();
+            for (let i = 0; i < 3; i++) {
+                ftDataBuffer.forces[i].shift();
+                ftDataBuffer.torques[i].shift();
+            }
+        }
+    }
+    
+    // Update statistics
+    ftUpdateCounter++;
+    const now = Date.now();
+    if (now - ftLastUpdateTime >= 1000) {
+        ftUpdateRate = ftUpdateCounter;
+        ftUpdateCounter = 0;
+        ftLastUpdateTime = now;
+    }
+}
+
+// Render FT Sensor Chart
+// Render FT Sensor Chart with frame rate limiting and anti-flicker optimization
+let lastFTRenderTime = 0;
+const FT_RENDER_INTERVAL = 66; // Reduced to ~15 FPS (1000ms / 15) for ultra-smooth appearance
+
+function renderFTSensorChart(timestamp) {
+    if (!ftSensorCtx || !ftSensorChart) {
+        return;
+    }
+    
+    // Limit frame rate to 15 FPS for maximum smoothness
+    if (timestamp - lastFTRenderTime < FT_RENDER_INTERVAL) {
+        requestAnimationFrame(renderFTSensorChart);
+        return;
+    }
+    lastFTRenderTime = timestamp;
+    
+    const ctx = ftSensorCtx;
+    const width = ftSensorChart.width;
+    const height = ftSensorChart.height;
+    
+    // Clear canvas with smooth transition
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Draw grid
+    drawGrid(ctx, width, height);
+    
+    // Draw data if available
+    if (ftDataBuffer.timestamps.length > 1) {
+        const timeRange = 3000; // Increased to 3 seconds for smoother transitions
+        const currentTime = Date.now();
+        const startTime = currentTime - timeRange;
+        
+        // Draw force data (top half)
+        drawFTData(ctx, ftDataBuffer.forces, ftDataBuffer.timestamps, 
+                  0, 0, width, height / 2, startTime, currentTime, [-50, 50], 'Forces (N)', 0);
+        
+        // Draw torque data (bottom half)
+        drawFTData(ctx, ftDataBuffer.torques, ftDataBuffer.timestamps,
+                  0, height / 2, width, height / 2, startTime, currentTime, [-20, 20], 'Torques (Nm)', 3);
+    }
+    
+    // Continue animation
+    requestAnimationFrame(renderFTSensorChart);
+}
+
+// Draw grid on chart with softer appearance
+function drawGrid(ctx, width, height) {
+    // Minor grid lines
+    ctx.strokeStyle = '#333333';
+    ctx.lineWidth = 0.5;
+    ctx.globalAlpha = 0.5;
+    
+    // Vertical lines (time) - minor
+    for (let i = 1; i < 20; i++) {
+        if (i % 4 !== 0) { // Skip major grid lines
+            const x = (i / 20) * width;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+        }
+    }
+    
+    // Horizontal lines - minor
+    for (let i = 1; i < 20; i++) {
+        if (i % 4 !== 0) { // Skip major grid lines
+            const y = (i / 20) * height;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+    }
+    
+    // Major grid lines
+    ctx.strokeStyle = '#555555';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.8;
+    
+    // Vertical lines (time) - major
+    for (let i = 0; i <= 20; i += 4) {
+        const x = (i / 20) * width;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+    }
+    
+    // Horizontal lines - major
+    for (let i = 0; i <= 20; i += 4) {
+        const y = (i / 20) * height;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+    }
+    
+    // Center line (zero line)
+    ctx.strokeStyle = '#AAAAAA';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 1.0;
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+    
+    // Reset alpha
+    ctx.globalAlpha = 1.0;
+}
+
+// Draw FT data curves with smooth transitions
+function drawFTData(ctx, dataArrays, timestamps, x, y, w, h, startTime, endTime, range, title, colorOffset = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    
+    // Reserve space for labels at top and bottom
+    const topMargin = 15;
+    const bottomMargin = 10;
+    const chartHeight = h - topMargin - bottomMargin;
+    
+    // Draw title
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '14px Arial';
+    ctx.fillText(title, 10, 20);
+    
+    // Draw Y-axis scale labels with better distribution
+    ctx.fillStyle = '#CCCCCC';
+    ctx.font = '9px Arial';
+    ctx.textAlign = 'right';
+    
+    const numTicks = 5; // Number of tick marks
+    for (let i = 0; i <= numTicks; i++) {
+        const ratio = i / numTicks;
+        const value = range[0] + (range[1] - range[0]) * ratio;
+        // Calculate y position with margins
+        const y = topMargin + chartHeight - (ratio * chartHeight);
+        
+        // Draw tick mark
+        ctx.strokeStyle = '#666666';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(w - 45, y);
+        ctx.lineTo(w - 40, y);
+        ctx.stroke();
+        
+        // Draw label
+        ctx.fillText(value.toFixed(1), w - 47, y + 3);
+    }
+    
+    // Reset text align for other text
+    ctx.textAlign = 'left';
+    
+    // Draw data curves with smooth transitions and fade effects
+    for (let curveIndex = 0; curveIndex < dataArrays.length; curveIndex++) {
+        const data = dataArrays[curveIndex];
+        if (data.length < 2) continue;
+        
+        // Collect all points with extended time range for smooth fade
+        const fadeMargin = (endTime - startTime) * 0.15; // 15% fade margin
+        const extendedStartTime = startTime - fadeMargin;
+        const extendedEndTime = endTime + fadeMargin;
+        
+        const allPoints = [];
+        for (let i = 0; i < data.length; i++) {
+            if (i >= timestamps.length) break;
+            
+            const timestamp = timestamps[i];
+            if (timestamp < extendedStartTime || timestamp > extendedEndTime) continue;
+            
+            const timeRatio = (timestamp - startTime) / (endTime - startTime);
+            const valueRatio = Math.max(0, Math.min(1, (data[i] - range[0]) / (range[1] - range[0])));
+            
+            const px = timeRatio * w;
+            const py = topMargin + chartHeight - (valueRatio * chartHeight);
+            
+            // Calculate alpha based on position for fade effect with enhanced smoothness
+            let alpha = 1.0;
+            if (timeRatio < 0) {
+                // Left fade-in: smooth exponential curve from 0 to 1
+                const leftProgress = Math.abs(timeRatio) / 0.15; // 0 to 1 as we move from -0.15 to 0
+                alpha = Math.max(0, 1 - Math.pow(leftProgress, 0.8)); // Smoother curve
+            } else if (timeRatio > 1) {
+                // Right fade-out: smooth exponential curve from 1 to 0 with enhanced decay
+                const rightProgress = (timeRatio - 1) / 0.15; // 0 to 1 as we move from 1 to 1.15
+                alpha = Math.max(0, 1 - Math.pow(rightProgress, 0.6)); // Even smoother fade-out
+            } else if (timeRatio > 0.85) {
+                // Enhanced right edge fade: start fading earlier for ultra-smooth transition
+                const earlyFadeProgress = (timeRatio - 0.85) / 0.15; // 0 to 1 as we move from 0.85 to 1
+                const earlyFadeFactor = 1 - Math.pow(earlyFadeProgress, 2) * 0.2; // Gentle early fade
+                alpha = Math.min(alpha, earlyFadeFactor);
+            }
+            
+            allPoints.push({x: px, y: py, timestamp, timeRatio, alpha});
+        }
+        
+        if (allPoints.length < 2) continue;
+        
+        // Draw curve with gradient transparency
+        const baseColor = FT_COLORS[curveIndex + colorOffset];
+        
+        // Extract RGB values from hex color
+        const r = parseInt(baseColor.substr(1, 2), 16);
+        const g = parseInt(baseColor.substr(3, 2), 16);
+        const b = parseInt(baseColor.substr(5, 2), 16);
+        
+        // Draw line segments with enhanced opacity blending for smoother transitions
+        for (let i = 0; i < allPoints.length - 1; i++) {
+            const currentPoint = allPoints[i];
+            const nextPoint = allPoints[i + 1];
+            
+            // Use weighted average alpha for ultra-smooth transitions, especially at edges
+            const avgAlpha = (currentPoint.alpha + nextPoint.alpha) / 2;
+            const segmentAlpha = Math.max(currentPoint.alpha, nextPoint.alpha) * 0.7 + avgAlpha * 0.3;
+            
+            if (segmentAlpha > 0.005) { // Even lower threshold for smoother fade
+                ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${segmentAlpha})`;
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                ctx.moveTo(currentPoint.x, currentPoint.y);
+                ctx.lineTo(nextPoint.x, nextPoint.y);
+                ctx.stroke();
+            }
+        }
+    }
+    
+    ctx.restore();
 }
 
 // Initialize 3D Viewer
@@ -2705,102 +3173,6 @@ async function sendServoTcpCommandAbsolute() {
     }
 }
 
-// Move to Target Position Dialog Functions
-function openMoveToTargetDialog() {
-    const modal = document.getElementById('moveToTargetModal');
-    
-    // Initialize with current joint positions if available
-    if (robotStateData && robotStateData.joint_actual_position) {
-        for (let i = 1; i <= 6; i++) {
-            const input = document.getElementById(`targetJoint${i}`);
-            const currentAngleRad = robotStateData.joint_actual_position[i - 1];
-            const currentAngleDeg = currentAngleRad * 180 / Math.PI;
-            input.value = currentAngleDeg.toFixed(1);
-        }
-    } else {
-        // Use current move control values as fallback
-        for (let i = 1; i <= 6; i++) {
-            const moveInput = document.getElementById(`moveJoint${i}`);
-            const targetInput = document.getElementById(`targetJoint${i}`);
-            targetInput.value = moveInput.value;
-        }
-    }
-    
-    modal.style.display = 'flex';
-    
-    // Focus on first input
-    document.getElementById('targetJoint1').focus();
-    
-    // Add escape key listener
-    document.addEventListener('keydown', handleModalKeydown);
-}
-
-function closeMoveToTargetDialog() {
-    const modal = document.getElementById('moveToTargetModal');
-    modal.style.display = 'none';
-    
-    // Remove escape key listener
-    document.removeEventListener('keydown', handleModalKeydown);
-}
-
-function handleModalKeydown(event) {
-    if (event.key === 'Escape') {
-        closeMoveToTargetDialog();
-    }
-}
-
-async function confirmMoveToTarget() {
-    try {
-        // Get target joint angles from inputs
-        const targetAngles = [];
-        for (let i = 1; i <= 6; i++) {
-            const input = document.getElementById(`targetJoint${i}`);
-            const angleDeg = parseFloat(input.value);
-            if (isNaN(angleDeg)) {
-                throw new Error(`Invalid value for Joint ${i}: ${input.value}`);
-            }
-            // Convert degrees to radians for the command
-            const angleRad = angleDeg * Math.PI / 180;
-            targetAngles.push(angleRad);
-        }
-        
-        // Create servoj command with target joint angles
-        const jointAnglesStr = targetAngles.map(angle => angle.toFixed(6)).join(',');
-        const command = `servoj [${jointAnglesStr}] 1.0 1.0 False 200 65`;
-        
-        console.log('Target joint angles (degrees):', targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1)));
-        console.log('Sending servoj command:', command);
-
-        const response = await fetch('/api/robot_arm/cmd', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ command: command })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to send servoj command: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        
-        // Log the successful command
-        const targetAnglesDeg = targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1));
-        logCommand('Move to Target Angle', `Moving to position: J1=${targetAnglesDeg[0]}°, J2=${targetAnglesDeg[1]}°, J3=${targetAnglesDeg[2]}°, J4=${targetAnglesDeg[3]}°, J5=${targetAnglesDeg[4]}°, J6=${targetAnglesDeg[5]}°`);
-        
-        // Close the dialog
-        closeMoveToTargetDialog();
-        
-    } catch (error) {
-        console.error('Error sending movej command:', error);
-        logCommand('Move to Target Angle', `❌ Error: ${error.message}`, 'error');
-        
-        // Show error to user but don't close dialog
-        alert(`Error: ${error.message}`);
-    }
-}
-
 // Movej2 Dialog Functions
 function openMovej2Dialog() {
     const modal = document.getElementById('movej2Modal');
@@ -3001,16 +3373,6 @@ async function confirmMoveTcp() {
 
 // Add click outside to close modal functionality
 document.addEventListener('click', function(event) {
-    const modal = document.getElementById('moveToTargetModal');
-    if (event.target === modal) {
-        closeMoveToTargetDialog();
-    }
-    
-    const tcpModal = document.getElementById('moveToTargetTcpModal');
-    if (event.target === tcpModal) {
-        closeMoveToTargetTcpDialog();
-    }
-    
     const movej2Modal = document.getElementById('movej2Modal');
     if (event.target === movej2Modal) {
         closeMovej2Dialog();
@@ -3021,174 +3383,6 @@ document.addEventListener('click', function(event) {
         closeMoveTcpDialog();
     }
 });
-
-// Move to Target TCP Position Dialog Functions
-function openMoveToTargetTcpDialog() {
-    const modal = document.getElementById('moveToTargetTcpModal');
-    
-    // Initialize with current TCP position if available
-    if (robotStateData && robotStateData.TCPActualPosition && robotStateData.TCPActualPosition.length >= 6) {
-        const currentTcp = robotStateData.TCPActualPosition;
-        
-        // Position values (convert from meters to mm)
-        document.getElementById('targetTcpX').value = (currentTcp[0] * 1000).toFixed(1);
-        document.getElementById('targetTcpY').value = (currentTcp[1] * 1000).toFixed(1);
-        document.getElementById('targetTcpZ').value = (currentTcp[2] * 1000).toFixed(1);
-        
-        // Orientation values (convert from radians to degrees)
-        document.getElementById('targetTcpRx').value = (currentTcp[3] * 180 / Math.PI).toFixed(1);
-        document.getElementById('targetTcpRy').value = (currentTcp[4] * 180 / Math.PI).toFixed(1);
-        document.getElementById('targetTcpRz').value = (currentTcp[5] * 180 / Math.PI).toFixed(1);
-    } else {
-        // Use current move control values as fallback
-        document.getElementById('targetTcpX').value = currentTcpValues.x.toFixed(1);
-        document.getElementById('targetTcpY').value = currentTcpValues.y.toFixed(1);
-        document.getElementById('targetTcpZ').value = currentTcpValues.z.toFixed(1);
-        document.getElementById('targetTcpRx').value = currentTcpValues.rx.toFixed(1);
-        document.getElementById('targetTcpRy').value = currentTcpValues.ry.toFixed(1);
-        document.getElementById('targetTcpRz').value = currentTcpValues.rz.toFixed(1);
-    }
-    
-    modal.style.display = 'flex';
-    
-    // Focus on first input
-    document.getElementById('targetTcpX').focus();
-    
-    // Add escape key listener
-    document.addEventListener('keydown', handleTcpModalKeydown);
-}
-
-function closeMoveToTargetTcpDialog() {
-    const modal = document.getElementById('moveToTargetTcpModal');
-    modal.style.display = 'none';
-    
-    // Remove escape key listener
-    document.removeEventListener('keydown', handleTcpModalKeydown);
-}
-
-function handleTcpModalKeydown(event) {
-    if (event.key === 'Escape') {
-        closeMoveToTargetTcpDialog();
-    }
-}
-
-async function confirmMoveToTargetTcp() {
-    try {
-        // Check if we have current robot state data
-        if (!robotStateData || !robotStateData.TCPActualPosition || robotStateData.TCPActualPosition.length < 6) {
-            throw new Error('Cannot get current TCP position for offset calculation');
-        }
-        
-        const currentTcp = robotStateData.TCPActualPosition;
-        
-        // Get target TCP values from inputs
-        const targetTcpX = parseFloat(document.getElementById('targetTcpX').value);
-        const targetTcpY = parseFloat(document.getElementById('targetTcpY').value);
-        const targetTcpZ = parseFloat(document.getElementById('targetTcpZ').value);
-        const targetTcpRx = parseFloat(document.getElementById('targetTcpRx').value);
-        const targetTcpRy = parseFloat(document.getElementById('targetTcpRy').value);
-        const targetTcpRz = parseFloat(document.getElementById('targetTcpRz').value);
-        
-        // Validate inputs
-        if (isNaN(targetTcpX) || isNaN(targetTcpY) || isNaN(targetTcpZ) || 
-            isNaN(targetTcpRx) || isNaN(targetTcpRy) || isNaN(targetTcpRz)) {
-            throw new Error('Invalid TCP position values. Please check your inputs.');
-        }
-        
-        // Calculate offset between target and current position
-        // Position: convert current from meters to mm, calculate offset in mm, then convert to meters
-        const currentXmm = currentTcp[0] * 1000;
-        const currentYmm = currentTcp[1] * 1000;
-        const currentZmm = currentTcp[2] * 1000;
-        
-        // Special offset calculation logic: for positive values use -(target - current), for negative values use (target - current)
-        let offsetX, offsetY, offsetZ;
-        if (targetTcpX >= 0) {
-            offsetX = -(targetTcpX - currentXmm) / 1000; // For positive values: -(target - current) in meters
-        } else {
-            offsetX = (targetTcpX - currentXmm) / 1000; // For negative values: (target - current) in meters
-        }
-        
-        if (targetTcpY >= 0) {
-            offsetY = -(targetTcpY - currentYmm) / 1000; // For positive values: -(target - current) in meters
-        } else {
-            offsetY = (targetTcpY - currentYmm) / 1000; // For negative values: (target - current) in meters
-        }
-        
-        if (targetTcpZ >= 0) {
-            offsetZ = -(targetTcpZ - currentZmm) / 1000; // For positive values: -(target - current) in meters
-        } else {
-            offsetZ = (targetTcpZ - currentZmm) / 1000; // For negative values: (target - current) in meters
-        }
-        
-        // Rotation: convert current from radians to degrees, calculate offset in degrees, then convert to radians
-        const currentRxDeg = currentTcp[3] * 180 / Math.PI;
-        const currentRyDeg = currentTcp[4] * 180 / Math.PI;
-        const currentRzDeg = currentTcp[5] * 180 / Math.PI;
-        
-        // Special offset calculation logic for rotation: for positive values use -(target - current), for negative values use (target - current)
-        let offsetRx, offsetRy, offsetRz;
-        if (targetTcpRx >= 0) {
-            offsetRx = -(targetTcpRx - currentRxDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
-        } else {
-            offsetRx = (targetTcpRx - currentRxDeg) * Math.PI / 180; // For negative values: (target - current) in radians
-        }
-        
-        if (targetTcpRy >= 0) {
-            offsetRy = -(targetTcpRy - currentRyDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
-        } else {
-            offsetRy = (targetTcpRy - currentRyDeg) * Math.PI / 180; // For negative values: (target - current) in radians
-        }
-        
-        if (targetTcpRz >= 0) {
-            offsetRz = -(targetTcpRz - currentRzDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
-        } else {
-            offsetRz = (targetTcpRz - currentRzDeg) * Math.PI / 180; // For negative values: (target - current) in radians
-        }
-        
-        // Create servo_tcp command with offset parameters
-        const command = `servo_tcp [${offsetX.toFixed(6)},${offsetY.toFixed(6)},${offsetZ.toFixed(6)},${offsetRx.toFixed(6)},${offsetRy.toFixed(6)},${offsetRz.toFixed(6)}] 1.0 1.0 "" False 150 35`;
-        
-        console.log('Current TCP (raw):', currentTcp);
-        console.log('Current TCP (converted):', {
-            x: currentXmm, y: currentYmm, z: currentZmm,
-            rx: currentRxDeg, ry: currentRyDeg, rz: currentRzDeg
-        });
-        console.log('Target TCP values:', {
-            x: targetTcpX, y: targetTcpY, z: targetTcpZ,
-            rx: targetTcpRx, ry: targetTcpRy, rz: targetTcpRz
-        });
-        console.log('Calculated offsets:', {offsetX, offsetY, offsetZ, offsetRx, offsetRy, offsetRz});
-        console.log('Sending servo_tcp command:', command);
-
-        const response = await fetch('/api/robot_arm/cmd', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ command: command })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to send servo_tcp command: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        
-        // Log the successful command
-        logCommand('Move to Target Position', `Moving to TCP position: X=${targetTcpX.toFixed(1)}mm, Y=${targetTcpY.toFixed(1)}mm, Z=${targetTcpZ.toFixed(1)}mm, Rx=${targetTcpRx.toFixed(1)}°, Ry=${targetTcpRy.toFixed(1)}°, Rz=${targetTcpRz.toFixed(1)}°`);
-        
-        // Close the dialog
-        closeMoveToTargetTcpDialog();
-        
-    } catch (error) {
-        console.error('Error sending servo_tcp command:', error);
-        logCommand('Move to Target Position', `❌ Error: ${error.message}`, 'error');
-        
-        // Show error to user but don't close dialog
-        alert(`Error: ${error.message}`);
-    }
-}
 
 // Set Index Dialog Functions
 function openSetIndexDialog() {

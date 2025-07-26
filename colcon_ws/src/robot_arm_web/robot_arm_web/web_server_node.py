@@ -14,6 +14,8 @@ import asyncio
 from typing import List
 import xml.etree.ElementTree as ET
 import base64
+import socket
+import time
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -82,8 +84,16 @@ class RobotArmWebServer(Node):
         self.latest_robot_state = None
         self.robot_state_lock = threading.Lock()
         
+        # FT Sensor UDP data
+        self.latest_ft_data = None
+        self.ft_data_lock = threading.Lock()
+        self.ft_connection_manager = ConnectionManager()
+        
         # Load URDF functionality
         self.load_urdf_data()
+        
+        # Start UDP receiver for FT sensor data
+        self.start_ft_udp_receiver()
         
         self.get_logger().info(f'Robot arm web server initialized for device {self.device_id}')
         self.get_logger().info(f'Publishing to topic: /arm{self.device_id}/cmd')
@@ -142,6 +152,46 @@ class RobotArmWebServer(Node):
                 self.new_state_event.set()
             except json.JSONDecodeError as e:
                 self.get_logger().error(f'Error parsing robot state JSON: {e}')
+    
+    def start_ft_udp_receiver(self):
+        """Start UDP receiver for FT sensor data in a separate thread"""
+        def udp_receiver():
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                sock.bind(('0.0.0.0', 5566))  # Port 5566 for FT sensor data
+                self.get_logger().info('FT Sensor UDP receiver started on port 5566')
+                
+                while True:
+                    try:
+                        data, addr = sock.recvfrom(4096)
+                        message = data.decode('utf-8').strip()
+                        ft_data = json.loads(message)
+                        
+                        # Store latest FT data
+                        with self.ft_data_lock:
+                            self.latest_ft_data = ft_data
+                        
+                        # Note: We'll handle WebSocket broadcasting in the main event loop
+                        # For now, just store the data and let WebSocket clients poll for it
+                        
+                    except json.JSONDecodeError:
+                        self.get_logger().warning(f'Invalid JSON from FT sensor: {message[:100]}')
+                    except Exception as e:
+                        self.get_logger().error(f'Error in FT UDP receiver: {e}')
+                        
+            except Exception as e:
+                self.get_logger().error(f'Failed to start FT UDP receiver: {e}')
+            finally:
+                sock.close()
+        
+        # Start UDP receiver in daemon thread
+        udp_thread = threading.Thread(target=udp_receiver, daemon=True)
+        udp_thread.start()
+    
+    def get_latest_ft_data(self):
+        """Get the latest FT sensor data"""
+        with self.ft_data_lock:
+            return self.latest_ft_data
     
     def get_latest_robot_state(self):
         """Get the latest robot state data"""
@@ -532,6 +582,46 @@ class RobotArmWebServer(Node):
                 except Exception as e:
                     self.get_logger().error(f"WebSocket error: {e}")
                     self.connection_manager.disconnect(websocket)
+            
+            # WebSocket endpoint for FT sensor data
+            @app.websocket("/ws/ft_sensor")
+            async def ft_sensor_websocket(websocket: WebSocket):
+                await self.ft_connection_manager.connect(websocket)
+                last_sent_data = None
+                try:
+                    while True:
+                        try:
+                            # Get latest FT data
+                            latest_data = self.get_latest_ft_data()
+                            
+                            # Only send if data exists and has changed
+                            if latest_data and latest_data != last_sent_data:
+                                await websocket.send_json(latest_data)
+                                last_sent_data = latest_data.copy() if isinstance(latest_data, dict) else latest_data
+                            
+                            # Wait 100ms before next check (10Hz instead of 20Hz)
+                            await asyncio.sleep(0.1)
+                            
+                        except WebSocketDisconnect:
+                            break
+                        except Exception as e:
+                            self.get_logger().debug(f"Error sending FT data: {e}")
+                            break
+                            
+                except WebSocketDisconnect:
+                    self.ft_connection_manager.disconnect(websocket)
+                except Exception as e:
+                    self.get_logger().debug(f"FT WebSocket error: {e}")
+                    self.ft_connection_manager.disconnect(websocket)
+            
+            # API endpoint to get latest FT sensor data
+            @app.get("/api/ft_sensor/latest")
+            async def get_ft_sensor_data():
+                latest_data = self.get_latest_ft_data()
+                if latest_data:
+                    return JSONResponse(content=latest_data)
+                else:
+                    return JSONResponse(content={"error": "No FT sensor data available"}, status_code=404)
 
             # Run server
             uvicorn.run(app, host="0.0.0.0", port=self.port)
