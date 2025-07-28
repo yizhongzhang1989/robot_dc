@@ -456,9 +456,12 @@
     }
     
     #ftSensorChart {
-      width: 100%;
-      height: 400px;
+      display: block;
+      margin: 0 auto;
       max-width: 100%;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #000;
     }
     
     .ft-sensor-controls {
@@ -924,9 +927,9 @@
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
       <h2 class="text-xl font-semibold mb-4">🤖 Robot Visualization</h2>
       
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="flex justify-center">
         <!-- 3D Robot Model -->
-        <div>
+        <div class="max-w-4xl w-full">
           <h3 class="text-lg font-medium mb-3">3D Robot Model</h3>
           <div class="viewer-3d" id="viewer3d">
             <div class="viewer-controls">
@@ -936,34 +939,6 @@
               <div>R key: Reset view</div>
             </div>
             <canvas id="robot3dCanvas"></canvas>
-          </div>
-        </div>
-        
-        <!-- Force-Torque Sensor Data -->
-        <div>
-          <h3 class="text-lg font-medium mb-3">
-            🔧 Force-Torque Sensor Data 
-            <span class="text-xs font-normal ml-4">
-              <span style="color: #FF4444;">● Force X</span>
-              <span style="color: #00AA00;" class="ml-3">● Force Y</span>
-              <span style="color: #4488FF;" class="ml-3">● Force Z</span>
-              <span style="color: #FF44FF;" class="ml-3">● Torque X</span>
-              <span style="color: #FF8800;" class="ml-3">● Torque Y</span>
-              <span style="color: #00FFFF;" class="ml-3">● Torque Z</span>
-            </span>
-          </h3>
-          <div class="ft-sensor-container">
-            <canvas id="ftSensorChart" width="480" height="400" style="border: 1px solid #e5e7eb; border-radius: 8px; background: #000;"></canvas>
-            <div class="ft-sensor-controls" style="margin-top: 10px;">
-              <div class="flex justify-between items-center text-xs text-gray-600">
-                <div>
-                  <label class="inline-flex items-center">
-                    <input type="checkbox" id="ftSensorEnabled" checked class="mr-1">
-                    <span>Enable UDP Reception</span>
-                  </label>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -1184,7 +1159,7 @@
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
       <h2 class="text-xl font-semibold mb-6">🕹️ FTC Control</h2>
       
-      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-w-6xl mx-auto">
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 max-w-7xl mx-auto">
         <!-- FTC Start Button -->
         <button 
           id="ftcStartBtn"
@@ -1236,13 +1211,39 @@
           onclick="openSetRTDialog()"
           class="robot-arm-button bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
         >
-          Set RT
+          Set Params
+        </button>
+
+        <!-- FT Sensor Enable/Disable Button -->
+        <button 
+          id="ftSensorToggleBtn"
+          onclick="toggleFTSensor()"
+          class="robot-arm-button bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
+        >
+          <span id="ftSensorBtnText">Stop Sensor</span>
         </button>
       </div>
 
       <!-- FTC Command Status -->
       <div class="mt-6 text-center">
         <div id="ftcCommandStatus" class="text-sm text-gray-600">Ready to send FTC commands</div>
+      </div>
+
+      <!-- Force-Torque Sensor Data -->
+      <div class="mt-6 text-center">
+        <div class="mb-3 text-center">
+          <span class="text-xs font-normal">
+            <span style="color: #FF4444;">● Force X</span>
+            <span style="color: #00AA00;" class="ml-3">● Force Y</span>
+            <span style="color: #4488FF;" class="ml-3">● Force Z</span>
+            <span style="color: #FF44FF;" class="ml-3">● Torque X</span>
+            <span style="color: #FF8800;" class="ml-3">● Torque Y</span>
+            <span style="color: #00FFFF;" class="ml-3">● Torque Z</span>
+          </span>
+        </div>
+        <div class="ft-sensor-container flex justify-center">
+          <canvas id="ftSensorChart" width="800" height="400"></canvas>
+        </div>
       </div>
     </div>
 

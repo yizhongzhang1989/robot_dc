@@ -150,26 +150,19 @@ window.addEventListener('load', function() {
         });
     }, 500);
     
-    // Initialize FT Sensor controls
+    // Initialize FT Sensor button status
     setTimeout(() => {
-        console.log('Initializing FT Sensor controls...');
-        const ftEnabledCheckbox = document.getElementById('ftSensorEnabled');
-        if (ftEnabledCheckbox) {
-            ftEnabledCheckbox.addEventListener('change', function() {
-                settings.ftSensorEnabled = this.checked;
-                console.log('FT Sensor enabled:', settings.ftSensorEnabled);
-                if (settings.ftSensorEnabled) {
-                    // Start WebSocket connection
-                    startFTSensorUDP();
-                } else {
-                    // Close WebSocket connection and stop all FT sensor activity
-                    if (ftSensorSocket) {
-                        ftSensorSocket.close();
-                        ftSensorSocket = null;
-                    }
-                    console.log('FT Sensor disabled - connections closed');
-                }
-            });
+        console.log('Initializing FT Sensor button...');
+        const button = document.getElementById('ftSensorToggleBtn');
+        const buttonText = document.getElementById('ftSensorBtnText');
+        if (button && buttonText) {
+            if (settings.ftSensorEnabled) {
+                buttonText.textContent = 'Stop Sensor';
+                button.className = 'robot-arm-button bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
+            } else {
+                buttonText.textContent = 'Start Sensor';
+                button.className = 'robot-arm-button bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
+            }
         }
     }, 600);
     
@@ -2002,6 +1995,35 @@ async function sendFTCCommand(command, parameter = null) {
     }
 }
 
+// Toggle FT Sensor function
+function toggleFTSensor() {
+    const button = document.getElementById('ftSensorToggleBtn');
+    const buttonText = document.getElementById('ftSensorBtnText');
+    
+    settings.ftSensorEnabled = !settings.ftSensorEnabled;
+    
+    if (settings.ftSensorEnabled) {
+        // Enable FT Sensor
+        console.log('Enabling FT Sensor...');
+        startFTSensorUDP();
+        buttonText.textContent = 'Stop FT';
+        button.className = 'robot-arm-button bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
+        logCommand('FT Sensor', 'Started', 'success');
+    } else {
+        // Disable FT Sensor
+        console.log('Disabling FT Sensor...');
+        if (ftSensorSocket) {
+            ftSensorSocket.close();
+            ftSensorSocket = null;
+        }
+        buttonText.textContent = 'Start Sensor';
+        button.className = 'robot-arm-button bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
+        logCommand('FT Sensor', 'Stopped', 'info');
+    }
+    
+    console.log('FT Sensor enabled:', settings.ftSensorEnabled);
+}
+
 // Get button ID for FTC commands
 function getFTCButtonId(command, parameter = null) {
     const buttonMap = {
@@ -2032,9 +2054,11 @@ function updateConnectionStatus(connected) {
     if (connected) {
         statusIndicator.className = 'status-indicator status-connected';
         statusText.textContent = 'Connected';
+        statusText.className = 'status-bar-value connected';
     } else {
         statusIndicator.className = 'status-indicator status-disconnected';
         statusText.textContent = 'Disconnected';
+        statusText.className = 'status-bar-value disconnected';
     }
 }
 
