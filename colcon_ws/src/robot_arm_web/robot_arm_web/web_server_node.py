@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from sensor_msgs.msg import Image
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -16,6 +17,8 @@ import xml.etree.ElementTree as ET
 import base64
 import socket
 import time
+import cv2
+from cv_bridge import CvBridge
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -80,9 +83,44 @@ class RobotArmWebServer(Node):
             10
         )
         
+        # Create subscription for camera images
+        self.camera_subscription = self.create_subscription(
+            Image,
+            '/rtsp_camera/image_raw',
+            self.camera_callback,
+            1
+        )
+        
         # Store latest robot state
         self.latest_robot_state = None
         self.robot_state_lock = threading.Lock()
+        
+        # Store latest camera image
+        self.latest_camera_image = None
+        self.camera_image_lock = threading.Lock()
+        self.bridge = CvBridge()
+        
+        # ROS2 Camera Publisher (auto-created when web server starts)
+        self.rtsp_url = "rtsp://admin:123456@192.168.1.102/stream0"
+        self.camera_cap = None
+        self.camera_running = False
+        self.camera_thread = None
+        self.frame_ready_event = threading.Event()
+        
+        # Create ROS2 Image Publisher for camera
+        self.camera_image_publisher = self.create_publisher(
+            Image,
+            '/rtsp_camera/image_raw',
+            1
+        )
+        
+        # Performance monitoring for camera
+        self.camera_frame_count = 0
+        self.camera_start_time = time.time()
+        self.camera_consecutive_failures = 0
+        
+        # Start ROS2 camera publisher
+        self.start_camera_publisher()
         
         # FT Sensor UDP data
         self.latest_ft_data = None
@@ -152,6 +190,150 @@ class RobotArmWebServer(Node):
                 self.new_state_event.set()
             except json.JSONDecodeError as e:
                 self.get_logger().error(f'Error parsing robot state JSON: {e}')
+    
+    def camera_callback(self, msg):
+        """Handle incoming camera image messages"""
+        try:
+            # Convert ROS Image message to OpenCV format
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            
+            # Encode image as JPEG
+            _, buffer = cv2.imencode('.jpg', cv_image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            
+            # Store the encoded image
+            with self.camera_image_lock:
+                self.latest_camera_image = buffer.tobytes()
+                
+        except Exception as e:
+            self.get_logger().error(f'Error processing camera image: {e}')
+    
+    def get_latest_camera_image(self):
+        """Get the latest camera image as JPEG bytes"""
+        with self.camera_image_lock:
+            return self.latest_camera_image
+    
+    def start_camera_publisher(self):
+        """Start ROS2 Camera Image Publisher (auto-created when web server starts)"""
+        def camera_publisher_thread():
+            """Camera publisher thread function - publishes to ROS2 topic"""
+            while self.camera_running:
+                try:
+                    # Initialize camera if not already done
+                    if self.camera_cap is None:
+                        self.get_logger().info(f"Starting ROS2 Camera Publisher - Connecting to RTSP: {self.rtsp_url}")
+                        self.camera_cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+                        
+                        # Set low latency parameters
+                        self.camera_cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)
+                        self.camera_cap.set(cv2.CAP_PROP_FPS, 30)
+                        
+                        try:
+                            self.camera_cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('H', '2', '6', '4'))
+                        except Exception:
+                            pass
+                        
+                        if not self.camera_cap.isOpened():
+                            self.get_logger().error("Cannot open RTSP stream for ROS2 publisher. Please check the URL.")
+                            self.camera_cap = None
+                            time.sleep(2.0)  # Wait before retry
+                            continue
+                        else:
+                            self.get_logger().info("ROS2 Camera Publisher connected to RTSP successfully")
+                    
+                    # Read frame
+                    ret, frame = self.camera_cap.read()
+                    
+                    if ret:
+                        try:
+                            # Convert OpenCV image to ROS Image message
+                            image_msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
+                            image_msg.header.stamp = self.get_clock().now().to_msg()
+                            image_msg.header.frame_id = "camera_frame"
+                            
+                            # Publish to ROS2 topic
+                            self.camera_image_publisher.publish(image_msg)
+                            
+                            self.camera_frame_count += 1
+                            self.camera_consecutive_failures = 0
+                            
+                            # Also store JPEG encoded version for direct web API access
+                            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                            with self.camera_image_lock:
+                                self.latest_camera_image = buffer.tobytes()
+                            
+                            # Trigger frame ready event
+                            self.frame_ready_event.set()
+                            
+                        except Exception as e:
+                            self.get_logger().error(f"Error publishing camera image to ROS2: {e}")
+                        
+                    else:
+                        self.camera_consecutive_failures += 1
+                        if self.camera_consecutive_failures > 3:
+                            self.get_logger().warn("Multiple camera read failures, trying to reconnect...")
+                            self._reconnect_camera()
+                            self.camera_consecutive_failures = 0
+                        time.sleep(0.01)
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error in camera publisher: {e}")
+                    self._reconnect_camera()
+                    time.sleep(1.0)
+        
+        # Start camera publisher
+        self.camera_running = True
+        self.camera_thread = threading.Thread(target=camera_publisher_thread, daemon=True)
+        self.camera_thread.start()
+        
+        self.get_logger().info("ROS2 Camera Image Publisher started - publishing to /rtsp_camera/image_raw")
+        
+        # Start performance monitoring timer
+        self.camera_monitor_timer = self.create_timer(5.0, self.print_camera_performance)
+    
+    def print_camera_performance(self):
+        """Print camera performance statistics"""
+        current_time = time.time()
+        elapsed_time = current_time - self.camera_start_time
+        
+        if elapsed_time > 0:
+            frame_fps = self.camera_frame_count / elapsed_time
+            
+            self.get_logger().info(
+                f"Camera Performance: Publishing at {frame_fps:.1f}fps to /rtsp_camera/image_raw"
+            )
+            
+            # Reset counters
+            self.camera_frame_count = 0
+            self.camera_start_time = current_time
+    
+    def _reconnect_camera(self):
+        """Reconnect to RTSP camera"""
+        try:
+            if self.camera_cap is not None:
+                self.camera_cap.release()
+                self.camera_cap = None
+            
+            self.get_logger().info("Attempting to reconnect to RTSP camera...")
+            
+        except Exception as e:
+            self.get_logger().error(f"Error during camera reconnection: {e}")
+    
+    def stop_camera_publisher(self):
+        """Stop ROS2 camera publisher"""
+        self.camera_running = False
+        
+        if self.camera_thread is not None:
+            self.camera_thread.join(timeout=2.0)
+        
+        if self.camera_cap is not None:
+            self.camera_cap.release()
+            self.camera_cap = None
+        
+        # Destroy the camera monitor timer
+        if hasattr(self, 'camera_monitor_timer'):
+            self.camera_monitor_timer.destroy()
+        
+        self.get_logger().info("ROS2 Camera Image Publisher stopped")
     
     def start_ft_udp_receiver(self):
         """Start UDP receiver for FT sensor data in a separate thread"""
@@ -337,7 +519,30 @@ class RobotArmWebServer(Node):
                     "device_id": self.device_id,
                     "topic": f"/arm{self.device_id}/cmd",
                     "state_topic": f"/arm{self.device_id}/robot_state",
+                    "camera_topic": "/rtsp_camera/image_raw",
                     "available_commands": ["power_on", "power_off", "enable", "disable"]
+                }
+            
+            @app.get("/api/camera/stream")
+            def get_camera_stream():
+                """Get current camera image as JPEG"""
+                try:
+                    image_data = self.get_latest_camera_image()
+                    if image_data is None:
+                        return Response(content="No camera image available", status_code=404)
+                    
+                    return Response(content=image_data, media_type="image/jpeg")
+                except Exception as e:
+                    self.get_logger().error(f"Error serving camera image: {e}")
+                    return Response(content="Camera error", status_code=500)
+            
+            @app.get("/api/camera/status")
+            def get_camera_status():
+                """Get camera status"""
+                image_data = self.get_latest_camera_image()
+                return {
+                    "connected": image_data is not None,
+                    "topic": "/rtsp_camera/image_raw"
                 }
             
             @app.get("/api/robot_arm/state")
@@ -675,6 +880,14 @@ class RobotArmWebServer(Node):
         
         # Run the broadcast loop
         loop.run_until_complete(broadcast_state())
+    
+    def destroy_node(self):
+        """Clean up resources when shutting down"""
+        # Stop ROS2 camera publisher
+        self.stop_camera_publisher()
+        
+        # Call parent destroy_node
+        super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)

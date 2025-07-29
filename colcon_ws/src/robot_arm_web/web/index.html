@@ -429,14 +429,90 @@
       font-weight: 600;
       color: #111827;
     }
+    /* 3D Viewer and Camera Container */
+    .visualization-container {
+      display: flex;
+      gap: 1.5rem;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    
     .viewer-3d {
       width: 100%;
-      height: 400px;
+      height: 540px;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
       background: #000;
       position: relative;
+      max-width: 720px;
     }
+    
+    .camera-viewer {
+      width: 100%;
+      height: 540px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #000;
+      position: relative;
+      max-width: 960px;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .camera-header {
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 8px 8px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .camera-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    
+    .camera-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+    
+    .camera-status-dot.connected {
+      background: #10b981;
+    }
+    
+    .camera-image-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a1a;
+      border-radius: 0 0 8px 8px;
+      position: relative;
+    }
+    
+    .camera-image {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 0 0 8px 8px;
+    }
+    
+    .camera-placeholder {
+      color: #6b7280;
+      text-align: center;
+      font-size: 14px;
+      padding: 2rem;
+    }
+    
     .viewer-controls {
       position: absolute;
       top: 10px;
@@ -927,9 +1003,9 @@
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
       <h2 class="text-xl font-semibold mb-4">🤖 Robot Visualization</h2>
       
-      <div class="flex justify-center">
+      <div class="visualization-container">
         <!-- 3D Robot Model -->
-        <div class="max-w-4xl w-full">
+        <div class="flex-1">
           <h3 class="text-lg font-medium mb-3">3D Robot Model</h3>
           <div class="viewer-3d" id="viewer3d">
             <div class="viewer-controls">
@@ -939,6 +1015,28 @@
               <div>R key: Reset view</div>
             </div>
             <canvas id="robot3dCanvas"></canvas>
+          </div>
+        </div>
+        
+        <!-- Camera Feed -->
+        <div class="flex-1">
+          <h3 class="text-lg font-medium mb-3">Camera Image</h3>
+          <div class="camera-viewer" id="cameraViewer">
+            <div class="camera-header">
+              <span>📷</span>
+              <div class="camera-status">
+                <div class="camera-status-dot" id="cameraStatusDot"></div>
+                <span id="cameraStatusText">Disconnected</span>
+              </div>
+            </div>
+            <div class="camera-image-container" id="cameraImageContainer">
+              <div class="camera-placeholder" id="cameraPlaceholder">
+                <div>IP Camera</div>
+                <div>No camera image available</div>
+                <div class="text-xs mt-2">Waiting for /rtsp_camera/image_raw topic...</div>
+              </div>
+              <img class="camera-image" id="cameraImage" style="display: none;" alt="Camera Feed" />
+            </div>
           </div>
         </div>
       </div>
@@ -1972,6 +2070,6 @@
     <span id="topicName"></span>
   </div>
 
-      <script src="/js/robot_arm_control.js?v=4&ts=1752776600"></script>
+      <script src="/js/robot_arm_control.js?v=5&ts=1752776600"></script>
 </body>
 </html>

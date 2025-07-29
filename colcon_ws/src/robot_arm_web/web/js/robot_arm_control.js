@@ -9,6 +9,11 @@ let updateRate = 0;
 let lastUIUpdate = 0;
 let robotStateData = null;
 
+// Camera variables
+let cameraUpdateInterval;
+let cameraConnected = false;
+let lastCameraUpdate = 0;
+
 // Force-Torque Sensor variables
 let ftSensorSocket = null;
 let ftSensorData = [];
@@ -33,7 +38,8 @@ const settings = {
     animationEnabled: true,  // Whether to enable continuous rendering
     debug: false,            // Enable debug mode
     ftSensorEnabled: true,   // Enable FT sensor data reception
-    ftUdpPort: 5566         // UDP port for FT sensor data
+    ftUdpPort: 5566,         // UDP port for FT sensor data
+    cameraRefreshRate: 100   // How often to update camera feed (ms)
 };
 
 // 3D Visualization variables
@@ -65,6 +71,12 @@ window.addEventListener('load', function() {
     fetchRobotArmInfo();
     updateConnectionStatus(true);
     startStateMonitoring();
+    
+    // Initialize camera feed
+    setTimeout(() => {
+        console.log('Initializing camera feed...');
+        startCameraMonitoring();
+    }, 150);
     
     // Initialize Force-Torque Sensor Chart
     setTimeout(() => {
@@ -3505,5 +3517,137 @@ async function sendFTCCommandWithIndex(command, index) {
             statusElement.textContent = 'Ready to send FTC commands';
             statusElement.className = 'text-sm text-gray-600';
         }, 3000);
+    }
+}
+
+// ===== Camera Functions =====
+
+// Start camera monitoring
+function startCameraMonitoring() {
+    console.log('Starting camera monitoring...');
+    
+    // Initial camera status check
+    updateCameraStatus();
+    
+    // Start periodic camera updates
+    cameraUpdateInterval = setInterval(() => {
+        updateCameraFeed();
+    }, settings.cameraRefreshRate);
+    
+    // Check camera status periodically
+    setInterval(() => {
+        updateCameraStatus();
+    }, 5000); // Check every 5 seconds
+}
+
+// Update camera feed
+async function updateCameraFeed() {
+    const now = Date.now();
+    
+    // Skip if too frequent
+    if (now - lastCameraUpdate < settings.cameraRefreshRate) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/camera/stream');
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const imageUrl = URL.createObjectURL(blob);
+            
+            const cameraImage = document.getElementById('cameraImage');
+            const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+            
+            if (cameraImage && cameraPlaceholder) {
+                // Show image, hide placeholder
+                cameraImage.src = imageUrl;
+                cameraImage.style.display = 'block';
+                cameraPlaceholder.style.display = 'none';
+                
+                // Update connection status
+                if (!cameraConnected) {
+                    cameraConnected = true;
+                    updateCameraConnectionStatus(true);
+                }
+                
+                // Clean up previous URL to prevent memory leaks
+                cameraImage.onload = () => {
+                    if (cameraImage.previousImageUrl) {
+                        URL.revokeObjectURL(cameraImage.previousImageUrl);
+                    }
+                    cameraImage.previousImageUrl = imageUrl;
+                };
+            }
+            
+            lastCameraUpdate = now;
+            
+        } else {
+            // Camera not available
+            if (cameraConnected) {
+                cameraConnected = false;
+                updateCameraConnectionStatus(false);
+                showCameraPlaceholder();
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error fetching camera feed:', error);
+        if (cameraConnected) {
+            cameraConnected = false;
+            updateCameraConnectionStatus(false);
+            showCameraPlaceholder();
+        }
+    }
+}
+
+// Update camera status
+async function updateCameraStatus() {
+    try {
+        const response = await fetch('/api/camera/status');
+        const status = await response.json();
+        
+        updateCameraConnectionStatus(status.connected);
+        
+    } catch (error) {
+        console.error('Error fetching camera status:', error);
+        updateCameraConnectionStatus(false);
+    }
+}
+
+// Update camera connection status display
+function updateCameraConnectionStatus(connected) {
+    const statusDot = document.getElementById('cameraStatusDot');
+    const statusText = document.getElementById('cameraStatusText');
+    
+    if (statusDot && statusText) {
+        if (connected) {
+            statusDot.classList.add('connected');
+            statusText.textContent = 'Connected';
+        } else {
+            statusDot.classList.remove('connected');
+            statusText.textContent = 'Disconnected';
+        }
+    }
+    
+    if (!connected) {
+        showCameraPlaceholder();
+    }
+}
+
+// Show camera placeholder
+function showCameraPlaceholder() {
+    const cameraImage = document.getElementById('cameraImage');
+    const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+    
+    if (cameraImage && cameraPlaceholder) {
+        cameraImage.style.display = 'none';
+        cameraPlaceholder.style.display = 'block';
+        
+        // Clean up image URL
+        if (cameraImage.src && cameraImage.src.startsWith('blob:')) {
+            URL.revokeObjectURL(cameraImage.src);
+            cameraImage.src = '';
+        }
     }
 }
