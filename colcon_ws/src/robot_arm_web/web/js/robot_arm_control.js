@@ -72,10 +72,10 @@ window.addEventListener('load', function() {
     updateConnectionStatus(true);
     startStateMonitoring();
     
-    // Initialize camera feed
+    // Initialize camera stream
     setTimeout(() => {
-        console.log('Initializing camera feed...');
-        startCameraMonitoring();
+        console.log('Initializing direct camera stream...');
+        initializeCameraStream();
     }, 150);
     
     // Initialize Force-Torque Sensor Chart
@@ -3522,83 +3522,63 @@ async function sendFTCCommandWithIndex(command, index) {
 
 // ===== Camera Functions =====
 
-// Start camera monitoring
-function startCameraMonitoring() {
-    console.log('Starting camera monitoring...');
+// Initialize camera stream
+function initializeCameraStream() {
+    console.log('Setting up direct camera stream...');
     
-    // Initial camera status check
-    updateCameraStatus();
+    const cameraImage = document.getElementById('cameraImage');
+    const cameraPlaceholder = document.getElementById('cameraPlaceholder');
     
-    // Start periodic camera updates
-    cameraUpdateInterval = setInterval(() => {
-        updateCameraFeed();
-    }, settings.cameraRefreshRate);
+    if (cameraImage && cameraPlaceholder) {
+        // Clear any existing src to start fresh
+        cameraImage.src = '';
+        
+        // Handle image load events
+        cameraImage.onload = () => {
+            console.log('Camera stream connected successfully');
+            cameraImage.style.display = 'block';
+            cameraPlaceholder.style.display = 'none';
+            updateCameraConnectionStatus(true);
+        };
+        
+        // Handle image error events
+        cameraImage.onerror = () => {
+            console.log('Camera stream connection failed');
+            cameraImage.style.display = 'none';
+            cameraPlaceholder.style.display = 'block';
+            updateCameraConnectionStatus(false);
+            
+            // Retry after a delay
+            setTimeout(() => {
+                console.log('Retrying camera stream connection...');
+                cameraImage.src = '/video_feed?' + new Date().getTime(); // Add timestamp to force refresh
+            }, 3000);
+        };
+        
+        // Start the stream after event handlers are set
+        setTimeout(() => {
+            console.log('Starting camera stream...');
+            cameraImage.src = '/video_feed';
+        }, 500);
+    }
     
     // Check camera status periodically
     setInterval(() => {
         updateCameraStatus();
-    }, 5000); // Check every 5 seconds
+    }, 10000); // Check every 10 seconds
 }
 
-// Update camera feed
+// Start camera monitoring (legacy function kept for compatibility)
+function startCameraMonitoring() {
+    console.log('Starting camera monitoring...');
+    initializeCameraStream();
+}
+
+// Update camera feed (legacy function - now simplified)
 async function updateCameraFeed() {
-    const now = Date.now();
-    
-    // Skip if too frequent
-    if (now - lastCameraUpdate < settings.cameraRefreshRate) {
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/camera/stream');
-        
-        if (response.ok) {
-            const blob = await response.blob();
-            const imageUrl = URL.createObjectURL(blob);
-            
-            const cameraImage = document.getElementById('cameraImage');
-            const cameraPlaceholder = document.getElementById('cameraPlaceholder');
-            
-            if (cameraImage && cameraPlaceholder) {
-                // Show image, hide placeholder
-                cameraImage.src = imageUrl;
-                cameraImage.style.display = 'block';
-                cameraPlaceholder.style.display = 'none';
-                
-                // Update connection status
-                if (!cameraConnected) {
-                    cameraConnected = true;
-                    updateCameraConnectionStatus(true);
-                }
-                
-                // Clean up previous URL to prevent memory leaks
-                cameraImage.onload = () => {
-                    if (cameraImage.previousImageUrl) {
-                        URL.revokeObjectURL(cameraImage.previousImageUrl);
-                    }
-                    cameraImage.previousImageUrl = imageUrl;
-                };
-            }
-            
-            lastCameraUpdate = now;
-            
-        } else {
-            // Camera not available
-            if (cameraConnected) {
-                cameraConnected = false;
-                updateCameraConnectionStatus(false);
-                showCameraPlaceholder();
-            }
-        }
-        
-    } catch (error) {
-        console.error('Error fetching camera feed:', error);
-        if (cameraConnected) {
-            cameraConnected = false;
-            updateCameraConnectionStatus(false);
-            showCameraPlaceholder();
-        }
-    }
+    // This function is now mostly handled by setupCameraStream
+    // We keep it for compatibility but it doesn't need to do much
+    return;
 }
 
 // Update camera status
