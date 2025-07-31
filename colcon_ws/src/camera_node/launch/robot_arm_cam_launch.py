@@ -19,12 +19,6 @@ def generate_launch_description():
         description='RTSP URL for main stream (1080p)'
     )
     
-    rtsp_url_sub_arg = DeclareLaunchArgument(
-        'rtsp_url_sub',
-        default_value='rtsp://admin:123456@192.168.1.102/stream1',
-        description='RTSP URL for sub stream (360p)'
-    )
-    
     camera_ip_arg = DeclareLaunchArgument(
         'camera_ip',
         default_value='192.168.1.102',
@@ -75,7 +69,6 @@ def generate_launch_description():
         parameters=[
             {'camera_name': LaunchConfiguration('camera_name')},
             {'rtsp_url_main': LaunchConfiguration('rtsp_url_main')},
-            {'rtsp_url_sub': LaunchConfiguration('rtsp_url_sub')},
             {'camera_ip': LaunchConfiguration('camera_ip')},
             {'server_port': LaunchConfiguration('server_port')},
             {'stream_fps': LaunchConfiguration('stream_fps')},
@@ -90,7 +83,6 @@ def generate_launch_description():
     return LaunchDescription([
         camera_name_arg,
         rtsp_url_main_arg,
-        rtsp_url_sub_arg,
         camera_ip_arg,
         server_port_arg,
         stream_fps_arg,

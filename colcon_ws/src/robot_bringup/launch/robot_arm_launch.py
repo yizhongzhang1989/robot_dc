@@ -118,7 +118,6 @@ def generate_launch_description():
                 parameters=[
                     {'camera_name': 'RobotArmCamera'},
                     {'rtsp_url_main': LaunchConfiguration('camera_rtsp_1080p')},
-                    {'rtsp_url_sub': LaunchConfiguration('camera_rtsp_360p')},
                     {'camera_ip': LaunchConfiguration('camera_ip')},
                     {'server_port': LaunchConfiguration('camera_port')},
                     {'ros_topic_name': '/robot_arm_camera/image_raw'},

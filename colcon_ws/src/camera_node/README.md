@@ -96,7 +96,6 @@ ros2 run camera_node camera_node \
     --ros-args \
     -p camera_name:=MyCam \
     -p rtsp_url_main:=rtsp://admin:password@192.168.1.100/stream0 \
-    -p rtsp_url_sub:=rtsp://admin:password@192.168.1.100/stream1 \
     -p camera_ip:=192.168.1.100 \
     -p server_port:=8010 \
     -p ros_topic_name:=/my_camera/image_raw \
@@ -108,8 +107,7 @@ ros2 run camera_node camera_node \
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `camera_name` | string | `'GenericCamera'` | Camera identifier for services and logging |
-| `rtsp_url_main` | string | `'rtsp://admin:123456@192.168.1.100/stream0'` | Main stream URL (high quality) |
-| `rtsp_url_sub` | string | `'rtsp://admin:123456@192.168.1.100/stream1'` | Sub stream URL (low quality) |
+| `rtsp_url_main` | string | `'rtsp://admin:123456@192.168.1.100/stream0'` | RTSP stream URL |
 | `camera_ip` | string | `'192.168.1.100'` | Camera IP address for reference |
 | `server_port` | int | `8010` | Web interface port |
 | `stream_fps` | int | `25` | Target streaming FPS for web interface |
@@ -153,7 +151,6 @@ Access the comprehensive web interface at: `http://localhost:{server_port}` (def
 | `/restart` | POST | Restart camera stream |
 | `/snapshot` | POST | Take snapshot |
 | `/download_snapshot` | GET | Download latest snapshot |
-| `/change_resolution` | POST | Switch stream resolution |
 | `/ros_image_publish` | GET/POST | Get/toggle ROS2 publishing status |
 
 ## ROS2 Integration
@@ -193,7 +190,6 @@ ros2 run camera_node camera_node \
     --ros-args \
     -p camera_name:=Camera1 \
     -p rtsp_url_main:=rtsp://admin:123456@192.168.1.100/stream0 \
-    -p rtsp_url_sub:=rtsp://admin:123456@192.168.1.100/stream1 \
     -p server_port:=8010 \
     -p ros_topic_name:=/camera1/image_raw \
     -p publish_ros_image:=true
@@ -203,7 +199,6 @@ ros2 run camera_node camera_node \
     --ros-args \
     -p camera_name:=Camera2 \
     -p rtsp_url_main:=rtsp://admin:123456@192.168.1.101/stream0 \
-    -p rtsp_url_sub:=rtsp://admin:123456@192.168.1.101/stream1 \
     -p server_port:=8011 \
     -p ros_topic_name:=/camera2/image_raw \
     -p publish_ros_image:=true

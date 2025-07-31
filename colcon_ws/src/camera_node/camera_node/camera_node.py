@@ -125,10 +125,11 @@ class RTSPStream:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL
                 )
-                # Give FFmpeg a moment to start
-                time.sleep(1)
+                # Give FFmpeg a moment to start and establish connection
+                time.sleep(3)  # Increased wait time for connection establishment
                 if self.proc.poll() is None:  # Process is still running
                     self.available = True
+                    self.log_info(f"FFmpeg process started for {name}, stream will be validated during frame reading")
                     break
                 else:
                     self.log_warn(f"FFmpeg process failed for {name}, attempt {attempt + 1}/{max_ffmpeg_retries}")
@@ -180,13 +181,28 @@ class RTSPStream:
             return
             
         frame_size = self.width * self.height * 3
+        consecutive_failures = 0
+        max_consecutive_failures = 10
+        
         while self.running and self.available:
             try:
                 if self.proc.stdout is None:
+                    self.log_error(f"FFmpeg stdout is None for {self.name}")
+                    self.available = False
                     break
+                    
                 raw = self.proc.stdout.read(frame_size)
                 if len(raw) != frame_size:
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        self.log_error(f"Too many consecutive frame read failures for {self.name}")
+                        self.available = False
+                        break
                     continue
+                    
+                # Reset failure counter on successful read
+                consecutive_failures = 0
+                
                 frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.height, self.width, 3))
                 with self.lock:
                     self.frame = frame
@@ -198,8 +214,13 @@ class RTSPStream:
                     self.frame_ready_event.set()
                     
             except Exception as e:
+                consecutive_failures += 1
                 self.log_error(f"Error reading frame for {self.name}: {e}")
-                break
+                if consecutive_failures >= max_consecutive_failures:
+                    self.log_error(f"Too many consecutive errors for {self.name}, marking as unavailable")
+                    self.available = False
+                    break
+                time.sleep(0.1)  # Small delay before retry
 
     def get_frame(self):
         """Get current frame as a copy"""
@@ -297,8 +318,23 @@ class RTSPStream:
         self.restart()
     
     def is_running(self):
-        """Check if the stream is running"""
-        return self.running and self.available
+        """Check if the stream is running and has valid frames"""
+        if not (self.running and self.available):
+            return False
+        
+        # Check if we're actually receiving frames
+        current_time = time.time()
+        time_since_last_frame = current_time - self.last_frame_update
+        
+        # If no frame has been received in the last 10 seconds, consider it not running
+        if time_since_last_frame > 10:
+            return False
+            
+        # Check if we have valid frame data
+        with self.lock:
+            has_valid_frame = self.frame is not None
+            
+        return has_valid_frame
 
     def enable_ros_publishing(self, publisher, cv_bridge):
         """Enable event-driven ROS image publishing"""
@@ -389,10 +425,6 @@ class CameraNode(Node):
         self.rtsp_url_main = self.get_parameter('rtsp_url_main').value
         self.get_logger().info(f"rtsp_url_main from param = {self.rtsp_url_main}")
         
-        self.declare_parameter('rtsp_url_sub', 'rtsp://admin:123456@192.168.1.100/stream1')
-        self.rtsp_url_sub = self.get_parameter('rtsp_url_sub').value
-        self.get_logger().info(f"rtsp_url_sub from param = {self.rtsp_url_sub}")
-        
         self.declare_parameter('camera_ip', '192.168.1.100')
         self.camera_ip = self.get_parameter('camera_ip').value
         self.get_logger().info(f"camera_ip from param = {self.camera_ip}")
@@ -425,22 +457,16 @@ class CameraNode(Node):
         self.ros_topic_name = self.get_parameter('ros_topic_name').value
         self.get_logger().info(f"ros_topic_name from param = {self.ros_topic_name}")
         
-        # Setup RTSP URL - support both main and sub streams
-        self.camera_streams = {
-            "main": self.rtsp_url_main,  # main stream
-            "sub": self.rtsp_url_sub     # sub stream
-        }
+        # Setup RTSP URL - use only main stream
+        self.rtsp_url = self.rtsp_url_main
         
-        # current resolution
-        self.current_resolution = "main"
-
         # latest snapshot path
         self.latest_snapshot = None
         
         # Initialize RTSP stream
         self.stream = None
-        self.get_logger().info(f"Starting camera stream: {self.camera_streams[self.current_resolution]}")
-        self.stream = RTSPStream(self.camera_name, self.camera_streams[self.current_resolution], self)
+        self.get_logger().info(f"Starting camera stream: {self.rtsp_url}")
+        self.stream = RTSPStream(self.camera_name, self.rtsp_url, self)
         
         # Create ROS2 Image Publisher for camera (only if enabled)
         if self.publish_ros_image:
@@ -676,13 +702,6 @@ class CameraNode(Node):
                         <button id="rosPublishBtn" class="snapshot-btn" onclick="toggleRosImagePublish()">🔄 Toggle ROS2 Publish</button>
                         
                         <br><br>
-                        <label for="resolution">📺 Stream Quality: </label>
-                        <select id="resolution" onchange="changeResolution()">
-                            <option value="main">1920x1080</option>
-                            <option value="sub">640x480</option>
-                        </select>
-                        
-                        <br><br>
                         <div id="ros-publish-status" style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 6px; padding: 8px; margin-top: 10px;">
                             <strong>🤖 ROS2 Image Publishing:</strong> <span id="ros-publish-enabled">Checking...</span>
                         </div>
@@ -743,28 +762,6 @@ class CameraNode(Node):
                                 .catch(error => {{
                                     updateStatus('Error restarting camera: ' + error.message, 'error');
                                 }});
-                        }}
-                        
-                        function changeResolution() {{
-                            const resolution = document.getElementById('resolution').value;
-                            updateStatus('Changing stream quality...', 'running');
-                            
-                            fetch('/change_resolution', {{
-                                method: 'POST',
-                                headers: {{
-                                    'Content-Type': 'application/json',
-                                }},
-                                body: JSON.stringify({{resolution: resolution}})
-                            }})
-                            .then(response => response.json())
-                            .then(data => {{
-                                updateStatus(data.message, data.status);
-                                if (data.status === 'success') {{
-                                    setTimeout(() => {{
-                                        refreshImage();
-                                    }}, 2000);
-                                }}
-                            }});
                         }}
                         
                         function takeSnapshot() {{
@@ -889,7 +886,7 @@ class CameraNode(Node):
                 if self.stream:
                     self.stream.restart()
                 else:
-                    self.stream = RTSPStream(self.camera_name, self.camera_streams[self.current_resolution], self)
+                    self.stream = RTSPStream(self.camera_name, self.rtsp_url, self)
                 
                 if self.stream.is_running():
                     return jsonify({'status': 'success', 'message': 'Camera started successfully'})
@@ -931,7 +928,7 @@ class CameraNode(Node):
                         return jsonify({'status': 'error', 'message': 'Failed to restart camera stream'})
                 else:
                     # If no stream exists, create a new one
-                    self.stream = RTSPStream(self.camera_name, self.camera_streams[self.current_resolution], self)
+                    self.stream = RTSPStream(self.camera_name, self.rtsp_url, self)
                     
                     if self.stream.is_running():
                         return jsonify({'status': 'success', 'message': 'Camera started successfully'})
@@ -944,32 +941,32 @@ class CameraNode(Node):
 
         @self.flask_app.route('/status')
         def get_camera_status():
-            is_running = self.stream and self.stream.is_running()
-            message = 'Camera is running' if is_running else 'Camera is stopped'
-            return jsonify({'is_running': is_running, 'message': message})
-
-        @self.flask_app.route('/change_resolution', methods=['POST'])
-        def change_resolution():
-            try:
-                data = request.get_json()
-                resolution = data.get('resolution', 'main')
+            if not self.stream:
+                return jsonify({'is_running': False, 'message': 'Camera stream not initialized'})
+            
+            is_running = self.stream.is_running()
+            
+            # Get detailed status information for error cases
+            if not is_running:
+                current_time = time.time()
+                time_since_last_frame = current_time - self.stream.last_frame_update
                 
-                if resolution not in self.camera_streams:
-                    return jsonify({'status': 'error', 'message': 'Invalid stream quality'})
-                
-                self.current_resolution = resolution
-                new_url = self.camera_streams[resolution]
-                
-                if self.stream:
-                    self.stream.change_url(new_url)
+                with self.stream.lock:
+                    has_frame = self.stream.frame is not None
+            
+            if is_running:
+                message = 'Camera is running'
+            else:
+                if not self.stream.available:
+                    message = 'Camera connection failed - unable to start FFmpeg process'
+                elif not has_frame:
+                    message = 'Camera process running but no frames received - check camera connection'
+                elif time_since_last_frame > 10:
+                    message = f'Camera connection lost - no frames for {time_since_last_frame:.1f} seconds'
                 else:
-                    self.stream = RTSPStream(self.camera_name, new_url, self)
-                
-                return jsonify({'status': 'success', 'message': f'Stream quality changed to {resolution}'})
-                
-            except Exception as e:
-                self.get_logger().error(f"Error changing resolution: {e}")
-                return jsonify({'status': 'error', 'message': f'Error changing resolution: {str(e)}'})
+                    message = 'Camera is stopped'
+                    
+            return jsonify({'is_running': is_running, 'message': message})
 
         @self.flask_app.route('/snapshot', methods=['POST'])
         def take_snapshot():
