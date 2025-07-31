@@ -435,6 +435,30 @@
       gap: 1.5rem;
       justify-content: center;
       align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    
+    /* Responsive design for visualization container */
+    @media (max-width: 1400px) {
+      .visualization-container {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+    
+    .visualization-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+    
+    @media (max-width: 1400px) {
+      .visualization-item {
+        width: 100%;
+        max-width: 650px;
+      }
     }
     
     .viewer-3d {
@@ -445,6 +469,7 @@
       background: #000;
       position: relative;
       max-width: 650px;
+      min-width: 300px;
     }
     
     .camera-viewer {
@@ -455,8 +480,24 @@
       background: #000;
       position: relative;
       max-width: 650px;
+      min-width: 300px;
       display: flex;
       flex-direction: column;
+    }
+    
+    /* Responsive sizing for visualization elements */
+    @media (max-width: 1400px) {
+      .viewer-3d, .camera-viewer {
+        max-width: 90vw;
+        width: 100%;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .viewer-3d, .camera-viewer {
+        height: 400px;
+        max-width: 95vw;
+      }
     }
     
     .camera-header {
@@ -1011,7 +1052,7 @@
       
       <div class="visualization-container">
         <!-- 3D Robot Model -->
-        <div class="flex-1">
+        <div class="visualization-item">
           <h3 class="text-lg font-medium mb-3">3D Robot Model</h3>
           <div class="viewer-3d" id="viewer3d">
             <div class="viewer-controls">
@@ -1025,7 +1066,7 @@
         </div>
         
         <!-- Camera Feed -->
-        <div class="flex-1">
+        <div class="visualization-item">
           <h3 class="text-lg font-medium mb-3">Camera Image 
             <span class="ml-3 text-sm inline-flex items-center">
               <div class="camera-status-dot" id="cameraStatusDot"></div>
