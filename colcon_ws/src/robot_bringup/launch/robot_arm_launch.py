@@ -57,7 +57,7 @@ def generate_launch_description():
     
     camera_port_arg = DeclareLaunchArgument(
         'camera_port',
-        default_value='8011',
+        default_value='8012',
         description='Port for camera web interface'
     )
 
@@ -112,15 +112,16 @@ def generate_launch_description():
         period=1.0,
         actions=[
             Node(
-                package='robot_arm_cam',
-                executable='robot_arm_cam',
+                package='camera_node',
+                executable='camera_node',
                 name='robot_arm_cam',
                 parameters=[
                     {'camera_name': 'RobotArmCamera'},
-                    {'rtsp_url_1080p': LaunchConfiguration('camera_rtsp_1080p')},
-                    {'rtsp_url_360p': LaunchConfiguration('camera_rtsp_360p')},
+                    {'rtsp_url_main': LaunchConfiguration('camera_rtsp_1080p')},
+                    {'rtsp_url_sub': LaunchConfiguration('camera_rtsp_360p')},
                     {'camera_ip': LaunchConfiguration('camera_ip')},
                     {'server_port': LaunchConfiguration('camera_port')},
+                    {'ros_topic_name': '/robot_arm_camera/image_raw'},
                     {'stream_fps': 25},
                     {'jpeg_quality': 75},
                     {'max_width': 800},

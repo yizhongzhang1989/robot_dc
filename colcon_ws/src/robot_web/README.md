@@ -22,7 +22,7 @@ ros2 launch robot_web web_server_launch.py
 ```bash
 cd /home/jetson/Desktop/robot_dc/colcon_ws
 source install/setup.bash
-ros2 launch cam_node camera_web_launch.py
+ros2 launch camera_node camera_web_launch.py
 ```
 
 ### Launch web server directly
@@ -87,8 +87,8 @@ curl -X POST http://localhost:8000/snapshot/camera_101
 - Supported motors: motor1, motor2, motor17, motor18, platform
 - Supported cameras: camera_100 (192.168.1.100), camera_101 (192.168.1.101)
 - Camera services: 
-  - camera_100_snapshot, restart_camera_100_node
-  - camera_101_snapshot, restart_camera_101_node
+  - /cam100/take_snapshot, /restart_cam100_node
+  - /cam101/take_snapshot, /restart_cam101_node
 
 ## Dependencies
 - fastapi
@@ -99,8 +99,8 @@ curl -X POST http://localhost:8000/snapshot/camera_101
 ## Notes
 1. Ensure ROS2 environment is properly configured
 2. Ensure camera nodes are running (if using snapshot functionality):
-   - cam_node_100 for camera_100 (192.168.1.100)
-   - cam_node_101 for camera_101 (192.168.1.101)
+   - camera_node_100 for camera_100 (192.168.1.100)
+   - camera_node_101 for camera_101 (192.168.1.101)
 3. Port 8000 must be available
 4. Source install/setup.bash before launching
 5. Camera nodes now use parameterized architecture - each camera runs as separate node

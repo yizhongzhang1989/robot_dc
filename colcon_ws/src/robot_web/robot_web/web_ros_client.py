@@ -74,8 +74,8 @@ class WebROSClient:
             # Create snapshot clients for each camera
             camera_names = ['cam100', 'cam101']
             for camera_name in camera_names:
-                snapshot_service = f'{camera_name}_snapshot'
-                restart_service = f'restart_{camera_name}_node'
+                snapshot_service = f'/{camera_name}/take_snapshot'
+                restart_service = f'/restart_{camera_name}_node'
                 
                 self.snapshot_clients[camera_name] = self.node.create_client(Trigger, snapshot_service)
                 self.restart_clients[camera_name] = self.node.create_client(Trigger, restart_service)
@@ -263,7 +263,7 @@ class WebROSClient:
         # Check if service is available, recreate client if needed
         if not restart_client.service_is_ready():
             self.node.get_logger().warning(f"Restart service for {camera_name} not ready, recreating client...")
-            service_name = f'restart_{camera_name}_node'
+            service_name = f'/restart_{camera_name}_node'
             restart_client = self.node.create_client(Trigger, service_name)
             self.restart_clients[camera_name] = restart_client
             

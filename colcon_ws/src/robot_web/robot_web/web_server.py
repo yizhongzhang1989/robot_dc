@@ -85,7 +85,7 @@ async def monitor_control(request: Request):
 
 @app.post("/snapshot")
 async def take_snapshot():
-    """Take snapshots from all cameras using the cam_node services."""
+    """Take snapshots from all cameras using the camera_node services."""
     if ros_client is None:
         return JSONResponse(content={"error": "ROS client not initialized"}, status_code=503)
     

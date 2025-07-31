@@ -342,7 +342,7 @@ class RTSPStream:
                 ros_image = self.cv_bridge.cv2_to_imgmsg(frame, "bgr8")
                 if self.node:
                     ros_image.header.stamp = self.node.get_clock().now().to_msg()
-                ros_image.header.frame_id = "robot_arm_camera"
+                ros_image.header.frame_id = "camera"
                 
                 # Publish the image
                 self.ros_publisher.publish(ros_image)
@@ -373,32 +373,32 @@ class RTSPStream:
         self.log_info(f"Stream {self.name} stopped")
 
 
-class RobotArmCamNode(Node):
-    """ROS2 node for robot arm camera RTSP streaming and control."""
+class CameraNode(Node):
+    """ROS2 node for generic IP camera RTSP streaming and control."""
     
     def __init__(self):
-        super().__init__('robot_arm_cam')
-        self.get_logger().info("Initializing Robot Arm Camera Node...")
+        super().__init__('camera_node')
+        self.get_logger().info("Initializing Generic Camera Node...")
         
         # Declare and read camera parameters
-        self.declare_parameter('camera_name', 'RobotArmCamera')
+        self.declare_parameter('camera_name', 'GenericCamera')
         self.camera_name = self.get_parameter('camera_name').value
         self.get_logger().info(f"camera_name from param = {self.camera_name}")
         
-        self.declare_parameter('rtsp_url_1080p', 'rtsp://admin:123456@192.168.1.102/stream0')
-        self.rtsp_url_1080p = self.get_parameter('rtsp_url_1080p').value
-        self.get_logger().info(f"rtsp_url_1080p from param = {self.rtsp_url_1080p}")
+        self.declare_parameter('rtsp_url_main', 'rtsp://admin:123456@192.168.1.100/stream0')
+        self.rtsp_url_main = self.get_parameter('rtsp_url_main').value
+        self.get_logger().info(f"rtsp_url_main from param = {self.rtsp_url_main}")
         
-        self.declare_parameter('rtsp_url_360p', 'rtsp://admin:123456@192.168.1.102/stream1')
-        self.rtsp_url_360p = self.get_parameter('rtsp_url_360p').value
-        self.get_logger().info(f"rtsp_url_360p from param = {self.rtsp_url_360p}")
+        self.declare_parameter('rtsp_url_sub', 'rtsp://admin:123456@192.168.1.100/stream1')
+        self.rtsp_url_sub = self.get_parameter('rtsp_url_sub').value
+        self.get_logger().info(f"rtsp_url_sub from param = {self.rtsp_url_sub}")
         
-        self.declare_parameter('camera_ip', '192.168.1.102')
+        self.declare_parameter('camera_ip', '192.168.1.100')
         self.camera_ip = self.get_parameter('camera_ip').value
         self.get_logger().info(f"camera_ip from param = {self.camera_ip}")
         
         # Declare Flask server port parameter
-        self.declare_parameter('server_port', 8011)
+        self.declare_parameter('server_port', 8010)
         self.server_port = self.get_parameter('server_port').value
         self.get_logger().info(f"server_port from param = {self.server_port}")
         
@@ -420,16 +420,19 @@ class RobotArmCamNode(Node):
         self.publish_ros_image = self.get_parameter('publish_ros_image').value
         self.get_logger().info(f"publish_ros_image from param = {self.publish_ros_image}")
         
-        # Note: ROS2 publishing now uses event-driven mode (no rate limiting)
+        # Declare ROS2 topic name parameter
+        self.declare_parameter('ros_topic_name', '/camera/image_raw')
+        self.ros_topic_name = self.get_parameter('ros_topic_name').value
+        self.get_logger().info(f"ros_topic_name from param = {self.ros_topic_name}")
         
         # Setup RTSP URL - 支持多种分辨率
         self.camera_streams = {
-            "1080p": self.rtsp_url_1080p,  # 主码流 1920x1080
-            "360p": self.rtsp_url_360p     # 子码流 640x360
+            "main": self.rtsp_url_main,  # 主码流 
+            "sub": self.rtsp_url_sub     # 子码流
         }
         
         # 当前分辨率
-        self.current_resolution = "1080p"
+        self.current_resolution = "main"
         
         # 最新截图路径
         self.latest_snapshot = None
@@ -443,7 +446,7 @@ class RobotArmCamNode(Node):
         if self.publish_ros_image:
             self.camera_image_publisher = self.create_publisher(
                 Image,
-                '/robot_arm_camera/image_raw',
+                self.ros_topic_name,
                 1
             )
             
@@ -454,7 +457,7 @@ class RobotArmCamNode(Node):
             self.stream.enable_ros_publishing(self.camera_image_publisher, self.bridge)
             
             self.get_logger().info("ROS2 event-driven image publishing enabled")
-            self.get_logger().info("ROS2 image topic: /robot_arm_camera/image_raw")
+            self.get_logger().info(f"ROS2 image topic: {self.ros_topic_name}")
         else:
             self.camera_image_publisher = None
             self.bridge = None
@@ -465,6 +468,13 @@ class RobotArmCamNode(Node):
             Trigger,
             f'/{self.camera_name.lower()}/take_snapshot',
             self.take_snapshot_callback
+        )
+        
+        # Create restart service
+        self.restart_service = self.create_service(
+            Trigger,
+            f'/restart_{self.camera_name.lower()}_node',
+            self.restart_callback
         )
         
         # Initialize Flask app for web interface
@@ -478,11 +488,12 @@ class RobotArmCamNode(Node):
         )
         self.flask_thread.start()
         
-        self.get_logger().info("Robot Arm Camera Node initialized successfully")
+        self.get_logger().info("Generic Camera Node initialized successfully")
         self.get_logger().info(f"Web interface available at http://localhost:{self.server_port}")
         if self.publish_ros_image:
-            self.get_logger().info("ROS2 image topic: /robot_arm_camera/image_raw")
+            self.get_logger().info(f"ROS2 image topic: {self.ros_topic_name}")
         self.get_logger().info(f"Snapshot service: /{self.camera_name.lower()}/take_snapshot")
+        self.get_logger().info(f"Restart service: /restart_{self.camera_name.lower()}_node")
 
     def take_snapshot_callback(self, request, response):
         """ROS2 service callback for taking snapshots"""
@@ -499,7 +510,7 @@ class RobotArmCamNode(Node):
                 return response
             
             # Create snapshots directory if it doesn't exist
-            snapshots_dir = "/tmp/robot_arm_camera_snapshots"
+            snapshots_dir = f"/tmp/{self.camera_name.lower()}_snapshots"
             os.makedirs(snapshots_dir, exist_ok=True)
             
             # Generate filename with timestamp
@@ -527,39 +538,68 @@ class RobotArmCamNode(Node):
         
         return response
 
+    def restart_callback(self, request, response):
+        """Handle restart service request."""
+        self.get_logger().info("Manual restart request received")
+        
+        # Set response
+        response.success = True
+        response.message = "Restarting camera node..."
+        
+        # Schedule restart in a separate thread to allow response to be sent
+        def delayed_restart():
+            import time
+            time.sleep(1)  # Give time for response to be sent
+            self.get_logger().info("Executing camera node restart...")
+            try:
+                # Restart the camera stream
+                if self.stream:
+                    self.stream.restart()
+                    self.get_logger().info("Camera stream restarted successfully")
+                else:
+                    self.get_logger().warn("No camera stream to restart")
+            except Exception as e:
+                self.get_logger().error(f"Error during restart: {e}")
+        
+        import threading
+        restart_thread = threading.Thread(target=delayed_restart)
+        restart_thread.start()
+        
+        return response
+
     def setup_flask_routes(self):
         """Setup Flask routes for web interface"""
         
         @self.flask_app.route('/')
         def index():
-            return '''
+            return f'''
             <html>
                 <head>
-                    <title>Robot Arm Camera</title>
+                    <title>{self.camera_name} Control</title>
                     <style>
-                        body {
+                        body {{
                             font-family: Arial, sans-serif;
                             max-width: 1000px;
                             margin: 0 auto;
                             padding: 20px;
                             background-color: #f5f5f5;
-                        }
-                        .header {
+                        }}
+                        .header {{
                             text-align: center;
                             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                             color: white;
                             padding: 20px;
                             border-radius: 10px;
                             margin-bottom: 20px;
-                        }
-                        .controls {
+                        }}
+                        .controls {{
                             background: white;
                             padding: 20px;
                             border-radius: 10px;
                             margin-bottom: 20px;
                             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        }
-                        button {
+                        }}
+                        button {{
                             padding: 10px 20px;
                             margin: 5px;
                             font-size: 16px;
@@ -567,61 +607,63 @@ class RobotArmCamNode(Node):
                             border: none;
                             border-radius: 5px;
                             transition: background-color 0.3s;
-                        }
-                        .start-btn { background-color: #4CAF50; color: white; }
-                        .start-btn:hover { background-color: #45a049; }
-                        .stop-btn { background-color: #f44336; color: white; }
-                        .stop-btn:hover { background-color: #da190b; }
-                        .snapshot-btn { background-color: #2196F3; color: white; }
-                        .snapshot-btn:hover { background-color: #0b7dda; }
-                        select {
+                        }}
+                        .start-btn {{ background-color: #4CAF50; color: white; }}
+                        .start-btn:hover {{ background-color: #45a049; }}
+                        .stop-btn {{ background-color: #f44336; color: white; }}
+                        .stop-btn:hover {{ background-color: #da190b; }}
+                        .restart-btn {{ background-color: #ff9800; color: white; }}
+                        .restart-btn:hover {{ background-color: #e68900; }}
+                        .snapshot-btn {{ background-color: #2196F3; color: white; }}
+                        .snapshot-btn:hover {{ background-color: #0b7dda; }}
+                        select {{
                             padding: 8px 12px;
                             margin: 5px;
                             font-size: 14px;
                             border: 1px solid #ddd;
                             border-radius: 4px;
-                        }
-                        label {
+                        }}
+                        label {{
                             font-weight: bold;
                             margin-right: 10px;
-                        }
-                        .status { 
+                        }}
+                        .status {{ 
                             padding: 15px; 
                             margin: 10px 0;
                             border-radius: 5px;
                             font-weight: bold;
-                        }
-                        .status.running { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-                        .status.stopped { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-                        #camera-container {
+                        }}
+                        .status.running {{ background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
+                        .status.stopped {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
+                        #camera-container {{
                             text-align: center;
                             background: white;
                             border: 2px solid #ddd;
                             padding: 10px;
                             border-radius: 10px;
                             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        }
-                        #camera-feed {
+                        }}
+                        #camera-feed {{
                             max-width: 100%; 
                             height: auto;
                             border-radius: 5px;
-                        }
-                        .info-panel {
+                        }}
+                        .info-panel {{
                             background: white;
                             padding: 15px;
                             border-radius: 10px;
                             margin-top: 20px;
                             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        }
-                        .info-panel h3 {
+                        }}
+                        .info-panel h3 {{
                             margin-top: 0;
                             color: #333;
-                        }
+                        }}
                     </style>
                 </head>
                 <body>
                     <div class="header">
-                        <h1>🤖 Robot Arm Camera Control</h1>
+                        <h1>📹 {self.camera_name} Control</h1>
                         <p>Real-time RTSP Camera Streaming and Control Interface</p>
                     </div>
                     
@@ -629,14 +671,15 @@ class RobotArmCamNode(Node):
                         <h3>Camera Controls</h3>
                         <button class="start-btn" onclick="startCamera()">▶️ Start Camera</button>
                         <button class="stop-btn" onclick="stopCamera()">⏹️ Stop Camera</button>
+                        <button class="restart-btn" onclick="restartCamera()">🔄 Restart Camera</button>
                         <button class="snapshot-btn" onclick="takeSnapshot()">📸 Take Snapshot</button>
                         <button id="rosPublishBtn" class="snapshot-btn" onclick="toggleRosImagePublish()">🔄 Toggle ROS2 Publish</button>
                         
                         <br><br>
-                        <label for="resolution">📺 Resolution: </label>
+                        <label for="resolution">📺 Stream Quality: </label>
                         <select id="resolution" onchange="changeResolution()">
-                            <option value="1080p">1920x1080</option>
-                            <option value="360p">640x360</option>
+                            <option value="main">1920x1080</option>
+                            <option value="sub">640x480</option>
                         </select>
                         
                         <br><br>
@@ -653,133 +696,154 @@ class RobotArmCamNode(Node):
 
                     <div class="info-panel">
                         <h3>📋 System Information</h3>
-                        <p><strong>Node Name:</strong> robot_arm_cam</p>
-                        <p><strong>ROS2 Topic:</strong> /robot_arm_camera/image_raw</p>
-                        <p><strong>Snapshot Service:</strong> /robotarmcamera/take_snapshot</p>
-                        <p><strong>Server Port:</strong> ''' + str(self.server_port) + '''</p>
+                        <p><strong>Node Name:</strong> camera_node</p>
+                        <p><strong>Camera Name:</strong> {self.camera_name}</p>
+                        <p><strong>ROS2 Topic:</strong> {self.ros_topic_name}</p>
+                        <p><strong>Snapshot Service:</strong> /{self.camera_name.lower()}/take_snapshot</p>
+                        <p><strong>Restart Service:</strong> /restart_{self.camera_name.lower()}_node</p>
+                        <p><strong>Server Port:</strong> {self.server_port}</p>
+                        <p><strong>Camera IP:</strong> {self.camera_ip}</p>
                     </div>
 
                     <script>
-                        function startCamera() {
-                            fetch('/start', {method: 'POST'})
+                        function startCamera() {{
+                            fetch('/start', {{method: 'POST'}})
                                 .then(response => response.json())
-                                .then(data => {
+                                .then(data => {{
                                     updateStatus(data.message, data.status);
-                                    if (data.status === 'success') {
-                                        setTimeout(() => {
+                                    if (data.status === 'success') {{
+                                        setTimeout(() => {{
                                             refreshImage();
-                                        }, 1000);
-                                    }
-                                });
-                        }
+                                        }}, 1000);
+                                    }}
+                                }});
+                        }}
                         
-                        function stopCamera() {
-                            fetch('/stop', {method: 'POST'})
+                        function stopCamera() {{
+                            fetch('/stop', {{method: 'POST'}})
                                 .then(response => response.json())
-                                .then(data => {
+                                .then(data => {{
                                     updateStatus(data.message, data.status);
-                                });
-                        }
+                                }});
+                        }}
                         
-                        function changeResolution() {
-                            const resolution = document.getElementById('resolution').value;
-                            updateStatus('Changing resolution...', 'running');
+                        function restartCamera() {{
+                            updateStatus('Restarting camera...', 'running');
                             
-                            fetch('/change_resolution', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({resolution: resolution})
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                updateStatus(data.message, data.status);
-                                if (data.status === 'success') {
-                                    setTimeout(() => {
-                                        refreshImage();
-                                    }, 2000);
-                                }
-                            });
-                        }
+                            fetch('/restart', {{method: 'POST'}})
+                                .then(response => response.json())
+                                .then(data => {{
+                                    updateStatus(data.message, data.status);
+                                    if (data.status === 'success') {{
+                                        setTimeout(() => {{
+                                            refreshImage();
+                                        }}, 2000); // Wait a bit longer for restart
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    updateStatus('Error restarting camera: ' + error.message, 'error');
+                                }});
+                        }}
                         
-                        function takeSnapshot() {
+                        function changeResolution() {{
+                            const resolution = document.getElementById('resolution').value;
+                            updateStatus('Changing stream quality...', 'running');
+                            
+                            fetch('/change_resolution', {{
+                                method: 'POST',
+                                headers: {{
+                                    'Content-Type': 'application/json',
+                                }},
+                                body: JSON.stringify({{resolution: resolution}})
+                            }})
+                            .then(response => response.json())
+                            .then(data => {{
+                                updateStatus(data.message, data.status);
+                                if (data.status === 'success') {{
+                                    setTimeout(() => {{
+                                        refreshImage();
+                                    }}, 2000);
+                                }}
+                            }});
+                        }}
+                        
+                        function takeSnapshot() {{
                             updateStatus('Taking snapshot...', 'running');
 
-                            fetch('/snapshot', {method: 'POST'})
+                            fetch('/snapshot', {{method: 'POST'}})
                                 .then(response => response.json())
-                                .then(data => {
+                                .then(data => {{
                                     updateStatus(data.message, data.status);
-                                    if (data.status === 'success') {
+                                    if (data.status === 'success') {{
                                         const a = document.createElement('a');
                                         a.href = '/download_snapshot';
                                         a.download = data.filename;
                                         a.click();
-                                    }
-                                });
-                        }
+                                    }}
+                                }});
+                        }}
                         
-                        function refreshImage() {
+                        function refreshImage() {{
                             const img = document.getElementById('camera-feed');
                             img.src = '/video_feed?' + new Date().getTime();
-                        }
+                        }}
                         
-                        function getStatus() {
+                        function getStatus() {{
                             fetch('/status')
                                 .then(response => response.json())
-                                .then(data => {
+                                .then(data => {{
                                     updateStatus(data.message, data.is_running ? 'running' : 'stopped');
-                                });
-                        }
+                                }});
+                        }}
                         
-                        function updateStatus(message, status) {
+                        function updateStatus(message, status) {{
                             const statusDiv = document.getElementById('status');
                             statusDiv.textContent = message;
                             statusDiv.className = 'status ' + (status === 'success' || status === 'running' ? 'running' : 'stopped');
-                        }
+                        }}
                         
-                        function toggleRosImagePublish() {
+                        function toggleRosImagePublish() {{
                             updateStatus('Toggling ROS2 image publishing...', 'running');
                             
-                            fetch('/ros_image_publish', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})})
+                            fetch('/ros_image_publish', {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{}})}})
                                 .then(response => response.json())
-                                .then(data => {
+                                .then(data => {{
                                     updateStatus(data.message, data.status);
                                     updateRosPublishStatus();
-                                })
-                                .catch(error => {
+                                }})
+                                .catch(error => {{
                                     updateStatus('Error toggling ROS2 publish: ' + error.message, 'error');
-                                });
-                        }
+                                }});
+                        }}
                         
-                        function updateRosPublishStatus() {
+                        function updateRosPublishStatus() {{
                             fetch('/ros_image_publish')
                                 .then(response => response.json())
-                                .then(data => {
+                                .then(data => {{
                                     const statusElement = document.getElementById('ros-publish-enabled');
                                     const btnElement = document.getElementById('rosPublishBtn');
                                     
-                                    if (data.enabled) {
+                                    if (data.enabled) {{
                                         statusElement.textContent = 'Enabled ✅';
                                         statusElement.style.color = '#10b981';
                                         btnElement.textContent = '🔄 Disable ROS2 Publish';
                                         btnElement.className = 'stop-btn';
-                                    } else {
+                                    }} else {{
                                         statusElement.textContent = 'Disabled ❌';
                                         statusElement.style.color = '#ef4444';
                                         btnElement.textContent = '🔄 Enable ROS2 Publish';
                                         btnElement.className = 'start-btn';
-                                    }
-                                })
-                                .catch(error => {
+                                    }}
+                                }})
+                                .catch(error => {{
                                     document.getElementById('ros-publish-enabled').textContent = 'Error checking status';
-                                });
-                        }
+                                }});
+                        }}
                         
-                        window.onload = function() {
+                        window.onload = function() {{
                             getStatus();
                             updateRosPublishStatus();
-                        };
+                        }};
                         
                         setInterval(getStatus, 5000);
                         setInterval(updateRosPublishStatus, 10000); // Check ROS2 publish status every 10 seconds
@@ -849,6 +913,35 @@ class RobotArmCamNode(Node):
                 self.get_logger().error(f"Error stopping camera: {e}")
                 return jsonify({'status': 'error', 'message': f'Error stopping camera: {str(e)}'})
 
+        @self.flask_app.route('/restart', methods=['POST'])
+        def restart_camera():
+            try:
+                self.get_logger().info("Manual restart request received from web interface")
+                
+                if self.stream:
+                    self.stream.restart()
+                    
+                    # Wait a moment and check if restart was successful
+                    import time
+                    time.sleep(1)
+                    
+                    if self.stream.is_running():
+                        return jsonify({'status': 'success', 'message': 'Camera restarted successfully'})
+                    else:
+                        return jsonify({'status': 'error', 'message': 'Failed to restart camera stream'})
+                else:
+                    # If no stream exists, create a new one
+                    self.stream = RTSPStream(self.camera_name, self.camera_streams[self.current_resolution], self)
+                    
+                    if self.stream.is_running():
+                        return jsonify({'status': 'success', 'message': 'Camera started successfully'})
+                    else:
+                        return jsonify({'status': 'error', 'message': 'Failed to start camera'})
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error restarting camera: {e}")
+                return jsonify({'status': 'error', 'message': f'Error restarting camera: {str(e)}'})
+
         @self.flask_app.route('/status')
         def get_camera_status():
             is_running = self.stream and self.stream.is_running()
@@ -859,10 +952,10 @@ class RobotArmCamNode(Node):
         def change_resolution():
             try:
                 data = request.get_json()
-                resolution = data.get('resolution', '1080p')
+                resolution = data.get('resolution', 'main')
                 
                 if resolution not in self.camera_streams:
-                    return jsonify({'status': 'error', 'message': 'Invalid resolution'})
+                    return jsonify({'status': 'error', 'message': 'Invalid stream quality'})
                 
                 self.current_resolution = resolution
                 new_url = self.camera_streams[resolution]
@@ -872,7 +965,7 @@ class RobotArmCamNode(Node):
                 else:
                     self.stream = RTSPStream(self.camera_name, new_url, self)
                 
-                return jsonify({'status': 'success', 'message': f'Resolution changed to {resolution}'})
+                return jsonify({'status': 'success', 'message': f'Stream quality changed to {resolution}'})
                 
             except Exception as e:
                 self.get_logger().error(f"Error changing resolution: {e}")
@@ -889,7 +982,7 @@ class RobotArmCamNode(Node):
                     return jsonify({'status': 'error', 'message': 'No frame available'})
                 
                 # Create snapshots directory if it doesn't exist
-                snapshots_dir = "/tmp/robot_arm_camera_snapshots"
+                snapshots_dir = f"/tmp/{self.camera_name.lower()}_snapshots"
                 os.makedirs(snapshots_dir, exist_ok=True)
                 
                 # Generate filename with timestamp
@@ -951,7 +1044,7 @@ class RobotArmCamNode(Node):
                     if not self.camera_image_publisher:
                         self.camera_image_publisher = self.create_publisher(
                             Image,
-                            '/robot_arm_camera/image_raw',
+                            self.ros_topic_name,
                             1
                         )
                     
@@ -1007,7 +1100,7 @@ class RobotArmCamNode(Node):
 
     def destroy_node(self):
         """Clean up resources when shutting down"""
-        self.get_logger().info("Shutting down Robot Arm Camera Node...")
+        self.get_logger().info("Shutting down Generic Camera Node...")
         
         # Stop the camera stream
         if self.stream:
@@ -1020,12 +1113,12 @@ class RobotArmCamNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     
-    node = RobotArmCamNode()
+    node = CameraNode()
     
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info('Shutting down robot arm camera node...')
+        node.get_logger().info('Shutting down camera node...')
     finally:
         node.destroy_node()
         rclpy.shutdown()
