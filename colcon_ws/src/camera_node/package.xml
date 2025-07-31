@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>cam_node</name>
+  <name>camera_node</name>
   <version>0.1.0</version>
-  <description>Node for providing camera snapshot service via ROS2.</description>
+  <description>Generic IP camera node for RTSP streaming and control</description>
   <maintainer email="yizhongzhang1989@gmail.com">yizhongzhang1989</maintainer>
   <license>MIT</license>
 
@@ -11,7 +11,12 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>python3-flask</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

@@ -1,10 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction, DeclareLaunchArgument
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import TimerAction, DeclareLaunchArgument
 from launch_ros.actions import Node
 from launch.substitutions import LaunchConfiguration
-from ament_index_python.packages import get_package_share_directory
-import os
 
 
 def generate_launch_description():
@@ -37,6 +34,31 @@ def generate_launch_description():
         'web_port',
         default_value='8080',
         description='Port for the web interface'
+    )
+    
+    # Camera parameters
+    camera_rtsp_1080p_arg = DeclareLaunchArgument(
+        'camera_rtsp_1080p',
+        default_value='rtsp://admin:123456@192.168.1.102/stream0',
+        description='RTSP URL for 1080p camera stream'
+    )
+    
+    camera_rtsp_360p_arg = DeclareLaunchArgument(
+        'camera_rtsp_360p',
+        default_value='rtsp://admin:123456@192.168.1.102/stream1',
+        description='RTSP URL for 360p camera stream'
+    )
+    
+    camera_ip_arg = DeclareLaunchArgument(
+        'camera_ip',
+        default_value='192.168.1.102',
+        description='IP address of the camera'
+    )
+    
+    camera_port_arg = DeclareLaunchArgument(
+        'camera_port',
+        default_value='8012',
+        description='Port for camera web interface'
     )
 
     # Robot arm node
@@ -85,13 +107,43 @@ def generate_launch_description():
         ]
     )
 
+    # Robot arm camera node - launch with a small delay to ensure system is ready
+    robot_arm_cam_node = TimerAction(
+        period=1.0,
+        actions=[
+            Node(
+                package='camera_node',
+                executable='camera_node',
+                name='robot_arm_cam',
+                parameters=[
+                    {'camera_name': 'RobotArmCamera'},
+                    {'rtsp_url_main': LaunchConfiguration('camera_rtsp_1080p')},
+                    {'camera_ip': LaunchConfiguration('camera_ip')},
+                    {'server_port': LaunchConfiguration('camera_port')},
+                    {'ros_topic_name': '/robot_arm_camera/image_raw'},
+                    {'stream_fps': 25},
+                    {'jpeg_quality': 75},
+                    {'max_width': 800},
+                    {'publish_ros_image': True}  # Event-driven publishing (auto-matches camera fps)
+                ],
+                output='screen',
+                emulate_tty=True,
+            )
+        ]
+    )
+
     return LaunchDescription([
         robot_ip_arg,
         robot_port_arg,
         robot_state_port_arg,
         device_id_arg,
         web_port_arg,
+        camera_rtsp_1080p_arg,
+        camera_rtsp_360p_arg,
+        camera_ip_arg,
+        camera_port_arg,
         robot_arm_node,
         robot_state_node,
-        robot_arm_web_node
+        robot_arm_web_node,
+        robot_arm_cam_node
     ])

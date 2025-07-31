@@ -2,7 +2,7 @@ from setuptools import setup
 import os
 from glob import glob
 
-package_name = 'cam_node'
+package_name = 'camera_node'
 
 setup(
     name=package_name,
@@ -18,12 +18,12 @@ setup(
     zip_safe=True,
     maintainer='yizhongzhang1989',
     maintainer_email='yizhongzhang1989@gmail.com',
-    description='Node for providing camera snapshot service via ROS2.',
+    description='Generic IP camera node for RTSP streaming and control',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'cam_node = cam_node.cam_node:main',
+            'camera_node = camera_node.camera_node:main',
         ],
     },
 )

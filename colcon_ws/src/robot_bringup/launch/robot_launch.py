@@ -43,9 +43,9 @@ def generate_launch_description():
         'motor_status_launch.py'
     )
     cam_node_path = os.path.join(
-        get_package_share_directory('cam_node'),
+        get_package_share_directory('camera_node'),
         'launch',
-        'cam_launch.py'
+        'double_camera_launch.py'
     )
 
     # Launch descriptions

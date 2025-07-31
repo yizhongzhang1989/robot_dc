@@ -148,6 +148,61 @@ class DucoRobotArmNode(Node):
                     else:
                         self.get_logger().error("Invalid pose list format for ServoTCP")
                         
+                case "movej2":
+                    # Parse movej2 command: movej2 [j1,j2,j3,j4,j5,j6] v a r block
+                    if len(parts) < 6:
+                        self.get_logger().error("Movej2 command requires at least 5 parameters")
+                        return
+                        
+                    # Extract joint angles from list format [j1,j2,j3,j4,j5,j6]
+                    joints_str = parts[1]
+                    if joints_str.startswith('[') and joints_str.endswith(']'):
+                        joints_str = joints_str[1:-1]  # Remove brackets
+                        joint_values = [float(x.strip()) for x in joints_str.split(',')]
+                        
+                        if len(joint_values) != 6:
+                            self.get_logger().error("Movej2 requires exactly 6 joint values")
+                            return
+                            
+                        v = float(parts[2])  # velocity
+                        a = float(parts[3])  # acceleration
+                        r = float(parts[4])  # blend radius
+                        block_str = parts[5].lower()
+                        block = block_str == 'true'
+                        
+                        res = self.robot.movej2(joint_values, v, a, r, block, self.op)
+                        self.get_logger().info(f"Movej2 command executed: {res}")
+                    else:
+                        self.get_logger().error("Invalid joint list format for Movej2")
+                        
+                case "tcp_move":
+                    # Parse tcp_move command: tcp_move [x,y,z,rx,ry,rz] v a r tool block
+                    if len(parts) < 7:
+                        self.get_logger().error("TCP Move command requires at least 6 parameters")
+                        return
+                        
+                    # Extract pose offset from list format [x,y,z,rx,ry,rz]
+                    pose_str = parts[1]
+                    if pose_str.startswith('[') and pose_str.endswith(']'):
+                        pose_str = pose_str[1:-1]  # Remove brackets
+                        pose_values = [float(x.strip()) for x in pose_str.split(',')]
+                        
+                        if len(pose_values) != 6:
+                            self.get_logger().error("TCP Move requires exactly 6 pose values")
+                            return
+                            
+                        v = float(parts[2])  # velocity
+                        a = float(parts[3])  # acceleration
+                        r = float(parts[4])  # blend radius
+                        tool = parts[5].strip('"\'')  # tool number as string, remove quotes if present
+                        block_str = parts[6].lower()
+                        block = block_str == 'true'
+                        
+                        res = self.robot.tcp_move(pose_values, v, a, r, tool, block, self.op)
+                        self.get_logger().info(f"TCP Move command executed: {res}")
+                    else:
+                        self.get_logger().error("Invalid pose list format for TCP Move")
+                        
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
                     

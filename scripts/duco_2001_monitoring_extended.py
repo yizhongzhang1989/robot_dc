@@ -1,7 +1,7 @@
-"""
-Robot data structure for Duco robot arm monitoring.
-This module contains the RobotData class that parses and stores robot state information
-from the complete 1468-byte data frame received from the robot at 10Hz.
+#!/usr/bin/env python3  
+"""  
+This script connects via TCP to the robot at IP '192.168.1.10' on port 2001.  
+The robot sends data at approximately 10Hz, with each data frame containing 1468 bytes.  
 
 The complete data structure contains:
 - bytes 0-27: jointActualPosition (7 floats, unit: rad)
@@ -34,9 +34,9 @@ The complete data structure contains:
 - byte 661: jogSpeed (byte, percentage)
 - bytes 662-719: reserved
 - bytes 720-727: functionalDigitalIOInput (8 bytes, FDI1-FDI8)
-- bytes 728-735: functionalDigitalIOOutput (8 bytes)
+- bytes 728-735: functionalDigitalIOOutput (8 bytes, FDI1-FDI8)
 - bytes 736-751: digitalIOInput (16 bytes, DI1-DI16)
-- bytes 752-767: digitalIOOutput (16 bytes)
+- bytes 752-767: digitalIOOutput (16 bytes, DI1-DI16)
 - bytes 768-799: analogInput (8 floats)
 - bytes 800-831: analogOutput (8 floats)
 - bytes 832-959: floatRegisterInput (32 floats)
@@ -53,23 +53,27 @@ The complete data structure contains:
 - bytes 1416-1423: toolIOOutput (2 floats)
 - bytes 1424-1431: toolAnalogInput (2 floats)
 - bytes 1432-1439: toolAnalogOutput (2 floats)
-- bytes 1440-1441: toolButtonStatus (2 bytes)
+- bytes 1440-1441: toolButtonStatus (2 bytes,True=1,false=0. Button S and Button T)
 - bytes 1442-1447: reserved
 - byte 1448: robotOperationMode (0=Manual, 1=Auto, 2=Remote)
-- byte 1449: robotStatus (0-6 various states)
+- byte 1449: robotStatus (0=SR_Start,1=SR_Initialize,2=SR_Logout,3=SR_Login,4=SR_PowerOff, 5=SR_Disable/PowerOn,6=SR_Enable)
 - byte 1450: robotProgramRunStatus (0-5 various states)
 - byte 1451: safetyMonitorStatus (0-15 various states)
-- byte 1452: collisionDetectionTrigger
-- byte 1453: collisionAxis
+- byte 1452: collisionDetectionTrigger (1 means collision detected)
+- byte 1453: collisionAxis  (1-6 means collision on joint 1-6)
 - bytes 1454-1455: reserved
 - bytes 1456-1459: robotErrorCode (uint)
 - bytes 1460-1467: reserved
-"""
 
+For each frame received, this script parses and displays comprehensive robot data
+including joint and TCP actual/expected states, temperatures, currents, driver status,
+IO states, registers, tool data, and robot status information.
+"""  
+   
+import socket  
 import struct
 from dataclasses import dataclass
 from typing import List
-
 
 @dataclass
 class RobotData:
@@ -165,7 +169,7 @@ class RobotData:
     
     # Error code
     robotErrorCode: int                 # bytes 1456-1459, uint error code
-
+    
     @classmethod
     def from_bytes(cls, data: bytes) -> 'RobotData':
         """
@@ -332,12 +336,195 @@ class RobotData:
             collisionAxis=collisionAxis,
             robotErrorCode=robotErrorCode
         )
-
+    
     def get_tcp_pose(self) -> List[float]:
         """
         Get TCP pose (x, y, z, rx, ry, rz) from TCP actual position.
+        Updated to use actual TCP position data instead of joint position.
         
         Returns:
             TCP actual position (X, Y, Z, Rx, Ry, Rz)
         """
-        return self.TCPActualPosition
+        return self.TCPActualPosition  
+   
+def main():  
+    # HOST = '192.168.70.128'  # virtual machine IP
+    HOST = '192.168.1.10'     # real robot
+    PORT = 2001  
+    FRAME_SIZE = 1468        # total size of each data frame in bytes
+  
+    # Create a TCP socket and connect to the robot.  
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
+    try:  
+        sock.connect((HOST, PORT))  
+        print(f"Connected to {HOST}:{PORT}")  
+    except Exception as e:  
+        print(f"Failed to connect: {e}")  
+        return  
+  
+    try:  
+        while True:  
+            # Read exactly FRAME_SIZE bytes from the socket.  
+            data = b""  
+            while len(data) < FRAME_SIZE:  
+                packet = sock.recv(FRAME_SIZE - len(data))  
+                if not packet:  
+                    print("Connection closed by the sender.")  
+                    return  
+                data += packet  
+  
+            # Now process the frame if it has the expected size.  
+            if len(data) == FRAME_SIZE:  
+                # Parse the robot data using the structured format
+                try:
+                    robot_data = RobotData.from_bytes(data)
+                    
+                    # Print all robot data with formatted output
+                    print("=" * 90)
+                    print("ROBOT DATA:")
+                    print("=" * 90)
+                    
+                    # Joint Actual Data
+                    print("JOINT ACTUAL DATA:")
+                    print(f"  Position (rad):     {' '.join(format(x, '.7g') for x in robot_data.jointActualPosition)}")
+                    print(f"  Velocity (rad/s):   {' '.join(format(x, '.7g') for x in robot_data.jointActualVelocity)}")
+                    print(f"  Acceleration (rad/s²): {' '.join(format(x, '.7g') for x in robot_data.jointActualAccelera)}")
+                    print(f"  Torque (Nm):        {' '.join(format(x, '.7g') for x in robot_data.jointActualTorque)}")
+                    print(f"  Temperature (°C):   {' '.join(format(x, '.7g') for x in robot_data.jointActualTemperature)}")
+                    print(f"  Current (‰ rated):  {' '.join(format(x, '.7g') for x in robot_data.jointActualCurrent)}")
+                    print(f"  Driver Error ID:    {' '.join(str(x) for x in robot_data.driverErrorID)}")
+                    print(f"  Driver State:       {' '.join(str(x) for x in robot_data.driverState)}")
+                    
+                    print()
+                    
+                    # Joint Expected Data
+                    print("JOINT EXPECTED DATA:")
+                    print(f"  Position (rad):     {' '.join(format(x, '.7g') for x in robot_data.jointExpectPosition)}")
+                    print(f"  Velocity (rad/s):   {' '.join(format(x, '.7g') for x in robot_data.jointExpectVelocity)}")
+                    print(f"  Acceleration (rad/s²): {' '.join(format(x, '.7g') for x in robot_data.jointExpectAccelera)}")
+                    print(f"  Torque (Nm):        {' '.join(format(x, '.7g') for x in robot_data.jointExpectTorque)}")
+                    
+                    print()
+                    
+                    # TCP Actual Data
+                    print("TCP ACTUAL DATA:")
+                    print(f"  Position (m,rad):   {' '.join(format(x, '.7g') for x in robot_data.TCPActualPosition)}")
+                    print(f"  Velocity (m/s,rad/s): {' '.join(format(x, '.7g') for x in robot_data.TCPActualVelocity)}")
+                    print(f"  Acceleration (m/s²,rad/s²): {' '.join(format(x, '.7g') for x in robot_data.TCPActualAccelera)}")
+                    print(f"  Torque (Nm):        {' '.join(format(x, '.7g') for x in robot_data.TCPActualTorque)}")
+                    
+                    print()
+                    
+                    # TCP Expected Data
+                    print("TCP EXPECTED DATA:")
+                    print(f"  Position (m,rad):   {' '.join(format(x, '.7g') for x in robot_data.TCPExpectPosition)}")
+                    print(f"  Velocity (m/s,rad/s): {' '.join(format(x, '.7g') for x in robot_data.TCPExpectVelocity)}")
+                    print(f"  Acceleration (m/s²,rad/s²): {' '.join(format(x, '.7g') for x in robot_data.TCPExpectAccelera)}")
+                    print(f"  Torque (Nm):        {' '.join(format(x, '.7g') for x in robot_data.TCPExpectTorque)}")
+                    
+                    print()
+                    
+                    # Base Torque Data
+                    print("BASE TORQUE DATA:")
+                    print(f"  Actual Torque (Nm): {' '.join(format(x, '.7g') for x in robot_data.baseActualTorque)}")
+                    print(f"  Expected Torque (Nm): {' '.join(format(x, '.7g') for x in robot_data.baseExpectTorque)}")
+                    
+                    print()
+                    
+                    # Coordinate Systems
+                    print("COORDINATE SYSTEMS:")
+                    print(f"  Active Tool Coord:  {' '.join(format(x, '.7g') for x in robot_data.activeToolCoordSystem)}")
+                    print(f"  Active Workpiece Coord: {' '.join(format(x, '.7g') for x in robot_data.activeWorkpieceCoordSystem)}")
+                    
+                    print()
+                    
+                    # Speed Settings
+                    print("SPEED SETTINGS:")
+                    print(f"  Blended Speed:      {robot_data.blendedSpeed:.7g}")
+                    print(f"  Global Speed:       {robot_data.globalSpeed}%")
+                    print(f"  Jog Speed:          {robot_data.jogSpeed}%")
+                    
+                    print()
+                    
+                    # Digital IO
+                    print("DIGITAL IO:")
+                    print(f"  Functional DI Input: {' '.join(str(x) for x in robot_data.functionalDigitalIOInput)}")
+                    print(f"  Functional DI Output: {' '.join(str(x) for x in robot_data.functionalDigitalIOOutput)}")
+                    print(f"  Digital Input:      {' '.join(str(x) for x in robot_data.digitalIOInput)}")
+                    print(f"  Digital Output:     {' '.join(str(x) for x in robot_data.digitalIOOutput)}")
+                    
+                    print()
+                    
+                    # Analog IO
+                    print("ANALOG IO:")
+                    print(f"  Analog Input:       {' '.join(format(x, '.7g') for x in robot_data.analogInput)}")
+                    print(f"  Analog Output:      {' '.join(format(x, '.7g') for x in robot_data.analogOutput)}")
+                    
+                    print()
+                    
+                    # Registers (only show first few to avoid too much output)
+                    print("REGISTERS (first 8 values shown):")
+                    print(f"  Float Reg Input:    {' '.join(format(x, '.7g') for x in robot_data.floatRegisterInput[:8])}")
+                    print(f"  Float Reg Output:   {' '.join(format(x, '.7g') for x in robot_data.floatRegisterOutput[:8])}")
+                    print(f"  Func Bool Reg In:   {' '.join(str(x) for x in robot_data.functionalBoolRegisterInput[:8])}")
+                    print(f"  Func Bool Reg Out:  {' '.join(str(x) for x in robot_data.functionalBoolRegisterOutput[:8])}")
+                    print(f"  Bool Reg Input:     {' '.join(str(x) for x in robot_data.boolRegisterInput[:8])}")
+                    print(f"  Bool Reg Output:    {' '.join(str(x) for x in robot_data.boolRegisterOutput[:8])}")
+                    print(f"  Word Reg Input:     {' '.join(str(x) for x in robot_data.wordRegisterInput[:8])}")
+                    print(f"  Word Reg Output:    {' '.join(str(x) for x in robot_data.wordRegisterOutput[:8])}")
+                    
+                    print()
+                    
+                    # Tool IO
+                    print("TOOL IO:")
+                    print(f"  Tool IO Input:      {' '.join(str(x) for x in robot_data.toolIOInput)}")
+                    print(f"  Tool IO Output:     {' '.join(format(x, '.7g') for x in robot_data.toolIOOutput)}")
+                    print(f"  Tool Analog Input:  {' '.join(format(x, '.7g') for x in robot_data.toolAnalogInput)}")
+                    print(f"  Tool Analog Output: {' '.join(format(x, '.7g') for x in robot_data.toolAnalogOutput)}")
+                    print(f"  Tool Button Status: {' '.join(str(x) for x in robot_data.toolButtonStatus)}")
+                    
+                    print()
+                    
+                    # Robot Status
+                    print("ROBOT STATUS:")
+                    operation_modes = {0: "Manual", 1: "Auto", 2: "Remote"}
+                    robot_states = {0: "Start", 1: "Initialize", 2: "Logout", 3: "Login", 
+                                   4: "PowerOff", 5: "Disable/PowerOn", 6: "Enable"}
+                    program_states = {0: "Stopped", 1: "Stopping", 2: "Running", 
+                                     3: "Paused", 4: "Pausing", 5: "TaskRunning"}
+                    safety_states = {0: "INIT", 2: "WAIT", 3: "CONFIG", 4: "POWER_OFF", 
+                                   5: "RUN", 6: "RECOVERY", 7: "STOP2", 8: "STOP1", 
+                                   9: "STOP0", 10: "MODEL", 12: "REDUCE", 13: "BOOT", 
+                                   14: "FAIL", 15: "UPDATE"}
+                    
+                    print(f"  Simulation Mode:    {'Simulation' if robot_data.simulationMode else 'Real Robot'}")
+                    print(f"  Operation Mode:     {operation_modes.get(robot_data.robotOperationMode, 'Unknown')} ({robot_data.robotOperationMode})")
+                    print(f"  Robot Status:       {robot_states.get(robot_data.robotStatus, 'Unknown')} ({robot_data.robotStatus})")
+                    print(f"  Program Run Status: {program_states.get(robot_data.robotProgramRunStatus, 'Unknown')} ({robot_data.robotProgramRunStatus})")
+                    print(f"  Safety Monitor:     {safety_states.get(robot_data.safetyMonitorStatus, 'Unknown')} ({robot_data.safetyMonitorStatus})")
+                    print(f"  Collision Detection: {'Triggered' if robot_data.collisionDetectionTrigger else 'Normal'}")
+                    print(f"  Collision Axis:     {robot_data.collisionAxis}")
+                    print(f"  Error Code:         {robot_data.robotErrorCode}")
+                    
+                    print()
+                    
+                    # TCP Pose (for reference - now using actual TCP data)
+                    tcp_pose = robot_data.get_tcp_pose()
+                    print(f"TCP POSE (X,Y,Z,Rx,Ry,Rz): {' '.join(format(x, '.7g') for x in tcp_pose)}")
+                    print()
+                    
+                except ValueError as e:
+                    print(f"Error parsing robot data: {e}")
+            else:  
+                print("Incomplete frame received. Skipping.")  
+  
+    except KeyboardInterrupt:  
+        print("\nInterrupted by user. Exiting.")  
+    except Exception as e:  
+        print(f"An error occurred: {e}")  
+    finally:  
+        sock.close()  
+        print("Socket closed.")  
+   
+if __name__ == "__main__":  
+    main()

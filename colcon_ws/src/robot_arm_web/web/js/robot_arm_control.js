@@ -9,13 +9,37 @@ let updateRate = 0;
 let lastUIUpdate = 0;
 let robotStateData = null;
 
+// Camera variables
+let cameraUpdateInterval;
+let cameraConnected = false;
+let lastCameraUpdate = 0;
+
+// Force-Torque Sensor variables
+let ftSensorSocket = null;
+let ftSensorData = [];
+let ftSensorChart = null;
+let ftSensorCtx = null;
+let ftDataBuffer = {
+    timestamps: [],
+    forces: [[], [], []], // Fx, Fy, Fz
+    torques: [[], [], []]  // Tx, Ty, Tz
+};
+let ftUpdateCounter = 0;
+let ftLastUpdateTime = 0;
+let ftUpdateRate = 0;
+const FT_BUFFER_SIZE = 300; // Increased to 300 data points (about 3 seconds at 100Hz)
+const FT_COLORS = ['#FF4444', '#00AA00', '#4488FF', '#FF44FF', '#FF8800', '#00FFFF']; // Force: Red, Green, Blue; Torque: Magenta, Orange, Cyan
+
 // User configurable settings
 const settings = {
     dataRefreshRate: 100,     // How often to fetch data from API (ms)
     uiRefreshRate: 500,      // How often to update the UI elements (ms)
     render3DRate: 30,        // Target FPS for 3D rendering
     animationEnabled: true,  // Whether to enable continuous rendering
-    debug: false            // Enable debug mode
+    debug: false,            // Enable debug mode
+    ftSensorEnabled: true,   // Enable FT sensor data reception
+    ftUdpPort: 5566,         // UDP port for FT sensor data
+    cameraRefreshRate: 100   // How often to update camera feed (ms)
 };
 
 // 3D Visualization variables
@@ -47,6 +71,24 @@ window.addEventListener('load', function() {
     fetchRobotArmInfo();
     updateConnectionStatus(true);
     startStateMonitoring();
+    
+    // Initialize camera stream
+    setTimeout(() => {
+        console.log('Initializing direct camera stream...');
+        initializeCameraStream();
+    }, 150);
+    
+    // Initialize Force-Torque Sensor Chart
+    setTimeout(() => {
+        console.log('Initializing FT Sensor Chart...');
+        initFTSensorChart();
+    }, 50);
+    
+    // Initialize FT Sensor UDP connection
+    setTimeout(() => {
+        console.log('Starting FT Sensor data reception...');
+        startFTSensorUDP();
+    }, 200);
     
     // Initialize 3D viewer with a small delay to ensure DOM is ready
     setTimeout(() => {
@@ -119,6 +161,22 @@ window.addEventListener('load', function() {
             }
         });
     }, 500);
+    
+    // Initialize FT Sensor button status
+    setTimeout(() => {
+        console.log('Initializing FT Sensor button...');
+        const button = document.getElementById('ftSensorToggleBtn');
+        const buttonText = document.getElementById('ftSensorBtnText');
+        if (button && buttonText) {
+            if (settings.ftSensorEnabled) {
+                buttonText.textContent = 'Stop Sensor';
+                button.className = 'robot-arm-button bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
+            } else {
+                buttonText.textContent = 'Start Sensor';
+                button.className = 'robot-arm-button bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
+            }
+        }
+    }, 600);
     
     logCommand('System', 'Web interface initialized');
 });
@@ -478,60 +536,58 @@ function updateRobotStateDisplay(state) {
 
     // Update Joint Actual Position
     if (state.jointActualPosition) {
-        document.getElementById('jointActualPositions').innerHTML = createCompactJointGrid(state.jointActualPosition, ' rad');
+        document.getElementById('jointActualPositions').innerHTML = createCompactJointGrid(state.jointActualPosition);
         // Update URDF joint states from actual joint positions
         updateURDFFromActualJoints(state.jointActualPosition);
     }
 
     // Update Joint Actual Velocity
     if (state.jointActualVelocity) {
-        document.getElementById('jointActualVelocities').innerHTML = createCompactJointGrid(state.jointActualVelocity, ' rad/s');
+        document.getElementById('jointActualVelocities').innerHTML = createCompactJointGrid(state.jointActualVelocity);
     }
 
     // Update Joint Actual Acceleration
     if (state.jointActualAccelera) {
-        document.getElementById('jointActualAccelerations').innerHTML = createCompactJointGrid(state.jointActualAccelera, ' rad/s²');
+        document.getElementById('jointActualAccelerations').innerHTML = createCompactJointGrid(state.jointActualAccelera);
     }
 
     // Update Joint Actual Torque
     if (state.jointActualTorque) {
-        document.getElementById('jointActualTorques').innerHTML = createCompactJointGrid(state.jointActualTorque, ' Nm');
+        document.getElementById('jointActualTorques').innerHTML = createCompactJointGrid(state.jointActualTorque);
     }
 
     // Update Joint Expected Position
     if (state.jointExpectPosition) {
-        document.getElementById('jointExpectedPositions').innerHTML = createCompactJointGrid(state.jointExpectPosition, ' rad');
+        document.getElementById('jointExpectedPositions').innerHTML = createCompactJointGrid(state.jointExpectPosition);
     }
 
     // Update Joint Expected Velocity
     if (state.jointExpectVelocity) {
-        document.getElementById('jointExpectedVelocities').innerHTML = createCompactJointGrid(state.jointExpectVelocity, ' rad/s');
+        document.getElementById('jointExpectedVelocities').innerHTML = createCompactJointGrid(state.jointExpectVelocity);
     }
 
     // Update Joint Temperatures
     if (state.jointActualTemperature) {
-        // Only show first 6 joints for temperature with color coding
+        // Only show first 6 joints for temperature
         const jointsToShow = state.jointActualTemperature.slice(0, 6);
         const tempHtml = jointsToShow.map((temp, index) => {
-            const tempClass = temp > 50 ? 'error-indicator' : (temp > 40 ? 'warning-indicator' : 'normal-indicator');
-            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="${tempClass}">${formatValue(temp, 1)}°C</span></div>`;
+            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="data-value">${formatValue(temp, 1)}</span></div>`;
         }).join('');
         document.getElementById('jointTemperatures').innerHTML = tempHtml;
     }
 
     // Update Joint Currents
     if (state.jointActualCurrent) {
-        // Only show first 6 joints for current with color coding
+        // Only show first 6 joints for current
         const jointsToShow = state.jointActualCurrent.slice(0, 6);
         const currentHtml = jointsToShow.map((current, index) => {
-            const currentClass = current > 800 ? 'error-indicator' : (current > 600 ? 'warning-indicator' : 'normal-indicator');
-            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="${currentClass}">${formatValue(current, 0)}‰</span></div>`;
+            return `<div class="compact-item"><span class="data-label">J${index + 1}:</span> <span class="data-value">${formatValue(current, 0)}</span></div>`;
         }).join('');
         document.getElementById('jointCurrents').innerHTML = currentHtml;
     }
 
     // Update Driver Status
-    if (state.driverErrorID && state.driverState) {
+    if (state.driverErrorID) {
         const hasErrors = state.driverErrorID.some(error => error !== 0);
         const errorElement = document.getElementById('driverErrors');
         if (hasErrors) {
@@ -545,13 +601,201 @@ function updateRobotStateDisplay(state) {
         // Show error IDs
         const errorIds = state.driverErrorID.filter(id => id !== 0);
         document.getElementById('driverErrorIds').textContent = errorIds.length > 0 ? errorIds.join(', ') : 'None';
-        
-        // Show driver states
-        document.getElementById('driverStates').textContent = state.driverState.join(', ');
     }
 
     // Update Move Control Section
     updateMoveControlDisplay(state);
+
+    // Update Coordinate Systems
+    if (state.activeToolCoordSystem && state.activeToolCoordSystem.length >= 6) {
+        const coordHtml = state.activeToolCoordSystem.map((value, index) => {
+            const label = index < 3 ? ['X', 'Y', 'Z'][index] : ['Rx', 'Ry', 'Rz'][index - 3];
+            return `<div class="compact-item"><span class="data-label">${label}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('activeToolCoordSystem').innerHTML = coordHtml;
+    }
+
+    if (state.activeWorkpieceCoordSystem && state.activeWorkpieceCoordSystem.length >= 6) {
+        const coordHtml = state.activeWorkpieceCoordSystem.map((value, index) => {
+            const label = index < 3 ? ['X', 'Y', 'Z'][index] : ['Rx', 'Ry', 'Rz'][index - 3];
+            return `<div class="compact-item"><span class="data-label">${label}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('activeWorkpieceCoordSystem').innerHTML = coordHtml;
+    }
+
+    // Update Speed Settings
+    if (state.blendedSpeed !== undefined) {
+        // Store blendedSpeed value but don't display it (keep for data continuity)
+        window.blendedSpeedValue = state.blendedSpeed;
+    }
+    if (state.globalSpeed !== undefined) {
+        document.getElementById('globalSpeed').textContent = state.globalSpeed + '%';
+        document.getElementById('globalSpeed').className = 'data-value';
+    }
+    if (state.jogSpeed !== undefined) {
+        document.getElementById('jogSpeed').textContent = state.jogSpeed + '%';
+        document.getElementById('jogSpeed').className = 'data-value';
+    }
+
+    // Update Digital IO
+    if (state.functionalDigitalIOInput && Array.isArray(state.functionalDigitalIOInput)) {
+        const ioHtml = state.functionalDigitalIOInput.map((value, index) => {
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">FDI${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('functionalDigitalIOInput').innerHTML = ioHtml;
+    }
+
+    if (state.functionalDigitalIOOutput && Array.isArray(state.functionalDigitalIOOutput)) {
+        const ioHtml = state.functionalDigitalIOOutput.map((value, index) => {
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">FDO${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('functionalDigitalIOOutput').innerHTML = ioHtml;
+    }
+
+    if (state.digitalIOInput && Array.isArray(state.digitalIOInput)) {
+        // Show first 16 DI inputs
+        const ioHtml = state.digitalIOInput.slice(0, 16).map((value, index) => {
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">DI${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('digitalIOInput').innerHTML = ioHtml;
+    }
+
+    if (state.digitalIOOutput && Array.isArray(state.digitalIOOutput)) {
+        // Show first 16 DO outputs
+        const ioHtml = state.digitalIOOutput.slice(0, 16).map((value, index) => {
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">DO${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('digitalIOOutput').innerHTML = ioHtml;
+    }
+
+    // Update Analog IO
+    if (state.analogInput && Array.isArray(state.analogInput)) {
+        const analogHtml = state.analogInput.map((value, index) => {
+            return `<div class="compact-item"><span class="data-label">AI${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('analogInput').innerHTML = analogHtml;
+    }
+
+    if (state.analogOutput && Array.isArray(state.analogOutput)) {
+        const analogHtml = state.analogOutput.map((value, index) => {
+            return `<div class="compact-item"><span class="data-label">AO${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('analogOutput').innerHTML = analogHtml;
+    }
+
+    // Update Tool IO
+    if (state.toolIOInput && Array.isArray(state.toolIOInput)) {
+        const toolIOHtml = Array.from({length: 8}, (_, index) => {
+            const value = state.toolIOInput[index] !== undefined ? state.toolIOInput[index] : false;
+            const status = value ? '✅' : '❌';
+            return `<div class="compact-item"><span class="data-label">TI${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('toolIOInput').innerHTML = toolIOHtml;
+    }
+
+    if (state.toolIOOutput && Array.isArray(state.toolIOOutput)) {
+        const toolIOHtml = Array.from({length: 8}, (_, index) => {
+            const value = state.toolIOOutput[index] !== undefined ? state.toolIOOutput[index] : 0;
+            return `<div class="compact-item"><span class="data-label">TO${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('toolIOOutput').innerHTML = toolIOHtml;
+    }
+
+    if (state.toolAnalogInput && Array.isArray(state.toolAnalogInput)) {
+        const toolAnalogHtml = Array.from({length: 8}, (_, index) => {
+            const value = state.toolAnalogInput[index] !== undefined ? state.toolAnalogInput[index] : 0;
+            return `<div class="compact-item"><span class="data-label">TAI${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('toolAnalogInput').innerHTML = toolAnalogHtml;
+    }
+
+    if (state.toolAnalogOutput && Array.isArray(state.toolAnalogOutput)) {
+        const toolAnalogHtml = Array.from({length: 8}, (_, index) => {
+            const value = state.toolAnalogOutput[index] !== undefined ? state.toolAnalogOutput[index] : 0;
+            return `<div class="compact-item"><span class="data-label">TAO${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('toolAnalogOutput').innerHTML = toolAnalogHtml;
+    }
+
+    if (state.toolButtonStatus && Array.isArray(state.toolButtonStatus)) {
+        const buttonHtml = state.toolButtonStatus.map((value, index) => {
+            const status = value ? '🔴' : '⚪';
+            return `<div class="compact-item"><span class="data-label">Button${index + 1}:</span> <span class="data-value">${status}</span></div>`;
+        }).join('');
+        document.getElementById('toolButtonStatus').innerHTML = buttonHtml;
+    }
+
+    // Update Robot Status
+    if (state.simulationMode !== undefined) {
+        document.getElementById('simulationMode').textContent = state.simulationMode ? 'Simulation' : 'Real Robot';
+        document.getElementById('simulationMode').className = state.simulationMode ? 'warning-indicator' : 'normal-indicator';
+    }
+
+    if (state.robotOperationMode !== undefined) {
+        const operationModes = {0: "Manual", 1: "Auto", 2: "Remote"};
+        document.getElementById('robotOperationMode').textContent = operationModes[state.robotOperationMode] || `Unknown (${state.robotOperationMode})`;
+        document.getElementById('robotOperationMode').className = 'data-value';
+    }
+
+    if (state.robotStatus !== undefined) {
+        const robotStates = {0: "Start", 1: "Initialize", 2: "Logout", 3: "Login", 
+                           4: "PowerOff", 5: "Disable/PowerOn", 6: "Enable"};
+        const statusText = robotStates[state.robotStatus] || `Unknown (${state.robotStatus})`;
+        document.getElementById('robotStatus').textContent = statusText;
+        document.getElementById('robotStatus').className = state.robotStatus === 6 ? 'normal-indicator' : 'warning-indicator';
+    }
+
+    if (state.robotProgramRunStatus !== undefined) {
+        const programStates = {0: "Stopped", 1: "Stopping", 2: "Running", 
+                             3: "Paused", 4: "Pausing", 5: "TaskRunning"};
+        const statusText = programStates[state.robotProgramRunStatus] || `Unknown (${state.robotProgramRunStatus})`;
+        document.getElementById('robotProgramRunStatus').textContent = statusText;
+        document.getElementById('robotProgramRunStatus').className = [2, 5].includes(state.robotProgramRunStatus) ? 'normal-indicator' : 'data-value';
+    }
+
+    if (state.safetyMonitorStatus !== undefined) {
+        const safetyStates = {0: "INIT", 2: "WAIT", 3: "CONFIG", 4: "POWER_OFF", 
+                           5: "RUN", 6: "RECOVERY", 7: "STOP2", 8: "STOP1", 
+                           9: "STOP0", 10: "MODEL", 12: "REDUCE", 13: "BOOT", 
+                           14: "FAIL", 15: "UPDATE"};
+        const statusText = safetyStates[state.safetyMonitorStatus] || `Unknown (${state.safetyMonitorStatus})`;
+        document.getElementById('safetyMonitorStatus').textContent = statusText;
+        document.getElementById('safetyMonitorStatus').className = state.safetyMonitorStatus === 5 ? 'normal-indicator' : 'warning-indicator';
+    }
+
+    if (state.collisionDetectionTrigger !== undefined) {
+        document.getElementById('collisionDetectionTrigger').textContent = state.collisionDetectionTrigger ? 'Triggered' : 'Normal';
+        document.getElementById('collisionDetectionTrigger').className = state.collisionDetectionTrigger ? 'error-indicator' : 'normal-indicator';
+    }
+
+    if (state.collisionAxis !== undefined) {
+        document.getElementById('collisionAxis').textContent = state.collisionAxis === 0 ? 'None' : `Joint ${state.collisionAxis}`;
+        document.getElementById('collisionAxis').className = state.collisionAxis === 0 ? 'normal-indicator' : 'error-indicator';
+    }
+
+    if (state.robotErrorCode !== undefined) {
+        document.getElementById('robotErrorCode').textContent = state.robotErrorCode === 0 ? 'None' : `0x${state.robotErrorCode.toString(16).toUpperCase()}`;
+        document.getElementById('robotErrorCode').className = state.robotErrorCode === 0 ? 'normal-indicator' : 'error-indicator';
+    }
+
+    // Update Float Registers (first 8 values)
+    if (state.floatRegisterInput && Array.isArray(state.floatRegisterInput)) {
+        const regHtml = state.floatRegisterInput.slice(0, 8).map((value, index) => {
+            return `<div class="compact-item"><span class="data-label">FR_I${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('floatRegisterInput').innerHTML = regHtml;
+    }
+
+    if (state.floatRegisterOutput && Array.isArray(state.floatRegisterOutput)) {
+        const regHtml = state.floatRegisterOutput.slice(0, 8).map((value, index) => {
+            return `<div class="compact-item"><span class="data-label">FR_O${index + 1}:</span> <span class="data-value">${formatValue(value)}</span></div>`;
+        }).join('');
+        document.getElementById('floatRegisterOutput').innerHTML = regHtml;
+    }
 
     // Update last update time
     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
@@ -630,6 +874,421 @@ function updateMoveControlDisplay(state) {
     }
 
     // Update Move Control status and timestamp - removed as requested
+}
+
+// ===== Force-Torque Sensor Functions =====
+
+// Initialize FT Sensor Chart
+function initFTSensorChart() {
+    try {
+        ftSensorChart = document.getElementById('ftSensorChart');
+        if (!ftSensorChart) {
+            console.error('FT Sensor chart canvas not found');
+            return;
+        }
+        
+        ftSensorCtx = ftSensorChart.getContext('2d');
+        
+        // Set canvas size
+        const container = ftSensorChart.parentElement;
+        const rect = container.getBoundingClientRect();
+        ftSensorChart.width = rect.width || 480;
+        ftSensorChart.height = 400;
+        
+        console.log('FT Sensor chart initialized successfully');
+        
+        // Start rendering loop
+        requestAnimationFrame(renderFTSensorChart);
+        
+    } catch (error) {
+        console.error('Failed to initialize FT Sensor chart:', error);
+    }
+}
+
+// Start FT Sensor UDP data reception
+function startFTSensorUDP() {
+    // Only try WebSocket if FT sensor is enabled
+    if ("WebSocket" in window && settings.ftSensorEnabled) {
+        console.log('Attempting to connect to FT Sensor WebSocket...');
+        connectFTSensorWebSocket();
+    } else {
+        console.log('FT Sensor disabled or WebSocket not supported, using simulation...');
+        startFTSensorSimulation();
+    }
+}
+
+// Connect to FT Sensor WebSocket
+function connectFTSensorWebSocket() {
+    // Close existing socket if any
+    if (ftSensorSocket) {
+        ftSensorSocket.close();
+    }
+    
+    // Create WebSocket connection for FT sensor data
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/ft_sensor`;
+    
+    ftSensorSocket = new WebSocket(wsUrl);
+    
+    ftSensorSocket.onopen = function(e) {
+        console.log('FT Sensor WebSocket connection opened');
+        // Request latest data
+        ftSensorSocket.send('get_latest');
+    };
+    
+    ftSensorSocket.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.FTSensorData) {
+                processFTSensorData(data);
+            }
+        } catch (error) {
+            console.error('Error parsing FT sensor data:', error);
+        }
+    };
+    
+    ftSensorSocket.onclose = function(event) {
+        console.log('FT Sensor WebSocket connection closed');
+        // Only attempt to reconnect if FT sensor is enabled and we're not using simulation
+        setTimeout(() => {
+            if (settings.ftSensorEnabled && !ftSensorSocket) {
+                console.log('Attempting to reconnect FT Sensor WebSocket...');
+                connectFTSensorWebSocket();
+            }
+        }, 5000); // Increased to 5 seconds to reduce log spam
+    };
+    
+    ftSensorSocket.onerror = function(error) {
+        console.error('FT Sensor WebSocket error:', error);
+        // Close the socket and fall back to simulation
+        if (ftSensorSocket) {
+            ftSensorSocket.close();
+            ftSensorSocket = null;
+        }
+        console.log('Falling back to FT sensor simulation...');
+        startFTSensorSimulation();
+    };
+}
+
+// Simulate FT Sensor data (for testing purposes)
+function startFTSensorSimulation() {
+    // Only start simulation if FT sensor is enabled and no WebSocket connection exists
+    if (!settings.ftSensorEnabled || (ftSensorSocket && ftSensorSocket.readyState === WebSocket.OPEN)) {
+        return;
+    }
+    
+    console.log('Starting FT Sensor data simulation...');
+    
+    const simulateData = () => {
+        // Stop simulation if FT sensor is disabled or WebSocket connection is established
+        if (!settings.ftSensorEnabled || (ftSensorSocket && ftSensorSocket.readyState === WebSocket.OPEN)) {
+            console.log('Stopping FT Sensor simulation');
+            return;
+        }
+        
+        const now = Date.now();
+        const time = now / 1000; // Convert to seconds
+        
+        // Simulate FT sensor data with some realistic patterns
+        const ftData = {
+            FTSensorData: [
+                Math.sin(time * 0.5) * 10 + Math.random() * 2,      // Fx
+                Math.cos(time * 0.3) * 15 + Math.random() * 2,      // Fy  
+                Math.sin(time * 0.2) * 8 + Math.random() * 1,       // Fz
+                Math.cos(time * 0.4) * 5 + Math.random() * 0.5,     // Tx
+                Math.sin(time * 0.6) * 7 + Math.random() * 0.5,     // Ty
+                Math.cos(time * 0.8) * 4 + Math.random() * 0.5      // Tz
+            ]
+        };
+        
+        processFTSensorData(ftData);
+        
+        setTimeout(simulateData, 50); // 20Hz simulation (reduced from 50Hz)
+    };
+    
+    simulateData();
+}
+
+// Process incoming FT Sensor data
+function processFTSensorData(data) {
+    if (!data.FTSensorData || !Array.isArray(data.FTSensorData)) {
+        return;
+    }
+    
+    const timestamp = Date.now();
+    const ftValues = data.FTSensorData;
+    
+    // Update data buffer
+    ftDataBuffer.timestamps.push(timestamp);
+    
+    // Add force data (first 3 values)
+    for (let i = 0; i < 3; i++) {
+        if (i < ftValues.length) {
+            ftDataBuffer.forces[i].push(ftValues[i]);
+        }
+    }
+    
+    // Add torque data (last 3 values)
+    for (let i = 0; i < 3; i++) {
+        if (i + 3 < ftValues.length) {
+            ftDataBuffer.torques[i].push(ftValues[i + 3]);
+        }
+    }
+    
+    // Trim buffer to max size with smooth removal (remove older data in batches)
+    if (ftDataBuffer.timestamps.length > FT_BUFFER_SIZE) {
+        const excessCount = ftDataBuffer.timestamps.length - FT_BUFFER_SIZE;
+        const removeCount = Math.min(excessCount, Math.max(1, Math.floor(FT_BUFFER_SIZE * 0.1))); // Remove 10% at most
+        
+        for (let j = 0; j < removeCount; j++) {
+            ftDataBuffer.timestamps.shift();
+            for (let i = 0; i < 3; i++) {
+                ftDataBuffer.forces[i].shift();
+                ftDataBuffer.torques[i].shift();
+            }
+        }
+    }
+    
+    // Update statistics
+    ftUpdateCounter++;
+    const now = Date.now();
+    if (now - ftLastUpdateTime >= 1000) {
+        ftUpdateRate = ftUpdateCounter;
+        ftUpdateCounter = 0;
+        ftLastUpdateTime = now;
+    }
+}
+
+// Render FT Sensor Chart
+// Render FT Sensor Chart with frame rate limiting and anti-flicker optimization
+let lastFTRenderTime = 0;
+const FT_RENDER_INTERVAL = 66; // Reduced to ~15 FPS (1000ms / 15) for ultra-smooth appearance
+
+function renderFTSensorChart(timestamp) {
+    if (!ftSensorCtx || !ftSensorChart) {
+        return;
+    }
+    
+    // Limit frame rate to 15 FPS for maximum smoothness
+    if (timestamp - lastFTRenderTime < FT_RENDER_INTERVAL) {
+        requestAnimationFrame(renderFTSensorChart);
+        return;
+    }
+    lastFTRenderTime = timestamp;
+    
+    const ctx = ftSensorCtx;
+    const width = ftSensorChart.width;
+    const height = ftSensorChart.height;
+    
+    // Clear canvas with smooth transition
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Draw grid
+    drawGrid(ctx, width, height);
+    
+    // Draw data if available
+    if (ftDataBuffer.timestamps.length > 1) {
+        const timeRange = 3000; // Increased to 3 seconds for smoother transitions
+        const currentTime = Date.now();
+        const startTime = currentTime - timeRange;
+        
+        // Draw force data (top half)
+        drawFTData(ctx, ftDataBuffer.forces, ftDataBuffer.timestamps, 
+                  0, 0, width, height / 2, startTime, currentTime, [-50, 50], 'Forces (N)', 0);
+        
+        // Draw torque data (bottom half)
+        drawFTData(ctx, ftDataBuffer.torques, ftDataBuffer.timestamps,
+                  0, height / 2, width, height / 2, startTime, currentTime, [-20, 20], 'Torques (Nm)', 3);
+    }
+    
+    // Continue animation
+    requestAnimationFrame(renderFTSensorChart);
+}
+
+// Draw grid on chart with softer appearance
+function drawGrid(ctx, width, height) {
+    // Minor grid lines
+    ctx.strokeStyle = '#333333';
+    ctx.lineWidth = 0.5;
+    ctx.globalAlpha = 0.5;
+    
+    // Vertical lines (time) - minor
+    for (let i = 1; i < 20; i++) {
+        if (i % 4 !== 0) { // Skip major grid lines
+            const x = (i / 20) * width;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+        }
+    }
+    
+    // Horizontal lines - minor
+    for (let i = 1; i < 20; i++) {
+        if (i % 4 !== 0) { // Skip major grid lines
+            const y = (i / 20) * height;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+    }
+    
+    // Major grid lines
+    ctx.strokeStyle = '#555555';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.8;
+    
+    // Vertical lines (time) - major
+    for (let i = 0; i <= 20; i += 4) {
+        const x = (i / 20) * width;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+    }
+    
+    // Horizontal lines - major
+    for (let i = 0; i <= 20; i += 4) {
+        const y = (i / 20) * height;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+    }
+    
+    // Center line (zero line)
+    ctx.strokeStyle = '#AAAAAA';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 1.0;
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+    
+    // Reset alpha
+    ctx.globalAlpha = 1.0;
+}
+
+// Draw FT data curves with smooth transitions
+function drawFTData(ctx, dataArrays, timestamps, x, y, w, h, startTime, endTime, range, title, colorOffset = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    
+    // Reserve space for labels at top and bottom
+    const topMargin = 15;
+    const bottomMargin = 10;
+    const chartHeight = h - topMargin - bottomMargin;
+    
+    // Draw title
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '14px Arial';
+    ctx.fillText(title, 10, 20);
+    
+    // Draw Y-axis scale labels with better distribution
+    ctx.fillStyle = '#CCCCCC';
+    ctx.font = '9px Arial';
+    ctx.textAlign = 'right';
+    
+    const numTicks = 5; // Number of tick marks
+    for (let i = 0; i <= numTicks; i++) {
+        const ratio = i / numTicks;
+        const value = range[0] + (range[1] - range[0]) * ratio;
+        // Calculate y position with margins
+        const y = topMargin + chartHeight - (ratio * chartHeight);
+        
+        // Draw tick mark
+        ctx.strokeStyle = '#666666';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(w - 45, y);
+        ctx.lineTo(w - 40, y);
+        ctx.stroke();
+        
+        // Draw label
+        ctx.fillText(value.toFixed(1), w - 47, y + 3);
+    }
+    
+    // Reset text align for other text
+    ctx.textAlign = 'left';
+    
+    // Draw data curves with smooth transitions and fade effects
+    for (let curveIndex = 0; curveIndex < dataArrays.length; curveIndex++) {
+        const data = dataArrays[curveIndex];
+        if (data.length < 2) continue;
+        
+        // Collect all points with extended time range for smooth fade
+        const fadeMargin = (endTime - startTime) * 0.15; // 15% fade margin
+        const extendedStartTime = startTime - fadeMargin;
+        const extendedEndTime = endTime + fadeMargin;
+        
+        const allPoints = [];
+        for (let i = 0; i < data.length; i++) {
+            if (i >= timestamps.length) break;
+            
+            const timestamp = timestamps[i];
+            if (timestamp < extendedStartTime || timestamp > extendedEndTime) continue;
+            
+            const timeRatio = (timestamp - startTime) / (endTime - startTime);
+            const valueRatio = Math.max(0, Math.min(1, (data[i] - range[0]) / (range[1] - range[0])));
+            
+            const px = timeRatio * w;
+            const py = topMargin + chartHeight - (valueRatio * chartHeight);
+            
+            // Calculate alpha based on position for fade effect with enhanced smoothness
+            let alpha = 1.0;
+            if (timeRatio < 0) {
+                // Left fade-in: smooth exponential curve from 0 to 1
+                const leftProgress = Math.abs(timeRatio) / 0.15; // 0 to 1 as we move from -0.15 to 0
+                alpha = Math.max(0, 1 - Math.pow(leftProgress, 0.8)); // Smoother curve
+            } else if (timeRatio > 1) {
+                // Right fade-out: smooth exponential curve from 1 to 0 with enhanced decay
+                const rightProgress = (timeRatio - 1) / 0.15; // 0 to 1 as we move from 1 to 1.15
+                alpha = Math.max(0, 1 - Math.pow(rightProgress, 0.6)); // Even smoother fade-out
+            } else if (timeRatio > 0.85) {
+                // Enhanced right edge fade: start fading earlier for ultra-smooth transition
+                const earlyFadeProgress = (timeRatio - 0.85) / 0.15; // 0 to 1 as we move from 0.85 to 1
+                const earlyFadeFactor = 1 - Math.pow(earlyFadeProgress, 2) * 0.2; // Gentle early fade
+                alpha = Math.min(alpha, earlyFadeFactor);
+            }
+            
+            allPoints.push({x: px, y: py, timestamp, timeRatio, alpha});
+        }
+        
+        if (allPoints.length < 2) continue;
+        
+        // Draw curve with gradient transparency
+        const baseColor = FT_COLORS[curveIndex + colorOffset];
+        
+        // Extract RGB values from hex color
+        const r = parseInt(baseColor.substr(1, 2), 16);
+        const g = parseInt(baseColor.substr(3, 2), 16);
+        const b = parseInt(baseColor.substr(5, 2), 16);
+        
+        // Draw line segments with enhanced opacity blending for smoother transitions
+        for (let i = 0; i < allPoints.length - 1; i++) {
+            const currentPoint = allPoints[i];
+            const nextPoint = allPoints[i + 1];
+            
+            // Use weighted average alpha for ultra-smooth transitions, especially at edges
+            const avgAlpha = (currentPoint.alpha + nextPoint.alpha) / 2;
+            const segmentAlpha = Math.max(currentPoint.alpha, nextPoint.alpha) * 0.7 + avgAlpha * 0.3;
+            
+            if (segmentAlpha > 0.005) { // Even lower threshold for smoother fade
+                ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${segmentAlpha})`;
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                ctx.moveTo(currentPoint.x, currentPoint.y);
+                ctx.lineTo(nextPoint.x, nextPoint.y);
+                ctx.stroke();
+            }
+        }
+    }
+    
+    ctx.restore();
 }
 
 // Initialize 3D Viewer
@@ -1268,6 +1927,126 @@ async function sendCommand(command) {
     }
 }
 
+// Send FTC command to robot arm
+async function sendFTCCommand(command, parameter = null) {
+    const statusElement = document.getElementById('ftcCommandStatus');
+    const button = document.getElementById(getFTCButtonId(command, parameter));
+    
+    // Disable button and show loading state
+    if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.6';
+    }
+    
+    statusElement.textContent = `Sending FTC command: ${command}...`;
+    statusElement.className = 'text-sm text-blue-600';
+    
+    try {
+        let endpoint;
+        let body;
+        
+        // Determine endpoint and body based on command
+        switch(command) {
+            case 'FTC_start':
+                endpoint = '/api/ftc/start';
+                body = JSON.stringify({ command: 'start' });
+                break;
+            case 'FTC_stop':
+                endpoint = '/api/ftc/stop';
+                body = JSON.stringify({ command: 'stop' });
+                break;
+            case 'FTC_setindex':
+                endpoint = '/api/ftc/setindex';
+                body = JSON.stringify({ command: 'setindex', index: 0 }); // Default index
+                break;
+            case 'FTC_SetDKAssemFlag':
+                endpoint = '/api/ftc/setdkassemflag';
+                body = JSON.stringify({ command: 'setdkassemflag', flag: parameter });
+                break;
+            default:
+                throw new Error(`Unknown FTC command: ${command}`);
+        }
+        
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: body
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            const commandText = parameter !== null ? `${command}(${parameter})` : command;
+            statusElement.textContent = `FTC command sent successfully: ${commandText}`;
+            statusElement.className = 'text-sm text-green-600';
+            logCommand('FTC', commandText, 'success');
+        } else {
+            statusElement.textContent = `Error: ${result.error || 'Unknown error'}`;
+            statusElement.className = 'text-sm text-red-600';
+            logCommand('FTC', command, 'error');
+        }
+    } catch (error) {
+        console.error('Error sending FTC command:', error);
+        statusElement.textContent = `Network error: ${error.message}`;
+        statusElement.className = 'text-sm text-red-600';
+        logCommand('FTC', command, 'error');
+    } finally {
+        // Re-enable button
+        if (button) {
+            button.disabled = false;
+            button.style.opacity = '1';
+        }
+        
+        // Clear status after 3 seconds
+        setTimeout(() => {
+            statusElement.textContent = 'Ready to send FTC commands';
+            statusElement.className = 'text-sm text-gray-600';
+        }, 3000);
+    }
+}
+
+// Toggle FT Sensor function
+function toggleFTSensor() {
+    const button = document.getElementById('ftSensorToggleBtn');
+    const buttonText = document.getElementById('ftSensorBtnText');
+    
+    settings.ftSensorEnabled = !settings.ftSensorEnabled;
+    
+    if (settings.ftSensorEnabled) {
+        // Enable FT Sensor
+        console.log('Enabling FT Sensor...');
+        startFTSensorUDP();
+        buttonText.textContent = 'Stop FT';
+        button.className = 'robot-arm-button bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
+        logCommand('FT Sensor', 'Started', 'success');
+    } else {
+        // Disable FT Sensor
+        console.log('Disabling FT Sensor...');
+        if (ftSensorSocket) {
+            ftSensorSocket.close();
+            ftSensorSocket = null;
+        }
+        buttonText.textContent = 'Start Sensor';
+        button.className = 'robot-arm-button bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
+        logCommand('FT Sensor', 'Stopped', 'info');
+    }
+    
+    console.log('FT Sensor enabled:', settings.ftSensorEnabled);
+}
+
+// Get button ID for FTC commands
+function getFTCButtonId(command, parameter = null) {
+    const buttonMap = {
+        'FTC_start': 'ftcStartBtn',
+        'FTC_stop': 'ftcStopBtn',
+        'FTC_setindex': 'ftcSetIndexBtn',
+        'FTC_SetDKAssemFlag': parameter === 1 ? 'ftcEnableProgramBtn' : 'ftcStopProgramBtn'
+    };
+    return buttonMap[command];
+}
+
 // Get button ID for a command
 function getButtonId(command) {
     const buttonMap = {
@@ -1287,9 +2066,11 @@ function updateConnectionStatus(connected) {
     if (connected) {
         statusIndicator.className = 'status-indicator status-connected';
         statusText.textContent = 'Connected';
+        statusText.className = 'status-bar-value connected';
     } else {
         statusIndicator.className = 'status-indicator status-disconnected';
         statusText.textContent = 'Disconnected';
+        statusText.className = 'status-bar-value disconnected';
     }
 }
 
@@ -1375,6 +2156,31 @@ document.addEventListener('keydown', function(event) {
                 event.preventDefault();
                 sendCommand('disable');
                 break;
+            // FTC shortcuts
+            case '5':
+                event.preventDefault();
+                sendFTCCommand('FTC_start');
+                break;
+            case '6':
+                event.preventDefault();
+                sendFTCCommand('FTC_stop');
+                break;
+            case '7':
+                event.preventDefault();
+                openSetIndexDialog();
+                break;
+            case '8':
+                event.preventDefault();
+                sendFTCCommand('FTC_SetDKAssemFlag', 1);
+                break;
+            case '9':
+                event.preventDefault();
+                sendFTCCommand('FTC_SetDKAssemFlag', 0);
+                break;
+            case '0':
+                event.preventDefault();
+                openSetRTDialog();
+                break;
         }
     }
 });
@@ -1385,7 +2191,13 @@ document.addEventListener('DOMContentLoaded', function() {
         {id: 'powerOnBtn', shortcut: 'Ctrl+1'},
         {id: 'powerOffBtn', shortcut: 'Ctrl+2'},
         {id: 'enableBtn', shortcut: 'Ctrl+3'},
-        {id: 'disableBtn', shortcut: 'Ctrl+4'}
+        {id: 'disableBtn', shortcut: 'Ctrl+4'},
+        {id: 'ftcStartBtn', shortcut: 'Ctrl+5'},
+        {id: 'ftcStopBtn', shortcut: 'Ctrl+6'},
+        {id: 'ftcSetIndexBtn', shortcut: 'Ctrl+7'},
+        {id: 'ftcEnableProgramBtn', shortcut: 'Ctrl+8'},
+        {id: 'ftcStopProgramBtn', shortcut: 'Ctrl+9'},
+        {id: 'ftcSetRTBtn', shortcut: 'Ctrl+0'}
     ];
     
     buttons.forEach(button => {
@@ -1397,7 +2209,372 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize move control input fields with default values
     initializeMoveControlInputs();
+    
+    // Add event listeners for Set Index dialog
+    const indexInput = document.getElementById('ftcIndexInput');
+    if (indexInput) {
+        indexInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                confirmSetIndex();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeSetIndexDialog();
+            }
+        });
+    }
+    
+    // Close modal when clicking outside
+    const setIndexModal = document.getElementById('setIndexModal');
+    if (setIndexModal) {
+        setIndexModal.addEventListener('click', function(event) {
+            if (event.target === setIndexModal) {
+                closeSetIndexDialog();
+            }
+        });
+    }
+    
+    // Close Set RT modal when clicking outside
+    const setRTModal = document.getElementById('setRTModal');
+    if (setRTModal) {
+        setRTModal.addEventListener('click', function(event) {
+            if (event.target === setRTModal) {
+                closeSetRTDialog();
+            }
+        });
+        
+        // Add Escape key listener for Set RT modal
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape' && setRTModal.style.display === 'flex') {
+                closeSetRTDialog();
+            }
+        });
+    }
 });
+
+// Set RT Dialog Functions
+let rtParametersInitialized = false; // Flag to track if RT parameters have been initialized
+
+function openSetRTDialog() {
+    const modal = document.getElementById('setRTModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Only initialize with default values on first open or if no saved parameters exist
+        if (!rtParametersInitialized) {
+            const loaded = loadRTParameters();
+            if (!loaded) {
+                initializeRTDefaults();
+            }
+            rtParametersInitialized = true;
+        }
+    }
+}
+
+function closeSetRTDialog() {
+    const modal = document.getElementById('setRTModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Function to reset RT parameters to default values
+function resetRTToDefaults() {
+    if (confirm('Are you sure you want to reset all parameters to default values? This will overwrite your current settings.')) {
+        initializeRTDefaults();
+        saveRTParameters(); // Save the reset values
+    }
+}
+
+// Function to save current RT parameters to localStorage
+function saveRTParameters() {
+    try {
+        const parameters = {};
+        
+        // Save single element values
+        const singleElementIds = [
+            'rtIsProgram', 'rtFtcProgram', 'rtOnlyMonitor', 'rtGraCalcIndex',
+            'rtDisEndLimit', 'rtTimeEndLimit', 'rtFtcEndType',
+            'rtIfDKStopOnMaxForce1', 'rtIfRobotStopOnMaxForce1',
+            'rtIfDKStopOnMaxForce2', 'rtIfRobotStopOnMaxForce2',
+            'rtIfDKStopOnTimeDisMon', 'rtIfRobotStopOnTimeDisMon',
+            'rtIfNeedInit', 'rtWithGroup', 'rtFtcSetGroup', 'rtIgnoreSensor'
+        ];
+        
+        singleElementIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                parameters[id] = element.value;
+            }
+        });
+        
+        // Save 6-dimensional array values
+        const array6DPrefixes = [
+            'rtFtEnabled', 'rtFtSet', 'rtDeadZone', 'rtQuickSetIndex',
+            'rtFtEndLimit', 'rtDisAng6DEndLimit', 'rtB', 'rtM',
+            'rtVelLimit', 'rtCorPosLimit', 'rtMaxForce1', 'rtMaxForce2'
+        ];
+        
+        array6DPrefixes.forEach(prefix => {
+            const values = [];
+            for (let i = 0; i < 6; i++) {
+                const element = document.getElementById(`${prefix}${i}`) || 
+                              document.getElementById(`${prefix}_${i}`);
+                if (element) {
+                    values.push(element.value);
+                }
+            }
+            parameters[prefix] = values;
+        });
+        
+        localStorage.setItem('ftcRTParameters', JSON.stringify(parameters));
+        console.log('RT parameters saved to localStorage');
+    } catch (error) {
+        console.error('Error saving RT parameters:', error);
+    }
+}
+
+// Function to load RT parameters from localStorage
+function loadRTParameters() {
+    try {
+        const saved = localStorage.getItem('ftcRTParameters');
+        if (!saved) return false;
+        
+        const parameters = JSON.parse(saved);
+        
+        // Load single element values
+        Object.entries(parameters).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+                // Handle 6-dimensional arrays
+                for (let i = 0; i < 6; i++) {
+                    const element = document.getElementById(`${key}${i}`) || 
+                                  document.getElementById(`${key}_${i}`);
+                    if (element && value[i] !== undefined) {
+                        element.value = value[i];
+                    }
+                }
+            } else {
+                // Handle single values
+                const element = document.getElementById(key);
+                if (element) {
+                    element.value = value;
+                }
+            }
+        });
+        
+        console.log('RT parameters loaded from localStorage');
+        return true;
+    } catch (error) {
+        console.error('Error loading RT parameters:', error);
+        return false;
+    }
+}
+
+function initializeRTDefaults() {
+    // Set default values for the RT parameters form based on user configuration
+    const singleElements = {
+        'rtIsProgram': 'false',
+        'rtFtcProgram': '',
+        'rtOnlyMonitor': 'false',
+        'rtGraCalcIndex': '5',
+        'rtDisEndLimit': '5000',
+        'rtTimeEndLimit': '60',
+        'rtFtcEndType': '6',
+        'rtIfDKStopOnMaxForce1': 'false',
+        'rtIfRobotStopOnMaxForce1': 'false',
+        'rtIfDKStopOnMaxForce2': 'false',
+        'rtIfRobotStopOnMaxForce2': 'false',
+        'rtIfDKStopOnTimeDisMon': 'false',
+        'rtIfRobotStopOnTimeDisMon': 'false',
+        'rtIfNeedInit': 'true',
+        'rtWithGroup': 'false',
+        'rtFtcSetGroup': '17',
+        'rtIgnoreSensor': 'false'
+    };
+    
+    // 6-dimensional arrays with their default values
+    const array6DElements = {
+        'rtFtEnabled': [true, true, true, true, true, true],
+        'rtFtSet': [0, 0, 0, 0, 0, 0],
+        'rtDeadZone': [1, 1, 1, 0.1, 0.1, 0.1],
+        'rtQuickSetIndex': [0, 0, 0, 0, 0, 0],
+        'rtFtEndLimit': [0, 0, 0, 0, 0, 0],
+        'rtDisAng6DEndLimit': [0, 0, 0, 0, 0, 0],
+        'rtB': [6000, 6000, 6000, 4500, 4500, 4500],
+        'rtM': [20, 20, 20, 25, 25, 25],
+        'rtVelLimit': [500, 500, 500, 500, 500, 500],
+        'rtCorPosLimit': [10, 10, 10, 5, 5, 5],
+        'rtMaxForce1': [0, 0, 0, 0, 0, 0],
+        'rtMaxForce2': [0, 0, 0, 0, 0, 0]
+    };
+    
+    // Set single element values
+    Object.entries(singleElements).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.value = value;
+        }
+    });
+    
+    // Set 6-dimensional array values
+    Object.entries(array6DElements).forEach(([prefix, values]) => {
+        for (let i = 0; i < 6; i++) {
+            const element = document.getElementById(`${prefix}${i}`) || 
+                          document.getElementById(`${prefix}_${i}`);
+            if (element) {
+                if (element.tagName === 'SELECT' && prefix === 'rtFtEnabled') {
+                    element.value = values[i] ? 'true' : 'false';
+                } else {
+                    element.value = values[i];
+                }
+            }
+        }
+    });
+}
+
+function parseArrayString(str) {
+    try {
+        // Remove whitespace and parse as JSON array
+        const cleanStr = str.trim();
+        if (cleanStr.startsWith('[') && cleanStr.endsWith(']')) {
+            return JSON.parse(cleanStr);
+        } else {
+            // If not in array format, try to split by comma
+            return cleanStr.split(',').map(x => parseFloat(x.trim())).filter(x => !isNaN(x));
+        }
+    } catch (e) {
+        console.warn('Failed to parse array string:', str);
+        return [0,0,0,0,0,0]; // Default array
+    }
+}
+
+async function confirmSetRT() {
+    try {
+        // Helper function to collect 6D array values
+        function collect6DArray(prefix) {
+            const values = [];
+            for (let i = 0; i < 6; i++) {
+                const element = document.getElementById(`${prefix}${i}`) || 
+                              document.getElementById(`${prefix}_${i}`);
+                if (element) {
+                    if (element.type === 'checkbox') {
+                        values.push(element.checked);
+                    } else if (element.tagName === 'SELECT') {
+                        if (prefix === 'rtFtEnabled') {
+                            values.push(element.value === 'true');
+                        } else {
+                            values.push(parseFloat(element.value) || 0);
+                        }
+                    } else {
+                        values.push(parseFloat(element.value) || 0);
+                    }
+                } else {
+                    values.push(0);
+                }
+            }
+            return values;
+        }
+
+        // Collect all parameters from the form
+        const parameters = {
+            isProgram: document.getElementById('rtIsProgram').value === 'true',
+            ftcProgram: document.getElementById('rtFtcProgram').value.trim() === '' ? null : document.getElementById('rtFtcProgram').value,
+            onlyMonitor: document.getElementById('rtOnlyMonitor').value === 'true',
+            graCalcIndex: parseInt(document.getElementById('rtGraCalcIndex').value) || 0,
+            ftEnabled: collect6DArray('rtFtEnabled'),
+            ftSet: collect6DArray('rtFtSet'),
+            deadZone: collect6DArray('rtDeadZone'),
+            disEndLimit: parseFloat(document.getElementById('rtDisEndLimit').value) || 0.0,
+            timeEndLimit: parseFloat(document.getElementById('rtTimeEndLimit').value) || 0.0,
+            ftEndLimit: collect6DArray('rtFtEndLimit'),
+            disAng6DEndLimit: collect6DArray('rtDisAng6DEndLimit'),
+            ftcEndType: parseInt(document.getElementById('rtFtcEndType').value) || 0,
+            quickSetIndex: collect6DArray('rtQuickSetIndex'),
+            B: collect6DArray('rtB'),
+            M: collect6DArray('rtM'),
+            velLimit: collect6DArray('rtVelLimit'),
+            corPosLimit: collect6DArray('rtCorPosLimit'),
+            maxForce1: collect6DArray('rtMaxForce1'),
+            ifDKStopOnMaxForce1: document.getElementById('rtIfDKStopOnMaxForce1').value === 'true',
+            ifRobotStopOnMaxForce1: document.getElementById('rtIfRobotStopOnMaxForce1').value === 'true',
+            maxForce2: collect6DArray('rtMaxForce2'),
+            ifDKStopOnMaxForce2: document.getElementById('rtIfDKStopOnMaxForce2').value === 'true',
+            ifRobotStopOnMaxForce2: document.getElementById('rtIfRobotStopOnMaxForce2').value === 'true',
+            ifDKStopOnTimeDisMon: document.getElementById('rtIfDKStopOnTimeDisMon').value === 'true',
+            ifRobotStopOnTimeDisMon: document.getElementById('rtIfRobotStopOnTimeDisMon').value === 'true',
+            ifNeedInit: document.getElementById('rtIfNeedInit').value === 'true',
+            withGroup: document.getElementById('rtWithGroup').value === 'true',
+            ftcSetGroup: document.getElementById('rtFtcSetGroup').value,
+            ignoreSensor: document.getElementById('rtIgnoreSensor').value === 'true'
+        };
+        
+        // Save current parameters before closing dialog
+        saveRTParameters();
+        
+        // Close the dialog first
+        closeSetRTDialog();
+        
+        // Send the FTC set RT command with all parameters
+        await sendFTCRTCommand(parameters);
+        
+    } catch (error) {
+        console.error('Error setting FTC RT parameters:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// FTC RT command function
+async function sendFTCRTCommand(parameters) {
+    const statusElement = document.getElementById('ftcCommandStatus');
+    const button = document.getElementById('ftcSetRTBtn');
+    
+    // Disable button and show loading state
+    if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.6';
+    }
+    
+    statusElement.textContent = 'Sending FTC RT parameters...';
+    statusElement.className = 'text-sm text-blue-600';
+    
+    try {
+        const response = await fetch('/api/ftc/setftsetallrt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ parameters: parameters })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            statusElement.textContent = 'FTC RT parameters set successfully';
+            statusElement.className = 'text-sm text-green-600';
+            logCommand('FTC', 'Set RT Parameters', 'success');
+        } else {
+            statusElement.textContent = `Error: ${result.error || 'Unknown error'}`;
+            statusElement.className = 'text-sm text-red-600';
+            logCommand('FTC', 'Set RT Parameters', 'error');
+        }
+    } catch (error) {
+        console.error('Error sending FTC RT command:', error);
+        statusElement.textContent = `Network error: ${error.message}`;
+        statusElement.className = 'text-sm text-red-600';
+        logCommand('FTC', 'Set RT Parameters', 'error');
+    } finally {
+        // Re-enable button
+        if (button) {
+            button.disabled = false;
+            button.style.opacity = '1';
+        }
+        
+        // Clear status after 3 seconds
+        setTimeout(() => {
+            statusElement.textContent = 'Ready to send FTC commands';
+            statusElement.className = 'text-sm text-gray-600';
+        }, 3000);
+    }
+}
 
 // Function to initialize move control input fields
 function initializeMoveControlInputs() {
@@ -2032,14 +3209,14 @@ async function sendServoTcpCommandAbsolute() {
     }
 }
 
-// Move to Target Position Dialog Functions
-function openMoveToTargetDialog() {
-    const modal = document.getElementById('moveToTargetModal');
+// Movej2 Dialog Functions
+function openMovej2Dialog() {
+    const modal = document.getElementById('movej2Modal');
     
     // Initialize with current joint positions if available
     if (robotStateData && robotStateData.joint_actual_position) {
         for (let i = 1; i <= 6; i++) {
-            const input = document.getElementById(`targetJoint${i}`);
+            const input = document.getElementById(`movej2Joint${i}`);
             const currentAngleRad = robotStateData.joint_actual_position[i - 1];
             const currentAngleDeg = currentAngleRad * 180 / Math.PI;
             input.value = currentAngleDeg.toFixed(1);
@@ -2048,40 +3225,44 @@ function openMoveToTargetDialog() {
         // Use current move control values as fallback
         for (let i = 1; i <= 6; i++) {
             const moveInput = document.getElementById(`moveJoint${i}`);
-            const targetInput = document.getElementById(`targetJoint${i}`);
-            targetInput.value = moveInput.value;
+            const targetInput = document.getElementById(`movej2Joint${i}`);
+            if (moveInput) {
+                targetInput.value = moveInput.value;
+            } else {
+                targetInput.value = "0";
+            }
         }
     }
     
     modal.style.display = 'flex';
     
     // Focus on first input
-    document.getElementById('targetJoint1').focus();
+    document.getElementById('movej2Joint1').focus();
     
     // Add escape key listener
-    document.addEventListener('keydown', handleModalKeydown);
+    document.addEventListener('keydown', handleMovej2ModalKeydown);
 }
 
-function closeMoveToTargetDialog() {
-    const modal = document.getElementById('moveToTargetModal');
+function closeMovej2Dialog() {
+    const modal = document.getElementById('movej2Modal');
     modal.style.display = 'none';
     
     // Remove escape key listener
-    document.removeEventListener('keydown', handleModalKeydown);
+    document.removeEventListener('keydown', handleMovej2ModalKeydown);
 }
 
-function handleModalKeydown(event) {
+function handleMovej2ModalKeydown(event) {
     if (event.key === 'Escape') {
-        closeMoveToTargetDialog();
+        closeMovej2Dialog();
     }
 }
 
-async function confirmMoveToTarget() {
+async function confirmMovej2() {
     try {
         // Get target joint angles from inputs
         const targetAngles = [];
         for (let i = 1; i <= 6; i++) {
-            const input = document.getElementById(`targetJoint${i}`);
+            const input = document.getElementById(`movej2Joint${i}`);
             const angleDeg = parseFloat(input.value);
             if (isNaN(angleDeg)) {
                 throw new Error(`Invalid value for Joint ${i}: ${input.value}`);
@@ -2091,12 +3272,12 @@ async function confirmMoveToTarget() {
             targetAngles.push(angleRad);
         }
         
-        // Create servoj command with target joint angles
+        // Create movej2 command with target joint angles
         const jointAnglesStr = targetAngles.map(angle => angle.toFixed(6)).join(',');
-        const command = `servoj [${jointAnglesStr}] 1.0 1.0 False 200 65`;
+        const command = `movej2 [${jointAnglesStr}] 1.0 1.0 1.0 True`;
         
-        console.log('Target joint angles (degrees):', targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1)));
-        console.log('Sending servoj command:', command);
+        console.log('Movej2 target joint angles (degrees):', targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1)));
+        console.log('Sending movej2 command:', command);
 
         const response = await fetch('/api/robot_arm/cmd', {
             method: 'POST',
@@ -2107,21 +3288,119 @@ async function confirmMoveToTarget() {
         });
 
         if (!response.ok) {
-            throw new Error(`Failed to send servoj command: ${response.statusText}`);
+            throw new Error(`Failed to send movej2 command: ${response.statusText}`);
         }
 
         const result = await response.json();
         
         // Log the successful command
         const targetAnglesDeg = targetAngles.map(rad => (rad * 180 / Math.PI).toFixed(1));
-        logCommand('Move to Target Angle', `Moving to position: J1=${targetAnglesDeg[0]}°, J2=${targetAnglesDeg[1]}°, J3=${targetAnglesDeg[2]}°, J4=${targetAnglesDeg[3]}°, J5=${targetAnglesDeg[4]}°, J6=${targetAnglesDeg[5]}°`);
+        logCommand('Movej2', `Moving to position: J1=${targetAnglesDeg[0]}°, J2=${targetAnglesDeg[1]}°, J3=${targetAnglesDeg[2]}°, J4=${targetAnglesDeg[3]}°, J5=${targetAnglesDeg[4]}°, J6=${targetAnglesDeg[5]}°`);
         
         // Close the dialog
-        closeMoveToTargetDialog();
+        closeMovej2Dialog();
         
     } catch (error) {
-        console.error('Error sending movej command:', error);
-        logCommand('Move to Target Angle', `❌ Error: ${error.message}`, 'error');
+        console.error('Error sending movej2 command:', error);
+        logCommand('Movej2', `❌ Error: ${error.message}`, 'error');
+        
+        // Show error to user but don't close dialog
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Move TCP Dialog Functions
+function openMoveTcpDialog() {
+    const modal = document.getElementById('moveTcpModal');
+    
+    // Initialize with zero offset values
+    const offsetIds = ['moveTcpOffsetX', 'moveTcpOffsetY', 'moveTcpOffsetZ', 'moveTcpOffsetRx', 'moveTcpOffsetRy', 'moveTcpOffsetRz'];
+    offsetIds.forEach(id => {
+        const input = document.getElementById(id);
+        input.value = "0";
+    });
+    
+    modal.style.display = 'flex';
+    
+    // Focus on first input
+    document.getElementById('moveTcpOffsetX').focus();
+    
+    // Add escape key listener
+    document.addEventListener('keydown', handleMoveTcpModalKeydown);
+}
+
+function closeMoveTcpDialog() {
+    const modal = document.getElementById('moveTcpModal');
+    modal.style.display = 'none';
+    
+    // Remove escape key listener
+    document.removeEventListener('keydown', handleMoveTcpModalKeydown);
+}
+
+function handleMoveTcpModalKeydown(event) {
+    if (event.key === 'Escape') {
+        closeMoveTcpDialog();
+    }
+}
+
+async function confirmMoveTcp() {
+    try {
+        // Get TCP offset values from inputs
+        const offsetX = parseFloat(document.getElementById('moveTcpOffsetX').value)/1000;
+        const offsetY = parseFloat(document.getElementById('moveTcpOffsetY').value)/1000;
+        const offsetZ = parseFloat(document.getElementById('moveTcpOffsetZ').value)/1000;
+        const offsetRx = parseFloat(document.getElementById('moveTcpOffsetRx').value);
+        const offsetRy = parseFloat(document.getElementById('moveTcpOffsetRy').value);
+        const offsetRz = parseFloat(document.getElementById('moveTcpOffsetRz').value);
+        
+        // Validate input values
+        const offsets = [offsetX, offsetY, offsetZ, offsetRx, offsetRy, offsetRz];
+        const labels = ['X', 'Y', 'Z', 'Rx', 'Ry', 'Rz'];
+        for (let i = 0; i < offsets.length; i++) {
+            if (isNaN(offsets[i])) {
+                throw new Error(`Invalid value for ${labels[i]} offset: ${offsets[i]}`);
+            }
+        }
+        
+        // Convert rotation offsets from degrees to radians
+        const offsetRxRad = offsetRx * Math.PI / 180;
+        const offsetRyRad = offsetRy * Math.PI / 180;
+        const offsetRzRad = offsetRz * Math.PI / 180;
+        
+        // Create tcp_move command with offset values
+        const poseOffsetStr = [offsetX, offsetY, offsetZ, offsetRxRad, offsetRyRad, offsetRzRad]
+            .map(val => val.toFixed(6)).join(',');
+        const command = `tcp_move [${poseOffsetStr}] 0.3 0.2 0.0 "" True`;
+        
+        console.log('TCP Move offset values:', {
+            position: `X=${offsetX}mm, Y=${offsetY}mm, Z=${offsetZ}mm`,
+            rotation: `Rx=${offsetRx}°, Ry=${offsetRy}°, Rz=${offsetRz}°`
+        });
+        console.log('Sending tcp_move command:', command);
+
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to send tcp_move command: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        // Log the successful command
+        logCommand('TCP Move', `Moving TCP by offset: X=${offsetX}mm, Y=${offsetY}mm, Z=${offsetZ}mm, Rx=${offsetRx}°, Ry=${offsetRy}°, Rz=${offsetRz}°`);
+        
+        // Close the dialog
+        closeMoveTcpDialog();
+        
+    } catch (error) {
+        console.error('Error sending tcp_move command:', error);
+        logCommand('TCP Move', `❌ Error: ${error.message}`, 'error');
         
         // Show error to user but don't close dialog
         alert(`Error: ${error.message}`);
@@ -2130,181 +3409,225 @@ async function confirmMoveToTarget() {
 
 // Add click outside to close modal functionality
 document.addEventListener('click', function(event) {
-    const modal = document.getElementById('moveToTargetModal');
-    if (event.target === modal) {
-        closeMoveToTargetDialog();
+    const movej2Modal = document.getElementById('movej2Modal');
+    if (event.target === movej2Modal) {
+        closeMovej2Dialog();
     }
     
-    const tcpModal = document.getElementById('moveToTargetTcpModal');
-    if (event.target === tcpModal) {
-        closeMoveToTargetTcpDialog();
+    const moveTcpModal = document.getElementById('moveTcpModal');
+    if (event.target === moveTcpModal) {
+        closeMoveTcpDialog();
     }
 });
 
-// Move to Target TCP Position Dialog Functions
-function openMoveToTargetTcpDialog() {
-    const modal = document.getElementById('moveToTargetTcpModal');
-    
-    // Initialize with current TCP position if available
-    if (robotStateData && robotStateData.TCPActualPosition && robotStateData.TCPActualPosition.length >= 6) {
-        const currentTcp = robotStateData.TCPActualPosition;
-        
-        // Position values (convert from meters to mm)
-        document.getElementById('targetTcpX').value = (currentTcp[0] * 1000).toFixed(1);
-        document.getElementById('targetTcpY').value = (currentTcp[1] * 1000).toFixed(1);
-        document.getElementById('targetTcpZ').value = (currentTcp[2] * 1000).toFixed(1);
-        
-        // Orientation values (convert from radians to degrees)
-        document.getElementById('targetTcpRx').value = (currentTcp[3] * 180 / Math.PI).toFixed(1);
-        document.getElementById('targetTcpRy').value = (currentTcp[4] * 180 / Math.PI).toFixed(1);
-        document.getElementById('targetTcpRz').value = (currentTcp[5] * 180 / Math.PI).toFixed(1);
-    } else {
-        // Use current move control values as fallback
-        document.getElementById('targetTcpX').value = currentTcpValues.x.toFixed(1);
-        document.getElementById('targetTcpY').value = currentTcpValues.y.toFixed(1);
-        document.getElementById('targetTcpZ').value = currentTcpValues.z.toFixed(1);
-        document.getElementById('targetTcpRx').value = currentTcpValues.rx.toFixed(1);
-        document.getElementById('targetTcpRy').value = currentTcpValues.ry.toFixed(1);
-        document.getElementById('targetTcpRz').value = currentTcpValues.rz.toFixed(1);
-    }
-    
-    modal.style.display = 'flex';
-    
-    // Focus on first input
-    document.getElementById('targetTcpX').focus();
-    
-    // Add escape key listener
-    document.addEventListener('keydown', handleTcpModalKeydown);
-}
-
-function closeMoveToTargetTcpDialog() {
-    const modal = document.getElementById('moveToTargetTcpModal');
-    modal.style.display = 'none';
-    
-    // Remove escape key listener
-    document.removeEventListener('keydown', handleTcpModalKeydown);
-}
-
-function handleTcpModalKeydown(event) {
-    if (event.key === 'Escape') {
-        closeMoveToTargetTcpDialog();
+// Set Index Dialog Functions
+function openSetIndexDialog() {
+    const modal = document.getElementById('setIndexModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Focus on the input field
+        const input = document.getElementById('ftcIndexInput');
+        if (input) {
+            input.focus();
+            input.select();
+        }
     }
 }
 
-async function confirmMoveToTargetTcp() {
+function closeSetIndexDialog() {
+    const modal = document.getElementById('setIndexModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+async function confirmSetIndex() {
     try {
-        // Check if we have current robot state data
-        if (!robotStateData || !robotStateData.TCPActualPosition || robotStateData.TCPActualPosition.length < 6) {
-            throw new Error('Cannot get current TCP position for offset calculation');
+        const indexInput = document.getElementById('ftcIndexInput');
+        if (!indexInput) {
+            throw new Error('Index input field not found');
         }
         
-        const currentTcp = robotStateData.TCPActualPosition;
-        
-        // Get target TCP values from inputs
-        const targetTcpX = parseFloat(document.getElementById('targetTcpX').value);
-        const targetTcpY = parseFloat(document.getElementById('targetTcpY').value);
-        const targetTcpZ = parseFloat(document.getElementById('targetTcpZ').value);
-        const targetTcpRx = parseFloat(document.getElementById('targetTcpRx').value);
-        const targetTcpRy = parseFloat(document.getElementById('targetTcpRy').value);
-        const targetTcpRz = parseFloat(document.getElementById('targetTcpRz').value);
-        
-        // Validate inputs
-        if (isNaN(targetTcpX) || isNaN(targetTcpY) || isNaN(targetTcpZ) || 
-            isNaN(targetTcpRx) || isNaN(targetTcpRy) || isNaN(targetTcpRz)) {
-            throw new Error('Invalid TCP position values. Please check your inputs.');
+        const index = parseInt(indexInput.value);
+        if (isNaN(index) || index < 0) {
+            throw new Error('Please enter a valid non-negative integer for index');
         }
         
-        // Calculate offset between target and current position
-        // Position: convert current from meters to mm, calculate offset in mm, then convert to meters
-        const currentXmm = currentTcp[0] * 1000;
-        const currentYmm = currentTcp[1] * 1000;
-        const currentZmm = currentTcp[2] * 1000;
+        // Close the dialog first
+        closeSetIndexDialog();
         
-        // Special offset calculation logic: for positive values use -(target - current), for negative values use (target - current)
-        let offsetX, offsetY, offsetZ;
-        if (targetTcpX >= 0) {
-            offsetX = -(targetTcpX - currentXmm) / 1000; // For positive values: -(target - current) in meters
-        } else {
-            offsetX = (targetTcpX - currentXmm) / 1000; // For negative values: (target - current) in meters
-        }
+        // Send the FTC set index command with the specified index
+        await sendFTCCommandWithIndex('FTC_setindex', index);
         
-        if (targetTcpY >= 0) {
-            offsetY = -(targetTcpY - currentYmm) / 1000; // For positive values: -(target - current) in meters
-        } else {
-            offsetY = (targetTcpY - currentYmm) / 1000; // For negative values: (target - current) in meters
-        }
-        
-        if (targetTcpZ >= 0) {
-            offsetZ = -(targetTcpZ - currentZmm) / 1000; // For positive values: -(target - current) in meters
-        } else {
-            offsetZ = (targetTcpZ - currentZmm) / 1000; // For negative values: (target - current) in meters
-        }
-        
-        // Rotation: convert current from radians to degrees, calculate offset in degrees, then convert to radians
-        const currentRxDeg = currentTcp[3] * 180 / Math.PI;
-        const currentRyDeg = currentTcp[4] * 180 / Math.PI;
-        const currentRzDeg = currentTcp[5] * 180 / Math.PI;
-        
-        // Special offset calculation logic for rotation: for positive values use -(target - current), for negative values use (target - current)
-        let offsetRx, offsetRy, offsetRz;
-        if (targetTcpRx >= 0) {
-            offsetRx = -(targetTcpRx - currentRxDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
-        } else {
-            offsetRx = (targetTcpRx - currentRxDeg) * Math.PI / 180; // For negative values: (target - current) in radians
-        }
-        
-        if (targetTcpRy >= 0) {
-            offsetRy = -(targetTcpRy - currentRyDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
-        } else {
-            offsetRy = (targetTcpRy - currentRyDeg) * Math.PI / 180; // For negative values: (target - current) in radians
-        }
-        
-        if (targetTcpRz >= 0) {
-            offsetRz = -(targetTcpRz - currentRzDeg) * Math.PI / 180; // For positive values: -(target - current) in radians
-        } else {
-            offsetRz = (targetTcpRz - currentRzDeg) * Math.PI / 180; // For negative values: (target - current) in radians
-        }
-        
-        // Create servo_tcp command with offset parameters
-        const command = `servo_tcp [${offsetX.toFixed(6)},${offsetY.toFixed(6)},${offsetZ.toFixed(6)},${offsetRx.toFixed(6)},${offsetRy.toFixed(6)},${offsetRz.toFixed(6)}] 1.0 1.0 "" False 150 35`;
-        
-        console.log('Current TCP (raw):', currentTcp);
-        console.log('Current TCP (converted):', {
-            x: currentXmm, y: currentYmm, z: currentZmm,
-            rx: currentRxDeg, ry: currentRyDeg, rz: currentRzDeg
-        });
-        console.log('Target TCP values:', {
-            x: targetTcpX, y: targetTcpY, z: targetTcpZ,
-            rx: targetTcpRx, ry: targetTcpRy, rz: targetTcpRz
-        });
-        console.log('Calculated offsets:', {offsetX, offsetY, offsetZ, offsetRx, offsetRy, offsetRz});
-        console.log('Sending servo_tcp command:', command);
+    } catch (error) {
+        console.error('Error setting FTC index:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
 
-        const response = await fetch('/api/robot_arm/cmd', {
+// Enhanced FTC command function that accepts index parameter
+async function sendFTCCommandWithIndex(command, index) {
+    const statusElement = document.getElementById('ftcCommandStatus');
+    const button = document.getElementById('ftcSetIndexBtn');
+    
+    // Disable button and show loading state
+    if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.6';
+    }
+    
+    statusElement.textContent = `Sending FTC command: ${command} with index ${index}...`;
+    statusElement.className = 'text-sm text-blue-600';
+    
+    try {
+        const response = await fetch('/api/ftc/setindex', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ command: command })
+            body: JSON.stringify({ command: 'setindex', index: index })
         });
-
-        if (!response.ok) {
-            throw new Error(`Failed to send servo_tcp command: ${response.statusText}`);
-        }
-
+        
         const result = await response.json();
         
-        // Log the successful command
-        logCommand('Move to Target Position', `Moving to TCP position: X=${targetTcpX.toFixed(1)}mm, Y=${targetTcpY.toFixed(1)}mm, Z=${targetTcpZ.toFixed(1)}mm, Rx=${targetTcpRx.toFixed(1)}°, Ry=${targetTcpRy.toFixed(1)}°, Rz=${targetTcpRz.toFixed(1)}°`);
+        if (response.ok) {
+            const commandText = `${command}(${index})`;
+            statusElement.textContent = `FTC command sent successfully: ${commandText}`;
+            statusElement.className = 'text-sm text-green-600';
+            logCommand('FTC', commandText, 'success');
+        } else {
+            statusElement.textContent = `Error: ${result.error || 'Unknown error'}`;
+            statusElement.className = 'text-sm text-red-600';
+            logCommand('FTC', command, 'error');
+        }
+    } catch (error) {
+        console.error('Error sending FTC command:', error);
+        statusElement.textContent = `Network error: ${error.message}`;
+        statusElement.className = 'text-sm text-red-600';
+        logCommand('FTC', command, 'error');
+    } finally {
+        // Re-enable button
+        if (button) {
+            button.disabled = false;
+            button.style.opacity = '1';
+        }
         
-        // Close the dialog
-        closeMoveToTargetTcpDialog();
+        // Clear status after 3 seconds
+        setTimeout(() => {
+            statusElement.textContent = 'Ready to send FTC commands';
+            statusElement.className = 'text-sm text-gray-600';
+        }, 3000);
+    }
+}
+
+// ===== Camera Functions =====
+
+// Initialize camera stream
+function initializeCameraStream() {
+    console.log('Setting up direct camera stream...');
+    
+    const cameraImage = document.getElementById('cameraImage');
+    const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+    
+    if (cameraImage && cameraPlaceholder) {
+        // Clear any existing src to start fresh
+        cameraImage.src = '';
+        
+        // Handle image load events
+        cameraImage.onload = () => {
+            console.log('Camera stream connected successfully');
+            cameraImage.style.display = 'block';
+            cameraPlaceholder.style.display = 'none';
+            updateCameraConnectionStatus(true);
+        };
+        
+        // Handle image error events
+        cameraImage.onerror = () => {
+            console.log('Camera stream connection failed');
+            cameraImage.style.display = 'none';
+            cameraPlaceholder.style.display = 'block';
+            updateCameraConnectionStatus(false);
+            
+            // Retry after a delay
+            setTimeout(() => {
+                console.log('Retrying camera stream connection...');
+                cameraImage.src = '/video_feed?' + new Date().getTime(); // Add timestamp to force refresh
+            }, 3000);
+        };
+        
+        // Start the stream after event handlers are set
+        setTimeout(() => {
+            console.log('Starting camera stream...');
+            cameraImage.src = '/video_feed';
+        }, 500);
+    }
+    
+    // Check camera status periodically
+    setInterval(() => {
+        updateCameraStatus();
+    }, 10000); // Check every 10 seconds
+}
+
+// Start camera monitoring (legacy function kept for compatibility)
+function startCameraMonitoring() {
+    console.log('Starting camera monitoring...');
+    initializeCameraStream();
+}
+
+// Update camera feed (legacy function - now simplified)
+async function updateCameraFeed() {
+    // This function is now mostly handled by setupCameraStream
+    // We keep it for compatibility but it doesn't need to do much
+    return;
+}
+
+// Update camera status
+async function updateCameraStatus() {
+    try {
+        const response = await fetch('/api/camera/status');
+        const status = await response.json();
+        
+        updateCameraConnectionStatus(status.connected);
         
     } catch (error) {
-        console.error('Error sending servo_tcp command:', error);
-        logCommand('Move to Target Position', `❌ Error: ${error.message}`, 'error');
+        console.error('Error fetching camera status:', error);
+        updateCameraConnectionStatus(false);
+    }
+}
+
+// Update camera connection status display
+function updateCameraConnectionStatus(connected) {
+    const statusDot = document.getElementById('cameraStatusDot');
+    const statusText = document.getElementById('cameraStatusText');
+    
+    if (statusDot && statusText) {
+        if (connected) {
+            statusDot.classList.add('connected');
+            statusText.textContent = 'Connected';
+        } else {
+            statusDot.classList.remove('connected');
+            statusText.textContent = 'Disconnected';
+        }
+    }
+    
+    if (!connected) {
+        showCameraPlaceholder();
+    }
+}
+
+// Show camera placeholder
+function showCameraPlaceholder() {
+    const cameraImage = document.getElementById('cameraImage');
+    const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+    
+    if (cameraImage && cameraPlaceholder) {
+        cameraImage.style.display = 'none';
+        cameraPlaceholder.style.display = 'block';
         
-        // Show error to user but don't close dialog
-        alert(`Error: ${error.message}`);
+        // Clean up image URL
+        if (cameraImage.src && cameraImage.src.startsWith('blob:')) {
+            URL.revokeObjectURL(cameraImage.src);
+            cameraImage.src = '';
+        }
     }
 }
