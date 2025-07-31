@@ -15,7 +15,7 @@ from cv_bridge import CvBridge
 
 
 def get_stream_resolution(url, max_retries=3, retry_delay=2):
-    """获取RTSP流的分辨率，带错误处理"""
+    "get the resolution of the RTSP stream using ffprobe with retries"
     for attempt in range(max_retries):
         try:
             cmd = [
@@ -284,20 +284,20 @@ class RTSPStream:
             }
 
     def restart(self):
-        """重启视频流"""
+        """restart the RTSP stream"""
         self.log_info(f"Restarting stream {self.name}...")
         self.stop()
-        time.sleep(1)  # 等待1秒
-        self.__init__(self.name, self.url, self.node)  # 重新初始化
+        time.sleep(1)  
+        self.__init__(self.name, self.url, self.node)  # reinitialize the stream
     
     def change_url(self, new_url):
-        """切换到新的RTSP URL"""
+        """Switch to a new RTSP URL"""
         self.log_info(f"Changing URL for {self.name} to: {new_url}")
         self.url = new_url
         self.restart()
     
     def is_running(self):
-        """检查流是否正在运行"""
+        """Check if the stream is running"""
         return self.running and self.available
 
     def enable_ros_publishing(self, publisher, cv_bridge):
@@ -350,7 +350,7 @@ class RTSPStream:
                 self.log_error(f"Error publishing ROS image: {e}")
 
     def stop(self):
-        """停止视频流"""
+        """stop the RTSP stream"""
         if not self.running:
             return
             
@@ -425,16 +425,16 @@ class CameraNode(Node):
         self.ros_topic_name = self.get_parameter('ros_topic_name').value
         self.get_logger().info(f"ros_topic_name from param = {self.ros_topic_name}")
         
-        # Setup RTSP URL - 支持多种分辨率
+        # Setup RTSP URL - support both main and sub streams
         self.camera_streams = {
-            "main": self.rtsp_url_main,  # 主码流 
-            "sub": self.rtsp_url_sub     # 子码流
+            "main": self.rtsp_url_main,  # main stream
+            "sub": self.rtsp_url_sub     # sub stream
         }
         
-        # 当前分辨率
+        # current resolution
         self.current_resolution = "main"
-        
-        # 最新截图路径
+
+        # latest snapshot path
         self.latest_snapshot = None
         
         # Initialize RTSP stream
