@@ -11,6 +11,9 @@ import threading
 from datetime import datetime
 import argparse
 import socket
+import struct
+import time
+import math
 from flask import Flask, render_template_string, Response, jsonify
 
 
@@ -69,6 +72,19 @@ class CameraCalibrationNode(Node):
         # Image counter for naming
         self.image_counter = 0
         
+        # Robot joint angle monitoring
+        self.robot_host = '192.168.1.10'
+        self.robot_port = 2001
+        self.joint_angles = [0.0] * 6  # Store 6 joint angles (we'll use first 6 of 7)
+        self.tcp_pose = [0.0] * 6  # Store TCP pose (X, Y, Z, Rx, Ry, Rz)
+        self.joint_lock = threading.Lock()
+        self.robot_connected = False
+        self.robot_last_update = None
+        
+        # Start robot monitoring thread
+        self.robot_thread = threading.Thread(target=self._monitor_robot, daemon=True)
+        self.robot_thread.start()
+        
         # Create subscriber for camera images
         self.image_subscriber = self.create_subscription(
             Image,
@@ -99,7 +115,6 @@ class CameraCalibrationNode(Node):
         self.flask_thread.start()
         
         # Give Flask a moment to start
-        import time
         time.sleep(1)
     
     def _run_flask_server(self):
@@ -120,7 +135,6 @@ class CameraCalibrationNode(Node):
         """Gracefully shutdown Flask server."""
         self.flask_running = False
         # Give some time for connections to close
-        import time
         time.sleep(0.5)
         
     def image_callback(self, msg):
@@ -141,6 +155,73 @@ class CameraCalibrationNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error converting image: {e}")
     
+    def _monitor_robot(self):
+        """Monitor robot joint angles from port 2001."""
+        while True:
+            try:
+                # Create socket and connect to robot
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(5.0)  # 5 second timeout
+                sock.connect((self.robot_host, self.robot_port))
+                
+                self.get_logger().info(f"Connected to robot at {self.robot_host}:{self.robot_port}")
+                self.robot_connected = True
+                
+                frame_size = 1468
+                
+                while True:
+                    # Read exactly frame_size bytes from the socket
+                    data = b""
+                    while len(data) < frame_size:
+                        packet = sock.recv(frame_size - len(data))
+                        if not packet:
+                            break
+                        data += packet
+                    
+                    if len(data) == frame_size:
+                        # Parse joint angles (first 28 bytes = 7 floats, we use first 6)
+                        joint_positions = list(struct.unpack("7f", data[0:28]))
+                        
+                        # Parse TCP pose (bytes 368-391 = 6 floats: X,Y,Z,Rx,Ry,Rz)
+                        tcp_positions = list(struct.unpack("6f", data[368:392]))
+                        
+                        # Convert radians to degrees and store only first 6 joints
+                        joint_angles_deg = [math.degrees(angle) for angle in joint_positions[:6]]
+                        
+                        # TCP pose: position in mm, rotation in degrees
+                        tcp_pose_converted = [
+                            tcp_positions[0] * 1000,  # X in mm
+                            tcp_positions[1] * 1000,  # Y in mm  
+                            tcp_positions[2] * 1000,  # Z in mm
+                            math.degrees(tcp_positions[3]),  # Rx in degrees
+                            math.degrees(tcp_positions[4]),  # Ry in degrees
+                            math.degrees(tcp_positions[5])   # Rz in degrees
+                        ]
+                        
+                        with self.joint_lock:
+                            self.joint_angles = joint_angles_deg
+                            self.tcp_pose = tcp_pose_converted
+                            self.robot_last_update = time.time()
+                    else:
+                        break
+                        
+            except socket.timeout:
+                self.get_logger().warning("Robot connection timeout, retrying...")
+                self.robot_connected = False
+            except ConnectionRefusedError:
+                self.get_logger().warning(f"Cannot connect to robot at {self.robot_host}:{self.robot_port}, retrying in 5 seconds...")
+                self.robot_connected = False
+                time.sleep(5)
+            except Exception as e:
+                self.get_logger().error(f"Robot monitoring error: {e}")
+                self.robot_connected = False
+            finally:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                time.sleep(1)  # Wait before retry
+    
     def setup_flask_routes(self):
         """Setup Flask web routes."""
         
@@ -153,7 +234,7 @@ class CameraCalibrationNode(Node):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DUCO Camera Screenshot Tool</title>
+    <title>DUCO Camera Calibration Tool</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -332,7 +413,7 @@ class CameraCalibrationNode(Node):
         }
         .info {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(8, 1fr);
             gap: 15px;
         }
         .info-item {
@@ -351,17 +432,40 @@ class CameraCalibrationNode(Node):
             display: block;
             font-weight: 600;
             color: #495057;
-            font-size: 0.9em;
-            margin-bottom: 4px;
+            font-size: 0.8em;
+            margin-bottom: 3px;
         }
         .info-value {
             display: block;
             font-weight: 500;
             color: #212529;
-            font-size: 1em;
+            font-size: 0.85em;
+            word-break: break-all;
+            line-height: 1.3;
         }
         #cameraStatus {
             font-weight: 600;
+        }
+        .first-row-item {
+            /* 第一行的4个卡片各占2列，总共8列 */
+            grid-column: span 2;
+        }
+        .robot-connection {
+            /* Robot Connection占2列 */
+            grid-column: span 2;
+        }
+        .pose-item {
+            /* Joint Angles和TCP Pose各占3列，给予更多空间显示完整数组 */
+            grid-column: span 3;
+        }
+        .pose-item .info-value {
+            font-family: 'Courier New', monospace;
+            font-size: 0.75em;
+            /* 尽量保持单行显示 */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.2;
         }
         .hidden {
             display: none;
@@ -387,6 +491,21 @@ class CameraCalibrationNode(Node):
             .info-panel {
                 padding: 15px;
             }
+            .first-row-item, .robot-connection, .pose-item {
+                /* 在小屏幕上取消跨列 */
+                grid-column: span 1;
+            }
+            .pose-item .info-value {
+                /* 在小屏幕上允许换行 */
+                white-space: normal;
+                word-break: break-word;
+            }
+        }
+        @media (min-width: 1200px) {
+            .info {
+                /* 在大屏幕上保持8列布局 */
+                grid-template-columns: repeat(8, 1fr);
+            }
         }
     </style>
 </head>
@@ -394,7 +513,7 @@ class CameraCalibrationNode(Node):
         <div class="container">
         <div class="main-content">
             <div class="header">
-                                <h1>📷 DUCO Camera Screenshot Tool</h1>
+                                <h1>📷 DUCO Camera Calibration Tool</h1>
                 <p>Real-time Camera View & Screenshot Capture</p>
             </div>
             
@@ -413,21 +532,33 @@ class CameraCalibrationNode(Node):
             <div class="info-panel">
                 <h3>📊 System Status</h3>
                 <div class="info">
-                    <div class="info-item">
+                    <div class="info-item first-row-item">
                         <span class="info-label">Camera Status:</span>
                         <span id="cameraStatus" class="info-value">Waiting for connection...</span>
                     </div>
-                    <div class="info-item">
+                    <div class="info-item first-row-item">
                         <span class="info-label">Camera Topic:</span>
                         <span id="cameraTopic" class="info-value">{{ camera_topic }}</span>
                     </div>
-                    <div class="info-item">
+                    <div class="info-item first-row-item">
                         <span class="info-label">Save Directory:</span>
                         <span id="saveDirectory" class="info-value">{{ save_dir }}</span>
                     </div>
-                    <div class="info-item">
+                    <div class="info-item first-row-item">
                         <span class="info-label">Screenshot Count:</span>
                         <span id="imageCount" class="info-value">0</span>
+                    </div>
+                    <div class="info-item robot-connection">
+                        <span class="info-label">Robot Connection:</span>
+                        <span id="robotStatus" class="info-value">Connecting...</span>
+                    </div>
+                    <div class="info-item pose-item">
+                        <span class="info-label">Joint Angles:</span>
+                        <span id="jointAngles" class="info-value">[--°, --°, --°, --°, --°, --°]</span>
+                    </div>
+                    <div class="info-item pose-item">
+                        <span class="info-label">TCP Pose:</span>
+                        <span id="tcpPose" class="info-value">[-- mm, -- mm, -- mm, --°, --°, --°]</span>
                     </div>
                 </div>
             </div>
@@ -548,7 +679,7 @@ class CameraCalibrationNode(Node):
                 // Update camera status
                 const cameraStatusElement = document.getElementById('cameraStatus');
                 if (data.has_image) {
-                    cameraStatusElement.textContent = `Connected (${data.image_shape[1]}×${data.image_shape[0]})`;
+                    cameraStatusElement.textContent = `Connected`;
                     cameraStatusElement.style.color = 'green';
                 } else {
                     cameraStatusElement.textContent = 'Waiting for connection... - Check camera_node';
@@ -561,6 +692,41 @@ class CameraCalibrationNode(Node):
                 const fullPath = data.save_directory;
                 const directoryName = fullPath.split('/').pop() || fullPath;
                 document.getElementById('saveDirectory').textContent = directoryName;
+                
+                // Update robot status and joint angles
+                const robotStatusElement = document.getElementById('robotStatus');
+                const jointAnglesElement = document.getElementById('jointAngles');
+                const tcpPoseElement = document.getElementById('tcpPose');
+                
+                if (data.robot_connected) {
+                    robotStatusElement.textContent = 'Connected';
+                    robotStatusElement.style.color = 'green';
+                    
+                    // Update joint angles in compact format
+                    if (data.joint_angles && data.joint_angles.length >= 6) {
+                        const jointText = '[' + data.joint_angles.slice(0, 6).map(angle => 
+                            angle.toFixed(1) + '°'
+                        ).join(', ') + ']';
+                        jointAnglesElement.textContent = jointText;
+                    } else {
+                        jointAnglesElement.textContent = '[--°, --°, --°, --°, --°, --°]';
+                    }
+                    
+                    // Update TCP pose in compact format
+                    if (data.tcp_pose && data.tcp_pose.length >= 6) {
+                        const tcpText = '[' + 
+                            data.tcp_pose.slice(0, 3).map(pos => pos.toFixed(1) + ' mm').join(', ') + ', ' +
+                            data.tcp_pose.slice(3, 6).map(rot => rot.toFixed(1) + '°').join(', ') + ']';
+                        tcpPoseElement.textContent = tcpText;
+                    } else {
+                        tcpPoseElement.textContent = '[-- mm, -- mm, -- mm, --°, --°, --°]';
+                    }
+                } else {
+                    robotStatusElement.textContent = 'Disconnected';
+                    robotStatusElement.style.color = 'red';
+                    jointAnglesElement.textContent = '[--°, --°, --°, --°, --°, --°]';
+                    tcpPoseElement.textContent = '[-- mm, -- mm, -- mm, --°, --°, --°]';
+                }
                 
                 // Update thumbnails
                 updateThumbnails();
@@ -604,16 +770,21 @@ class CameraCalibrationNode(Node):
         
         @self.app.route('/clear_images', methods=['POST'])
         def clear_images():
-            """Clear all calibration images."""
+            """Clear all calibration images and angle files."""
             try:
                 import glob
-                image_files = glob.glob(os.path.join(self.save_dir, '*.jpg'))
-                for file_path in image_files:
+                # Clear image files
+                image_files = glob.glob(os.path.join(self.save_dir, 'screenshot_*.jpg'))
+                # Clear angle files
+                angle_files = glob.glob(os.path.join(self.save_dir, 'screenshot_*_angles.txt'))
+                
+                for file_path in image_files + angle_files:
                     os.remove(file_path)
+                    
                 self.image_counter = 0
                 return jsonify({
                     'success': True,
-                    'message': f'Deleted {len(image_files)} images'
+                    'message': f'Deleted {len(image_files)} images and {len(angle_files)} angle files'
                 })
             except Exception as e:
                 return jsonify({
@@ -629,12 +800,27 @@ class CameraCalibrationNode(Node):
             if has_image:
                 image_shape = self.current_image.shape
             
+            # Get robot joint angles with thread safety
+            with self.joint_lock:
+                joint_angles = self.joint_angles.copy()
+                tcp_pose = self.tcp_pose.copy()
+                robot_connected = self.robot_connected
+                last_update = self.robot_last_update
+            
+            # Check if robot data is recent (within last 5 seconds)
+            current_time = time.time()
+            if last_update and (current_time - last_update) > 5:
+                robot_connected = False
+            
             return jsonify({
                 'image_count': self.image_counter,
                 'has_image': has_image,
                 'image_shape': image_shape,
                 'camera_topic': self.camera_topic,
-                'save_directory': os.path.abspath(self.save_dir)
+                'save_directory': os.path.abspath(self.save_dir),
+                'robot_connected': robot_connected,
+                'joint_angles': joint_angles,
+                'tcp_pose': tcp_pose
             })
         
         @self.app.route('/get_thumbnails')
@@ -802,9 +988,15 @@ class CameraCalibrationNode(Node):
         return img
     
     def save_screenshot(self):
-        """Save the current camera image as a screenshot."""
+        """Save the current camera image as a screenshot with joint angles."""
         with self.image_lock:
             if self.current_image is not None:
+                # Get current joint angles and TCP pose
+                with self.joint_lock:
+                    joint_angles = self.joint_angles.copy()
+                    tcp_pose = self.tcp_pose.copy()
+                    robot_connected = self.robot_connected
+                
                 # Generate filename with timestamp
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"screenshot_{timestamp}_{self.image_counter:04d}.jpg"
@@ -814,12 +1006,69 @@ class CameraCalibrationNode(Node):
                 success = cv2.imwrite(filepath, self.current_image)
                 
                 if success:
+                    # Save joint angles and TCP pose to text file
+                    data_filename = f"screenshot_{timestamp}_{self.image_counter:04d}_pose_data.txt"
+                    data_filepath = os.path.join(self.save_dir, data_filename)
+                    
+                    try:
+                        with open(data_filepath, 'w', encoding='utf-8') as f:
+                            f.write(f"Screenshot: {filename}\n")
+                            f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                            f.write(f"Robot Connected: {robot_connected}\n")
+                            
+                            if robot_connected and len(joint_angles) >= 6:
+                                # Write joint angles
+                                f.write("\nJoint Angles (degrees):\n")
+                                for i, angle in enumerate(joint_angles[:6]):
+                                    f.write(f"  Joint {i+1}: {angle:.3f}°\n")
+                                angles_str = '[' + ', '.join([f'{angle:.3f}°' for angle in joint_angles[:6]]) + ']'
+                                f.write(f"Joint Angles Array: {angles_str}\n")
+                                
+                                # Write TCP pose
+                                if len(tcp_pose) >= 6:
+                                    f.write("\nTCP Pose:\n")
+                                    f.write(f"  X: {tcp_pose[0]:.1f} mm\n")
+                                    f.write(f"  Y: {tcp_pose[1]:.1f} mm\n")
+                                    f.write(f"  Z: {tcp_pose[2]:.1f} mm\n")
+                                    f.write(f"  Rx: {tcp_pose[3]:.3f}°\n")
+                                    f.write(f"  Ry: {tcp_pose[4]:.3f}°\n")
+                                    f.write(f"  Rz: {tcp_pose[5]:.3f}°\n")
+                                    tcp_str = '[' + ', '.join([f'{tcp_pose[i]:.1f} mm' if i < 3 else f'{tcp_pose[i]:.3f}°' for i in range(6)]) + ']'
+                                    f.write(f"TCP Pose Array: {tcp_str}\n")
+                                else:
+                                    f.write("\nTCP Pose: Not available\n")
+                            else:
+                                f.write("Joint Angles: Not available (robot disconnected)\n")
+                                f.write("TCP Pose: Not available (robot disconnected)\n")
+                    except Exception as e:
+                        self.get_logger().warning(f"Failed to save pose data: {e}")
+                    
                     self.image_counter += 1
+                    
+                    # Create result message
+                    if robot_connected and len(joint_angles) >= 6:
+                        angles_str = '[' + ', '.join([f'{angle:.1f}°' for angle in joint_angles[:6]]) + ']'
+                        if len(tcp_pose) >= 6:
+                            tcp_str = f'[{tcp_pose[0]:.0f},{tcp_pose[1]:.0f},{tcp_pose[2]:.0f}mm; {tcp_pose[3]:.1f},{tcp_pose[4]:.1f},{tcp_pose[5]:.1f}°]'
+                            message = f'Screenshot saved: {filename} with angles: {angles_str} and TCP: {tcp_str}'
+                        else:
+                            message = f'Screenshot saved: {filename} with angles: {angles_str}'
+                    else:
+                        message = f'Screenshot saved: {filename} (no robot data)'
+                    
                     self.get_logger().info(f"Screenshot saved: {filepath}")
+                    if robot_connected:
+                        if len(joint_angles) >= 6:
+                            angles_str = '[' + ', '.join([f'{angle:.1f}°' for angle in joint_angles[:6]]) + ']'
+                            self.get_logger().info(f"Joint angles recorded: {angles_str}")
+                        if len(tcp_pose) >= 6:
+                            tcp_str = f'TCP: [{tcp_pose[0]:.0f},{tcp_pose[1]:.0f},{tcp_pose[2]:.0f}mm; {tcp_pose[3]:.1f},{tcp_pose[4]:.1f},{tcp_pose[5]:.1f}°]'
+                            self.get_logger().info(f"TCP pose recorded: {tcp_str}")
+                    
                     return {
                         'success': True,
                         'filename': filename,
-                        'message': f'Screenshot saved: {filename}'
+                        'message': message
                     }
                 else:
                     self.get_logger().error(f"Failed to save screenshot: {filepath}")
@@ -858,7 +1107,7 @@ def main():
             web_port=args.port
         )
         
-        print("\n🚀 DUCO Camera Screenshot Tool Started!")
+        print("\n🚀 DUCO Camera Calibration Tool Started!")
         print(f"📷 Camera Topic: {args.topic}")
         print(f"💾 Save Directory: {os.path.abspath(args.save_dir)}")
         print(f"🌐 Web Interface: http://localhost:{calibration_node.web_port}")
