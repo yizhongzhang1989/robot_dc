@@ -7,14 +7,70 @@ from cv_bridge import CvBridge
 import cv2
 import numpy as np
 import os
+import glob
 import threading
-from datetime import datetime
 import argparse
 import socket
 import struct
 import time
 import math
-from flask import Flask, render_template_string, Response, jsonify
+import tempfile
+import json
+import subprocess
+import signal
+import atexit
+from flask import Flask, render_template_string, Response, jsonify, request
+
+
+def tcp_pose_to_transform_matrix(tcp_pose):
+    """
+    Convert TCP pose (X, Y, Z, Rx, Ry, Rz) to 4x4 transformation matrix.
+    
+    Args:
+        tcp_pose: List of 6 values [X, Y, Z, Rx, Ry, Rz] where:
+                 - X, Y, Z are in meters
+                 - Rx, Ry, Rz are rotation angles in radians
+    
+    Returns:
+        4x4 numpy array representing the transformation matrix
+    """
+    x, y, z, rx, ry, rz = tcp_pose
+    
+    # Create rotation matrices for each axis
+    cos_rx, sin_rx = math.cos(rx), math.sin(rx)
+    cos_ry, sin_ry = math.cos(ry), math.sin(ry)
+    cos_rz, sin_rz = math.cos(rz), math.sin(rz)
+    
+    # Rotation matrix around X axis
+    R_x = np.array([
+        [1, 0, 0],
+        [0, cos_rx, -sin_rx],
+        [0, sin_rx, cos_rx]
+    ])
+    
+    # Rotation matrix around Y axis
+    R_y = np.array([
+        [cos_ry, 0, sin_ry],
+        [0, 1, 0],
+        [-sin_ry, 0, cos_ry]
+    ])
+    
+    # Rotation matrix around Z axis
+    R_z = np.array([
+        [cos_rz, -sin_rz, 0],
+        [sin_rz, cos_rz, 0],
+        [0, 0, 1]
+    ])
+    
+    # Combined rotation matrix (ZYX order)
+    R = R_z @ R_y @ R_x
+    
+    # Create 4x4 transformation matrix
+    T = np.eye(4)
+    T[:3, :3] = R
+    T[:3, 3] = [x, y, z]
+    
+    return T
 
 
 def find_available_port(start_port=8020, max_attempts=10):
@@ -33,11 +89,18 @@ class CameraCalibrationNode(Node):
     """ROS2 node for camera calibration with web interface."""
     
     def __init__(self, camera_topic='/robot_arm_camera/image_raw', save_dir='./calibration_images', web_port=8020):
-        super().__init__('camera_node')
+        super().__init__('camera_calibration_node')
         
         # Parameters
         self.camera_topic = camera_topic
         self.save_dir = save_dir
+        
+        # Initialize camera node process
+        self.camera_process = None
+        self._start_camera_node()
+        
+        # Register cleanup on exit
+        atexit.register(self._cleanup_camera_node)
         
         # Find available port if the requested port is occupied
         if web_port:
@@ -69,8 +132,14 @@ class CameraCalibrationNode(Node):
         self.current_image = None
         self.image_lock = threading.Lock()
         
-        # Image counter for naming
-        self.image_counter = 0
+        # Image counter for naming - initialize based on existing files
+        self.image_counter = self._initialize_image_counter()
+        
+        # Corner detection mode
+        self.corner_detection_enabled = False
+        self.chessboard_size = (11, 8)  # Default corner size (corners, not grid squares)
+        self.chessboard_grid_size = (12, 9)  # Default grid size for display
+        self.corner_lock = threading.Lock()
         
         # Robot joint angle monitoring
         self.robot_host = '192.168.1.10'
@@ -102,6 +171,7 @@ class CameraCalibrationNode(Node):
         self.get_logger().info("Camera Calibration Node started")
         self.get_logger().info(f"Subscribing to: {self.camera_topic}")
         self.get_logger().info(f"Save directory: {os.path.abspath(self.save_dir)}")
+        self.get_logger().info(f"Found {self.image_counter} existing screenshots, next will be {self.image_counter:04d}")
         self.get_logger().info(f"Web interface: http://localhost:{self.web_port}")
         
         # Flag to control Flask server
@@ -116,6 +186,70 @@ class CameraCalibrationNode(Node):
         
         # Give Flask a moment to start
         time.sleep(1)
+    
+    def _start_camera_node(self):
+        """Start the camera node using ros2 launch."""
+        try:
+            # Find the workspace root
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            workspace_root = os.path.dirname(current_dir)  # Go up one level from scripts
+            colcon_ws = os.path.join(workspace_root, 'colcon_ws')
+            
+            # Check if colcon workspace exists
+            if not os.path.exists(colcon_ws):
+                self.get_logger().error(f"Colcon workspace not found at: {colcon_ws}")
+                return
+            
+            # Setup environment and launch camera node
+            env = os.environ.copy()
+            
+            # Source the workspace setup
+            setup_bash = os.path.join(colcon_ws, 'install', 'setup.bash')
+            if os.path.exists(setup_bash):
+                # Use bash to source setup and run launch
+                launch_cmd = f"source {setup_bash} && ros2 launch camera_node robot_arm_cam_launch.py"
+                self.camera_process = subprocess.Popen(
+                    launch_cmd,
+                    shell=True,
+                    executable='/bin/bash',
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    preexec_fn=os.setsid  # Create new process group
+                )
+                self.get_logger().info("Camera node launched successfully")
+                
+                # Give camera node time to start
+                time.sleep(3)
+            else:
+                self.get_logger().error(f"Setup file not found at: {setup_bash}")
+                self.get_logger().info("Please make sure to build the colcon workspace first:")
+                self.get_logger().info(f"cd {colcon_ws} && colcon build")
+                
+        except Exception as e:
+            self.get_logger().error(f"Failed to start camera node: {e}")
+    
+    def _cleanup_camera_node(self):
+        """Clean up camera node process."""
+        if self.camera_process:
+            try:
+                # Terminate the entire process group
+                os.killpg(os.getpgid(self.camera_process.pid), signal.SIGTERM)
+                self.camera_process.wait(timeout=5)
+                self.get_logger().info("Camera node stopped successfully")
+            except subprocess.TimeoutExpired:
+                # Force kill if it doesn't stop gracefully
+                os.killpg(os.getpgid(self.camera_process.pid), signal.SIGKILL)
+                self.get_logger().warning("Camera node force killed")
+            except Exception as e:
+                self.get_logger().error(f"Error stopping camera node: {e}")
+            finally:
+                self.camera_process = None
+    
+    def destroy_node(self):
+        """Override destroy_node to clean up camera process."""
+        self._cleanup_camera_node()
+        super().destroy_node()
     
     def _run_flask_server(self):
         """Run Flask server with proper error handling."""
@@ -136,6 +270,105 @@ class CameraCalibrationNode(Node):
         self.flask_running = False
         # Give some time for connections to close
         time.sleep(0.5)
+    
+    def _initialize_image_counter(self):
+        """Initialize image counter based on existing image files in the new format."""
+        try:
+            # Get all existing image files in new format (序号.jpg)
+            image_files = glob.glob(os.path.join(self.save_dir, '*.jpg'))
+            
+            if not image_files:
+                return 0
+            
+            # Extract counter numbers from filenames
+            # Expected format: 序号.jpg (simple numeric filename)
+            counters = []
+            for file_path in image_files:
+                filename = os.path.basename(file_path)
+                # Remove .jpg extension and try to parse as integer
+                name_without_ext = filename.replace('.jpg', '')
+                try:
+                    counter = int(name_without_ext)
+                    counters.append(counter)
+                except ValueError:
+                    # Skip files that don't match the numeric format
+                    continue
+            
+            if counters:
+                # Return the next counter number (max + 1)
+                return max(counters) + 1
+            else:
+                # If no valid numeric files found, start from 0
+                return 0
+                
+        except Exception as e:
+            self.get_logger().warning(f"Failed to initialize image counter: {e}")
+            return 0
+    
+    def _get_current_image_count(self):
+        """Get current count of image files in the save directory."""
+        try:
+            # Get all existing image files in new format (序号.jpg)
+            image_files = glob.glob(os.path.join(self.save_dir, '*.jpg'))
+            
+            if not image_files:
+                return 0
+            
+            # Count only numeric filename files
+            valid_count = 0
+            for file_path in image_files:
+                filename = os.path.basename(file_path)
+                # Remove .jpg extension and try to parse as integer
+                name_without_ext = filename.replace('.jpg', '')
+                try:
+                    int(name_without_ext)  # Check if it's a valid integer
+                    valid_count += 1
+                except ValueError:
+                    # Skip files that don't match the numeric format
+                    continue
+            
+            return valid_count
+                
+        except Exception as e:
+            self.get_logger().warning(f"Failed to get current image count: {e}")
+            return 0
+    
+    def _get_next_sequence_number(self):
+        """Get the next available sequence number for saving files."""
+        try:
+            # Get all existing image files in new format (序号.jpg)
+            image_files = glob.glob(os.path.join(self.save_dir, '*.jpg'))
+            
+            if not image_files:
+                return 0
+            
+            # Extract counter numbers from filenames
+            used_numbers = set()
+            for file_path in image_files:
+                filename = os.path.basename(file_path)
+                # Remove .jpg extension and try to parse as integer
+                name_without_ext = filename.replace('.jpg', '')
+                try:
+                    counter = int(name_without_ext)
+                    used_numbers.add(counter)
+                except ValueError:
+                    # Skip files that don't match the numeric format
+                    continue
+            
+            if not used_numbers:
+                return 0
+            
+            # Find the next available number starting from 0
+            next_number = 0
+            while next_number in used_numbers:
+                next_number += 1
+            
+            return next_number
+                
+        except Exception as e:
+            self.get_logger().warning(f"Failed to get next sequence number: {e}")
+            # Fallback to current counter
+            return self.image_counter
         
     def image_callback(self, msg):
         """Callback function for receiving camera images."""
@@ -281,7 +514,7 @@ class CameraCalibrationNode(Node):
         .thumbnail-grid {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 6px;
             flex: 1;
             overflow-y: auto;
         }
@@ -299,7 +532,7 @@ class CameraCalibrationNode(Node):
         }
         .thumbnail-img {
             width: 100%;
-            height: 120px;
+            height: 75px;
             object-fit: cover;
             border-radius: 8px;
         }
@@ -470,6 +703,149 @@ class CameraCalibrationNode(Node):
         .hidden {
             display: none;
         }
+        
+        /* Modal styles for corner detection settings */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+        }
+        
+        .modal-content {
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 0;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            width: 90%;
+            max-width: 500px;
+            animation: modalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes modalSlideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 20px 25px;
+            border-radius: 15px 15px 0 0;
+            text-align: center;
+            position: relative;
+        }
+        
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.4em;
+            font-weight: 600;
+        }
+        
+        .close {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255,255,255,0.8);
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s ease;
+        }
+        
+        .close:hover {
+            color: white;
+        }
+        
+        .modal-body {
+            padding: 30px 25px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 1em;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+            box-sizing: border-box;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+        }
+        
+        .form-help {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .modal-footer {
+            padding: 20px 25px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        
+        .modal-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            min-width: 80px;
+        }
+        
+        .modal-btn-cancel {
+            background: #f8f9fa;
+            color: #6c757d;
+            border: 1px solid #dee2e6;
+        }
+        
+        .modal-btn-cancel:hover {
+            background: #e2e6ea;
+        }
+        
+        .modal-btn-confirm {
+            background: #007bff;
+            color: white;
+        }
+        
+        .modal-btn-confirm:hover {
+            background: #0056b3;
+        }
+        
         @media (max-width: 768px) {
             .container {
                 flex-direction: column;
@@ -500,6 +876,13 @@ class CameraCalibrationNode(Node):
                 white-space: normal;
                 word-break: break-word;
             }
+            .modal-content {
+                margin: 5% auto;
+                width: 95%;
+            }
+            .modal-body {
+                padding: 20px 15px;
+            }
         }
         @media (min-width: 1200px) {
             .info {
@@ -524,10 +907,38 @@ class CameraCalibrationNode(Node):
             <div class="controls">
                 <button class="btn btn-success" onclick="takeScreenshot()">📸 Take Screenshot</button>
                 <button class="btn btn-primary" onclick="refreshFeed()">🔄 Refresh Feed</button>
+                <button id="cornerDetectionBtn" class="btn btn-warning" onclick="toggleCornerDetection()">🎯 Corner Detection</button>
                 <button class="btn btn-danger" onclick="clearImages()">🗑️ Clear Images</button>
             </div>
             
             <div id="statusMessage" class="status hidden"></div>
+            
+            <!-- Corner Detection Settings Modal -->
+            <div id="cornerDetectionModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>🎯 Chessboard Settings</h2>
+                        <span class="close" onclick="closeCornerDetectionModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label class="form-label" for="chessboardWidth">Chessboard Width (Grid Count)</label>
+                            <input type="number" id="chessboardWidth" class="form-input" value="12" min="2" max="50">
+                            <div class="form-help">Number of squares in horizontal direction</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label" for="chessboardHeight">Chessboard Height (Grid Count)</label>
+                            <input type="number" id="chessboardHeight" class="form-input" value="9" min="2" max="50">
+                            <div class="form-help">Number of squares in vertical direction</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="modal-btn modal-btn-cancel" onclick="closeCornerDetectionModal()">Cancel</button>
+                        <button class="modal-btn modal-btn-confirm" onclick="confirmCornerDetection()">Start Detection</button>
+                    </div>
+                </div>
+            </div>
             
             <div class="info-panel">
                 <h3>📊 System Status</h3>
@@ -565,7 +976,7 @@ class CameraCalibrationNode(Node):
         </div>
         
         <div class="sidebar">
-            <h4>📸 Recent Screenshots</h4>
+            <h4>Recent Screenshots</h4>
             <div id="thumbnailGrid" class="thumbnail-grid">
                 <!-- Thumbnails will be populated here -->
             </div>
@@ -574,6 +985,7 @@ class CameraCalibrationNode(Node):
 
     <script>
         let imageCount = 0;
+        let cornerDetectionEnabled = false;
 
         function showStatus(message, type = 'info') {
             const statusElement = document.getElementById('statusMessage');
@@ -585,6 +997,109 @@ class CameraCalibrationNode(Node):
                 statusElement.classList.add('hidden');
             }, 3000);
         }
+
+        function toggleCornerDetection() {
+            if (!cornerDetectionEnabled) {
+                // Show modal instead of prompt
+                showCornerDetectionModal();
+            } else {
+                // Disable corner detection
+                fetch('/toggle_corner_detection', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({enable: false})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        cornerDetectionEnabled = false;
+                        document.getElementById('cornerDetectionBtn').textContent = '🎯 Corner Detection';
+                        document.getElementById('cornerDetectionBtn').className = 'btn btn-warning';
+                        showStatus('Corner detection disabled', 'info');
+                    } else {
+                        showStatus('Failed to disable corner detection: ' + data.message, 'error');
+                    }
+                });
+            }
+        }
+
+        function showCornerDetectionModal() {
+            document.getElementById('cornerDetectionModal').style.display = 'block';
+            // Focus on first input
+            setTimeout(() => {
+                document.getElementById('chessboardWidth').focus();
+            }, 100);
+        }
+
+        function closeCornerDetectionModal() {
+            document.getElementById('cornerDetectionModal').style.display = 'none';
+        }
+
+        function confirmCornerDetection() {
+            const width = parseInt(document.getElementById('chessboardWidth').value);
+            const height = parseInt(document.getElementById('chessboardHeight').value);
+            
+            if (isNaN(width) || isNaN(height) || width <= 1 || height <= 1) {
+                showStatus('Please enter valid chessboard size (greater than 1)', 'error');
+                return;
+            }
+            
+            // Convert grid size to corner size (grid_size - 1)
+            const cornerWidth = width - 1;
+            const cornerHeight = height - 1;
+            
+            // Enable corner detection
+            fetch('/toggle_corner_detection', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    enable: true,
+                    chessboard_width: cornerWidth,
+                    chessboard_height: cornerHeight,
+                    grid_width: width,
+                    grid_height: height
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    cornerDetectionEnabled = true;
+                    document.getElementById('cornerDetectionBtn').textContent = '🛑 Stop Detection';
+                    document.getElementById('cornerDetectionBtn').className = 'btn btn-danger';
+                    showStatus(`Corner detection enabled (${width}×${height} grid, ${cornerWidth}×${cornerHeight} corners)`, 'success');
+                    closeCornerDetectionModal();
+                } else {
+                    showStatus('Failed to enable corner detection: ' + data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showStatus('Network request failed: ' + error.message, 'error');
+            });
+        }
+
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('cornerDetectionModal');
+            if (event.target === modal) {
+                closeCornerDetectionModal();
+            }
+        }
+
+        // Handle Enter key in modal inputs
+        document.addEventListener('DOMContentLoaded', function() {
+            const inputs = document.querySelectorAll('#cornerDetectionModal input');
+            inputs.forEach(input => {
+                input.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        confirmCornerDetection();
+                    }
+                });
+            });
+        });
 
         function takeScreenshot() {
             fetch('/take_screenshot', {method: 'POST'})
@@ -632,8 +1147,12 @@ class CameraCalibrationNode(Node):
                         thumbnailItem.className = 'thumbnail-item';
                         thumbnailItem.onclick = () => openImageModal(thumbnail.filename);
                         
-                        // 使用序号而不是时间戳，从最新的开始编号
-                        const sequenceNumber = String(index).padStart(4, '0');
+                        // 从文件名中提取序号 (格式: 序号.jpg)
+                        let sequenceNumber = '0';
+                        const nameWithoutExt = thumbnail.filename.replace('.jpg', '');
+                        if (/^\d+$/.test(nameWithoutExt)) {
+                            sequenceNumber = nameWithoutExt;
+                        }
                         
                         thumbnailItem.innerHTML = `
                             <img src="/thumbnail/${thumbnail.filename}" alt="${thumbnail.filename}" class="thumbnail-img">
@@ -728,6 +1247,19 @@ class CameraCalibrationNode(Node):
                     tcpPoseElement.textContent = '[-- mm, -- mm, -- mm, --°, --°, --°]';
                 }
                 
+                // Update corner detection status
+                if (data.corner_detection_enabled !== undefined) {
+                    cornerDetectionEnabled = data.corner_detection_enabled;
+                    const cornerBtn = document.getElementById('cornerDetectionBtn');
+                    if (cornerDetectionEnabled) {
+                        cornerBtn.textContent = '🛑 Stop Detection';
+                        cornerBtn.className = 'btn btn-danger';
+                    } else {
+                        cornerBtn.textContent = '🎯 Corner Detection';
+                        cornerBtn.className = 'btn btn-warning';
+                    }
+                }
+                
                 // Update thumbnails
                 updateThumbnails();
             })
@@ -770,26 +1302,89 @@ class CameraCalibrationNode(Node):
         
         @self.app.route('/clear_images', methods=['POST'])
         def clear_images():
-            """Clear all calibration images and angle files."""
+            """Clear all calibration images and JSON data files."""
             try:
-                import glob
-                # Clear image files
-                image_files = glob.glob(os.path.join(self.save_dir, 'screenshot_*.jpg'))
-                # Clear angle files
-                angle_files = glob.glob(os.path.join(self.save_dir, 'screenshot_*_angles.txt'))
+                # Clear image files (new format: 序号.jpg)
+                image_files = glob.glob(os.path.join(self.save_dir, '*.jpg'))
+                # Clear JSON files (序号.json)
+                json_files = glob.glob(os.path.join(self.save_dir, '*.json'))
                 
-                for file_path in image_files + angle_files:
+                # Filter to only remove numeric named files and their corresponding data files
+                numeric_image_files = []
+                for file_path in image_files:
+                    filename = os.path.basename(file_path)
+                    name_without_ext = filename.replace('.jpg', '')
+                    try:
+                        int(name_without_ext)  # Check if it's a numeric filename
+                        numeric_image_files.append(file_path)
+                    except ValueError:
+                        # Skip non-numeric files
+                        continue
+                
+                # Filter JSON files to only remove numeric named ones
+                numeric_json_files = []
+                for file_path in json_files:
+                    filename = os.path.basename(file_path)
+                    name_without_ext = filename.replace('.json', '')
+                    try:
+                        int(name_without_ext)  # Check if it's a numeric filename
+                        numeric_json_files.append(file_path)
+                    except ValueError:
+                        # Skip non-numeric files
+                        continue
+                
+                all_files_to_remove = numeric_image_files + numeric_json_files
+                
+                for file_path in all_files_to_remove:
                     os.remove(file_path)
                     
                 self.image_counter = 0
                 return jsonify({
                     'success': True,
-                    'message': f'Deleted {len(image_files)} images and {len(angle_files)} angle files'
+                    'message': f'Deleted {len(numeric_image_files)} images and {len(numeric_json_files)} JSON files'
                 })
             except Exception as e:
                 return jsonify({
                     'success': False,
                     'message': f'Delete failed: {str(e)}'
+                })
+        
+        @self.app.route('/toggle_corner_detection', methods=['POST'])
+        def toggle_corner_detection():
+            """Toggle corner detection mode."""
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                with self.corner_lock:
+                    if enable:
+                        # Get corner dimensions (actual corner count for detection)
+                        chessboard_width = data.get('chessboard_width', 11)
+                        chessboard_height = data.get('chessboard_height', 8)
+                        
+                        # Get grid dimensions (for display purposes)
+                        grid_width = data.get('grid_width', 12)
+                        grid_height = data.get('grid_height', 9)
+                        
+                        self.chessboard_size = (chessboard_width, chessboard_height)
+                        self.chessboard_grid_size = (grid_width, grid_height)
+                        self.corner_detection_enabled = True
+                        message = f'Corner detection enabled: {grid_width}x{grid_height} grid ({chessboard_width}x{chessboard_height} corners)'
+                    else:
+                        self.corner_detection_enabled = False
+                        message = 'Corner detection disabled'
+                
+                return jsonify({
+                    'success': True,
+                    'enabled': self.corner_detection_enabled,
+                    'chessboard_size': self.chessboard_size,
+                    'chessboard_grid_size': self.chessboard_grid_size,
+                    'message': message
+                })
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'Toggle failed: {str(e)}'
                 })
         
         @self.app.route('/get_status')
@@ -812,27 +1407,55 @@ class CameraCalibrationNode(Node):
             if last_update and (current_time - last_update) > 5:
                 robot_connected = False
             
+            # Get corner detection status
+            with self.corner_lock:
+                corner_detection_enabled = self.corner_detection_enabled
+                chessboard_size = self.chessboard_size
+                chessboard_grid_size = self.chessboard_grid_size
+            
+            # Get actual current image count from filesystem (real-time)
+            actual_image_count = self._get_current_image_count()
+            
             return jsonify({
-                'image_count': self.image_counter,
+                'image_count': actual_image_count,
                 'has_image': has_image,
                 'image_shape': image_shape,
                 'camera_topic': self.camera_topic,
                 'save_directory': os.path.abspath(self.save_dir),
                 'robot_connected': robot_connected,
                 'joint_angles': joint_angles,
-                'tcp_pose': tcp_pose
+                'tcp_pose': tcp_pose,
+                'corner_detection_enabled': corner_detection_enabled,
+                'chessboard_size': chessboard_size,
+                'chessboard_grid_size': chessboard_grid_size
             })
         
         @self.app.route('/get_thumbnails')
         def get_thumbnails():
             """Get list of recent screenshots for thumbnails."""
             try:
-                import glob
-                image_files = glob.glob(os.path.join(self.save_dir, 'screenshot_*.jpg'))
-                # Sort by modification time, newest first
-                image_files.sort(key=os.path.getmtime, reverse=True)
-                # Get only the last 8 files
-                recent_files = image_files[:8]
+                # Get all image files in new format (序号.jpg)
+                image_files = glob.glob(os.path.join(self.save_dir, '*.jpg'))
+                
+                # Filter and sort by numeric sequence (oldest first)
+                def extract_sequence_number(file_path):
+                    filename = os.path.basename(file_path)
+                    name_without_ext = filename.replace('.jpg', '')
+                    try:
+                        return int(name_without_ext)  # Get the numeric part
+                    except ValueError:
+                        return -1  # Non-numeric files go to the beginning
+                
+                # Filter out non-numeric files and sort
+                numeric_files = []
+                for file_path in image_files:
+                    seq_num = extract_sequence_number(file_path)
+                    if seq_num >= 0:  # Only include numeric files
+                        numeric_files.append(file_path)
+                
+                numeric_files.sort(key=extract_sequence_number, reverse=False)  # Oldest first
+                # Get only the last 10 files (most recent 10 by sequence number)
+                recent_files = numeric_files[-10:] if len(numeric_files) > 10 else numeric_files
                 
                 thumbnails = []
                 for file_path in recent_files:
@@ -897,6 +1520,11 @@ class CameraCalibrationNode(Node):
                     if self.current_image is not None:
                         frame = self.current_image.copy()
                         
+                        # Apply corner detection if enabled
+                        with self.corner_lock:
+                            if self.corner_detection_enabled:
+                                frame = self.apply_corner_detection(frame)
+                        
                         # Resize frame if too large for better streaming performance
                         height, width = frame.shape[:2]
                         if width > 800:
@@ -935,6 +1563,51 @@ class CameraCalibrationNode(Node):
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
                 
                 threading.Event().wait(1.0)  # Wait longer on error
+    
+    def apply_corner_detection(self, frame):
+        """Apply corner detection to the frame."""
+        try:
+            # Convert to grayscale for corner detection
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            # Find chessboard corners
+            ret, corners = cv2.findChessboardCorners(
+                gray, 
+                self.chessboard_size, 
+                flags=cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE + cv2.CALIB_CB_FAST_CHECK
+            )
+            
+            # Draw corners if found
+            if ret:
+                # Refine corners for better accuracy
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                corners_refined = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                
+                # Draw the corners
+                cv2.drawChessboardCorners(frame, self.chessboard_size, corners_refined, ret)
+                
+                # Add status text with grid and corner information
+                grid_info = f'{self.chessboard_grid_size[0]}x{self.chessboard_grid_size[1]} grid'
+                corner_info = f'{self.chessboard_size[0]}x{self.chessboard_size[1]} corners'
+                cv2.putText(frame, f'Corners Found: {len(corners)} ({grid_info}, {corner_info})', 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            else:
+                # Add status text when no corners found
+                grid_info = f'{self.chessboard_grid_size[0]}x{self.chessboard_grid_size[1]} grid'
+                corner_info = f'{self.chessboard_size[0]}x{self.chessboard_size[1]} corners'
+                cv2.putText(frame, f'No Corners Found ({grid_info}, {corner_info})', 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            
+            # Add corner detection indicator
+            cv2.putText(frame, 'Corner Detection: ON', 
+                       (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+            
+        except Exception as e:
+            # Add error text
+            cv2.putText(frame, f'Corner Detection Error: {str(e)[:50]}', 
+                       (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        
+        return frame
     
     def create_placeholder_image(self):
         """Create a placeholder image when no camera feed is available."""
@@ -988,7 +1661,7 @@ class CameraCalibrationNode(Node):
         return img
     
     def save_screenshot(self):
-        """Save the current camera image as a screenshot with joint angles."""
+        """Save the current camera image as a screenshot with joint angles in the new format."""
         with self.image_lock:
             if self.current_image is not None:
                 # Get current joint angles and TCP pose
@@ -997,81 +1670,104 @@ class CameraCalibrationNode(Node):
                     tcp_pose = self.tcp_pose.copy()
                     robot_connected = self.robot_connected
                 
-                # Generate filename with timestamp
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"screenshot_{timestamp}_{self.image_counter:04d}.jpg"
-                filepath = os.path.join(self.save_dir, filename)
+                # Find the next available sequence number
+                next_sequence = self._get_next_sequence_number()
+                
+                # Generate filenames with simple numeric format
+                image_filename = f"{next_sequence}.jpg"
+                json_filename = f"{next_sequence}.json"
+                
+                image_filepath = os.path.join(self.save_dir, image_filename)
+                json_filepath = os.path.join(self.save_dir, json_filename)
                 
                 # Save the image
-                success = cv2.imwrite(filepath, self.current_image)
+                success = cv2.imwrite(image_filepath, self.current_image)
                 
                 if success:
-                    # Save joint angles and TCP pose to text file
-                    data_filename = f"screenshot_{timestamp}_{self.image_counter:04d}_pose_data.txt"
-                    data_filepath = os.path.join(self.save_dir, data_filename)
-                    
+                    # Save joint angles and TCP pose data to JSON only
                     try:
-                        with open(data_filepath, 'w', encoding='utf-8') as f:
-                            f.write(f"Screenshot: {filename}\n")
-                            f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                            f.write(f"Robot Connected: {robot_connected}\n")
+                        if robot_connected and len(joint_angles) >= 6 and len(tcp_pose) >= 6:
+                            # TCP pose: convert position from mm to meters and rotation from degrees to radians
+                            tcp_pose_converted = [
+                                tcp_pose[0] / 1000.0,  # X in meters
+                                tcp_pose[1] / 1000.0,  # Y in meters  
+                                tcp_pose[2] / 1000.0,  # Z in meters
+                                math.radians(tcp_pose[3]),  # Rx in radians
+                                math.radians(tcp_pose[4]),  # Ry in radians
+                                math.radians(tcp_pose[5])   # Rz in radians
+                            ]
                             
-                            if robot_connected and len(joint_angles) >= 6:
-                                # Write joint angles
-                                f.write("\nJoint Angles (degrees):\n")
-                                for i, angle in enumerate(joint_angles[:6]):
-                                    f.write(f"  Joint {i+1}: {angle:.3f}°\n")
-                                angles_str = '[' + ', '.join([f'{angle:.3f}°' for angle in joint_angles[:6]]) + ']'
-                                f.write(f"Joint Angles Array: {angles_str}\n")
-                                
-                                # Write TCP pose
-                                if len(tcp_pose) >= 6:
-                                    f.write("\nTCP Pose:\n")
-                                    f.write(f"  X: {tcp_pose[0]:.1f} mm\n")
-                                    f.write(f"  Y: {tcp_pose[1]:.1f} mm\n")
-                                    f.write(f"  Z: {tcp_pose[2]:.1f} mm\n")
-                                    f.write(f"  Rx: {tcp_pose[3]:.3f}°\n")
-                                    f.write(f"  Ry: {tcp_pose[4]:.3f}°\n")
-                                    f.write(f"  Rz: {tcp_pose[5]:.3f}°\n")
-                                    tcp_str = '[' + ', '.join([f'{tcp_pose[i]:.1f} mm' if i < 3 else f'{tcp_pose[i]:.3f}°' for i in range(6)]) + ']'
-                                    f.write(f"TCP Pose Array: {tcp_str}\n")
-                                else:
-                                    f.write("\nTCP Pose: Not available\n")
-                            else:
-                                f.write("Joint Angles: Not available (robot disconnected)\n")
-                                f.write("TCP Pose: Not available (robot disconnected)\n")
-                    except Exception as e:
-                        self.get_logger().warning(f"Failed to save pose data: {e}")
+                            # Convert joint angles from degrees to radians
+                            joint_angles_rad = [math.radians(angle) for angle in joint_angles[:6]]
+                            
+                            # Create 4x4 transformation matrix
+                            transform_matrix = tcp_pose_to_transform_matrix(tcp_pose_converted)
+                            
+                            # Save TCP pose data and transformation matrix to JSON
+                            json_data = {
+                                "joint_angles": joint_angles_rad,  # Joint angles in radians
+                                "end_xyzrpy": {
+                                    "x": tcp_pose_converted[0],
+                                    "y": tcp_pose_converted[1], 
+                                    "z": tcp_pose_converted[2],
+                                    "rx": tcp_pose_converted[3],
+                                    "ry": tcp_pose_converted[4],
+                                    "rz": tcp_pose_converted[5]
+                                },
+                                "end2base": transform_matrix.tolist()
+                            }
+                            
+                            with open(json_filepath, 'w') as json_file:
+                                json.dump(json_data, json_file, indent=2)
+                            
+                            self.get_logger().info(f"Screenshot saved: {image_filepath}")
+                            self.get_logger().info(f"Robot data saved: {json_filepath}")
+                            
+                        else:
+                            # If robot not connected, save dummy JSON data
+                            json_data = {
+                                "joint_angles": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # Dummy joint angles
+                                "end_xyzrpy": {
+                                    "x": 0.0,
+                                    "y": 0.0,
+                                    "z": 0.0,
+                                    "rx": 0.0,
+                                    "ry": 0.0,
+                                    "rz": 0.0
+                                },
+                                "end2base": np.eye(4).tolist()
+                            }
+                            
+                            with open(json_filepath, 'w') as json_file:
+                                json.dump(json_data, json_file, indent=2)
+                            
+                            self.get_logger().warning(f"Robot disconnected - saved dummy data for {image_filename}")
                     
-                    self.image_counter += 1
+                    except Exception as e:
+                        self.get_logger().error(f"Failed to save JSON data: {e}")
+                        # If JSON save fails, at least we have the image
+                    
+                    # Update image_counter to next available sequence number for subsequent saves
+                    self.image_counter = self._get_next_sequence_number()
                     
                     # Create result message
                     if robot_connected and len(joint_angles) >= 6:
                         angles_str = '[' + ', '.join([f'{angle:.1f}°' for angle in joint_angles[:6]]) + ']'
                         if len(tcp_pose) >= 6:
                             tcp_str = f'[{tcp_pose[0]:.0f},{tcp_pose[1]:.0f},{tcp_pose[2]:.0f}mm; {tcp_pose[3]:.1f},{tcp_pose[4]:.1f},{tcp_pose[5]:.1f}°]'
-                            message = f'Screenshot saved: {filename} with angles: {angles_str} and TCP: {tcp_str}'
+                            message = f'Data saved: {image_filename}, {json_filename} - Angles: {angles_str}, TCP: {tcp_str}'
                         else:
-                            message = f'Screenshot saved: {filename} with angles: {angles_str}'
+                            message = f'Data saved: {image_filename}, {json_filename} - Angles: {angles_str}'
                     else:
-                        message = f'Screenshot saved: {filename} (no robot data)'
-                    
-                    self.get_logger().info(f"Screenshot saved: {filepath}")
-                    if robot_connected:
-                        if len(joint_angles) >= 6:
-                            angles_str = '[' + ', '.join([f'{angle:.1f}°' for angle in joint_angles[:6]]) + ']'
-                            self.get_logger().info(f"Joint angles recorded: {angles_str}")
-                        if len(tcp_pose) >= 6:
-                            tcp_str = f'TCP: [{tcp_pose[0]:.0f},{tcp_pose[1]:.0f},{tcp_pose[2]:.0f}mm; {tcp_pose[3]:.1f},{tcp_pose[4]:.1f},{tcp_pose[5]:.1f}°]'
-                            self.get_logger().info(f"TCP pose recorded: {tcp_str}")
+                        message = f'Data saved: {image_filename}, {json_filename} (no robot data - dummy data saved)'
                     
                     return {
                         'success': True,
-                        'filename': filename,
+                        'filename': image_filename,
                         'message': message
                     }
                 else:
-                    self.get_logger().error(f"Failed to save screenshot: {filepath}")
+                    self.get_logger().error(f"Failed to save screenshot: {image_filepath}")
                     return {
                         'success': False,
                         'message': 'Failed to save screenshot'
@@ -1099,6 +1795,24 @@ def main():
     # Initialize ROS2
     rclpy.init()
     
+    calibration_node = None
+    
+    def signal_handler(sig, frame):
+        """Handle Ctrl+C signal."""
+        print("\n👋 User requested shutdown")
+        if calibration_node:
+            print("🔄 Shutting down camera node...")
+            calibration_node._cleanup_camera_node()
+            print("🔄 Shutting down web server...")
+            calibration_node.shutdown_flask()
+            calibration_node.destroy_node()
+        rclpy.shutdown()
+        print("🔄 Cleanup completed")
+        exit(0)
+    
+    # Register signal handler
+    signal.signal(signal.SIGINT, signal_handler)
+    
     try:
         # Create and run the calibration node
         calibration_node = CameraCalibrationNode(
@@ -1111,7 +1825,8 @@ def main():
         print(f"📷 Camera Topic: {args.topic}")
         print(f"💾 Save Directory: {os.path.abspath(args.save_dir)}")
         print(f"🌐 Web Interface: http://localhost:{calibration_node.web_port}")
-        print("💡 Open the above link in your browser to start using")
+        print("� Camera node automatically started")
+        print("�💡 Open the above link in your browser to start using")
         print("⏹️  Press Ctrl+C to exit\n")
         
         # Keep the node running
@@ -1123,7 +1838,9 @@ def main():
         print(f"❌ Error: {e}")
     finally:
         # Cleanup
-        if 'calibration_node' in locals():
+        if calibration_node:
+            print("🔄 Shutting down camera node...")
+            calibration_node._cleanup_camera_node()
             print("🔄 Shutting down web server...")
             calibration_node.shutdown_flask()
             calibration_node.destroy_node()
