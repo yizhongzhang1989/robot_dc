@@ -27,7 +27,7 @@ def get_objpoints(num_images: int, XX: int, YY: int, L: float) -> Sequence[Array
 def calculate_reproject_error_fast(imgpoints, objpoints, 
                                    rvecs_target2cam, tvecs_target2cam, mtx, dist, 
                                    image_paths=None, XX=None, YY=None, vis=False, save_fig=False, save_dir='../colcon_ws/src/camera_calibrate/output',
-                                   verbose=True):
+                                   verbose=False):
 
     num_images = len(imgpoints)
     
@@ -65,7 +65,7 @@ def calculate_reproject_error_fast(imgpoints, objpoints,
     return mean_error/len(objpoints)
 
 # calculate the reprojection error of single image
-def calculate_single_image_reprojection_error(image_path, rvec_target2cam, tvec_target2cam, mtx, dist, XX, YY, L, vis=False, save_fig=False, save_dir='../colcon_ws/src/camera_calibrate/output', verbose=True):
+def calculate_single_image_reprojection_error(image_path, rvec_target2cam, tvec_target2cam, mtx, dist, XX, YY, L, vis=False, save_fig=False, save_dir='../colcon_ws/src/camera_calibrate/output', verbose=False):
     
     imgpoints = get_chessboard_corners([image_path], XX, YY)
     
@@ -137,7 +137,7 @@ def calibrate_camera(image_path_list: List[str], corners_3d_list: List[List[floa
                   find_chessboard_corners_flags: int = cv2.CALIB_CB_ADAPTIVE_THRESH+cv2.CALIB_CB_FAST_CHECK+cv2.CALIB_CB_NORMALIZE_IMAGE,
                   corner_refine_criteria=(cv2.TERM_CRITERIA_MAX_ITER | cv2.TERM_CRITERIA_EPS, 30, 0.001), 
                   corner_refine_winsize=(11, 11),
-                  verbose=True) \
+                  verbose=False) \
     -> Tuple[bool, np.array, np.array, np.array, np.array]:
 
     imgpoints = []
@@ -175,7 +175,7 @@ def _calibrate_intrinsic_camera_parameters(
     XX: int, 
     YY: int, 
     L: float,
-    verbose: bool=True
+    verbose: bool=False
 ) -> Tuple[ArrayLike, ArrayLike]:
     
     # generate 3D positions of corners
@@ -186,7 +186,7 @@ def _calibrate_intrinsic_camera_parameters(
     return mtx, dist
 
 # calculate the extrinsic params
-def _calibrate_extrinsic_camera_parameters(extrinsic_calib_image_paths, XX, YY, L, verbose=True):
+def _calibrate_extrinsic_camera_parameters(extrinsic_calib_image_paths, XX, YY, L, verbose=False):
 
     objpoints = get_objpoints(len(extrinsic_calib_image_paths), XX, YY, L)
 
@@ -381,7 +381,7 @@ def load_calibration_images_pose(HANDEYE_CALIB_DATA_DIR, selected_idxs=None):
     return np.array(base2end_Ms), np.array(end2base_Ms)
 
 # the main function of eye in hand calibration
-def calibrate_camera_eyeinhand(calib_image_paths, end2base_Ms, XX, YY, L, mtx, dist, verbose=True):
+def calibrate_camera_eyeinhand(calib_image_paths, end2base_Ms, XX, YY, L, mtx, dist, verbose=False):
 
     # check if the needed data has been loaded
     if mtx is None or dist is None:
@@ -882,11 +882,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Eye-in-Hand Calibration")
 
     parser.add_argument("--calib_data_dir", required=True, help="Path to calibration images folder")
-    parser.add_argument("--calib_out_dir", required=True, help="Path to output folder for calibration parameters")
     parser.add_argument("--xx", type=int, required=True, help="Number of corners along chessboard X axis")
     parser.add_argument("--yy", type=int, required=True, help="Number of corners along chessboard Y axis")
     parser.add_argument("--square_size", type=float, required=True, help="Size of one chessboard square in meters")
-    parser.add_argument("--reproj_out_dir", required=False, help="(Optional) Output folder for reprojection visualization")
+    parser.add_argument("--calib_out_dir", required=True, help="Path to output folder for calibration parameters")
+    parser.add_argument("--reproj_out_dir", required=True, help="(Optional) Output folder for reprojection visualization")
 
     args = parser.parse_args()
 
