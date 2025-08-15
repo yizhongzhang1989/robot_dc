@@ -4,3 +4,4 @@ fastapi
 uvicorn[standard]
 websockets>=10.0
 flask
+nlopt
