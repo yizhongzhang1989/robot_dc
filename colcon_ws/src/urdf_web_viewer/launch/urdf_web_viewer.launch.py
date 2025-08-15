@@ -15,8 +15,8 @@ def generate_launch_description():
     
     urdf_file_arg = DeclareLaunchArgument(
         'urdf_file',
-        default_value='/home/a/Documents/robot_dc/colcon_ws/src/duco_gcr5_910_urdf/urdf/duco_gcr5_910_urdf.urdf',
-        description='Full path to the URDF file'
+        default_value='',  # Empty string will trigger auto-discovery in the node
+        description='Full path to the URDF file (leave empty for auto-discovery)'
     )
     
     # URDF Web Server Node
