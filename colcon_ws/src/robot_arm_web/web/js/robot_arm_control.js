@@ -797,12 +797,82 @@ function updateRobotStateDisplay(state) {
         document.getElementById('floatRegisterOutput').innerHTML = regHtml;
     }
 
+    // Update Tool Status (Bool Register Output bits 1-5 corresponding to frames 1104-1119)
+    // Five items: 4 tools + 1 program status from first 5 bits of boolRegisterOutput
+    if (state.boolRegisterOutput && Array.isArray(state.boolRegisterOutput)) {
+        updateToolStatus(state.boolRegisterOutput);
+    } else {
+        // If no data available, set all tools to AWAY and program to RUNNING
+        updateToolStatus([false, false, false, false, false]);
+    }
+
     // Update last update time
     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
     document.getElementById('dataStatus').textContent = 'Active';
     document.getElementById('dataStatus').className = 'normal-indicator';
 
     // Update 3D visualization - removed duplicate TCP update to prevent flickering
+}
+
+// Update Tool Status based on Bool Register Output (frames 1104-1119, first 5 bits)
+function updateToolStatus(boolRegisterOutput) {
+    // Tool mapping: Jaw (bit 1), Holder (bit 2), StickP (bit 3), StickR (bit 4), Program (bit 5)
+    // Using the first 5 bits of the boolRegisterOutput array
+    const tools = [
+        { id: 'jawStatus', name: 'Jaw', bit: 0 },        // Bit 1 (index 0)
+        { id: 'holderStatus', name: 'Holder', bit: 1 },  // Bit 2 (index 1)
+        { id: 'stickPStatus', name: 'StickP', bit: 2 },  // Bit 3 (index 2)
+        { id: 'stickRStatus', name: 'StickR', bit: 3 },  // Bit 4 (index 3)
+        { id: 'programStatus', name: 'Program', bit: 4 } // Bit 5 (index 4) - inverted logic
+    ];
+
+    tools.forEach(tool => {
+        const statusElement = document.getElementById(tool.id);
+        if (statusElement) {
+            let isActive;
+            
+            // Program status has inverted logic: 0=running, 1=completed
+            if (tool.id === 'programStatus') {
+                isActive = boolRegisterOutput[tool.bit] === false || boolRegisterOutput[tool.bit] === 0;
+            } else {
+                isActive = boolRegisterOutput[tool.bit] === true || boolRegisterOutput[tool.bit] === 1;
+            }
+            
+            // Update status dot
+            const statusDot = statusElement.querySelector('.status-dot');
+            const statusText = statusElement.querySelector('.status-text');
+            
+            if (statusDot && statusText) {
+                if (tool.id === 'programStatus') {
+                    // Program status: active=running, inactive=completed
+                    if (isActive) {
+                        statusDot.classList.remove('inactive');
+                        statusDot.classList.add('active');
+                        statusText.classList.add('active');
+                        statusText.textContent = 'COMPLETED';
+                    } else {
+                        statusDot.classList.remove('active');
+                        statusDot.classList.add('inactive');
+                        statusText.classList.remove('active');
+                        statusText.textContent = 'RUNNING';
+                    }
+                } else {
+                    // Tool status: active=home, inactive=away
+                    if (isActive) {
+                        statusDot.classList.remove('inactive');
+                        statusDot.classList.add('active');
+                        statusText.classList.add('active');
+                        statusText.textContent = 'HOME';
+                    } else {
+                        statusDot.classList.remove('active');
+                        statusDot.classList.add('inactive');
+                        statusText.classList.remove('active');
+                        statusText.textContent = 'AWAY';
+                    }
+                }
+            }
+        }
+    });
 }
 
 // Update Move Control Display Section
@@ -2004,6 +2074,44 @@ async function sendFTCCommand(command, parameter = null) {
             statusElement.textContent = 'Ready to send FTC commands';
             statusElement.className = 'text-sm text-gray-600';
         }, 3000);
+    }
+}
+
+// Send Task command to robot arm using appropriate robot commands
+async function sendTaskCommand(command) {
+    // Map task commands to actual robot commands
+    const taskCommands = {
+        'arm_move2zero': [
+            'movej2 [0.0,0.0,0.0,0.0,0.0,0.0] 1.5 1.0 0.0 true',
+            'movej2 [1.1504,-0.4533,1.3090,0.8081,-1.6195,-1.9460] 1.5 1.0 0.0 true'  // Convert degrees to radians
+        ],
+        'task_zero2stickP': 'run_program zero2stickP.jspf true',
+        'task_stickP2zero': 'run_program stickP2zero.jspf true',
+        'task_zero2stickR': 'run_program zero2stickR.jspf true',
+        'task_stickR2zero': 'run_program stickR2zero.jspf true',
+        'task_zero2jaw': 'run_program zero2jaw.jspf true',
+        'task_jaw2zero': 'run_program jaw2zero.jspf true',
+        'task_zero2holder': 'run_program zero2holder.jspf true',
+        'task_holder2zero': 'run_program holder2zero.jspf true',
+        'task_pushbox': 'run_program task_pushbox.jspf true'
+    };
+    
+    if (command in taskCommands) {
+        const robotCommands = taskCommands[command];
+        
+        if (Array.isArray(robotCommands)) {
+            // For arm_move2zero, send multiple commands sequentially
+            for (const robotCommand of robotCommands) {
+                await sendCommand(robotCommand);
+                // Add a small delay between commands
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        } else {
+            // For other tasks, send single command
+            await sendCommand(robotCommands);
+        }
+    } else {
+        console.error(`Unknown task command: ${command}`);
     }
 }
 

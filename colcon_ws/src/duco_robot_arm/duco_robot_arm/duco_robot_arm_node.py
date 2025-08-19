@@ -203,6 +203,21 @@ class DucoRobotArmNode(Node):
                     else:
                         self.get_logger().error("Invalid pose list format for TCP Move")
                         
+                case "run_program":
+                    # Parse run_program command: run_program program_name [block]
+                    if len(parts) < 2:
+                        self.get_logger().error("run_program command requires program name")
+                        return
+                        
+                    program_name = parts[1]
+                    block = True  # Default to blocking
+                    if len(parts) > 2:
+                        block_str = parts[2].lower()
+                        block = block_str == 'true'
+                    
+                    res = self.robot.run_program(program_name, block)
+                    self.get_logger().info(f"run_program '{program_name}' executed: {res}")
+                        
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")
                     
