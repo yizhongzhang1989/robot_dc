@@ -934,86 +934,237 @@ function updateToolControlButtons(boolRegisterOutput, forceUpdate = false) {
     }
 }
 
-// Find shortest path using BFS algorithm (similar to duco_test_tool.py)
-function findShortestPath(currentState, targetState, validStates) {
-    // Convert states to string for comparison
-    const currentStateStr = currentState.join(',');
-    const targetStateStr = targetState.join(',');
-    
-    // If already at target state
-    if (currentStateStr === targetStateStr) {
-        return [];
+// Tool State Manager Class (similar to Python version)
+class ToolStateManager {
+    constructor() {
+        // Define valid states (根据物理约束分析)
+        this.validStates = new Set([
+            '1,1,1,1',  // 1111 - 默认状态，所有工具在原位
+            '0,1,1,1',  // 0111 - 只取gripper（正在使用gripper）
+            '1,0,1,1',  // 1011 - 只取frame（正在使用frame）
+            '0,1,0,1',  // 0101 - 取gripper后夹取stickP（准备使用stickP）
+            '0,1,1,0',  // 0110 - 取gripper后夹取stickR（准备使用stickR）
+            '0,0,1,1',  // 0011 - 先取frame，再取gripper
+            '0,0,0,1',  // 0001 - 先取frame，再取gripper，然后夹取stickP
+            '0,0,1,0'   // 0010 - 先取frame，再取gripper，然后夹取stickR
+        ]);
     }
-    
-    // BFS queue: [state, path]
-    const queue = [[currentState.slice(), []]];
-    const visited = new Set([currentStateStr]);
-    
-    // Define all possible actions (same as duco_test_tool.py)
-    const actions = [
-        {
-            name: 'zero2gripper',
-            apply: (state) => state[0] === 1 ? [0, state[1], state[2], state[3]] : null
-        },
-        {
-            name: 'gripper2zero', 
-            apply: (state) => state[0] === 0 ? [1, state[1], state[2], state[3]] : null
-        },
-        {
-            name: 'zero2frame',
-            apply: (state) => state[1] === 1 ? [state[0], 0, state[2], state[3]] : null
-        },
-        {
-            name: 'frame2zero',
-            apply: (state) => state[1] === 0 ? [state[0], 1, state[2], state[3]] : null
-        },
-        {
-            name: 'zero2stickP',
-            apply: (state) => state[2] === 1 ? [state[0], state[1], 0, state[3]] : null
-        },
-        {
-            name: 'stickP2zero',
-            apply: (state) => state[2] === 0 ? [state[0], state[1], 1, state[3]] : null
-        },
-        {
-            name: 'zero2stickR',
-            apply: (state) => state[3] === 1 ? [state[0], state[1], state[2], 0] : null
-        },
-        {
-            name: 'stickR2zero',
-            apply: (state) => state[3] === 0 ? [state[0], state[1], state[2], 1] : null
-        }
-    ];
-    
-    while (queue.length > 0) {
-        const [currentState, path] = queue.shift();
-        
-        // Try all possible actions
-        for (const action of actions) {
-            const newState = action.apply(currentState);
-            
-            if (newState) {
-                const newStateStr = newState.join(',');
+
+    // 根据按钮操作计算目标状态 (动态计算，类似Python版本)
+    calculateTargetState(currentState, button) {
+        let targetState = currentState.slice(); // 复制当前状态
+
+        if (button === 'gripper') {  // A: gripper取反
+            targetState[0] = 1 - targetState[0];
+            // 如果gripper要被放回，那么stickP和stickR也必须放回
+            if (targetState[0] === 1) {  // gripper被放回
+                targetState[2] = 1;  // stickP必须放回
+                targetState[3] = 1;  // stickR必须放回
+            }
+        } else if (button === 'frame') {  // B: frame取反
+            // 关键约束：gripper正在使用时，不能操作frame
+            if (currentState[0] === 0) {  // gripper取出状态
+                // 先计算理想的frame取反结果
+                const idealFrameState = 1 - currentState[1];
                 
-                // Check if new state is valid and not visited
-                if (validStates.has(newStateStr) && !visited.has(newStateStr)) {
-                    const newPath = [...path, action.name];
+                // 必须先放回所有工具到1111状态，然后重新按需取出
+                targetState = [1, 1, 1, 1];  // 先全部放回
+                
+                // 然后设置最终需要的状态
+                targetState[1] = idealFrameState;  // frame按需求设置
+                
+                // 如果之前有stickP或stickR被取出，需要重新取出gripper和对应的stick
+                if (currentState[2] === 0) {  // 之前stickP被取出
+                    targetState[0] = 0;  // 重新取出gripper
+                    targetState[2] = 0;  // 重新取出stickP
+                } else if (currentState[3] === 0) {  // 之前stickR被取出
+                    targetState[0] = 0;  // 重新取出gripper  
+                    targetState[3] = 0;  // 重新取出stickR
+                }
+            } else {
+                // gripper在位时可以正常操作frame
+                targetState[1] = 1 - targetState[1];
+            }
+        } else if (button === 'stickP') {  // C: gripper置0，stickP取反
+            targetState[0] = 0;  // gripper强制取出
+            
+            // 如果stickR已经取出，需要先放回stickR（互斥约束）
+            if (currentState[3] === 0) {
+                targetState[3] = 1;  // 放回stickR
+            }
+            
+            targetState[2] = 1 - currentState[2];  // stickP取反
+        } else if (button === 'stickR') {  // D: gripper置0，stickR取反
+            targetState[0] = 0;  // gripper强制取出
+            
+            // 如果stickP已经取出，需要先放回stickP（互斥约束）
+            if (currentState[2] === 0) {
+                targetState[2] = 1;  // 放回stickP
+            }
+            
+            targetState[3] = 1 - currentState[3];  // stickR取反
+        } else if (button === 'homing') {
+            targetState = [1, 1, 1, 1];  // 归位到默认状态
+        }
+
+        return targetState;
+    }
+
+    // 检查在当前状态下是否允许执行某个动作
+    isActionAllowed(currentState, actionName) {
+        // 关键约束：gripper正在使用时，不能操作frame（取出或放回）
+        if ((actionName === 'zero2frame' || actionName === 'frame2zero') && currentState[0] === 0) {
+            return false;  // gripper已取出时不能操作frame
+        }
+        
+        // stickP和stickR只有在gripper被取出时才能夹取
+        if (actionName === 'zero2stickP' && currentState[0] === 1) {
+            return false;  // gripper在位时不能取stickP
+        }
+        
+        if (actionName === 'zero2stickR' && currentState[0] === 1) {
+            return false;  // gripper在位时不能取stickR
+        }
+        
+        // 不能同时取stickP和stickR
+        if (actionName === 'zero2stickP' && currentState[3] === 0) {
+            return false;  // stickR已取出时不能取stickP
+        }
+        
+        if (actionName === 'zero2stickR' && currentState[2] === 0) {
+            return false;  // stickP已取出时不能取stickR
+        }
+        
+        return true;
+    }
+
+    // 使用BFS找到从当前状态到目标状态的最短路径 (增强版，包含约束检查)
+    findShortestPath(currentState, targetState) {
+        // Convert states to string for comparison
+        const currentStateStr = currentState.join(',');
+        const targetStateStr = targetState.join(',');
+        
+        // If already at target state
+        if (currentStateStr === targetStateStr) {
+            return [];
+        }
+        
+        // BFS queue: [state, path]
+        const queue = [[currentState.slice(), []]];
+        const visited = new Set([currentStateStr]);
+        
+        // Define all possible actions
+        const actions = [
+            {
+                name: 'zero2gripper',
+                apply: (state) => state[0] === 1 ? [0, state[1], state[2], state[3]] : null
+            },
+            {
+                name: 'gripper2zero', 
+                apply: (state) => state[0] === 0 ? [1, state[1], state[2], state[3]] : null
+            },
+            {
+                name: 'zero2frame',
+                apply: (state) => state[1] === 1 ? [state[0], 0, state[2], state[3]] : null
+            },
+            {
+                name: 'frame2zero',
+                apply: (state) => state[1] === 0 ? [state[0], 1, state[2], state[3]] : null
+            },
+            {
+                name: 'zero2stickP',
+                apply: (state) => state[2] === 1 ? [state[0], state[1], 0, state[3]] : null
+            },
+            {
+                name: 'stickP2zero',
+                apply: (state) => state[2] === 0 ? [state[0], state[1], 1, state[3]] : null
+            },
+            {
+                name: 'zero2stickR',
+                apply: (state) => state[3] === 1 ? [state[0], state[1], state[2], 0] : null
+            },
+            {
+                name: 'stickR2zero',
+                apply: (state) => state[3] === 0 ? [state[0], state[1], state[2], 1] : null
+            }
+        ];
+        
+        while (queue.length > 0) {
+            const [currentState, path] = queue.shift();
+            
+            // Try all possible actions
+            for (const action of actions) {
+                const newState = action.apply(currentState);
+                
+                if (newState) {
+                    const newStateStr = newState.join(',');
                     
-                    // If reached target state
-                    if (newStateStr === targetStateStr) {
-                        return newPath;
+                    // Check if new state is valid and not visited
+                    if (this.validStates.has(newStateStr) && !visited.has(newStateStr)) {
+                        // 额外约束检查：确保动作符合业务逻辑
+                        if (this.isActionAllowed(currentState, action.name)) {
+                            const newPath = [...path, action.name];
+                            
+                            // If reached target state
+                            if (newStateStr === targetStateStr) {
+                                return newPath;
+                            }
+                            
+                            queue.push([newState, newPath]);
+                            visited.add(newStateStr);
+                        }
                     }
-                    
-                    queue.push([newState, newPath]);
-                    visited.add(newStateStr);
                 }
             }
         }
+        
+        // No path found
+        return ['No valid path found'];
     }
-    
-    // No path found
-    return ['No valid path found'];
+
+    // Reset to default state (similar to Python version)
+    resetToDefault(currentState) {
+        const targetState = [1, 1, 1, 1]; // Default state
+        const currentStateStr = currentState.join('');
+        const targetStateStr = "1111";
+        
+        // If already at default state
+        if (currentStateStr === targetStateStr) {
+            return [];
+        }
+        
+        const path = [];
+        let current = currentState.slice();
+        
+        // 按正确顺序放回工具：stickP和stickR必须在gripper之前放回
+        // 1. 先放回stickP和stickR
+        if (current[2] === 0) {  // stickP被取出
+            path.push('stickP2zero');
+            current[2] = 1;
+        }
+        
+        if (current[3] === 0) {  // stickR被取出
+            path.push('stickR2zero');
+            current[3] = 1;
+        }
+        
+        // 2. 然后放回gripper和frame
+        if (current[0] === 0) {  // gripper被取出
+            path.push('gripper2zero');
+            current[0] = 1;
+        }
+        
+        if (current[1] === 0) {  // frame被取出
+            path.push('frame2zero');
+            current[1] = 1;
+        }
+        
+        return path;
+    }
 }
+
+// Create global tool state manager instance
+const toolStateManager = new ToolStateManager();
 
 // Handle tool control button clicks
 function handleToolControlClick(toolType) {
@@ -1028,24 +1179,6 @@ function handleToolControlClick(toolType) {
     // Set click active flag
     toolControlClickActive = true;
     
-    // Define target states based on duco_test_tool.py
-    const targetStates = {
-        'gripper': [0, 1, 1, 1],      // A: gripper
-        'frame': [1, 0, 1, 1],   // B: frame  
-        'stickP': [0, 1, 0, 1],   // C: gripper + stickP
-        'stickR': [0, 1, 1, 0],   // D: gripper + stickR
-        'homing': [1, 1, 1, 1]    // Reset to default state
-    };
-    
-    // Define valid states
-    const validStates = new Set([
-        '1,1,1,1',  // 1111 - All tools are at home position
-        '0,1,1,1',  // 0111 - Get Gripper
-        '1,0,1,1',  // 1011 - Get Frame
-        '0,1,0,1',  // 0101 - Get StickP(must operate after get gripper)
-        '0,1,1,0'   // 0110 - Get StickR(must operate after get gripper)
-    ]);
-    
     // Get current robot state to display tool status
     if (robotStateData && robotStateData.boolRegisterOutput) {
         const boolRegisterOutput = robotStateData.boolRegisterOutput;
@@ -1055,10 +1188,25 @@ function handleToolControlClick(toolType) {
         const stickRState = boolRegisterOutput[3] ? 1 : 0;
         
         const currentState = [gripperState, frameState, stickPState, stickRState];
-        const targetState = targetStates[toolType] || [1, 1, 1, 1];
         
-        // Find shortest path using BFS (similar to duco_test_tool.py)
-        const path = findShortestPath(currentState, targetState, validStates);
+        let path, targetState;
+        
+        // Calculate target state dynamically based on current state and button (like Python version)
+        if (toolType === 'homing') {
+            // Use special reset logic for homing
+            path = toolStateManager.resetToDefault(currentState);
+            targetState = [1, 1, 1, 1];
+        } else {
+            targetState = toolStateManager.calculateTargetState(currentState, toolType);
+            
+            console.log(`Current state: ${currentState.join('')}`);
+            console.log(`Target state: ${targetState.join('')}`);
+            
+            // Find shortest path using enhanced BFS with constraint checking
+            path = toolStateManager.findShortestPath(currentState, targetState);
+        }
+        
+        console.log(`Tool: ${toolType}, Current: ${currentState.join('')}, Target: ${targetState.join('')}, Path: ${path.join(' → ')}`);
         
         // Create tool name mapping for display
         const toolDisplayNames = {
@@ -1251,7 +1399,7 @@ async function sendToolControlAPI(toolType, options = {}) {
 }
 
 // Wait for robot program to complete execution by monitoring boolRegisterOutput[4]
-async function waitForProgramCompletion(timeout = 100000) {
+async function waitForProgramCompletion(timeout = 300000) {
     return new Promise((resolve, reject) => {
         const startTime = Date.now();
         const maxWaitTime = timeout; // Maximum wait time in milliseconds
