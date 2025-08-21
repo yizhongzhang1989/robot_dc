@@ -2540,6 +2540,7 @@ async function sendTaskCommand(command) {
         'task_zero2frame': 'run_program zero2holder.jspf true',
         'task_frame2zero': 'run_program holder2zero.jspf true',
         'task_rotate': 'run_program task_rotate.jspf true',
+        'task_pull': 'run_program task_pull.jspf true',
         'task_pushbox': 'run_program task_pushbox.jspf true'
     };
     
@@ -2559,6 +2560,133 @@ async function sendTaskCommand(command) {
         }
     } else {
         console.error(`Unknown task command: ${command}`);
+    }
+}
+
+// Send Extract Server composite task - combines task_rotate, get_stickP, and task_pull
+async function sendExtractServerTask() {
+    console.log('Starting Extract Server composite task...');
+    
+    try {
+        // Update status to show sequence started
+        const statusElement = document.getElementById('commandStatus');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Executing Extract Server sequence...</div>';
+        }
+        
+        // Step 1: Execute task_rotate
+        console.log('Step 1/3: Executing task_rotate...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 1/3: Rotating...</div>';
+        }
+        await sendTaskCommand('task_rotate');
+        await waitForProgramCompletion();
+        console.log('Step 1/3: task_rotate completed');
+        
+        // Step 2: Execute get_stickP operation
+        console.log('Step 2/3: Executing get_stickP...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 2/3: Getting StickP...</div>';
+        }
+        await executeGetStickP();
+        console.log('Step 2/3: get_stickP completed');
+        
+        // Step 3: Execute task_pull
+        console.log('Step 3/3: Executing task_pull...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 3/3: Pulling...</div>';
+        }
+        await sendTaskCommand('task_pull');
+        await waitForProgramCompletion();
+        console.log('Step 3/3: task_pull completed');
+        
+        // Update status to show completion
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-green-600 font-medium">✅ Extract Server sequence completed successfully</div>';
+            setTimeout(() => {
+                statusElement.innerHTML = 'Ready to send commands';
+                statusElement.className = 'text-sm text-gray-600';
+            }, 5000);
+        }
+        
+        console.log('Extract Server composite task completed successfully');
+        logCommand('Extract Server', 'Composite task completed', 'success');
+        
+    } catch (error) {
+        console.error('Error executing Extract Server task:', error);
+        const statusElement = document.getElementById('commandStatus');
+        if (statusElement) {
+            statusElement.innerHTML = `<div class="text-red-600 font-medium">❌ Error: ${error.message}</div>`;
+            setTimeout(() => {
+                statusElement.innerHTML = 'Ready to send commands';
+                statusElement.className = 'text-sm text-gray-600';
+            }, 5000);
+        }
+        logCommand('Extract Server', `Error: ${error.message}`, 'error');
+    }
+}
+
+// Execute get_stickP operation (simulate clicking the get_stickP button)
+async function executeGetStickP() {
+    console.log('Executing get_stickP operation...');
+    
+    // Get current robot state to determine the path for stickP
+    if (robotStateData && robotStateData.boolRegisterOutput) {
+        const boolRegisterOutput = robotStateData.boolRegisterOutput;
+        const gripperState = boolRegisterOutput[0] ? 1 : 0;
+        const frameState = boolRegisterOutput[1] ? 1 : 0;
+        const stickPState = boolRegisterOutput[2] ? 1 : 0;
+        const stickRState = boolRegisterOutput[3] ? 1 : 0;
+        
+        const currentState = [gripperState, frameState, stickPState, stickRState];
+        const targetState = [0, 1, 0, 1];  // Target state for stickP: gripper + stickP
+        
+        // Define valid states
+        const validStates = new Set([
+            '1,1,1,1',  // 1111 - All tools are at home position
+            '0,1,1,1',  // 0111 - Get Gripper
+            '1,0,1,1',  // 1011 - Get Frame
+            '0,1,0,1',  // 0101 - Get StickP(must operate after get gripper)
+            '0,1,1,0'   // 0110 - Get StickR(must operate after get gripper)
+        ]);
+        
+        // Find shortest path to get stickP
+        const path = findShortestPath(currentState, targetState, validStates);
+        
+        if (path.length > 0 && path[0] !== 'No valid path found') {
+            console.log('Executing stickP path:', path);
+            
+            // Map BFS action names to task command names
+            const actionToTaskCommand = {
+                'zero2gripper': 'task_zero2gripper',
+                'gripper2zero': 'task_gripper2zero',
+                'zero2frame': 'task_zero2frame',
+                'frame2zero': 'task_frame2zero',
+                'zero2stickP': 'task_zero2stickP',
+                'stickP2zero': 'task_stickP2zero',
+                'zero2stickR': 'task_zero2stickR',
+                'stickR2zero': 'task_stickR2zero'
+            };
+            
+            // Execute each action in sequence
+            for (let i = 0; i < path.length; i++) {
+                const action = path[i];
+                const taskCommand = actionToTaskCommand[action];
+                
+                if (taskCommand) {
+                    console.log(`Executing stickP step ${i + 1}/${path.length}: ${action} -> ${taskCommand}`);
+                    await sendTaskCommand(taskCommand);
+                    await waitForProgramCompletion();
+                    console.log(`Completed stickP step ${i + 1}/${path.length}: ${action}`);
+                } else {
+                    throw new Error(`Unknown action: ${action}`);
+                }
+            }
+        } else {
+            console.log('StickP already at target state or no valid path found');
+        }
+    } else {
+        throw new Error('Robot state data not available');
     }
 }
 
