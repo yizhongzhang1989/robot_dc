@@ -902,7 +902,9 @@ function updateToolControlButtons(boolRegisterOutput, forceUpdate = false) {
         'holderControlBtn', 
         'stickPControlBtn',
         'stickRControlBtn',
-        'homingToolsBtn'
+        'homingToolsBtn',
+        'rotateBtn',
+        'pushBoxBtn'
     ];
     
     const statusElement = document.getElementById('toolControlStatus');
