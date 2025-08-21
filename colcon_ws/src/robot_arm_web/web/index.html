@@ -1198,22 +1198,22 @@
             </div>
           </div>
           
-          <!-- Jaw Status -->
+          <!-- Gripper Status -->
           <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-600">🤏 Jaw</span>
-              <div id="jawStatus" class="tool-status-indicator">
+              <span class="text-sm font-medium text-gray-600">🤏 Gripper</span>
+              <div id="gripperStatus" class="tool-status-indicator">
                 <span class="status-dot inactive"></span>
                 <span class="status-text">AWAY</span>
               </div>
             </div>
           </div>
           
-          <!-- Holder Status -->
+          <!-- Frame Status -->
           <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-600">🗄️ Holder</span>
-              <div id="holderStatus" class="tool-status-indicator">
+              <span class="text-sm font-medium text-gray-600">🗄️ Frame</span>
+              <div id="frameStatus" class="tool-status-indicator">
                 <span class="status-dot inactive"></span>
                 <span class="status-text">AWAY</span>
               </div>
@@ -1247,21 +1247,21 @@
       <!-- Tool Control Buttons -->
       <div class="mt-6">
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 max-w-full mx-auto">
-          <!-- Jaw Control Button -->
+          <!-- Gripper Control Button -->
           <button 
-            id="jawControlBtn"
+            id="gripperControlBtn"
             class="tool-control-button bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
-            onclick="handleToolControlClick('jaw')"
+            onclick="handleToolControlClick('gripper')"
             disabled
           >
             🤏 Get Gripper
           </button>
 
-          <!-- Holder Control Button -->
+          <!-- Frame Control Button -->
           <button 
-            id="holderControlBtn"
+            id="frameControlBtn"
             class="tool-control-button bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
-            onclick="handleToolControlClick('holder')"
+            onclick="handleToolControlClick('frame')"
             disabled
           >
             🗄️ Get Frame

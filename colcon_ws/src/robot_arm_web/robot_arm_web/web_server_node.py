@@ -657,7 +657,7 @@ class RobotArmWebServer(Node):
                         return JSONResponse(content={'error': 'tool_type is required'}, status_code=400)
                     
                     # Validate tool type
-                    valid_tool_types = ['jaw', 'holder', 'stickP', 'stickR', 'homing']
+                    valid_tool_types = ['gripper', 'frame', 'stickP', 'stickR', 'homing']
                     if tool_type not in valid_tool_types:
                         return JSONResponse(content={
                             'error': f'Invalid tool_type. Must be one of: {valid_tool_types}'
@@ -702,8 +702,8 @@ class RobotArmWebServer(Node):
                     
                     # Tool states (first 4 bits)
                     tool_states = {
-                        'jaw': bool_register_output[0] or bool_register_output[0] == 1,
-                        'holder': bool_register_output[1] or bool_register_output[1] == 1,
+                        'gripper': bool_register_output[0] or bool_register_output[0] == 1,
+                        'frame': bool_register_output[1] or bool_register_output[1] == 1,
                         'stickP': bool_register_output[2] or bool_register_output[2] == 1,
                         'stickR': bool_register_output[3] or bool_register_output[3] == 1,
                     }
@@ -713,8 +713,8 @@ class RobotArmWebServer(Node):
                     
                     # Current state array
                     current_state = [
-                        1 if tool_states['jaw'] else 0,
-                        1 if tool_states['holder'] else 0,
+                        1 if tool_states['gripper'] else 0,
+                        1 if tool_states['frame'] else 0,
                         1 if tool_states['stickP'] else 0,
                         1 if tool_states['stickR'] else 0
                     ]
@@ -724,7 +724,7 @@ class RobotArmWebServer(Node):
                         'program_completed': is_program_completed,
                         'controls_enabled': is_program_completed,
                         'current_state': current_state,
-                        'available_operations': ['jaw', 'holder', 'stickP', 'stickR', 'homing']
+                        'available_operations': ['gripper', 'frame', 'stickP', 'stickR', 'homing']
                     })
                     
                 except Exception as e:
@@ -1036,29 +1036,29 @@ class RobotArmWebServer(Node):
         try:
             # Define target states based on tool type
             target_states = {
-                'jaw': [0, 1, 1, 1],      # A: jaw
-                'holder': [1, 0, 1, 1],   # B: holder  
-                'stickP': [0, 1, 0, 1],   # C: jaw + stickP
-                'stickR': [0, 1, 1, 0],   # D: jaw + stickR
+                'gripper': [0, 1, 1, 1],      # A: gripper
+                'frame': [1, 0, 1, 1],   # B: frame  
+                'stickP': [0, 1, 0, 1],   # C: gripper + stickP
+                'stickR': [0, 1, 1, 0],   # D: gripper + stickR
                 'homing': [1, 1, 1, 1]    # Reset to default state
             }
             
             # Define valid states
             valid_states = {
                 '1,1,1,1',  # 1111 - All tools are at home position
-                '0,1,1,1',  # 0111 - Get Jaw
-                '1,0,1,1',  # 1011 - Get Holder
-                '0,1,0,1',  # 0101 - Get StickP(must operate after get jaw)
-                '0,1,1,0'   # 0110 - Get StickR(must operate after get jaw)
+                '0,1,1,1',  # 0111 - Get Gripper
+                '1,0,1,1',  # 1011 - Get Frame
+                '0,1,0,1',  # 0101 - Get StickP(must operate after get gripper)
+                '0,1,1,0'   # 0110 - Get StickR(must operate after get gripper)
             }
             
             # Get current state
-            jaw_state = 1 if bool_register_output[0] or bool_register_output[0] == 1 else 0
-            holder_state = 1 if bool_register_output[1] or bool_register_output[1] == 1 else 0
+            gripper_state = 1 if bool_register_output[0] or bool_register_output[0] == 1 else 0
+            frame_state = 1 if bool_register_output[1] or bool_register_output[1] == 1 else 0
             stick_p_state = 1 if bool_register_output[2] or bool_register_output[2] == 1 else 0
             stick_r_state = 1 if bool_register_output[3] or bool_register_output[3] == 1 else 0
             
-            current_state = [jaw_state, holder_state, stick_p_state, stick_r_state]
+            current_state = [gripper_state, frame_state, stick_p_state, stick_r_state]
             target_state = target_states.get(tool_type, [1, 1, 1, 1])
             
             # Find shortest path using BFS
@@ -1117,19 +1117,19 @@ class RobotArmWebServer(Node):
         # Define all possible actions
         actions = [
             {
-                'name': 'zero2jaw',
+                'name': 'zero2gripper',
                 'apply': lambda state: [0, state[1], state[2], state[3]] if state[0] == 1 else None
             },
             {
-                'name': 'jaw2zero', 
+                'name': 'gripper2zero', 
                 'apply': lambda state: [1, state[1], state[2], state[3]] if state[0] == 0 else None
             },
             {
-                'name': 'zero2holder',
+                'name': 'zero2frame',
                 'apply': lambda state: [state[0], 0, state[2], state[3]] if state[1] == 1 else None
             },
             {
-                'name': 'holder2zero',
+                'name': 'frame2zero',
                 'apply': lambda state: [state[0], 1, state[2], state[3]] if state[1] == 0 else None
             },
             {
@@ -1179,10 +1179,10 @@ class RobotArmWebServer(Node):
         try:
             # Map BFS action names to robot program commands
             action_to_robot_command = {
-                'zero2jaw': 'run_program zero2jaw.jspf true',
-                'jaw2zero': 'run_program jaw2zero.jspf true',
-                'zero2holder': 'run_program zero2holder.jspf true',
-                'holder2zero': 'run_program holder2zero.jspf true',
+                'zero2gripper': 'run_program zero2jaw.jspf true',
+                'gripper2zero': 'run_program jaw2zero.jspf true',
+                'zero2frame': 'run_program zero2holder.jspf true',
+                'frame2zero': 'run_program holder2zero.jspf true',
                 'zero2stickP': 'run_program zero2stickP.jspf true',
                 'stickP2zero': 'run_program stickP2zero.jspf true',
                 'zero2stickR': 'run_program zero2stickR.jspf true',

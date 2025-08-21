@@ -826,11 +826,11 @@ function updateRobotStateDisplay(state) {
 
 // Update Tool Status based on Bool Register Output (frames 1104-1119, first 5 bits)
 function updateToolStatus(boolRegisterOutput) {
-    // Tool mapping: Jaw (bit 1), Holder (bit 2), StickP (bit 3), StickR (bit 4), Program (bit 5)
+    // Tool mapping: Gripper (bit 1), Frame (bit 2), StickP (bit 3), StickR (bit 4), Program (bit 5)
     // Using the first 5 bits of the boolRegisterOutput array
     const tools = [
-        { id: 'jawStatus', name: 'Jaw', bit: 0 },        // Bit 1 (index 0)
-        { id: 'holderStatus', name: 'Holder', bit: 1 },  // Bit 2 (index 1)
+        { id: 'gripperStatus', name: 'Gripper', bit: 0 },        // Bit 1 (index 0)
+        { id: 'frameStatus', name: 'Frame', bit: 1 },  // Bit 2 (index 1)
         { id: 'stickPStatus', name: 'StickP', bit: 2 },  // Bit 3 (index 2)
         { id: 'stickRStatus', name: 'StickR', bit: 3 },  // Bit 4 (index 3)
         { id: 'programStatus', name: 'Program', bit: 4 } // Bit 5 (index 4) - inverted logic
@@ -898,8 +898,8 @@ function updateToolControlButtons(boolRegisterOutput, forceUpdate = false) {
     const isProgramCompleted = boolRegisterOutput[4] === false || boolRegisterOutput[4] === 0;
     
     const toolButtons = [
-        'jawControlBtn',
-        'holderControlBtn', 
+        'gripperControlBtn',
+        'frameControlBtn', 
         'stickPControlBtn',
         'stickRControlBtn',
         'homingToolsBtn',
@@ -952,19 +952,19 @@ function findShortestPath(currentState, targetState, validStates) {
     // Define all possible actions (same as duco_test_tool.py)
     const actions = [
         {
-            name: 'zero2jaw',
+            name: 'zero2gripper',
             apply: (state) => state[0] === 1 ? [0, state[1], state[2], state[3]] : null
         },
         {
-            name: 'jaw2zero', 
+            name: 'gripper2zero', 
             apply: (state) => state[0] === 0 ? [1, state[1], state[2], state[3]] : null
         },
         {
-            name: 'zero2holder',
+            name: 'zero2frame',
             apply: (state) => state[1] === 1 ? [state[0], 0, state[2], state[3]] : null
         },
         {
-            name: 'holder2zero',
+            name: 'frame2zero',
             apply: (state) => state[1] === 0 ? [state[0], 1, state[2], state[3]] : null
         },
         {
@@ -1030,31 +1030,31 @@ function handleToolControlClick(toolType) {
     
     // Define target states based on duco_test_tool.py
     const targetStates = {
-        'jaw': [0, 1, 1, 1],      // A: jaw
-        'holder': [1, 0, 1, 1],   // B: holder  
-        'stickP': [0, 1, 0, 1],   // C: jaw + stickP
-        'stickR': [0, 1, 1, 0],   // D: jaw + stickR
+        'gripper': [0, 1, 1, 1],      // A: gripper
+        'frame': [1, 0, 1, 1],   // B: frame  
+        'stickP': [0, 1, 0, 1],   // C: gripper + stickP
+        'stickR': [0, 1, 1, 0],   // D: gripper + stickR
         'homing': [1, 1, 1, 1]    // Reset to default state
     };
     
     // Define valid states
     const validStates = new Set([
         '1,1,1,1',  // 1111 - All tools are at home position
-        '0,1,1,1',  // 0111 - Get Jaw
-        '1,0,1,1',  // 1011 - Get Holder
-        '0,1,0,1',  // 0101 - Get StickP(must operate after get jaw)
-        '0,1,1,0'   // 0110 - Get StickR(must operate after get jaw)
+        '0,1,1,1',  // 0111 - Get Gripper
+        '1,0,1,1',  // 1011 - Get Frame
+        '0,1,0,1',  // 0101 - Get StickP(must operate after get gripper)
+        '0,1,1,0'   // 0110 - Get StickR(must operate after get gripper)
     ]);
     
     // Get current robot state to display tool status
     if (robotStateData && robotStateData.boolRegisterOutput) {
         const boolRegisterOutput = robotStateData.boolRegisterOutput;
-        const jawState = boolRegisterOutput[0] ? 1 : 0;
-        const holderState = boolRegisterOutput[1] ? 1 : 0;
+        const gripperState = boolRegisterOutput[0] ? 1 : 0;
+        const frameState = boolRegisterOutput[1] ? 1 : 0;
         const stickPState = boolRegisterOutput[2] ? 1 : 0;
         const stickRState = boolRegisterOutput[3] ? 1 : 0;
         
-        const currentState = [jawState, holderState, stickPState, stickRState];
+        const currentState = [gripperState, frameState, stickPState, stickRState];
         const targetState = targetStates[toolType] || [1, 1, 1, 1];
         
         // Find shortest path using BFS (similar to duco_test_tool.py)
@@ -1062,8 +1062,8 @@ function handleToolControlClick(toolType) {
         
         // Create tool name mapping for display
         const toolDisplayNames = {
-            'jaw': 'Get Jaw',
-            'holder': 'Get Holder',
+            'gripper': 'Get Gripper',
+            'frame': 'Get Frame',
             'stickP': 'Get StickP',
             'stickR': 'Get StickR',
             'homing': 'Homing Tools'
@@ -1095,13 +1095,13 @@ function handleToolControlClick(toolType) {
     // Add your tool control logic here
     // For example, send commands to the robot based on toolType
     switch (toolType) {
-        case 'jaw':
-            console.log('Executing Get jaw command');
-            // Add jaw control command here
+        case 'gripper':
+            console.log('Executing Get gripper command');
+            // Add gripper control command here
             break;
-        case 'holder':
-            console.log('Executing Get holder command');
-            // Add holder control command here
+        case 'frame':
+            console.log('Executing Get frame command');
+            // Add frame control command here
             break;
         case 'stickP':
             console.log('Executing Get stickP command');
@@ -1126,10 +1126,10 @@ async function executeActionSequence(actionPath, statusElement) {
     
     // Map BFS action names to task command names (matching sendTaskCommand mapping)
     const actionToTaskCommand = {
-        'zero2jaw': 'task_zero2jaw',
-        'jaw2zero': 'task_jaw2zero',
-        'zero2holder': 'task_zero2holder',
-        'holder2zero': 'task_holder2zero',
+        'zero2gripper': 'task_zero2gripper',
+        'gripper2zero': 'task_gripper2zero',
+        'zero2frame': 'task_zero2frame',
+        'frame2zero': 'task_frame2zero',
         'zero2stickP': 'task_zero2stickP',
         'stickP2zero': 'task_stickP2zero',
         'zero2stickR': 'task_zero2stickR',
@@ -2535,10 +2535,10 @@ async function sendTaskCommand(command) {
         'task_stickP2zero': 'run_program stickP2zero.jspf true',
         'task_zero2stickR': 'run_program zero2stickR.jspf true',
         'task_stickR2zero': 'run_program stickR2zero.jspf true',
-        'task_zero2jaw': 'run_program zero2jaw.jspf true',
-        'task_jaw2zero': 'run_program jaw2zero.jspf true',
-        'task_zero2holder': 'run_program zero2holder.jspf true',
-        'task_holder2zero': 'run_program holder2zero.jspf true',
+        'task_zero2gripper': 'run_program zero2jaw.jspf true',
+        'task_gripper2zero': 'run_program jaw2zero.jspf true',
+        'task_zero2frame': 'run_program zero2holder.jspf true',
+        'task_frame2zero': 'run_program holder2zero.jspf true',
         'task_rotate': 'run_program task_rotate.jspf true',
         'task_pushbox': 'run_program task_pushbox.jspf true'
     };
