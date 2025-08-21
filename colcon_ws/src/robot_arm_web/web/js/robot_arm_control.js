@@ -72,6 +72,9 @@ window.addEventListener('load', function() {
     updateConnectionStatus(true);
     startStateMonitoring();
     
+    // Initialize camera status as disconnected initially
+    updateCameraConnectionStatus(false);
+    
     // Initialize camera stream
     setTimeout(() => {
         console.log('Initializing direct camera stream...');
@@ -177,6 +180,13 @@ window.addEventListener('load', function() {
             }
         }
     }, 600);
+    
+    // Initialize tool control button status
+    setTimeout(() => {
+        console.log('Initializing tool control buttons...');
+        // Initially disable all tool control buttons until program status is checked
+        updateToolControlButtons([false, false, false, false, false]); // All false = disabled state
+    }, 650);
     
     logCommand('System', 'Web interface initialized');
 });
@@ -872,6 +882,440 @@ function updateToolStatus(boolRegisterOutput) {
                 }
             }
         }
+    });
+    
+    // Update tool control buttons based on program status
+    updateToolControlButtons(boolRegisterOutput);
+}
+
+// Global variable to track if user clicked a tool button
+let toolControlClickActive = false;
+let toolControlClickTimeout = null;
+
+// Update tool control buttons availability based on program status
+function updateToolControlButtons(boolRegisterOutput, forceUpdate = false) {
+    // Check if program is completed (bit 4 = false/0)
+    const isProgramCompleted = boolRegisterOutput[4] === false || boolRegisterOutput[4] === 0;
+    
+    const toolButtons = [
+        'jawControlBtn',
+        'holderControlBtn', 
+        'stickPControlBtn',
+        'stickRControlBtn',
+        'homingToolsBtn'
+    ];
+    
+    const statusElement = document.getElementById('toolControlStatus');
+    
+    toolButtons.forEach(buttonId => {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.disabled = !isProgramCompleted;
+            
+            if (isProgramCompleted) {
+                button.classList.remove('disabled:from-gray-400', 'disabled:to-gray-500', 'disabled:cursor-not-allowed', 'disabled:shadow-none');
+            } else {
+                button.classList.add('disabled:from-gray-400', 'disabled:to-gray-500', 'disabled:cursor-not-allowed', 'disabled:shadow-none');
+            }
+        }
+    });
+    
+    // Update status text with tool states - only if not showing click feedback or forced update
+    if (statusElement && (!toolControlClickActive || forceUpdate)) {
+        if (isProgramCompleted) {
+            statusElement.textContent = 'Tool controls are enabled - Program completed';
+            statusElement.className = 'text-sm text-green-600';
+        } else {
+            statusElement.textContent = 'Tool controls are disabled - Program must be completed';
+            statusElement.className = 'text-sm text-gray-600';
+        }
+    }
+}
+
+// Find shortest path using BFS algorithm (similar to duco_test_tool.py)
+function findShortestPath(currentState, targetState, validStates) {
+    // Convert states to string for comparison
+    const currentStateStr = currentState.join(',');
+    const targetStateStr = targetState.join(',');
+    
+    // If already at target state
+    if (currentStateStr === targetStateStr) {
+        return [];
+    }
+    
+    // BFS queue: [state, path]
+    const queue = [[currentState.slice(), []]];
+    const visited = new Set([currentStateStr]);
+    
+    // Define all possible actions (same as duco_test_tool.py)
+    const actions = [
+        {
+            name: 'zero2jaw',
+            apply: (state) => state[0] === 1 ? [0, state[1], state[2], state[3]] : null
+        },
+        {
+            name: 'jaw2zero', 
+            apply: (state) => state[0] === 0 ? [1, state[1], state[2], state[3]] : null
+        },
+        {
+            name: 'zero2holder',
+            apply: (state) => state[1] === 1 ? [state[0], 0, state[2], state[3]] : null
+        },
+        {
+            name: 'holder2zero',
+            apply: (state) => state[1] === 0 ? [state[0], 1, state[2], state[3]] : null
+        },
+        {
+            name: 'zero2stickP',
+            apply: (state) => state[2] === 1 ? [state[0], state[1], 0, state[3]] : null
+        },
+        {
+            name: 'stickP2zero',
+            apply: (state) => state[2] === 0 ? [state[0], state[1], 1, state[3]] : null
+        },
+        {
+            name: 'zero2stickR',
+            apply: (state) => state[3] === 1 ? [state[0], state[1], state[2], 0] : null
+        },
+        {
+            name: 'stickR2zero',
+            apply: (state) => state[3] === 0 ? [state[0], state[1], state[2], 1] : null
+        }
+    ];
+    
+    while (queue.length > 0) {
+        const [currentState, path] = queue.shift();
+        
+        // Try all possible actions
+        for (const action of actions) {
+            const newState = action.apply(currentState);
+            
+            if (newState) {
+                const newStateStr = newState.join(',');
+                
+                // Check if new state is valid and not visited
+                if (validStates.has(newStateStr) && !visited.has(newStateStr)) {
+                    const newPath = [...path, action.name];
+                    
+                    // If reached target state
+                    if (newStateStr === targetStateStr) {
+                        return newPath;
+                    }
+                    
+                    queue.push([newState, newPath]);
+                    visited.add(newStateStr);
+                }
+            }
+        }
+    }
+    
+    // No path found
+    return ['No valid path found'];
+}
+
+// Handle tool control button clicks
+function handleToolControlClick(toolType) {
+    console.log(`Tool control clicked: ${toolType}`);
+    
+    // Clear any existing timeout
+    if (toolControlClickTimeout) {
+        clearTimeout(toolControlClickTimeout);
+        toolControlClickTimeout = null;
+    }
+    
+    // Set click active flag
+    toolControlClickActive = true;
+    
+    // Define target states based on duco_test_tool.py
+    const targetStates = {
+        'jaw': [0, 1, 1, 1],      // A: jaw
+        'holder': [1, 0, 1, 1],   // B: holder  
+        'stickP': [0, 1, 0, 1],   // C: jaw + stickP
+        'stickR': [0, 1, 1, 0],   // D: jaw + stickR
+        'homing': [1, 1, 1, 1]    // Reset to default state
+    };
+    
+    // Define valid states
+    const validStates = new Set([
+        '1,1,1,1',  // 1111 - All tools are at home position
+        '0,1,1,1',  // 0111 - Get Jaw
+        '1,0,1,1',  // 1011 - Get Holder
+        '0,1,0,1',  // 0101 - Get StickP(must operate after get jaw)
+        '0,1,1,0'   // 0110 - Get StickR(must operate after get jaw)
+    ]);
+    
+    // Get current robot state to display tool status
+    if (robotStateData && robotStateData.boolRegisterOutput) {
+        const boolRegisterOutput = robotStateData.boolRegisterOutput;
+        const jawState = boolRegisterOutput[0] ? 1 : 0;
+        const holderState = boolRegisterOutput[1] ? 1 : 0;
+        const stickPState = boolRegisterOutput[2] ? 1 : 0;
+        const stickRState = boolRegisterOutput[3] ? 1 : 0;
+        
+        const currentState = [jawState, holderState, stickPState, stickRState];
+        const targetState = targetStates[toolType] || [1, 1, 1, 1];
+        
+        // Find shortest path using BFS (similar to duco_test_tool.py)
+        const path = findShortestPath(currentState, targetState, validStates);
+        
+        // Create tool name mapping for display
+        const toolDisplayNames = {
+            'jaw': 'Get Jaw',
+            'holder': 'Get Holder',
+            'stickP': 'Get StickP',
+            'stickR': 'Get StickR',
+            'homing': 'Homing Tools'
+        };
+        
+        const toolDisplayName = toolDisplayNames[toolType] || toolType;
+        const pathText = path.length > 0 ? `path: ${path.join(' → ')}` : 'Already at target state';
+        
+        const statusElement = document.getElementById('toolControlStatus');
+        if (statusElement) {
+            statusElement.innerHTML = `<div class="text-blue-600 font-medium">"${toolDisplayName}" clicked, ${pathText}</div>`;
+            statusElement.className = 'text-sm';
+            
+            // Execute the action sequence if path is found and not empty
+            if (path.length > 0 && path[0] !== 'No valid path found') {
+                executeActionSequence(path, statusElement);
+            }
+            
+            // Reset to normal status after 5 seconds (or longer if executing actions)
+            const resetDelay = path.length > 0 && path[0] !== 'No valid path found' ? 
+                               Math.max(5000, path.length * 2000) : 3000;
+            toolControlClickTimeout = setTimeout(() => {
+                toolControlClickActive = false;
+                updateToolControlButtons(boolRegisterOutput, true); // Force update
+            }, resetDelay);
+        }
+    }
+    
+    // Add your tool control logic here
+    // For example, send commands to the robot based on toolType
+    switch (toolType) {
+        case 'jaw':
+            console.log('Executing Get jaw command');
+            // Add jaw control command here
+            break;
+        case 'holder':
+            console.log('Executing Get holder command');
+            // Add holder control command here
+            break;
+        case 'stickP':
+            console.log('Executing Get stickP command');
+            // Add stickP control command here
+            break;
+        case 'stickR':
+            console.log('Executing Get stickR command');
+            // Add stickR control command here
+            break;
+        case 'homing':
+            console.log('Executing homing tools command');
+            // Add homing tools command here
+            break;
+        default:
+            console.log('Unknown tool type:', toolType);
+    }
+}
+
+// Execute action sequence by sending task commands
+async function executeActionSequence(actionPath, statusElement) {
+    console.log('Executing action sequence:', actionPath);
+    
+    // Map BFS action names to task command names (matching sendTaskCommand mapping)
+    const actionToTaskCommand = {
+        'zero2jaw': 'task_zero2jaw',
+        'jaw2zero': 'task_jaw2zero',
+        'zero2holder': 'task_zero2holder',
+        'holder2zero': 'task_holder2zero',
+        'zero2stickP': 'task_zero2stickP',
+        'stickP2zero': 'task_stickP2zero',
+        'zero2stickR': 'task_zero2stickR',
+        'stickR2zero': 'task_stickR2zero'
+    };
+    
+    try {
+        // Update status to show execution started
+        if (statusElement) {
+            const currentHTML = statusElement.innerHTML;
+            statusElement.innerHTML = currentHTML + `<div id="action-progress" class="text-purple-600 text-sm font-medium mt-1">⚙️ Executing actions...</div>`;
+        }
+        
+        // Execute each action in sequence
+        for (let i = 0; i < actionPath.length; i++) {
+            const action = actionPath[i];
+            const taskCommand = actionToTaskCommand[action];
+            
+            if (taskCommand) {
+                console.log(`Executing step ${i + 1}/${actionPath.length}: ${action} -> ${taskCommand}`);
+                
+                // Update status to show current action
+                if (statusElement) {
+                    const progressElement = statusElement.querySelector('#action-progress');
+                    if (progressElement) {
+                        progressElement.innerHTML = `⚙️ Executing ${i + 1}/${actionPath.length}: ${action}`;
+                    }
+                }
+                
+                // Send the task command
+                await sendTaskCommand(taskCommand);
+                
+                // Wait for program to complete before sending next command
+                console.log(`Waiting for program completion after ${action}...`);
+                await waitForProgramCompletion();
+                
+                console.log(`Completed step ${i + 1}/${actionPath.length}: ${action}`);
+            } else {
+                console.error(`Unknown action: ${action}`);
+                if (statusElement) {
+                    const progressElement = statusElement.querySelector('#action-progress');
+                    if (progressElement) {
+                        progressElement.innerHTML = `❌ Error: Unknown action ${action}`;
+                        progressElement.className = 'text-red-600 text-sm font-medium mt-1';
+                    }
+                }
+                return;
+            }
+        }
+        
+        // Update status to show completion
+        if (statusElement) {
+            const progressElement = statusElement.querySelector('#action-progress');
+            if (progressElement) {
+                progressElement.innerHTML = `✅ All actions completed successfully`;
+                progressElement.className = 'text-green-600 text-sm font-medium mt-1';
+            }
+        }
+        
+        console.log('Action sequence completed successfully');
+        
+    } catch (error) {
+        console.error('Error executing action sequence:', error);
+        if (statusElement) {
+            const progressElement = statusElement.querySelector('#action-progress');
+            if (progressElement) {
+                progressElement.innerHTML = `❌ Error: ${error.message}`;
+                progressElement.className = 'text-red-600 text-sm font-medium mt-1';
+            } else {
+                // Fallback if progress element not found
+                const currentHTML = statusElement.innerHTML;
+                statusElement.innerHTML = currentHTML + `<div class="text-red-600 text-sm font-medium mt-1">❌ Error: ${error.message}</div>`;
+            }
+        }
+    }
+}
+
+// Send Tool Control API command (for use by external scripts via JSON API)
+async function sendToolControlAPI(toolType, options = {}) {
+    try {
+        const response = await fetch('/api/tool_control/execute', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                tool_type: toolType,
+                wait_completion: options.waitCompletion || false,
+                timeout: options.timeout || 100000
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            console.log(`Tool control API success: ${toolType}`, result);
+            return {
+                success: true,
+                message: result.message || 'Tool control executed successfully',
+                path: result.path || [],
+                data: result
+            };
+        } else {
+            console.error(`Tool control API error: ${toolType}`, result);
+            return {
+                success: false,
+                error: result.error || 'Unknown error occurred',
+                data: result
+            };
+        }
+    } catch (error) {
+        console.error('Tool control API network error:', error);
+        return {
+            success: false,
+            error: `Network error: ${error.message}`,
+            data: null
+        };
+    }
+}
+
+// Wait for robot program to complete execution by monitoring boolRegisterOutput[4]
+async function waitForProgramCompletion(timeout = 100000) {
+    return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        const maxWaitTime = timeout; // Maximum wait time in milliseconds
+        let programStarted = false;
+        let initialDelayCompleted = false;
+        
+        console.log('Starting program completion wait...');
+        
+        const checkCompletion = () => {
+            // Check timeout
+            if (Date.now() - startTime > maxWaitTime) {
+                console.error('Timeout waiting for program completion');
+                reject(new Error('Timeout waiting for program completion'));
+                return;
+            }
+            
+            // Add initial delay to allow command to be processed
+            if (!initialDelayCompleted) {
+                if (Date.now() - startTime < 200) { // Wait 200ms initially
+                    setTimeout(checkCompletion, 50);
+                    return;
+                } else {
+                    initialDelayCompleted = true;
+                    console.log('Initial delay completed, starting status monitoring...');
+                }
+            }
+            
+            // Check if we have robot state data
+            if (robotStateData && robotStateData.boolRegisterOutput && Array.isArray(robotStateData.boolRegisterOutput)) {
+                // Program status logic: 
+                // true/1 = program started/running, false/0 = program completed/idle
+                const bit4Value = robotStateData.boolRegisterOutput[4];
+                const isProgramActive = bit4Value === true || bit4Value === 1;
+                const isProgramIdle = bit4Value === false || bit4Value === 0;
+                
+                console.log(`Program status check: boolRegisterOutput[4] = ${bit4Value}, active=${isProgramActive}, idle=${isProgramIdle}, started=${programStarted}`);
+                
+                // Wait for program to start (bit goes to 1)
+                if (!programStarted && isProgramActive) {
+                    programStarted = true;
+                    console.log('Program execution started detected (boolRegisterOutput[4] = 1)');
+                }
+                
+                // Wait for program to complete (bit goes back to 0) 
+                if (programStarted && isProgramIdle) {
+                    console.log('Program execution completed (boolRegisterOutput[4] = 0), ready for next command');
+                    resolve();
+                    return;
+                } else if (programStarted) {
+                    console.log('Program still running (boolRegisterOutput[4] = 1), waiting...');
+                } else if (!programStarted && isProgramIdle) {
+                    // If program shows as idle before we see it starting, wait for it to start
+                    console.log('Waiting for program to start (currently idle, boolRegisterOutput[4] = 0)...');
+                } else {
+                    console.log('Waiting for program state change...');
+                }
+            } else {
+                console.log('No robot state data available, waiting...');
+            }
+            
+            // Check again after a short delay
+            setTimeout(checkCompletion, 100); // Check every 100ms
+        };
+        
+        // Start checking
+        checkCompletion();
     });
 }
 
@@ -2081,10 +2525,10 @@ async function sendFTCCommand(command, parameter = null) {
 async function sendTaskCommand(command) {
     // Map task commands to actual robot commands
     const taskCommands = {
-        'arm_move2zero': [
-            'movej2 [0.0,0.0,0.0,0.0,0.0,0.0] 1.5 1.0 0.0 true',
-            'movej2 [1.1504,-0.4533,1.3090,0.8081,-1.6195,-1.9460] 1.5 1.0 0.0 true'  // Convert degrees to radians
-        ],
+        // 'arm_move2zero': [
+        //     'movej2 [0.0,0.0,0.0,0.0,0.0,0.0] 1.5 1.0 0.0 true',
+        //     'movej2 [1.1504,-0.4533,1.3090,0.8081,-1.6195,-1.9460] 1.5 1.0 0.0 true'  // Convert degrees to radians
+        // ],
         'task_zero2stickP': 'run_program zero2stickP.jspf true',
         'task_stickP2zero': 'run_program stickP2zero.jspf true',
         'task_zero2stickR': 'run_program zero2stickR.jspf true',
@@ -2093,6 +2537,7 @@ async function sendTaskCommand(command) {
         'task_jaw2zero': 'run_program jaw2zero.jspf true',
         'task_zero2holder': 'run_program zero2holder.jspf true',
         'task_holder2zero': 'run_program holder2zero.jspf true',
+        'task_rotate': 'run_program task_rotate.jspf true',
         'task_pushbox': 'run_program task_pushbox.jspf true'
     };
     
@@ -3705,16 +4150,18 @@ async function updateCameraStatus() {
 
 // Update camera connection status display
 function updateCameraConnectionStatus(connected) {
-    const statusDot = document.getElementById('cameraStatusDot');
-    const statusText = document.getElementById('cameraStatusText');
+    const statusBarCamera = document.getElementById('cameraStatusBar');
     
-    if (statusDot && statusText) {
+    cameraConnected = connected; // Update global variable
+    
+    // Update camera status in the status bar
+    if (statusBarCamera) {
         if (connected) {
-            statusDot.classList.add('connected');
-            statusText.textContent = 'Connected';
+            statusBarCamera.textContent = 'Connected';
+            statusBarCamera.className = 'status-bar-value connected';
         } else {
-            statusDot.classList.remove('connected');
-            statusText.textContent = 'Disconnected';
+            statusBarCamera.textContent = 'Disconnected';
+            statusBarCamera.className = 'status-bar-value disconnected';
         }
     }
     

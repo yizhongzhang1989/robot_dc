@@ -1087,6 +1087,10 @@
             <div class="status-bar-label">Error</div>
             <div id="robotErrorCode" class="status-bar-value">-</div>
           </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Camera</div>
+            <div id="cameraStatusBar" class="status-bar-value disconnected">Disconnected</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1098,7 +1102,6 @@
       <div class="visualization-container">
         <!-- 3D Robot Model -->
         <div class="visualization-item">
-          <h3 class="text-lg font-medium mb-3">3D Robot Model</h3>
           <div class="viewer-3d" id="viewer3d">
             <div class="viewer-controls">
               <div>Left click: Rotate</div>
@@ -1112,12 +1115,6 @@
         
         <!-- Camera Feed -->
         <div class="visualization-item">
-          <h3 class="text-lg font-medium mb-3">Camera Image 
-            <span class="ml-3 text-sm inline-flex items-center">
-              <div class="camera-status-dot" id="cameraStatusDot"></div>
-              <span id="cameraStatusText" class="ml-1">Disconnected</span>
-            </span>
-          </h3>
           <div class="camera-viewer" id="cameraViewer">
             <div class="camera-header">
               <span>📷</span>
@@ -1185,7 +1182,7 @@
 
     <!-- Task Control Section -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-6">🎯 Task Control</h2>
+      <h2 class="text-xl font-semibold mb-6">🏁 Task Control</h2>
       
       <!-- Tool Status -->
       <div class="mb-6">
@@ -1226,7 +1223,7 @@
           <!-- StickP Status -->
           <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-600">🏒 StickP</span>
+              <span class="text-sm font-medium text-gray-600">↔️ StickP</span>
               <div id="stickPStatus" class="tool-status-indicator">
                 <span class="status-dot inactive"></span>
                 <span class="status-text">AWAY</span>
@@ -1237,13 +1234,91 @@
           <!-- StickR Status -->
           <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-600">🏒 StickR</span>
+              <span class="text-sm font-medium text-gray-600">🔄 StickR</span>
               <div id="stickRStatus" class="tool-status-indicator">
                 <span class="status-dot inactive"></span>
                 <span class="status-text">AWAY</span>
               </div>
             </div>
           </div>
+        </div>
+      </div>
+      
+      <!-- Tool Control Buttons -->
+      <div class="mt-6">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 max-w-full mx-auto">
+          <!-- Jaw Control Button -->
+          <button 
+            id="jawControlBtn"
+            class="tool-control-button bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('jaw')"
+            disabled
+          >
+            🤏 Get Gripper
+          </button>
+
+          <!-- Holder Control Button -->
+          <button 
+            id="holderControlBtn"
+            class="tool-control-button bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('holder')"
+            disabled
+          >
+            🗄️ Get Frame
+          </button>
+
+          <!-- StickP Control Button -->
+          <button 
+            id="stickPControlBtn"
+            class="tool-control-button bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('stickP')"
+            disabled
+          >
+            ↔️ Get StickP
+          </button>
+
+          <!-- StickR Control Button -->
+          <button 
+            id="stickRControlBtn"
+            class="tool-control-button bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('stickR')"
+            disabled
+          >
+            🔄 Get StickR
+          </button>
+
+          <!-- Homing Tools Button -->
+          <button 
+            id="homingToolsBtn"
+            class="tool-control-button bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('homing')"
+            disabled
+          >
+            🏠 Homing Tools
+          </button>
+
+          <!-- Rotate Button -->
+          <button 
+            id="rotateBtn"
+            class="task-button bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl"
+            onclick="sendTaskCommand('task_rotate')"
+          >
+            🖲️ Rotate Bts
+          </button>
+
+          <!-- Push Box Button -->
+          <button 
+            id="pushBoxBtn"
+            class="task-button bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl"
+            onclick="sendTaskCommand('task_pushbox')"
+          >
+            🗄️ Push Server
+          </button>
+        </div>
+        
+        <!-- Tool Control Status -->
+        <div class="mt-4 text-center">
+          <div id="toolControlStatus" class="text-sm text-gray-600">Tool controls are disabled - Program must be completed</div>
         </div>
       </div>
     </div>
@@ -1480,11 +1555,6 @@
         </button>
       </div>
 
-      <!-- FTC Command Status -->
-      <div class="mt-6 text-center">
-        <div id="ftcCommandStatus" class="text-sm text-gray-600">Ready to send FTC commands</div>
-      </div>
-
       <!-- Force-Torque Sensor Data -->
       <div class="mt-6 text-center">
         <div class="mb-3 text-center">
@@ -1500,6 +1570,11 @@
         <div class="ft-sensor-container flex justify-center">
           <canvas id="ftSensorChart" width="800" height="400"></canvas>
         </div>
+      </div>
+
+      <!-- FTC Command Status -->
+      <div class="mt-6 text-center">
+        <div id="ftcCommandStatus" class="text-sm text-gray-600">Ready to send FTC commands</div>
       </div>
     </div>
 

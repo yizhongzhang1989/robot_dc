@@ -70,11 +70,11 @@ def Task_pushbox(duco_cobot, op):
     # 接近推服务器处附近
     Arm_move2pushbegin(duco_cobot, op, True)  # True = close to push point
 
-    offset1 = [0/1000, 0/1000, 200/1000, np.radians(0), np.radians(0), np.radians(0)]   # back to start point
-    res = duco_cobot.tcp_move(offset1, 0.5, 0.2, 0.0, '', True, op)
+    offset1 = [0/1000, 0/1000, 180/1000, np.radians(0), np.radians(0), np.radians(0)]   # back to start point
+    res = duco_cobot.tcp_move(offset1, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    offset2 = [0/1000, 0/1000, -200/1000, np.radians(0), np.radians(0), np.radians(0)]   # back to start point
+    offset2 = [0/1000, 0/1000, -180/1000, np.radians(0), np.radians(0), np.radians(0)]   # back to start point
     res = duco_cobot.tcp_move(offset2, 0.5, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
@@ -91,16 +91,16 @@ def Task_pushbox(duco_cobot, op):
 def Task_closeleft(duco_cobot, op):
     
     # 接近左边的把手，到关闭的开始点位(这里选择了一个极限位置，防止没推到)
-    offset1 = [-33.5/1000, 90/1000, 280/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    offset1 = [-40.5/1000, 80/1000, 280/1000, np.radians(0), np.radians(0), np.radians(0)]  
     res = duco_cobot.tcp_move(offset1, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
     # 推动动作序列
-    offset2 = [0/1000, 0/1000, 40/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    offset2 = [0/1000, 0/1000, 30/1000, np.radians(0), np.radians(0), np.radians(0)]   
     res = duco_cobot.tcp_move(offset2, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
     
-    offset3 = [0/1000, -70/1000, 10/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    offset3 = [0/1000, -100/1000, 20/1000, np.radians(0), np.radians(0), np.radians(0)]   
     res = duco_cobot.tcp_move(offset3, 0.4, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
@@ -112,30 +112,34 @@ def Task_closeleft(duco_cobot, op):
     res = duco_cobot.tcp_move(offset5, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    offset6 = [-15/1000, 0/1000, 73/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    offset6 = [-10/1000, 0/1000, 55/1000, np.radians(0), np.radians(0), np.radians(0)]   
     res = duco_cobot.tcp_move(offset6, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    offset7 = [15/1000, 40/1000, -15/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    offset7 = [5/1000, 0/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]   
     res = duco_cobot.tcp_move(offset7, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
-    
-    # 摁进去旋钮
-    offset8 = [0/1000, 0/1000, 45/1000, np.radians(0), np.radians(0), np.radians(0)]   
-    res = duco_cobot.tcp_move(offset8, 0.3, 0.2, 0.0, '', True, op)
+
+    offset7 = [0/1000, 25/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    res = duco_cobot.tcp_move(offset7, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
-    
+
+    offset7 = [0/1000, 10/1000, 31/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    res = duco_cobot.tcp_move(offset7, 0.3, 0.2, 0.0, '', True, op)
+    time.sleep(0.5)
+   
     # back 
-    offset_backz = [0/1000, 0/1000, -233/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    offset_backz = [0/1000, 0/1000, -216/1000, np.radians(0), np.radians(0), np.radians(0)]   
     res = duco_cobot.tcp_move(offset_backz, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    # offset_backyx = [0/1000, 80/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    # # 参数确认一下再注释
+    # offset_backyx = [5/1000, 115/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]   
     # res = duco_cobot.tcp_move(offset_backyx, 0.3, 0.2, 0.0, '', True, op)
     # time.sleep(0.5)
 
     # # 回到任务开始点位
-    # offset1 = [33.5/1000, -90/1000, -280/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    # offset1 = [40.5/1000, -80/1000, -280/1000, np.radians(0), np.radians(0), np.radians(0)]  
     # res = duco_cobot.tcp_move(offset1, 0.3, 0.2, 0.0, '', True, op)
     # time.sleep(0.5)
 
@@ -149,41 +153,46 @@ def Task_closeleft(duco_cobot, op):
 
 def Task_closeright(duco_cobot, op):
 
-    # 关闭左边之后的位姿
+    # 关闭左边之后,退出z之后
     pose = [-89.77, -1.26, 100.35, -99.30, -89.26, 91.25]
     pose_rad = ConvertDeg2Rad(pose)
     res = duco_cobot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
     time.sleep(0.5)
 
     # 去往右边
-    offset1 = [-12/1000, -180/1000, 140/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    offset1 = [-16/1000, -200/1000, 140/1000, np.radians(0), np.radians(0), np.radians(0)]  
     res = duco_cobot.tcp_move(offset1, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    offset2 = [-2/1000, 0/1000, 65/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    offset2 = [-10/1000, 0/1000, 45/1000, np.radians(0), np.radians(0), np.radians(0)]  
     res = duco_cobot.tcp_move(offset2, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    offset2 = [0/1000, -65/1000, -15/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    # 下压
+    offset2 = [15/1000, 0/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]  
     res = duco_cobot.tcp_move(offset2, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    # 摁进去旋钮
-    offset8 = [0/1000, 0/1000, 45/1000, np.radians(0), np.radians(0), np.radians(0)]   
+    offset2 = [0/1000, -60/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    res = duco_cobot.tcp_move(offset2, 0.3, 0.2, 0.0, '', True, op)
+    time.sleep(0.5)
+
+    # # 摁进去旋钮
+    offset8 = [0/1000, -10/1000, 30/1000, np.radians(0), np.radians(0), np.radians(0)]   
     res = duco_cobot.tcp_move(offset8, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
     # back
-    offset_z = [0/1000, 0/1000, -145/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    offset_z = [0/1000, 0/1000, -215/1000, np.radians(0), np.radians(0), np.radians(0)]  
     res = duco_cobot.tcp_move(offset_z, 0.3, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    # offset_yx = [2/1000, 245/1000, -65/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    # offset_yx = [5/1000, 0/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]  
     # res = duco_cobot.tcp_move(offset_yx, 0.3, 0.2, 0.0, '', True, op)
     # time.sleep(0.5)
 
     # # 回到关闭左边之后的位姿
-    # offset2 = [12/1000, 180/1000, -140/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    # offset2 = [16/1000, 200/1000, -140/1000, np.radians(0), np.radians(0), np.radians(0)]  
     # res = duco_cobot.tcp_move(offset2, 0.3, 0.2, 0.0, '', True, op)
     # time.sleep(0.5)
 
@@ -192,7 +201,7 @@ def Task_closeright(duco_cobot, op):
     pose3_rad = ConvertDeg2Rad(pose3)
     res = duco_cobot.movej2(pose3_rad, 2.0, 1.0, 0.0, True, op)
     time.sleep(0.5)
-    return 
+    return res
 
 def main():
     
@@ -229,39 +238,11 @@ def main():
 
     # Arm_movezero2taskbegin(duco_cobot, op)  # 移动到抓取完工具后的点位，再运动到执行任务的起点
 
-    Task_pushbox(duco_cobot, op)  # 推服务器任务
+    # Task_pushbox(duco_cobot, op)  # 推服务器任务
 
     # Task_closeleft(duco_cobot, op)  # 关闭左边把手任务
 
     # Task_closeright(duco_cobot, op)  # 关闭右边把手任务
-
-
-
-    # old============================
-
-    # # 1. 移动到零位
-    # Arm_move2zero(duco_cobot, op)
-
-    # # 2. 取Push工具
-    # get_tool_push(duco_cobot, op)  
-
-    # # 3. 取到Push工具以后, 运动到执行任务的起点
-    # Arm_move2taskstart(duco_cobot, op)
-
-    # # 4. 任务1：将服务器推到里面去，并撤回任务起点
-    # Task_PushServer_Pos(duco_cobot, op)
-
-    # # 6. 任务2：将左边的把手关闭
-    # Task_CloseLeft_Pos(duco_cobot, op)
-
-    # # 7. 任务3：将右边的把手也关闭
-    # Task_CloseRight_Pos(duco_cobot, op)
-
-    # # 8. 把工具放回去
-    # # To do
-
-    # # 1. 移动到零位
-    # Arm_move2zero(duco_cobot, op) 
 
 
     # =======================结束任务，断使能，断点，断连接=======================
