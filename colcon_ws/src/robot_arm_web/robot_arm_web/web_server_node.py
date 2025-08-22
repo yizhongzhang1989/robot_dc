@@ -566,7 +566,7 @@ class RobotArmWebServer(Node):
                     "topic": f"/arm{self.device_id}/cmd",
                     "state_topic": f"/arm{self.device_id}/robot_state",
                     "camera_topic": "/rtsp_camera/image_raw",
-                    "available_commands": ["power_on", "power_off", "enable", "disable", "task:*"]
+                    "available_commands": ["power_on", "power_off", "enable", "disable", "pause", "resume", "stop_program", "task:*"]
                 }
             
             @app.get("/api/camera/stream")

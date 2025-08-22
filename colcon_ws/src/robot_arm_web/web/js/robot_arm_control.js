@@ -14,6 +14,9 @@ let cameraUpdateInterval;
 let cameraConnected = false;
 let lastCameraUpdate = 0;
 
+// Program control variables
+let isProgramPaused = false;
+
 // Force-Torque Sensor variables
 let ftSensorSocket = null;
 let ftSensorData = [];
@@ -187,6 +190,12 @@ window.addEventListener('load', function() {
         // Initially disable all tool control buttons until program status is checked
         updateToolControlButtons([false, false, false, false, false]); // All false = disabled state
     }, 650);
+    
+    // Initialize pause/resume button state
+    setTimeout(() => {
+        console.log('Initializing pause/resume button state...');
+        initializePauseResumeState();
+    }, 700);
     
     logCommand('System', 'Web interface initialized');
 });
@@ -2546,8 +2555,7 @@ async function sendCommand(command) {
         button.style.opacity = '0.6';
     }
     
-    statusElement.textContent = `Sending command: ${command}...`;
-    statusElement.className = 'text-sm text-blue-600';
+    console.log(`Attempting to send command: ${command}`);
     
     try {
         const response = await fetch('/api/robot_arm/cmd', {
@@ -2560,21 +2568,20 @@ async function sendCommand(command) {
             })
         });
         
-        const result = await response.json();
+        console.log(`Response status: ${response.status}`);
         
-        if (response.ok) {
-            statusElement.textContent = `Command sent successfully: ${command}`;
-            statusElement.className = 'text-sm text-green-600';
-            logCommand('Command', command, 'success');
-        } else {
-            statusElement.textContent = `Error: ${result.error || 'Unknown error'}`;
-            statusElement.className = 'text-sm text-red-600';
-            logCommand('Command', command, 'error');
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`HTTP error: ${response.status} - ${errorText}`);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
+        
+        const result = await response.json();
+        console.log('Command result:', result);
+        
+        logCommand('Command', command, 'success');
     } catch (error) {
         console.error('Error sending command:', error);
-        statusElement.textContent = `Network error: ${error.message}`;
-        statusElement.className = 'text-sm text-red-600';
         logCommand('Command', command, 'error');
     } finally {
         // Re-enable button
@@ -2582,12 +2589,6 @@ async function sendCommand(command) {
             button.disabled = false;
             button.style.opacity = '1';
         }
-        
-        // Clear status after 3 seconds
-        setTimeout(() => {
-            statusElement.textContent = 'Ready to send commands';
-            statusElement.className = 'text-sm text-gray-600';
-        }, 3000);
     }
 }
 
@@ -2711,7 +2712,7 @@ async function sendTaskCommand(command) {
     }
 }
 
-// Send Extract Server composite task - combines task_rotate, get_stickP, and task_pull
+// Send Extract Server composite task - combines get_stickR, task_rotate, get_stickP, and task_pull
 async function sendExtractServerTask() {
     console.log('Starting Extract Server composite task...');
     
@@ -2722,31 +2723,39 @@ async function sendExtractServerTask() {
             statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Executing Extract Server sequence...</div>';
         }
         
-        // Step 1: Execute task_rotate
-        console.log('Step 1/3: Executing task_rotate...');
+        // Step 1: Execute get_stickR operation (ensure we have stickR first)
+        console.log('Step 1/4: Executing get_stickR...');
         if (statusElement) {
-            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 1/3: Rotating...</div>';
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 1/4: Getting StickR...</div>';
+        }
+        await executeGetStickR();
+        console.log('Step 1/4: get_stickR completed');
+        
+        // Step 2: Execute task_rotate
+        console.log('Step 2/4: Executing task_rotate...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 2/4: Rotating...</div>';
         }
         await sendTaskCommand('task_rotate');
         await waitForProgramCompletion();
-        console.log('Step 1/3: task_rotate completed');
+        console.log('Step 2/4: task_rotate completed');
         
-        // Step 2: Execute get_stickP operation
-        console.log('Step 2/3: Executing get_stickP...');
+        // Step 3: Execute get_stickP operation
+        console.log('Step 3/4: Executing get_stickP...');
         if (statusElement) {
-            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 2/3: Getting StickP...</div>';
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 3/4: Getting StickP...</div>';
         }
         await executeGetStickP();
-        console.log('Step 2/3: get_stickP completed');
+        console.log('Step 3/4: get_stickP completed');
         
-        // Step 3: Execute task_pull
-        console.log('Step 3/3: Executing task_pull...');
+        // Step 4: Execute task_pull
+        console.log('Step 4/4: Executing task_pull...');
         if (statusElement) {
-            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 3/3: Pulling...</div>';
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 4/4: Pulling...</div>';
         }
         await sendTaskCommand('task_pull');
         await waitForProgramCompletion();
-        console.log('Step 3/3: task_pull completed');
+        console.log('Step 4/4: task_pull completed');
         
         // Update status to show completion
         if (statusElement) {
@@ -2774,7 +2783,128 @@ async function sendExtractServerTask() {
     }
 }
 
-// Execute get_stickP operation (simulate clicking the get_stickP button)
+// Send Insert Server composite task - combines get_stickP and task_pushbox
+async function sendInsertServerTask() {
+    console.log('Starting Insert Server composite task...');
+    
+    try {
+        // Update status to show sequence started
+        const statusElement = document.getElementById('commandStatus');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🗄️ Executing Insert Server sequence...</div>';
+        }
+        
+        // Step 1: Execute get_stickP operation (ensure we have stickP first)
+        console.log('Step 1/2: Executing get_stickP...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🗄️ Step 1/2: Getting StickP...</div>';
+        }
+        await executeGetStickP();
+        console.log('Step 1/2: get_stickP completed');
+        
+        // Step 2: Execute task_pushbox
+        console.log('Step 2/2: Executing task_pushbox...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🗄️ Step 2/2: Pushing server...</div>';
+        }
+        await sendTaskCommand('task_pushbox');
+        await waitForProgramCompletion();
+        console.log('Step 2/2: task_pushbox completed');
+        
+        // Update status to show completion
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-green-600 font-medium">✅ Insert Server sequence completed successfully</div>';
+            setTimeout(() => {
+                statusElement.innerHTML = 'Ready to send commands';
+                statusElement.className = 'text-sm text-gray-600';
+            }, 5000);
+        }
+        
+        console.log('Insert Server composite task completed successfully');
+        logCommand('Insert Server', 'Composite task completed', 'success');
+        
+    } catch (error) {
+        console.error('Error executing Insert Server task:', error);
+        const statusElement = document.getElementById('commandStatus');
+        if (statusElement) {
+            statusElement.innerHTML = `<div class="text-red-600 font-medium">❌ Error: ${error.message}</div>`;
+            setTimeout(() => {
+                statusElement.innerHTML = 'Ready to send commands';
+                statusElement.className = 'text-sm text-gray-600';
+            }, 5000);
+        }
+        logCommand('Insert Server', `Error: ${error.message}`, 'error');
+    }
+}
+
+// Execute get_stickR operation (using ToolStateManager logic)
+async function executeGetStickR() {
+    console.log('Executing get_stickR operation...');
+    
+    // Get current robot state to determine the path for stickR
+    if (robotStateData && robotStateData.boolRegisterOutput) {
+        const boolRegisterOutput = robotStateData.boolRegisterOutput;
+        const gripperState = boolRegisterOutput[0] ? 1 : 0;
+        const frameState = boolRegisterOutput[1] ? 1 : 0;
+        const stickPState = boolRegisterOutput[2] ? 1 : 0;
+        const stickRState = boolRegisterOutput[3] ? 1 : 0;
+        
+        const currentState = [gripperState, frameState, stickPState, stickRState];
+        
+        console.log(`Current state: ${currentState.join('')}`);
+        
+        // Check if stickR is already taken out (AWAY = 0)
+        if (stickRState === 0) {
+            console.log('StickR is already taken out (AWAY state), no action needed');
+            return;
+        }
+        
+        // StickR needs to be taken out, calculate target state for stickR operation
+        const targetState = toolStateManager.calculateTargetState(currentState, 'stickR');
+        
+        console.log(`Target state for stickR: ${targetState.join('')}`);
+        
+        // Use ToolStateManager to find shortest path
+        const path = toolStateManager.findShortestPath(currentState, targetState);
+        
+        if (path.length > 0 && path[0] !== 'No valid path found') {
+            console.log('Executing stickR path:', path);
+            
+            // Map BFS action names to task command names (same mapping as in handleToolControlClick)
+            const actionToTaskCommand = {
+                'zero2gripper': 'task_zero2gripper',
+                'gripper2zero': 'task_gripper2zero',
+                'zero2frame': 'task_zero2frame',
+                'frame2zero': 'task_frame2zero',
+                'zero2stickP': 'task_zero2stickP',
+                'stickP2zero': 'task_stickP2zero',
+                'zero2stickR': 'task_zero2stickR',
+                'stickR2zero': 'task_stickR2zero'
+            };
+            
+            // Execute each action in sequence
+            for (let i = 0; i < path.length; i++) {
+                const action = path[i];
+                const taskCommand = actionToTaskCommand[action];
+                
+                if (taskCommand) {
+                    console.log(`Executing stickR step ${i + 1}/${path.length}: ${action} -> ${taskCommand}`);
+                    await sendTaskCommand(taskCommand);
+                    await waitForProgramCompletion();
+                    console.log(`Completed stickR step ${i + 1}/${path.length}: ${action}`);
+                } else {
+                    throw new Error(`Unknown action: ${action}`);
+                }
+            }
+        } else {
+            console.log('StickR already at target state or no valid path found');
+        }
+    } else {
+        throw new Error('Robot state data not available');
+    }
+}
+
+// Execute get_stickP operation (using ToolStateManager logic)
 async function executeGetStickP() {
     console.log('Executing get_stickP operation...');
     
@@ -2787,24 +2917,27 @@ async function executeGetStickP() {
         const stickRState = boolRegisterOutput[3] ? 1 : 0;
         
         const currentState = [gripperState, frameState, stickPState, stickRState];
-        const targetState = [0, 1, 0, 1];  // Target state for stickP: gripper + stickP
         
-        // Define valid states
-        const validStates = new Set([
-            '1,1,1,1',  // 1111 - All tools are at home position
-            '0,1,1,1',  // 0111 - Get Gripper
-            '1,0,1,1',  // 1011 - Get Frame
-            '0,1,0,1',  // 0101 - Get StickP(must operate after get gripper)
-            '0,1,1,0'   // 0110 - Get StickR(must operate after get gripper)
-        ]);
+        console.log(`Current state: ${currentState.join('')}`);
         
-        // Find shortest path to get stickP
-        const path = findShortestPath(currentState, targetState, validStates);
+        // Check if stickP is already taken out (AWAY = 0)
+        if (stickPState === 0) {
+            console.log('StickP is already taken out (AWAY state), no action needed');
+            return;
+        }
+        
+        // StickP needs to be taken out, calculate target state for stickP operation
+        const targetState = toolStateManager.calculateTargetState(currentState, 'stickP');
+        
+        console.log(`Target state for stickP: ${targetState.join('')}`);
+        
+        // Use ToolStateManager to find shortest path
+        const path = toolStateManager.findShortestPath(currentState, targetState);
         
         if (path.length > 0 && path[0] !== 'No valid path found') {
             console.log('Executing stickP path:', path);
             
-            // Map BFS action names to task command names
+            // Map BFS action names to task command names (same mapping as in handleToolControlClick)
             const actionToTaskCommand = {
                 'zero2gripper': 'task_zero2gripper',
                 'gripper2zero': 'task_gripper2zero',
@@ -2884,9 +3017,80 @@ function getButtonId(command) {
         'power_on': 'powerOnBtn',
         'power_off': 'powerOffBtn',
         'enable': 'enableBtn',
-        'disable': 'disableBtn'
+        'disable': 'disableBtn',
+        'pause': 'pauseResumeBtn',
+        'resume': 'pauseResumeBtn',
+        'stop_program': 'stopProgramBtn'
     };
     return buttonMap[command];
+}
+
+// Toggle pause/resume function
+async function togglePauseResume() {
+    const button = document.getElementById('pauseResumeBtn');
+    
+    try {
+        if (isProgramPaused) {
+            // Currently paused, so resume
+            const result = await sendCommandWithResult('resume');
+            if (result.success) {
+                isProgramPaused = false;
+                button.innerHTML = '⏸️ Pause Program';
+                button.className = 'robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base';
+                logCommand('System', 'Program resumed', 'success');
+            }
+        } else {
+            // Currently running, so pause
+            const result = await sendCommandWithResult('pause');
+            if (result.success) {
+                isProgramPaused = true;
+                button.innerHTML = '▶️ Resume Program';
+                button.className = 'robot-arm-button status-style-button status-button-green font-semibold rounded-lg text-base';
+                logCommand('System', 'Program paused', 'success');
+            }
+        }
+    } catch (error) {
+        console.error('Error toggling pause/resume:', error);
+        logCommand('System', `Pause/Resume error: ${error.message}`, 'error');
+    }
+}
+
+// Initialize pause/resume button state
+function initializePauseResumeState() {
+    const button = document.getElementById('pauseResumeBtn');
+    if (button) {
+        // Reset to default state (not paused)
+        isProgramPaused = false;
+        button.innerHTML = '⏸️ Pause Program';
+        button.className = 'robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base';
+        console.log('Pause/Resume button initialized');
+    }
+}
+
+// Helper function to send command and return result
+async function sendCommandWithResult(command) {
+    try {
+        const response = await fetch('/api/robot_arm/cmd', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                command: command
+            })
+        });
+        
+        const result = await response.json();
+        return {
+            success: response.ok,
+            data: result
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message
+        };
+    }
 }
 
 // Update connection status indicator

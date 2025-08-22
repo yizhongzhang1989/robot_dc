@@ -91,6 +91,18 @@ class DucoRobotArmNode(Node):
                     res = self.robot.disable(True)
                     self.get_logger().info(f"Disable: {res}")
                     
+                case "pause":
+                    res = self.robot.pause(True)
+                    self.get_logger().info(f"Pause: {res}")
+                    
+                case "resume":
+                    res = self.robot.resume(True)
+                    self.get_logger().info(f"Resume: {res}")
+                    
+                case "stop_program":
+                    res = self.robot.stop(True)
+                    self.get_logger().info(f"Stop program: {res}")
+                    
                 case "servoj":
                     # Parse servoj command: servoj [j1,j2,j3,j4,j5,j6] v a block kp kd
                     if len(parts) < 6:
