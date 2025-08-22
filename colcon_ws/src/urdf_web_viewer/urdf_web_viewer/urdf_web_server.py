@@ -9,6 +9,7 @@ import rclpy
 from rclpy.node import Node
 import base64
 import threading
+from ament_index_python.packages import get_package_share_directory
 
 class URDFWebServer(Node):
     def __init__(self):
@@ -16,10 +17,17 @@ class URDFWebServer(Node):
         
         # Get parameters
         self.declare_parameter('port', 8080)
-        self.declare_parameter('urdf_file', '/home/a/Documents/robot_dc/colcon_ws/src/duco_gcr5_910_urdf/urdf/duco_gcr5_910_urdf.urdf')
+        
+        # Dynamic URDF file path - try to find the URDF file using ROS2 package discovery
+        default_urdf_path = self.find_urdf_file()
+        self.declare_parameter('urdf_file', default_urdf_path)
         
         self.port = self.get_parameter('port').value
         self.urdf_file = self.get_parameter('urdf_file').value
+        
+        # If parameter is empty, use auto-discovery
+        if not self.urdf_file or self.urdf_file.strip() == '':
+            self.urdf_file = default_urdf_path
         
         # Try to load URDF file directly
         try:
@@ -46,6 +54,65 @@ class URDFWebServer(Node):
         
         # Start web server
         self.start_web_server()
+        
+    def find_urdf_file(self):
+        """Find URDF file using multiple strategies for cross-machine compatibility"""
+        # Strategy 1: Try to use ROS2 package discovery
+        try:
+            package_share_dir = get_package_share_directory('duco_gcr5_910_urdf')
+            urdf_path = os.path.join(package_share_dir, 'urdf', 'duco_gcr5_910_urdf.urdf')
+            if os.path.exists(urdf_path):
+                self.get_logger().info(f"Found URDF using package discovery: {urdf_path}")
+                return urdf_path
+        except Exception as e:
+            self.get_logger().warn(f"Package discovery failed: {e}")
+        
+        # Strategy 2: Search relative to current package
+        try:
+            # Get the directory of this Python file
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # Navigate to workspace src directory and look for the URDF package
+            workspace_src = os.path.join(current_dir, '..', '..', '..', 'src')
+            urdf_package_dir = os.path.join(workspace_src, 'duco_gcr5_910_urdf')
+            urdf_path = os.path.join(urdf_package_dir, 'urdf', 'duco_gcr5_910_urdf.urdf')
+            
+            if os.path.exists(urdf_path):
+                urdf_path = os.path.abspath(urdf_path)
+                self.get_logger().info(f"Found URDF using relative path: {urdf_path}")
+                return urdf_path
+        except Exception as e:
+            self.get_logger().warn(f"Relative path search failed: {e}")
+        
+        # Strategy 3: Search in common workspace locations
+        possible_bases = [
+            os.path.expanduser('~/Documents/robot_dc/colcon_ws/src'),
+            os.path.expanduser('~/robot_dc/colcon_ws/src'),
+            os.path.expanduser('~/workspace/robot_dc/colcon_ws/src'),
+            '/opt/ros/workspace/src',
+        ]
+        
+        for base_dir in possible_bases:
+            urdf_path = os.path.join(base_dir, 'duco_gcr5_910_urdf', 'urdf', 'duco_gcr5_910_urdf.urdf')
+            if os.path.exists(urdf_path):
+                self.get_logger().info(f"Found URDF using common path search: {urdf_path}")
+                return urdf_path
+        
+        # Strategy 4: Search for the file in the entire system (as a last resort)
+        try:
+            import subprocess
+            result = subprocess.run(['find', os.path.expanduser('~'), '-name', 'duco_gcr5_910_urdf.urdf', '-type', 'f'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                urdf_path = result.stdout.strip().split('\n')[0]  # Take the first match
+                self.get_logger().info(f"Found URDF using system search: {urdf_path}")
+                return urdf_path
+        except Exception as e:
+            self.get_logger().warn(f"System search failed: {e}")
+        
+        # Fallback: Return a default path (will cause an error later if file doesn't exist)
+        fallback_path = '/tmp/duco_gcr5_910_urdf.urdf'
+        self.get_logger().error(f"Could not find URDF file! Using fallback: {fallback_path}")
+        return fallback_path
         
     def init_ros_components(self):
         """Initialize ROS-related components"""
