@@ -1281,6 +1281,12 @@ function handleToolControlClick(toolType) {
 async function executeActionSequence(actionPath, statusElement) {
     console.log('Executing action sequence:', actionPath);
     
+    // IMPORTANT: Reset interrupt flags at the start of new tool operation
+    programShouldStop = false;
+    programShouldPause = false;
+    forceInterrupt = false;
+    console.log('🔄 RESET: Cleared all interrupt flags for new tool operation');
+    
     // Map BFS action names to task command names (matching sendTaskCommand mapping)
     const actionToTaskCommand = {
         'zero2gripper': 'task_zero2gripper',
@@ -1316,12 +1322,26 @@ async function executeActionSequence(actionPath, statusElement) {
                     }
                 }
                 
-                // Send the task command
+                // Send the task command (non-blocking)
                 await sendTaskCommand(taskCommand);
                 
                 // Wait for program to complete before sending next command
-                console.log(`Waiting for program completion after ${action}...`);
+                console.log(`Waiting for program completion after ${action}... (Pause/Stop available with HIGH PRIORITY)`);
+                console.log(`📝 INFO: If paused, sequence will resume from step ${i + 1}/${actionPath.length} when resumed`);
                 await waitForProgramCompletion();
+                
+                // Check if we were interrupted by stop command
+                if (programShouldStop || forceInterrupt) {
+                    console.log(`🛑 SEQUENCE STOPPED: Task sequence interrupted at step ${i + 1}/${actionPath.length}`);
+                    if (statusElement) {
+                        const progressElement = statusElement.querySelector('#action-progress');
+                        if (progressElement) {
+                            progressElement.innerHTML = `🛑 Sequence stopped at step ${i + 1}/${actionPath.length}`;
+                            progressElement.className = 'text-orange-600 text-sm font-medium mt-1';
+                        }
+                    }
+                    return; // Exit the sequence
+                }
                 
                 console.log(`Completed step ${i + 1}/${actionPath.length}: ${action}`);
             } else {
@@ -1407,6 +1427,11 @@ async function sendToolControlAPI(toolType, options = {}) {
     }
 }
 
+// Global flags for program interruption - HIGHEST PRIORITY CONTROLS
+let programShouldStop = false;
+let programShouldPause = false;
+let forceInterrupt = false; // Ultimate interrupt flag for immediate exit
+
 // Wait for robot program to complete execution by monitoring boolRegisterOutput[4]
 async function waitForProgramCompletion(timeout = 300000) {
     return new Promise((resolve, reject) => {
@@ -1418,6 +1443,19 @@ async function waitForProgramCompletion(timeout = 300000) {
         console.log('Starting program completion wait...');
         
         const checkCompletion = () => {
+            // Check for user-initiated interruptions first
+            if (programShouldStop) {
+                console.log('Program execution interrupted by user stop command');
+                programShouldStop = false; // Reset flag
+                resolve(); // Exit waiting
+                return;
+            }
+            
+            if (programShouldPause && isProgramPaused) {
+                console.log('Program execution paused by user, continuing to wait...');
+                // Don't resolve, just continue waiting in paused state
+            }
+            
             // Check timeout
             if (Date.now() - startTime > maxWaitTime) {
                 console.error('Timeout waiting for program completion');
@@ -2557,6 +2595,19 @@ async function sendCommand(command) {
     
     console.log(`Attempting to send command: ${command}`);
     
+    // Handle program control commands specially - set interrupt flags for priority handling
+    if (command === 'stop_program') {
+        programShouldStop = true; // Set global flag to interrupt waiting
+        forceInterrupt = true; // Also set force interrupt for immediate response
+        console.log('🛑 STOP: Stop program command received, setting HIGH PRIORITY interrupt flags');
+    } else if (command === 'pause') {
+        programShouldPause = true; // Set global flag to pause execution
+        console.log('⏸️ PAUSE: Pause command received, setting MEDIUM PRIORITY interrupt flag');
+    } else if (command === 'resume') {
+        programShouldPause = false; // Clear pause flag to resume execution
+        console.log('▶️ RESUME: Resume command received, clearing pause flag');
+    }
+    
     try {
         const response = await fetch('/api/robot_arm/cmd', {
             method: 'POST',
@@ -2579,7 +2630,13 @@ async function sendCommand(command) {
         const result = await response.json();
         console.log('Command result:', result);
         
-        logCommand('Command', command, 'success');
+        // Special handling for stop_program command
+        if (command === 'stop_program') {
+            console.log('🛑 STOP: Program stopped and bool register 5 reset to 0');
+            logCommand('Command', `${command} + bool_reg_5_reset`, 'success');
+        } else {
+            logCommand('Command', command, 'success');
+        }
     } catch (error) {
         console.error('Error sending command:', error);
         logCommand('Command', command, 'error');
@@ -2674,23 +2731,24 @@ async function sendFTCCommand(command, parameter = null) {
 
 // Send Task command to robot arm using appropriate robot commands
 async function sendTaskCommand(command) {
-    // Map task commands to actual robot commands
+    // Map task commands to actual robot commands - using FALSE for non-blocking execution
+    // This allows pause/stop commands to be processed during task execution
     const taskCommands = {
         // 'arm_move2zero': [
         //     'movej2 [0.0,0.0,0.0,0.0,0.0,0.0] 1.5 1.0 0.0 true',
         //     'movej2 [1.1504,-0.4533,1.3090,0.8081,-1.6195,-1.9460] 1.5 1.0 0.0 true'  // Convert degrees to radians
         // ],
-        'task_zero2stickP': 'run_program zero2stickP.jspf true',
-        'task_stickP2zero': 'run_program stickP2zero.jspf true',
-        'task_zero2stickR': 'run_program zero2stickR.jspf true',
-        'task_stickR2zero': 'run_program stickR2zero.jspf true',
-        'task_zero2gripper': 'run_program zero2jaw.jspf true',
-        'task_gripper2zero': 'run_program jaw2zero.jspf true',
-        'task_zero2frame': 'run_program zero2holder.jspf true',
-        'task_frame2zero': 'run_program holder2zero.jspf true',
-        'task_rotate': 'run_program task_rotate.jspf true',
-        'task_pull': 'run_program task_pull.jspf true',
-        'task_pushbox': 'run_program task_pushbox.jspf true'
+        'task_zero2stickP': 'run_program zero2stickP.jspf false',
+        'task_stickP2zero': 'run_program stickP2zero.jspf false',
+        'task_zero2stickR': 'run_program zero2stickR.jspf false',
+        'task_stickR2zero': 'run_program stickR2zero.jspf false',
+        'task_zero2gripper': 'run_program zero2jaw.jspf false',
+        'task_gripper2zero': 'run_program jaw2zero.jspf false',
+        'task_zero2frame': 'run_program zero2holder.jspf false',
+        'task_frame2zero': 'run_program holder2zero.jspf false',
+        'task_rotate': 'run_program task_rotate.jspf false',
+        'task_pull': 'run_program task_pull.jspf false',
+        'task_pushbox': 'run_program task_pushbox.jspf false'
     };
     
     if (command in taskCommands) {
@@ -3032,22 +3090,22 @@ async function togglePauseResume() {
     try {
         if (isProgramPaused) {
             // Currently paused, so resume
-            const result = await sendCommandWithResult('resume');
-            if (result.success) {
-                isProgramPaused = false;
-                button.innerHTML = '⏸️ Pause Program';
-                button.className = 'robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base';
-                logCommand('System', 'Program resumed', 'success');
-            }
+            console.log('📋 RESUME: Task sequence will continue from where it was paused');
+            await sendCommand('resume');
+            isProgramPaused = false;
+            programShouldPause = false; // Clear pause flag
+            button.innerHTML = '⏸️ Pause Program';
+            button.className = 'robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base';
+            logCommand('System', 'Program resumed - execution will continue', 'success');
         } else {
             // Currently running, so pause
-            const result = await sendCommandWithResult('pause');
-            if (result.success) {
-                isProgramPaused = true;
-                button.innerHTML = '▶️ Resume Program';
-                button.className = 'robot-arm-button status-style-button status-button-green font-semibold rounded-lg text-base';
-                logCommand('System', 'Program paused', 'success');
-            }
+            console.log('⏸️ PAUSE: Sending pause command with MEDIUM PRIORITY');
+            await sendCommand('pause'); // Use correct pause command
+            isProgramPaused = true;
+            // Note: programShouldPause flag is set in sendCommand() for pause
+            button.innerHTML = '▶️ Resume Program';
+            button.className = 'robot-arm-button status-style-button status-button-green font-semibold rounded-lg text-base';
+            logCommand('System', '💡 Program paused - Click Resume to continue execution', 'success');
         }
     } catch (error) {
         console.error('Error toggling pause/resume:', error);
@@ -3064,32 +3122,6 @@ function initializePauseResumeState() {
         button.innerHTML = '⏸️ Pause Program';
         button.className = 'robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base';
         console.log('Pause/Resume button initialized');
-    }
-}
-
-// Helper function to send command and return result
-async function sendCommandWithResult(command) {
-    try {
-        const response = await fetch('/api/robot_arm/cmd', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                command: command
-            })
-        });
-        
-        const result = await response.json();
-        return {
-            success: response.ok,
-            data: result
-        };
-    } catch (error) {
-        return {
-            success: false,
-            error: error.message
-        };
     }
 }
 

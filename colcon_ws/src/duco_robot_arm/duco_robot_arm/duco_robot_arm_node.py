@@ -102,6 +102,9 @@ class DucoRobotArmNode(Node):
                 case "stop_program":
                     res = self.robot.stop(True)
                     self.get_logger().info(f"Stop program: {res}")
+                    # Also reset bool register 5 to 0 after stopping program
+                    bool_reg_res = self.robot.write_bool_reg(5, 0)
+                    self.get_logger().info(f"Reset bool register 5: {bool_reg_res}")
                     
                 case "servoj":
                     # Parse servoj command: servoj [j1,j2,j3,j4,j5,j6] v a block kp kd
