@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response
 from ament_index_python.packages import get_package_share_directory
 import os
+import sys
 from ament_index_python.packages import get_package_share_directory
 import threading
 import json
@@ -292,8 +293,6 @@ class RobotArmWebServer(Node):
     
     def add_scripts_to_path(self):
         """Add the scripts directory to Python path for importing FTC modules"""
-        import sys
-        import os
         # Find the robot_dc2 directory and add scripts to path
         current_file = os.path.abspath(__file__)
         self.get_logger().info(f"Current file path: {current_file}")
@@ -634,7 +633,7 @@ class RobotArmWebServer(Node):
                     "topic": f"/arm{self.device_id}/cmd",
                     "state_topic": f"/arm{self.device_id}/robot_state",
                     "camera_topic": "/rtsp_camera/image_raw",
-                    "available_commands": ["power_on", "power_off", "enable", "disable"]
+                    "available_commands": ["power_on", "power_off", "enable", "disable", "pause", "resume", "stop_program", "task:*"]
                 }
             
             @app.get("/api/camera/stream")
@@ -712,6 +711,92 @@ class RobotArmWebServer(Node):
                     return JSONResponse(content={'status': 'success'})
                 except Exception as e:
                     return JSONResponse(content={'error': str(e)}, status_code=400)
+            
+            # Tool Control API endpoints
+            @app.post("/api/tool_control/execute")
+            async def tool_control_execute(request: Request):
+                """Execute tool control operation via JSON API - simplified version"""
+                try:
+                    data = await request.json()
+                    tool_type = data.get('tool_type')
+                    
+                    if not tool_type:
+                        return JSONResponse(content={'error': 'tool_type is required'}, status_code=400)
+                    
+                    # Validate tool type
+                    valid_tool_types = ['gripper', 'frame', 'stickP', 'stickR', 'homing']
+                    if tool_type not in valid_tool_types:
+                        return JSONResponse(content={
+                            'error': f'Invalid tool_type. Must be one of: {valid_tool_types}'
+                        }, status_code=400)
+                    
+                    # Get current robot state
+                    state = self.get_latest_robot_state()
+                    if not state or 'boolRegisterOutput' not in state:
+                        return JSONResponse(content={
+                            'error': 'Robot state not available'
+                        }, status_code=503)
+                    
+                    # Check if program is completed (tool controls are enabled)
+                    bool_register_output = state['boolRegisterOutput']
+                    is_program_completed = not bool_register_output[4] or bool_register_output[4] == 0
+                    
+                    if not is_program_completed:
+                        return JSONResponse(content={
+                            'error': 'Tool controls are disabled - Program must be completed first'
+                        }, status_code=400)
+                    
+                    # Execute tool control operation with default settings (always wait for completion)
+                    result = await self.execute_tool_control_operation(tool_type, bool_register_output, wait_completion=True, timeout=100000)
+                    
+                    return JSONResponse(content=result)
+                    
+                except Exception as e:
+                    self.get_logger().error(f"Error in tool control API: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            @app.get("/api/tool_control/status")
+            async def tool_control_status():
+                """Get current tool control status"""
+                try:
+                    state = self.get_latest_robot_state()
+                    if not state or 'boolRegisterOutput' not in state:
+                        return JSONResponse(content={
+                            'error': 'Robot state not available'
+                        }, status_code=503)
+                    
+                    bool_register_output = state['boolRegisterOutput']
+                    
+                    # Tool states (first 4 bits)
+                    tool_states = {
+                        'gripper': bool_register_output[0] or bool_register_output[0] == 1,
+                        'frame': bool_register_output[1] or bool_register_output[1] == 1,
+                        'stickP': bool_register_output[2] or bool_register_output[2] == 1,
+                        'stickR': bool_register_output[3] or bool_register_output[3] == 1,
+                    }
+                    
+                    # Program status (bit 4, inverted logic)
+                    is_program_completed = not bool_register_output[4] or bool_register_output[4] == 0
+                    
+                    # Current state array
+                    current_state = [
+                        1 if tool_states['gripper'] else 0,
+                        1 if tool_states['frame'] else 0,
+                        1 if tool_states['stickP'] else 0,
+                        1 if tool_states['stickR'] else 0
+                    ]
+                    
+                    return JSONResponse(content={
+                        'tool_states': tool_states,
+                        'program_completed': is_program_completed,
+                        'controls_enabled': is_program_completed,
+                        'current_state': current_state,
+                        'available_operations': ['gripper', 'frame', 'stickP', 'stickR', 'homing']
+                    })
+                    
+                except Exception as e:
+                    self.get_logger().error(f"Error getting tool control status: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
             
             # FTC-related endpoints
             @app.post("/api/ftc/start")
@@ -1013,18 +1098,281 @@ class RobotArmWebServer(Node):
         # Call parent destroy_node
         super().destroy_node()
 
+    async def execute_tool_control_operation(self, tool_type, bool_register_output, wait_completion=False, timeout=100000):
+        """Execute tool control operation and optionally wait for completion"""
+        try:
+            # Define target states based on tool type
+            target_states = {
+                'gripper': [0, 1, 1, 1],      # A: gripper
+                'frame': [1, 0, 1, 1],   # B: frame  
+                'stickP': [0, 1, 0, 1],   # C: gripper + stickP
+                'stickR': [0, 1, 1, 0],   # D: gripper + stickR
+                'homing': [1, 1, 1, 1]    # Reset to default state
+            }
+            
+            # Define valid states
+            valid_states = {
+                '1,1,1,1',  # 1111 - All tools are at home position
+                '0,1,1,1',  # 0111 - Get Gripper
+                '1,0,1,1',  # 1011 - Get Frame
+                '0,1,0,1',  # 0101 - Get StickP(must operate after get gripper)
+                '0,1,1,0'   # 0110 - Get StickR(must operate after get gripper)
+            }
+            
+            # Get current state
+            gripper_state = 1 if bool_register_output[0] or bool_register_output[0] == 1 else 0
+            frame_state = 1 if bool_register_output[1] or bool_register_output[1] == 1 else 0
+            stick_p_state = 1 if bool_register_output[2] or bool_register_output[2] == 1 else 0
+            stick_r_state = 1 if bool_register_output[3] or bool_register_output[3] == 1 else 0
+            
+            current_state = [gripper_state, frame_state, stick_p_state, stick_r_state]
+            target_state = target_states.get(tool_type, [1, 1, 1, 1])
+            
+            # Find shortest path using BFS
+            path = self.find_shortest_path(current_state, target_state, valid_states)
+            
+            if not path:
+                return {
+                    'status': 'success',
+                    'message': f'Tool {tool_type} is already at target state',
+                    'path': [],
+                    'current_state': current_state,
+                    'target_state': target_state
+                }
+            
+            if path and path[0] == 'No valid path found':
+                return {
+                    'status': 'error',
+                    'error': 'No valid path found to target state',
+                    'current_state': current_state,
+                    'target_state': target_state
+                }
+            
+            # Execute the action sequence
+            execution_result = await self.execute_action_sequence_backend(path, wait_completion, timeout)
+            
+            return {
+                'status': 'success',
+                'message': f'Tool {tool_type} operation executed successfully',
+                'path': path,
+                'current_state': current_state,
+                'target_state': target_state,
+                'execution_result': execution_result
+            }
+            
+        except Exception as e:
+            self.get_logger().error(f"Error executing tool control operation {tool_type}: {str(e)}")
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+    
+    def find_shortest_path(self, current_state, target_state, valid_states):
+        """Find shortest path using BFS algorithm (similar to duco_test_tool.py)"""
+        # Convert states to string for comparison
+        current_state_str = ','.join(map(str, current_state))
+        target_state_str = ','.join(map(str, target_state))
+        
+        # If already at target state
+        if current_state_str == target_state_str:
+            return []
+        
+        # BFS queue: [state, path]
+        queue = [[current_state[:], []]]
+        visited = {current_state_str}
+        
+        # Define all possible actions
+        actions = [
+            {
+                'name': 'zero2gripper',
+                'apply': lambda state: [0, state[1], state[2], state[3]] if state[0] == 1 else None
+            },
+            {
+                'name': 'gripper2zero', 
+                'apply': lambda state: [1, state[1], state[2], state[3]] if state[0] == 0 else None
+            },
+            {
+                'name': 'zero2frame',
+                'apply': lambda state: [state[0], 0, state[2], state[3]] if state[1] == 1 else None
+            },
+            {
+                'name': 'frame2zero',
+                'apply': lambda state: [state[0], 1, state[2], state[3]] if state[1] == 0 else None
+            },
+            {
+                'name': 'zero2stickP',
+                'apply': lambda state: [state[0], state[1], 0, state[3]] if state[2] == 1 else None
+            },
+            {
+                'name': 'stickP2zero',
+                'apply': lambda state: [state[0], state[1], 1, state[3]] if state[2] == 0 else None
+            },
+            {
+                'name': 'zero2stickR',
+                'apply': lambda state: [state[0], state[1], state[2], 0] if state[3] == 1 else None
+            },
+            {
+                'name': 'stickR2zero',
+                'apply': lambda state: [state[0], state[1], state[2], 1] if state[3] == 0 else None
+            }
+        ]
+        
+        while queue:
+            current_state, path = queue.pop(0)
+            
+            # Try all possible actions
+            for action in actions:
+                new_state = action['apply'](current_state)
+                
+                if new_state:
+                    new_state_str = ','.join(map(str, new_state))
+                    
+                    # Check if new state is valid and not visited
+                    if new_state_str in valid_states and new_state_str not in visited:
+                        new_path = path + [action['name']]
+                        
+                        # If reached target state
+                        if new_state_str == target_state_str:
+                            return new_path
+                        
+                        queue.append([new_state, new_path])
+                        visited.add(new_state_str)
+        
+        # No path found
+        return ['No valid path found']
+    
+    async def execute_action_sequence_backend(self, action_path, wait_completion=False, timeout=100000):
+        """Execute action sequence by sending task commands"""
+        try:
+            # Map BFS action names to robot program commands
+            action_to_robot_command = {
+                'zero2gripper': 'run_program zero2jaw.jspf true',
+                'gripper2zero': 'run_program jaw2zero.jspf true',
+                'zero2frame': 'run_program zero2holder.jspf true',
+                'frame2zero': 'run_program holder2zero.jspf true',
+                'zero2stickP': 'run_program zero2stickP.jspf true',
+                'stickP2zero': 'run_program stickP2zero.jspf true',
+                'zero2stickR': 'run_program zero2stickR.jspf true',
+                'stickR2zero': 'run_program stickR2zero.jspf true'
+            }
+            
+            execution_log = []
+            
+            # Execute each action in sequence
+            for i, action in enumerate(action_path):
+                robot_command = action_to_robot_command.get(action)
+                
+                if robot_command:
+                    self.get_logger().info(f"Executing step {i + 1}/{len(action_path)}: {action} -> {robot_command}")
+                    
+                    # Send the robot command
+                    command_result = self.send_command(robot_command)
+                    execution_log.append({
+                        'step': i + 1,
+                        'action': action,
+                        'robot_command': robot_command,
+                        'result': command_result
+                    })
+                    
+                    if wait_completion:
+                        # Wait for program to complete before sending next command
+                        self.get_logger().info(f"Waiting for program completion after {action}...")
+                        await self.wait_for_program_completion_backend(timeout)
+                    else:
+                        # Small delay between commands
+                        await asyncio.sleep(0.5)
+                    
+                    self.get_logger().info(f"Completed step {i + 1}/{len(action_path)}: {action}")
+                else:
+                    error_msg = f"Unknown action: {action}"
+                    self.get_logger().error(error_msg)
+                    execution_log.append({
+                        'step': i + 1,
+                        'action': action,
+                        'error': error_msg
+                    })
+                    break
+            
+            return {
+                'success': True,
+                'execution_log': execution_log,
+                'wait_completion': wait_completion
+            }
+            
+        except Exception as e:
+            self.get_logger().error(f"Error executing action sequence: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'execution_log': execution_log if 'execution_log' in locals() else []
+            }
+    
+    async def wait_for_program_completion_backend(self, timeout=100000):
+        """Wait for robot program to complete execution by monitoring boolRegisterOutput[4]"""
+        start_time = time.time()
+        program_started = False
+        initial_delay_completed = False
+        
+        self.get_logger().info('Starting program completion wait...')
+        
+        while time.time() - start_time < timeout / 1000.0:  # Convert to seconds
+            # Add initial delay to allow command to be processed
+            if not initial_delay_completed:
+                if time.time() - start_time < 0.2:  # Wait 200ms initially
+                    await asyncio.sleep(0.05)
+                    continue
+                else:
+                    initial_delay_completed = True
+                    self.get_logger().info('Initial delay completed, starting status monitoring...')
+            
+            # Check if we have robot state data
+            state = self.get_latest_robot_state()
+            if state and 'boolRegisterOutput' in state:
+                bool_register_output = state['boolRegisterOutput']
+                
+                # Program status logic: 
+                # True/1 = program started/running, False/0 = program completed/idle
+                bit4_value = bool_register_output[4]
+                is_program_active = bit4_value or bit4_value == 1
+                is_program_idle = not bit4_value or bit4_value == 0
+                
+                self.get_logger().debug(f"Program status check: boolRegisterOutput[4] = {bit4_value}, active={is_program_active}, idle={is_program_idle}, started={program_started}")
+                
+                # Wait for program to start (bit goes to 1)
+                if not program_started and is_program_active:
+                    program_started = True
+                    self.get_logger().info('Program started (bit 4 went to 1)')
+                
+                # Wait for program to complete (bit goes back to 0) 
+                if program_started and is_program_idle:
+                    self.get_logger().info('Program completed (bit 4 went to 0)')
+                    return True
+            else:
+                self.get_logger().debug('No robot state data available, waiting...')
+            
+            # Check again after a short delay
+            await asyncio.sleep(0.1)  # Check every 100ms
+        
+                # Timeout reached
+        self.get_logger().error('Timeout waiting for program completion')
+        raise Exception('Timeout waiting for program completion')
+
 def main(args=None):
+    """Main entry point for the robot arm web server"""
     rclpy.init(args=args)
     
-    node = RobotArmWebServer()
-    
     try:
+        node = RobotArmWebServer()
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info('Shutting down robot arm web server...')
+        print("Shutting down robot arm web server...")
     finally:
-        node.destroy_node()
+        try:
+            node.destroy_node()
+        except Exception:
+            pass
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

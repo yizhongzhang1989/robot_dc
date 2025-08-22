@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Robot Arm Control</title>
+  <title>Robot Arm Control Center</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
@@ -883,17 +883,17 @@
       writing-mode: vertical-rl;
       text-orientation: mixed;
       font-family: 'Inter', 'SF Pro Display', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
-      font-size: 1rem;
+      font-size: 0.875rem;
       font-weight: 600;
       color: #374151;
       background: #f7fafc;
       border: 1px solid #e2e8f0;
-      padding: 0.875rem 0.625rem;
-      border-radius: 8px;
+      padding: 0.75rem 0.5rem;
+      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      min-width: 36px;
+      min-width: 28px;
       text-align: center;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
       letter-spacing: 0.05em;
@@ -960,6 +960,152 @@
     
     .status-bar-value.disconnected {
       color: #ef4444 !important; /* Red for disconnected */
+    }
+    
+    /* Tool status styles */
+    .tool-status-card {
+      transition: all 0.3s ease;
+    }
+    
+    .tool-status-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    }
+    
+    .tool-status-indicator {
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      transition: all 0.3s ease;
+      display: inline-block;
+    }
+    
+    .status-dot.active {
+      background-color: #10b981; /* Green */
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+    }
+    
+    .status-dot.inactive {
+      background-color: #ef4444; /* Red */
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+    }
+    
+    .status-text {
+      color: #4b5563;
+      font-weight: 600;
+    }
+    
+    .status-text.active {
+      color: #10b981;
+    }
+
+    /* Status-style buttons matching the status bar design */
+    .status-style-button {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%);
+      border: 1px solid rgba(226, 232, 240, 0.8);
+      transition: all 0.3s ease;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    .status-style-button:hover {
+      background: rgba(255, 255, 255, 0.95);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+    }
+
+    .status-style-button:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Color variants for status-style buttons */
+    .status-button-green {
+      color: #166534;
+      border-color: rgba(34, 197, 94, 0.4);
+    }
+    .status-button-green:hover {
+      border-color: rgba(34, 197, 94, 0.6);
+      background: linear-gradient(135deg, rgba(240, 253, 244, 0.9) 0%, rgba(187, 247, 208, 0.9) 100%);
+      color: #14532d;
+    }
+
+    .status-button-red {
+      color: #b91c1c;
+      border-color: rgba(248, 113, 113, 0.4);
+    }
+    .status-button-red:hover {
+      border-color: rgba(248, 113, 113, 0.6);
+      background: linear-gradient(135deg, rgba(254, 242, 242, 0.9) 0%, rgba(254, 202, 202, 0.9) 100%);
+      color: #991b1b;
+    }
+
+    .status-button-red-dark {
+      color: #dc2626;
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    .status-button-red-dark:hover {
+      border-color: rgba(239, 68, 68, 0.6);
+      background: linear-gradient(135deg, rgba(254, 242, 242, 0.9) 0%, rgba(254, 202, 202, 0.9) 100%);
+      color: #b91c1c;
+    }
+
+    .status-button-blue {
+      color: #2563eb;
+      border-color: rgba(96, 165, 250, 0.4);
+    }
+    .status-button-blue:hover {
+      border-color: rgba(96, 165, 250, 0.6);
+      background: linear-gradient(135deg, rgba(239, 246, 255, 0.9) 0%, rgba(191, 219, 254, 0.9) 100%);
+      color: #1d4ed8;
+    }
+
+    .status-button-orange {
+      color: #ea580c;
+      border-color: rgba(251, 146, 60, 0.4);
+    }
+    .status-button-orange:hover {
+      border-color: rgba(251, 146, 60, 0.6);
+      background: linear-gradient(135deg, rgba(255, 247, 237, 0.9) 0%, rgba(254, 215, 170, 0.9) 100%);
+      color: #c2410c;
+    }
+
+    .status-button-purple {
+      color: #9333ea;
+      border-color: rgba(168, 85, 247, 0.4);
+    }
+    .status-button-purple:hover {
+      border-color: rgba(168, 85, 247, 0.6);
+      background: linear-gradient(135deg, rgba(250, 245, 255, 0.9) 0%, rgba(221, 214, 254, 0.9) 100%);
+      color: #7c3aed;
+    }
+
+    /* Control buttons grid layout */
+    .control-buttons-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.5rem;
+      align-items: stretch;
+      min-height: 100%;
+    }
+
+    .control-buttons-grid button {
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      white-space: nowrap;
+      padding: 0.75rem 0.75rem;
+      font-size: 1rem;
     }
   </style>
 </head>
@@ -1042,6 +1188,74 @@
             <div class="status-bar-label">Error</div>
             <div id="robotErrorCode" class="status-bar-value">-</div>
           </div>
+          <div class="status-bar-item">
+            <div class="status-bar-label">Camera</div>
+            <div id="cameraStatusBar" class="status-bar-value disconnected">Disconnected</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- System Control Buttons -->
+    <div class="status-bar mb-6">
+      <div class="status-bar-title">
+        CTRL
+      </div>
+      <div class="status-bar-content">
+        <div class="control-buttons-grid">
+          <!-- Power On Button -->
+          <button 
+            id="powerOnBtn"
+            class="robot-arm-button status-style-button status-button-green font-semibold rounded-lg text-base"
+            onclick="sendCommand('power_on')"
+          >
+            ⚡ Power On
+          </button>
+
+          <!-- Power Off Button -->
+          <button 
+            id="powerOffBtn"
+            class="robot-arm-button status-style-button status-button-red font-semibold rounded-lg text-base"
+            onclick="sendCommand('power_off')"
+          >
+            🪫 Power Off
+          </button>
+
+          <!-- Enable Button -->
+          <button 
+            id="enableBtn"
+            class="robot-arm-button status-style-button status-button-blue font-semibold rounded-lg text-base"
+            onclick="sendCommand('enable')"
+          >
+            ✅ Enable
+          </button>
+
+          <!-- Disable Button -->
+          <button 
+            id="disableBtn"
+            class="robot-arm-button status-style-button status-button-orange font-semibold rounded-lg text-base"
+            onclick="sendCommand('disable')"
+          >
+            ⛔ Disable
+          </button>
+
+          <!-- Pause/Resume Button -->
+          <button 
+            id="pauseResumeBtn"
+            class="robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base"
+            onclick="togglePauseResume()"
+          >
+            ⏸️ Pause Program
+          </button>
+
+          <!-- Stop Program Button -->
+          <button 
+            id="stopProgramBtn"
+            class="robot-arm-button status-style-button status-button-red-dark font-semibold rounded-lg text-base"
+            onclick="sendCommand('stop_program')"
+          >
+            ⏹️ Stop Program
+          </button>
         </div>
       </div>
     </div>
@@ -1053,7 +1267,6 @@
       <div class="visualization-container">
         <!-- 3D Robot Model -->
         <div class="visualization-item">
-          <h3 class="text-lg font-medium mb-3">3D Robot Model</h3>
           <div class="viewer-3d" id="viewer3d">
             <div class="viewer-controls">
               <div>Left click: Rotate</div>
@@ -1067,12 +1280,6 @@
         
         <!-- Camera Feed -->
         <div class="visualization-item">
-          <h3 class="text-lg font-medium mb-3">Camera Image 
-            <span class="ml-3 text-sm inline-flex items-center">
-              <div class="camera-status-dot" id="cameraStatusDot"></div>
-              <span id="cameraStatusText" class="ml-1">Disconnected</span>
-            </span>
-          </h3>
           <div class="camera-viewer" id="cameraViewer">
             <div class="camera-header">
               <span>📷</span>
@@ -1090,51 +1297,146 @@
       </div>
     </div>
     
-    <!-- Control Panel moved here -->
+    <!-- Task Control Section -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-6">⚙️ System Control</h2>
+      <h2 class="text-xl font-semibold mb-6">🏁 Task Control</h2>
       
-      <div class="grid grid-cols-2 gap-4 max-w-md mx-auto">
-        <!-- Power On Button -->
-        <button 
-          id="powerOnBtn"
-          class="robot-arm-button bg-green-500 hover:bg-green-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
-          onclick="sendCommand('power_on')"
-        >
-          ⚡ Power On
-        </button>
-
-        <!-- Power Off Button -->
-        <button 
-          id="powerOffBtn"
-          class="robot-arm-button bg-red-500 hover:bg-red-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
-          onclick="sendCommand('power_off')"
-        >
-          🔴 Power Off
-        </button>
-
-        <!-- Enable Button -->
-        <button 
-          id="enableBtn"
-          class="robot-arm-button bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
-          onclick="sendCommand('enable')"
-        >
-          ✅ Enable
-        </button>
-
-        <!-- Disable Button -->
-        <button 
-          id="disableBtn"
-          class="robot-arm-button bg-orange-500 hover:bg-orange-600 text-white font-semibold py-4 px-6 rounded-lg text-lg"
-          onclick="sendCommand('disable')"
-        >
-          ⏸️ Disable
-        </button>
+      <!-- Tool Status -->
+      <div class="mb-6">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <!-- Program Status -->
+          <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-600">📋 Program</span>
+              <div id="programStatus" class="tool-status-indicator">
+                <span class="status-dot inactive"></span>
+                <span class="status-text">RUNNING</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Gripper Status -->
+          <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-600">🤏 Gripper</span>
+              <div id="gripperStatus" class="tool-status-indicator">
+                <span class="status-dot inactive"></span>
+                <span class="status-text">AWAY</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Frame Status -->
+          <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-600">🗄️ Frame</span>
+              <div id="frameStatus" class="tool-status-indicator">
+                <span class="status-dot inactive"></span>
+                <span class="status-text">AWAY</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- StickP Status -->
+          <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-600">↔️ StickP</span>
+              <div id="stickPStatus" class="tool-status-indicator">
+                <span class="status-dot inactive"></span>
+                <span class="status-text">AWAY</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- StickR Status -->
+          <div class="tool-status-card bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-600">🔄 StickR</span>
+              <div id="stickRStatus" class="tool-status-indicator">
+                <span class="status-dot inactive"></span>
+                <span class="status-text">AWAY</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+      
+      <!-- Tool Control Buttons -->
+      <div class="mt-6">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 max-w-full mx-auto">
+          <!-- Gripper Control Button -->
+          <button 
+            id="gripperControlBtn"
+            class="tool-control-button bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('gripper')"
+            disabled
+          >
+            🤏 Switch Gripper
+          </button>
 
-      <!-- Command Status -->
-      <div class="mt-6 text-center">
-        <div id="commandStatus" class="text-sm text-gray-600">Ready to send commands</div>
+          <!-- Frame Control Button -->
+          <button 
+            id="frameControlBtn"
+            class="tool-control-button bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('frame')"
+            disabled
+          >
+            🗄️ Switch Frame
+          </button>
+
+          <!-- StickP Control Button -->
+          <button 
+            id="stickPControlBtn"
+            class="tool-control-button bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('stickP')"
+            disabled
+          >
+            ↔️ Switch StickP
+          </button>
+
+          <!-- StickR Control Button -->
+          <button 
+            id="stickRControlBtn"
+            class="tool-control-button bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('stickR')"
+            disabled
+          >
+            🔄 Switch StickR
+          </button>
+
+          <!-- Homing Tools Button -->
+          <button 
+            id="homingToolsBtn"
+            class="tool-control-button bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="handleToolControlClick('homing')"
+            disabled
+          >
+            🏠 Homing Tools
+          </button>
+
+          <!-- Rotate Button -->
+          <button 
+            id="rotateBtn"
+            class="task-button bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl"
+            onclick="sendExtractServerTask()"
+          >
+            🖲️ Extract Server
+          </button>
+
+          <!-- Push Box Button -->
+          <button 
+            id="pushBoxBtn"
+            class="task-button bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl"
+            onclick="sendInsertServerTask()"
+          >
+            🗄️ Insert Server
+          </button>
+        </div>
+        
+        <!-- Tool Control Status -->
+        <div class="mt-4 text-center">
+          <div id="toolControlStatus" class="text-sm text-gray-600">Tool controls are disabled - Program must be completed</div>
+        </div>
       </div>
     </div>
 
@@ -1310,7 +1612,7 @@
         <button 
           id="ftcStartBtn"
           onclick="sendFTCCommand('FTC_start')"
-          class="robot-arm-button bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
+          class="robot-arm-button bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl"
         >
           Start FTC
         </button>
@@ -1319,7 +1621,7 @@
         <button 
           id="ftcStopBtn"
           onclick="sendFTCCommand('FTC_stop')"
-          class="robot-arm-button bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
+          class="robot-arm-button bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl"
         >
           Stop FTC
         </button>
@@ -1328,7 +1630,7 @@
         <button 
           id="ftcSetIndexBtn"
           onclick="openSetIndexDialog()"
-          class="robot-arm-button bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
+          class="robot-arm-button bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl"
         >
           Set Index
         </button>
@@ -1337,7 +1639,7 @@
         <button 
           id="ftcEnableProgramBtn"
           onclick="sendFTCCommand('FTC_SetDKAssemFlag', 1)"
-          class="robot-arm-button bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
+          class="robot-arm-button bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl"
         >
           Enable Program
         </button>
@@ -1346,7 +1648,7 @@
         <button 
           id="ftcStopProgramBtn"
           onclick="sendFTCCommand('FTC_SetDKAssemFlag', 0)"
-          class="robot-arm-button bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
+          class="robot-arm-button bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl"
         >
           Stop Program
         </button>
@@ -1355,7 +1657,7 @@
         <button 
           id="ftcSetRTBtn"
           onclick="openSetRTDialog()"
-          class="robot-arm-button bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
+          class="robot-arm-button bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl"
         >
           Set Params
         </button>
@@ -1364,15 +1666,10 @@
         <button 
           id="ftSensorToggleBtn"
           onclick="toggleFTSensor()"
-          class="robot-arm-button bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition-all"
+          class="robot-arm-button bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl"
         >
           <span id="ftSensorBtnText">Stop Sensor</span>
         </button>
-      </div>
-
-      <!-- FTC Command Status -->
-      <div class="mt-6 text-center">
-        <div id="ftcCommandStatus" class="text-sm text-gray-600">Ready to send FTC commands</div>
       </div>
 
       <!-- Force-Torque Sensor Data -->
@@ -1390,6 +1687,11 @@
         <div class="ft-sensor-container flex justify-center">
           <canvas id="ftSensorChart" width="800" height="400"></canvas>
         </div>
+      </div>
+
+      <!-- FTC Command Status -->
+      <div class="mt-6 text-center">
+        <div id="ftcCommandStatus" class="text-sm text-gray-600">Ready to send FTC commands</div>
       </div>
     </div>
 
@@ -2118,6 +2420,6 @@
     <span id="topicName"></span>
   </div>
 
-      <script src="/js/robot_arm_control.js?v=5&ts=1752776600"></script>
+      <script src="/js/robot_arm_control.js?v=6&ts=1755534000"></script>
 </body>
 </html>

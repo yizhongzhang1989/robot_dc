@@ -91,6 +91,21 @@ class DucoRobotArmNode(Node):
                     res = self.robot.disable(True)
                     self.get_logger().info(f"Disable: {res}")
                     
+                case "pause":
+                    res = self.robot.pause(True)
+                    self.get_logger().info(f"Pause: {res}")
+                    
+                case "resume":
+                    res = self.robot.resume(True)
+                    self.get_logger().info(f"Resume: {res}")
+                    
+                case "stop_program":
+                    res = self.robot.stop(True)
+                    self.get_logger().info(f"Stop program: {res}")
+                    # Also reset bool register 5 to 0 after stopping program
+                    bool_reg_res = self.robot.write_bool_reg(5, 0)
+                    self.get_logger().info(f"Reset bool register 5: {bool_reg_res}")
+                    
                 case "servoj":
                     # Parse servoj command: servoj [j1,j2,j3,j4,j5,j6] v a block kp kd
                     if len(parts) < 6:
@@ -202,6 +217,21 @@ class DucoRobotArmNode(Node):
                         self.get_logger().info(f"TCP Move command executed: {res}")
                     else:
                         self.get_logger().error("Invalid pose list format for TCP Move")
+                        
+                case "run_program":
+                    # Parse run_program command: run_program program_name [block]
+                    if len(parts) < 2:
+                        self.get_logger().error("run_program command requires program name")
+                        return
+                        
+                    program_name = parts[1]
+                    block = True  # Default to blocking
+                    if len(parts) > 2:
+                        block_str = parts[2].lower()
+                        block = block_str == 'true'
+                    
+                    res = self.robot.run_program(program_name, block)
+                    self.get_logger().info(f"run_program '{program_name}' executed: {res}")
                         
                 case _:
                     self.get_logger().warn(f"Unknown command: {cmd}")

@@ -14,6 +14,9 @@ let cameraUpdateInterval;
 let cameraConnected = false;
 let lastCameraUpdate = 0;
 
+// Program control variables
+let isProgramPaused = false;
+
 // Force-Torque Sensor variables
 let ftSensorSocket = null;
 let ftSensorData = [];
@@ -71,6 +74,9 @@ window.addEventListener('load', function() {
     fetchRobotArmInfo();
     updateConnectionStatus(true);
     startStateMonitoring();
+    
+    // Initialize camera status as disconnected initially
+    updateCameraConnectionStatus(false);
     
     // Initialize camera stream
     setTimeout(() => {
@@ -177,6 +183,19 @@ window.addEventListener('load', function() {
             }
         }
     }, 600);
+    
+    // Initialize tool control button status
+    setTimeout(() => {
+        console.log('Initializing tool control buttons...');
+        // Initially disable all tool control buttons until program status is checked
+        updateToolControlButtons([false, false, false, false, false]); // All false = disabled state
+    }, 650);
+    
+    // Initialize pause/resume button state
+    setTimeout(() => {
+        console.log('Initializing pause/resume button state...');
+        initializePauseResumeState();
+    }, 700);
     
     logCommand('System', 'Web interface initialized');
 });
@@ -797,12 +816,704 @@ function updateRobotStateDisplay(state) {
         document.getElementById('floatRegisterOutput').innerHTML = regHtml;
     }
 
+    // Update Tool Status (Bool Register Output bits 1-5 corresponding to frames 1104-1119)
+    // Five items: 4 tools + 1 program status from first 5 bits of boolRegisterOutput
+    if (state.boolRegisterOutput && Array.isArray(state.boolRegisterOutput)) {
+        updateToolStatus(state.boolRegisterOutput);
+    } else {
+        // If no data available, set all tools to AWAY and program to RUNNING
+        updateToolStatus([false, false, false, false, false]);
+    }
+
     // Update last update time
     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
     document.getElementById('dataStatus').textContent = 'Active';
     document.getElementById('dataStatus').className = 'normal-indicator';
 
     // Update 3D visualization - removed duplicate TCP update to prevent flickering
+}
+
+// Update Tool Status based on Bool Register Output (frames 1104-1119, first 5 bits)
+function updateToolStatus(boolRegisterOutput) {
+    // Tool mapping: Gripper (bit 1), Frame (bit 2), StickP (bit 3), StickR (bit 4), Program (bit 5)
+    // Using the first 5 bits of the boolRegisterOutput array
+    const tools = [
+        { id: 'gripperStatus', name: 'Gripper', bit: 0 },        // Bit 1 (index 0)
+        { id: 'frameStatus', name: 'Frame', bit: 1 },  // Bit 2 (index 1)
+        { id: 'stickPStatus', name: 'StickP', bit: 2 },  // Bit 3 (index 2)
+        { id: 'stickRStatus', name: 'StickR', bit: 3 },  // Bit 4 (index 3)
+        { id: 'programStatus', name: 'Program', bit: 4 } // Bit 5 (index 4) - inverted logic
+    ];
+
+    tools.forEach(tool => {
+        const statusElement = document.getElementById(tool.id);
+        if (statusElement) {
+            let isActive;
+            
+            // Program status has inverted logic: 0=running, 1=completed
+            if (tool.id === 'programStatus') {
+                isActive = boolRegisterOutput[tool.bit] === false || boolRegisterOutput[tool.bit] === 0;
+            } else {
+                isActive = boolRegisterOutput[tool.bit] === true || boolRegisterOutput[tool.bit] === 1;
+            }
+            
+            // Update status dot
+            const statusDot = statusElement.querySelector('.status-dot');
+            const statusText = statusElement.querySelector('.status-text');
+            
+            if (statusDot && statusText) {
+                if (tool.id === 'programStatus') {
+                    // Program status: active=running, inactive=completed
+                    if (isActive) {
+                        statusDot.classList.remove('inactive');
+                        statusDot.classList.add('active');
+                        statusText.classList.add('active');
+                        statusText.textContent = 'COMPLETED';
+                    } else {
+                        statusDot.classList.remove('active');
+                        statusDot.classList.add('inactive');
+                        statusText.classList.remove('active');
+                        statusText.textContent = 'RUNNING';
+                    }
+                } else {
+                    // Tool status: active=home, inactive=away
+                    if (isActive) {
+                        statusDot.classList.remove('inactive');
+                        statusDot.classList.add('active');
+                        statusText.classList.add('active');
+                        statusText.textContent = 'HOME';
+                    } else {
+                        statusDot.classList.remove('active');
+                        statusDot.classList.add('inactive');
+                        statusText.classList.remove('active');
+                        statusText.textContent = 'AWAY';
+                    }
+                }
+            }
+        }
+    });
+    
+    // Update tool control buttons based on program status
+    updateToolControlButtons(boolRegisterOutput);
+}
+
+// Global variable to track if user clicked a tool button
+let toolControlClickActive = false;
+let toolControlClickTimeout = null;
+
+// Update tool control buttons availability based on program status
+function updateToolControlButtons(boolRegisterOutput, forceUpdate = false) {
+    // Check if program is completed (bit 4 = false/0)
+    const isProgramCompleted = boolRegisterOutput[4] === false || boolRegisterOutput[4] === 0;
+    
+    const toolButtons = [
+        'gripperControlBtn',
+        'frameControlBtn', 
+        'stickPControlBtn',
+        'stickRControlBtn',
+        'homingToolsBtn',
+        'rotateBtn',
+        'pushBoxBtn'
+    ];
+    
+    const statusElement = document.getElementById('toolControlStatus');
+    
+    toolButtons.forEach(buttonId => {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.disabled = !isProgramCompleted;
+            
+            if (isProgramCompleted) {
+                button.classList.remove('disabled:from-gray-400', 'disabled:to-gray-500', 'disabled:cursor-not-allowed', 'disabled:shadow-none');
+            } else {
+                button.classList.add('disabled:from-gray-400', 'disabled:to-gray-500', 'disabled:cursor-not-allowed', 'disabled:shadow-none');
+            }
+        }
+    });
+    
+    // Update status text with tool states - only if not showing click feedback or forced update
+    if (statusElement && (!toolControlClickActive || forceUpdate)) {
+        if (isProgramCompleted) {
+            statusElement.textContent = 'Tool controls are enabled - Program completed';
+            statusElement.className = 'text-sm text-green-600';
+        } else {
+            statusElement.textContent = 'Tool controls are disabled - Program must be completed';
+            statusElement.className = 'text-sm text-gray-600';
+        }
+    }
+}
+
+// Tool State Manager Class (similar to Python version)
+class ToolStateManager {
+    constructor() {
+        // Define valid states (根据物理约束分析)
+        this.validStates = new Set([
+            '1,1,1,1',  // 1111 - 默认状态，所有工具在原位
+            '0,1,1,1',  // 0111 - 只取gripper（正在使用gripper）
+            '1,0,1,1',  // 1011 - 只取frame（正在使用frame）
+            '0,1,0,1',  // 0101 - 取gripper后夹取stickP（准备使用stickP）
+            '0,1,1,0',  // 0110 - 取gripper后夹取stickR（准备使用stickR）
+            '0,0,1,1',  // 0011 - 先取frame，再取gripper
+            '0,0,0,1',  // 0001 - 先取frame，再取gripper，然后夹取stickP
+            '0,0,1,0'   // 0010 - 先取frame，再取gripper，然后夹取stickR
+        ]);
+    }
+
+    // 根据按钮操作计算目标状态 (动态计算，类似Python版本)
+    calculateTargetState(currentState, button) {
+        let targetState = currentState.slice(); // 复制当前状态
+
+        if (button === 'gripper') {  // A: gripper取反
+            targetState[0] = 1 - targetState[0];
+            // 如果gripper要被放回，那么stickP和stickR也必须放回
+            if (targetState[0] === 1) {  // gripper被放回
+                targetState[2] = 1;  // stickP必须放回
+                targetState[3] = 1;  // stickR必须放回
+            }
+        } else if (button === 'frame') {  // B: frame取反
+            // 关键约束：gripper正在使用时，不能操作frame
+            if (currentState[0] === 0) {  // gripper取出状态
+                // 先计算理想的frame取反结果
+                const idealFrameState = 1 - currentState[1];
+                
+                // 必须先放回所有工具到1111状态，然后重新按需取出
+                targetState = [1, 1, 1, 1];  // 先全部放回
+                
+                // 然后设置最终需要的状态
+                targetState[1] = idealFrameState;  // frame按需求设置
+                
+                // 如果之前有stickP或stickR被取出，需要重新取出gripper和对应的stick
+                if (currentState[2] === 0) {  // 之前stickP被取出
+                    targetState[0] = 0;  // 重新取出gripper
+                    targetState[2] = 0;  // 重新取出stickP
+                } else if (currentState[3] === 0) {  // 之前stickR被取出
+                    targetState[0] = 0;  // 重新取出gripper  
+                    targetState[3] = 0;  // 重新取出stickR
+                }
+            } else {
+                // gripper在位时可以正常操作frame
+                targetState[1] = 1 - targetState[1];
+            }
+        } else if (button === 'stickP') {  // C: gripper置0，stickP取反
+            targetState[0] = 0;  // gripper强制取出
+            
+            // 如果stickR已经取出，需要先放回stickR（互斥约束）
+            if (currentState[3] === 0) {
+                targetState[3] = 1;  // 放回stickR
+            }
+            
+            targetState[2] = 1 - currentState[2];  // stickP取反
+        } else if (button === 'stickR') {  // D: gripper置0，stickR取反
+            targetState[0] = 0;  // gripper强制取出
+            
+            // 如果stickP已经取出，需要先放回stickP（互斥约束）
+            if (currentState[2] === 0) {
+                targetState[2] = 1;  // 放回stickP
+            }
+            
+            targetState[3] = 1 - currentState[3];  // stickR取反
+        } else if (button === 'homing') {
+            targetState = [1, 1, 1, 1];  // 归位到默认状态
+        }
+
+        return targetState;
+    }
+
+    // 检查在当前状态下是否允许执行某个动作
+    isActionAllowed(currentState, actionName) {
+        // 关键约束：gripper正在使用时，不能操作frame（取出或放回）
+        if ((actionName === 'zero2frame' || actionName === 'frame2zero') && currentState[0] === 0) {
+            return false;  // gripper已取出时不能操作frame
+        }
+        
+        // stickP和stickR只有在gripper被取出时才能夹取
+        if (actionName === 'zero2stickP' && currentState[0] === 1) {
+            return false;  // gripper在位时不能取stickP
+        }
+        
+        if (actionName === 'zero2stickR' && currentState[0] === 1) {
+            return false;  // gripper在位时不能取stickR
+        }
+        
+        // 不能同时取stickP和stickR
+        if (actionName === 'zero2stickP' && currentState[3] === 0) {
+            return false;  // stickR已取出时不能取stickP
+        }
+        
+        if (actionName === 'zero2stickR' && currentState[2] === 0) {
+            return false;  // stickP已取出时不能取stickR
+        }
+        
+        return true;
+    }
+
+    // 使用BFS找到从当前状态到目标状态的最短路径 (增强版，包含约束检查)
+    findShortestPath(currentState, targetState) {
+        // Convert states to string for comparison
+        const currentStateStr = currentState.join(',');
+        const targetStateStr = targetState.join(',');
+        
+        // If already at target state
+        if (currentStateStr === targetStateStr) {
+            return [];
+        }
+        
+        // BFS queue: [state, path]
+        const queue = [[currentState.slice(), []]];
+        const visited = new Set([currentStateStr]);
+        
+        // Define all possible actions
+        const actions = [
+            {
+                name: 'zero2gripper',
+                apply: (state) => state[0] === 1 ? [0, state[1], state[2], state[3]] : null
+            },
+            {
+                name: 'gripper2zero', 
+                apply: (state) => state[0] === 0 ? [1, state[1], state[2], state[3]] : null
+            },
+            {
+                name: 'zero2frame',
+                apply: (state) => state[1] === 1 ? [state[0], 0, state[2], state[3]] : null
+            },
+            {
+                name: 'frame2zero',
+                apply: (state) => state[1] === 0 ? [state[0], 1, state[2], state[3]] : null
+            },
+            {
+                name: 'zero2stickP',
+                apply: (state) => state[2] === 1 ? [state[0], state[1], 0, state[3]] : null
+            },
+            {
+                name: 'stickP2zero',
+                apply: (state) => state[2] === 0 ? [state[0], state[1], 1, state[3]] : null
+            },
+            {
+                name: 'zero2stickR',
+                apply: (state) => state[3] === 1 ? [state[0], state[1], state[2], 0] : null
+            },
+            {
+                name: 'stickR2zero',
+                apply: (state) => state[3] === 0 ? [state[0], state[1], state[2], 1] : null
+            }
+        ];
+        
+        while (queue.length > 0) {
+            const [currentState, path] = queue.shift();
+            
+            // Try all possible actions
+            for (const action of actions) {
+                const newState = action.apply(currentState);
+                
+                if (newState) {
+                    const newStateStr = newState.join(',');
+                    
+                    // Check if new state is valid and not visited
+                    if (this.validStates.has(newStateStr) && !visited.has(newStateStr)) {
+                        // 额外约束检查：确保动作符合业务逻辑
+                        if (this.isActionAllowed(currentState, action.name)) {
+                            const newPath = [...path, action.name];
+                            
+                            // If reached target state
+                            if (newStateStr === targetStateStr) {
+                                return newPath;
+                            }
+                            
+                            queue.push([newState, newPath]);
+                            visited.add(newStateStr);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // No path found
+        return ['No valid path found'];
+    }
+
+    // Reset to default state (similar to Python version)
+    resetToDefault(currentState) {
+        const targetState = [1, 1, 1, 1]; // Default state
+        const currentStateStr = currentState.join('');
+        const targetStateStr = "1111";
+        
+        // If already at default state
+        if (currentStateStr === targetStateStr) {
+            return [];
+        }
+        
+        const path = [];
+        let current = currentState.slice();
+        
+        // 按正确顺序放回工具：stickP和stickR必须在gripper之前放回
+        // 1. 先放回stickP和stickR
+        if (current[2] === 0) {  // stickP被取出
+            path.push('stickP2zero');
+            current[2] = 1;
+        }
+        
+        if (current[3] === 0) {  // stickR被取出
+            path.push('stickR2zero');
+            current[3] = 1;
+        }
+        
+        // 2. 然后放回gripper和frame
+        if (current[0] === 0) {  // gripper被取出
+            path.push('gripper2zero');
+            current[0] = 1;
+        }
+        
+        if (current[1] === 0) {  // frame被取出
+            path.push('frame2zero');
+            current[1] = 1;
+        }
+        
+        return path;
+    }
+}
+
+// Create global tool state manager instance
+const toolStateManager = new ToolStateManager();
+
+// Handle tool control button clicks
+function handleToolControlClick(toolType) {
+    console.log(`Tool control clicked: ${toolType}`);
+    
+    // Clear any existing timeout
+    if (toolControlClickTimeout) {
+        clearTimeout(toolControlClickTimeout);
+        toolControlClickTimeout = null;
+    }
+    
+    // Set click active flag
+    toolControlClickActive = true;
+    
+    // Get current robot state to display tool status
+    if (robotStateData && robotStateData.boolRegisterOutput) {
+        const boolRegisterOutput = robotStateData.boolRegisterOutput;
+        const gripperState = boolRegisterOutput[0] ? 1 : 0;
+        const frameState = boolRegisterOutput[1] ? 1 : 0;
+        const stickPState = boolRegisterOutput[2] ? 1 : 0;
+        const stickRState = boolRegisterOutput[3] ? 1 : 0;
+        
+        const currentState = [gripperState, frameState, stickPState, stickRState];
+        
+        let path, targetState;
+        
+        // Calculate target state dynamically based on current state and button (like Python version)
+        if (toolType === 'homing') {
+            // Use special reset logic for homing
+            path = toolStateManager.resetToDefault(currentState);
+            targetState = [1, 1, 1, 1];
+        } else {
+            targetState = toolStateManager.calculateTargetState(currentState, toolType);
+            
+            console.log(`Current state: ${currentState.join('')}`);
+            console.log(`Target state: ${targetState.join('')}`);
+            
+            // Find shortest path using enhanced BFS with constraint checking
+            path = toolStateManager.findShortestPath(currentState, targetState);
+        }
+        
+        console.log(`Tool: ${toolType}, Current: ${currentState.join('')}, Target: ${targetState.join('')}, Path: ${path.join(' → ')}`);
+        
+        // Create tool name mapping for display
+        const toolDisplayNames = {
+            'gripper': 'Get Gripper',
+            'frame': 'Get Frame',
+            'stickP': 'Get StickP',
+            'stickR': 'Get StickR',
+            'homing': 'Homing Tools'
+        };
+        
+        const toolDisplayName = toolDisplayNames[toolType] || toolType;
+        const pathText = path.length > 0 ? `path: ${path.join(' → ')}` : 'Already at target state';
+        
+        const statusElement = document.getElementById('toolControlStatus');
+        if (statusElement) {
+            statusElement.innerHTML = `<div class="text-blue-600 font-medium">"${toolDisplayName}" clicked, ${pathText}</div>`;
+            statusElement.className = 'text-sm';
+            
+            // Execute the action sequence if path is found and not empty
+            if (path.length > 0 && path[0] !== 'No valid path found') {
+                executeActionSequence(path, statusElement);
+            }
+            
+            // Reset to normal status after 5 seconds (or longer if executing actions)
+            const resetDelay = path.length > 0 && path[0] !== 'No valid path found' ? 
+                               Math.max(5000, path.length * 2000) : 3000;
+            toolControlClickTimeout = setTimeout(() => {
+                toolControlClickActive = false;
+                updateToolControlButtons(boolRegisterOutput, true); // Force update
+            }, resetDelay);
+        }
+    }
+    
+    // Add your tool control logic here
+    // For example, send commands to the robot based on toolType
+    switch (toolType) {
+        case 'gripper':
+            console.log('Executing Get gripper command');
+            // Add gripper control command here
+            break;
+        case 'frame':
+            console.log('Executing Get frame command');
+            // Add frame control command here
+            break;
+        case 'stickP':
+            console.log('Executing Get stickP command');
+            // Add stickP control command here
+            break;
+        case 'stickR':
+            console.log('Executing Get stickR command');
+            // Add stickR control command here
+            break;
+        case 'homing':
+            console.log('Executing homing tools command');
+            // Add homing tools command here
+            break;
+        default:
+            console.log('Unknown tool type:', toolType);
+    }
+}
+
+// Execute action sequence by sending task commands
+async function executeActionSequence(actionPath, statusElement) {
+    console.log('Executing action sequence:', actionPath);
+    
+    // IMPORTANT: Reset interrupt flags at the start of new tool operation
+    programShouldStop = false;
+    programShouldPause = false;
+    forceInterrupt = false;
+    console.log('🔄 RESET: Cleared all interrupt flags for new tool operation');
+    
+    // Map BFS action names to task command names (matching sendTaskCommand mapping)
+    const actionToTaskCommand = {
+        'zero2gripper': 'task_zero2gripper',
+        'gripper2zero': 'task_gripper2zero',
+        'zero2frame': 'task_zero2frame',
+        'frame2zero': 'task_frame2zero',
+        'zero2stickP': 'task_zero2stickP',
+        'stickP2zero': 'task_stickP2zero',
+        'zero2stickR': 'task_zero2stickR',
+        'stickR2zero': 'task_stickR2zero'
+    };
+    
+    try {
+        // Update status to show execution started
+        if (statusElement) {
+            const currentHTML = statusElement.innerHTML;
+            statusElement.innerHTML = currentHTML + `<div id="action-progress" class="text-purple-600 text-sm font-medium mt-1">⚙️ Executing actions...</div>`;
+        }
+        
+        // Execute each action in sequence
+        for (let i = 0; i < actionPath.length; i++) {
+            const action = actionPath[i];
+            const taskCommand = actionToTaskCommand[action];
+            
+            if (taskCommand) {
+                console.log(`Executing step ${i + 1}/${actionPath.length}: ${action} -> ${taskCommand}`);
+                
+                // Update status to show current action
+                if (statusElement) {
+                    const progressElement = statusElement.querySelector('#action-progress');
+                    if (progressElement) {
+                        progressElement.innerHTML = `⚙️ Executing ${i + 1}/${actionPath.length}: ${action}`;
+                    }
+                }
+                
+                // Send the task command (non-blocking)
+                await sendTaskCommand(taskCommand);
+                
+                // Wait for program to complete before sending next command
+                console.log(`Waiting for program completion after ${action}... (Pause/Stop available with HIGH PRIORITY)`);
+                console.log(`📝 INFO: If paused, sequence will resume from step ${i + 1}/${actionPath.length} when resumed`);
+                await waitForProgramCompletion();
+                
+                // Check if we were interrupted by stop command
+                if (programShouldStop || forceInterrupt) {
+                    console.log(`🛑 SEQUENCE STOPPED: Task sequence interrupted at step ${i + 1}/${actionPath.length}`);
+                    if (statusElement) {
+                        const progressElement = statusElement.querySelector('#action-progress');
+                        if (progressElement) {
+                            progressElement.innerHTML = `🛑 Sequence stopped at step ${i + 1}/${actionPath.length}`;
+                            progressElement.className = 'text-orange-600 text-sm font-medium mt-1';
+                        }
+                    }
+                    return; // Exit the sequence
+                }
+                
+                console.log(`Completed step ${i + 1}/${actionPath.length}: ${action}`);
+            } else {
+                console.error(`Unknown action: ${action}`);
+                if (statusElement) {
+                    const progressElement = statusElement.querySelector('#action-progress');
+                    if (progressElement) {
+                        progressElement.innerHTML = `❌ Error: Unknown action ${action}`;
+                        progressElement.className = 'text-red-600 text-sm font-medium mt-1';
+                    }
+                }
+                return;
+            }
+        }
+        
+        // Update status to show completion
+        if (statusElement) {
+            const progressElement = statusElement.querySelector('#action-progress');
+            if (progressElement) {
+                progressElement.innerHTML = `✅ All actions completed successfully`;
+                progressElement.className = 'text-green-600 text-sm font-medium mt-1';
+            }
+        }
+        
+        console.log('Action sequence completed successfully');
+        
+    } catch (error) {
+        console.error('Error executing action sequence:', error);
+        if (statusElement) {
+            const progressElement = statusElement.querySelector('#action-progress');
+            if (progressElement) {
+                progressElement.innerHTML = `❌ Error: ${error.message}`;
+                progressElement.className = 'text-red-600 text-sm font-medium mt-1';
+            } else {
+                // Fallback if progress element not found
+                const currentHTML = statusElement.innerHTML;
+                statusElement.innerHTML = currentHTML + `<div class="text-red-600 text-sm font-medium mt-1">❌ Error: ${error.message}</div>`;
+            }
+        }
+    }
+}
+
+// Send Tool Control API command (for use by external scripts via JSON API)
+async function sendToolControlAPI(toolType, options = {}) {
+    try {
+        const response = await fetch('/api/tool_control/execute', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                tool_type: toolType,
+                wait_completion: options.waitCompletion || false,
+                timeout: options.timeout || 100000
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            console.log(`Tool control API success: ${toolType}`, result);
+            return {
+                success: true,
+                message: result.message || 'Tool control executed successfully',
+                path: result.path || [],
+                data: result
+            };
+        } else {
+            console.error(`Tool control API error: ${toolType}`, result);
+            return {
+                success: false,
+                error: result.error || 'Unknown error occurred',
+                data: result
+            };
+        }
+    } catch (error) {
+        console.error('Tool control API network error:', error);
+        return {
+            success: false,
+            error: `Network error: ${error.message}`,
+            data: null
+        };
+    }
+}
+
+// Global flags for program interruption - HIGHEST PRIORITY CONTROLS
+let programShouldStop = false;
+let programShouldPause = false;
+let forceInterrupt = false; // Ultimate interrupt flag for immediate exit
+
+// Wait for robot program to complete execution by monitoring boolRegisterOutput[4]
+async function waitForProgramCompletion(timeout = 300000) {
+    return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        const maxWaitTime = timeout; // Maximum wait time in milliseconds
+        let programStarted = false;
+        let initialDelayCompleted = false;
+        
+        console.log('Starting program completion wait...');
+        
+        const checkCompletion = () => {
+            // Check for user-initiated interruptions first
+            if (programShouldStop) {
+                console.log('Program execution interrupted by user stop command');
+                programShouldStop = false; // Reset flag
+                resolve(); // Exit waiting
+                return;
+            }
+            
+            if (programShouldPause && isProgramPaused) {
+                console.log('Program execution paused by user, continuing to wait...');
+                // Don't resolve, just continue waiting in paused state
+            }
+            
+            // Check timeout
+            if (Date.now() - startTime > maxWaitTime) {
+                console.error('Timeout waiting for program completion');
+                reject(new Error('Timeout waiting for program completion'));
+                return;
+            }
+            
+            // Add initial delay to allow command to be processed
+            if (!initialDelayCompleted) {
+                if (Date.now() - startTime < 200) { // Wait 200ms initially
+                    setTimeout(checkCompletion, 50);
+                    return;
+                } else {
+                    initialDelayCompleted = true;
+                    console.log('Initial delay completed, starting status monitoring...');
+                }
+            }
+            
+            // Check if we have robot state data
+            if (robotStateData && robotStateData.boolRegisterOutput && Array.isArray(robotStateData.boolRegisterOutput)) {
+                // Program status logic: 
+                // true/1 = program started/running, false/0 = program completed/idle
+                const bit4Value = robotStateData.boolRegisterOutput[4];
+                const isProgramActive = bit4Value === true || bit4Value === 1;
+                const isProgramIdle = bit4Value === false || bit4Value === 0;
+                
+                console.log(`Program status check: boolRegisterOutput[4] = ${bit4Value}, active=${isProgramActive}, idle=${isProgramIdle}, started=${programStarted}`);
+                
+                // Wait for program to start (bit goes to 1)
+                if (!programStarted && isProgramActive) {
+                    programStarted = true;
+                    console.log('Program execution started detected (boolRegisterOutput[4] = 1)');
+                }
+                
+                // Wait for program to complete (bit goes back to 0) 
+                if (programStarted && isProgramIdle) {
+                    console.log('Program execution completed (boolRegisterOutput[4] = 0), ready for next command');
+                    resolve();
+                    return;
+                } else if (programStarted) {
+                    console.log('Program still running (boolRegisterOutput[4] = 1), waiting...');
+                } else if (!programStarted && isProgramIdle) {
+                    // If program shows as idle before we see it starting, wait for it to start
+                    console.log('Waiting for program to start (currently idle, boolRegisterOutput[4] = 0)...');
+                } else {
+                    console.log('Waiting for program state change...');
+                }
+            } else {
+                console.log('No robot state data available, waiting...');
+            }
+            
+            // Check again after a short delay
+            setTimeout(checkCompletion, 100); // Check every 100ms
+        };
+        
+        // Start checking
+        checkCompletion();
+    });
 }
 
 // Update Move Control Display Section
@@ -1882,8 +2593,20 @@ async function sendCommand(command) {
         button.style.opacity = '0.6';
     }
     
-    statusElement.textContent = `Sending command: ${command}...`;
-    statusElement.className = 'text-sm text-blue-600';
+    console.log(`Attempting to send command: ${command}`);
+    
+    // Handle program control commands specially - set interrupt flags for priority handling
+    if (command === 'stop_program') {
+        programShouldStop = true; // Set global flag to interrupt waiting
+        forceInterrupt = true; // Also set force interrupt for immediate response
+        console.log('🛑 STOP: Stop program command received, setting HIGH PRIORITY interrupt flags');
+    } else if (command === 'pause') {
+        programShouldPause = true; // Set global flag to pause execution
+        console.log('⏸️ PAUSE: Pause command received, setting MEDIUM PRIORITY interrupt flag');
+    } else if (command === 'resume') {
+        programShouldPause = false; // Clear pause flag to resume execution
+        console.log('▶️ RESUME: Resume command received, clearing pause flag');
+    }
     
     try {
         const response = await fetch('/api/robot_arm/cmd', {
@@ -1896,21 +2619,26 @@ async function sendCommand(command) {
             })
         });
         
-        const result = await response.json();
+        console.log(`Response status: ${response.status}`);
         
-        if (response.ok) {
-            statusElement.textContent = `Command sent successfully: ${command}`;
-            statusElement.className = 'text-sm text-green-600';
-            logCommand('Command', command, 'success');
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`HTTP error: ${response.status} - ${errorText}`);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log('Command result:', result);
+        
+        // Special handling for stop_program command
+        if (command === 'stop_program') {
+            console.log('🛑 STOP: Program stopped and bool register 5 reset to 0');
+            logCommand('Command', `${command} + bool_reg_5_reset`, 'success');
         } else {
-            statusElement.textContent = `Error: ${result.error || 'Unknown error'}`;
-            statusElement.className = 'text-sm text-red-600';
-            logCommand('Command', command, 'error');
+            logCommand('Command', command, 'success');
         }
     } catch (error) {
         console.error('Error sending command:', error);
-        statusElement.textContent = `Network error: ${error.message}`;
-        statusElement.className = 'text-sm text-red-600';
         logCommand('Command', command, 'error');
     } finally {
         // Re-enable button
@@ -1918,12 +2646,6 @@ async function sendCommand(command) {
             button.disabled = false;
             button.style.opacity = '1';
         }
-        
-        // Clear status after 3 seconds
-        setTimeout(() => {
-            statusElement.textContent = 'Ready to send commands';
-            statusElement.className = 'text-sm text-gray-600';
-        }, 3000);
     }
 }
 
@@ -2007,6 +2729,306 @@ async function sendFTCCommand(command, parameter = null) {
     }
 }
 
+// Send Task command to robot arm using appropriate robot commands
+async function sendTaskCommand(command) {
+    // Map task commands to actual robot commands - using FALSE for non-blocking execution
+    // This allows pause/stop commands to be processed during task execution
+    const taskCommands = {
+        // 'arm_move2zero': [
+        //     'movej2 [0.0,0.0,0.0,0.0,0.0,0.0] 1.5 1.0 0.0 true',
+        //     'movej2 [1.1504,-0.4533,1.3090,0.8081,-1.6195,-1.9460] 1.5 1.0 0.0 true'  // Convert degrees to radians
+        // ],
+        'task_zero2stickP': 'run_program zero2stickP.jspf false',
+        'task_stickP2zero': 'run_program stickP2zero.jspf false',
+        'task_zero2stickR': 'run_program zero2stickR.jspf false',
+        'task_stickR2zero': 'run_program stickR2zero.jspf false',
+        'task_zero2gripper': 'run_program zero2jaw.jspf false',
+        'task_gripper2zero': 'run_program jaw2zero.jspf false',
+        'task_zero2frame': 'run_program zero2holder.jspf false',
+        'task_frame2zero': 'run_program holder2zero.jspf false',
+        'task_rotate': 'run_program task_rotate.jspf false',
+        'task_pull': 'run_program task_pull.jspf false',
+        'task_pushbox': 'run_program task_pushbox.jspf false'
+    };
+    
+    if (command in taskCommands) {
+        const robotCommands = taskCommands[command];
+        
+        if (Array.isArray(robotCommands)) {
+            // For arm_move2zero, send multiple commands sequentially
+            for (const robotCommand of robotCommands) {
+                await sendCommand(robotCommand);
+                // Add a small delay between commands
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        } else {
+            // For other tasks, send single command
+            await sendCommand(robotCommands);
+        }
+    } else {
+        console.error(`Unknown task command: ${command}`);
+    }
+}
+
+// Send Extract Server composite task - combines get_stickR, task_rotate, get_stickP, and task_pull
+async function sendExtractServerTask() {
+    console.log('Starting Extract Server composite task...');
+    
+    try {
+        // Update status to show sequence started
+        const statusElement = document.getElementById('commandStatus');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Executing Extract Server sequence...</div>';
+        }
+        
+        // Step 1: Execute get_stickR operation (ensure we have stickR first)
+        console.log('Step 1/4: Executing get_stickR...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 1/4: Getting StickR...</div>';
+        }
+        await executeGetStickR();
+        console.log('Step 1/4: get_stickR completed');
+        
+        // Step 2: Execute task_rotate
+        console.log('Step 2/4: Executing task_rotate...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 2/4: Rotating...</div>';
+        }
+        await sendTaskCommand('task_rotate');
+        await waitForProgramCompletion();
+        console.log('Step 2/4: task_rotate completed');
+        
+        // Step 3: Execute get_stickP operation
+        console.log('Step 3/4: Executing get_stickP...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 3/4: Getting StickP...</div>';
+        }
+        await executeGetStickP();
+        console.log('Step 3/4: get_stickP completed');
+        
+        // Step 4: Execute task_pull
+        console.log('Step 4/4: Executing task_pull...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🖲️ Step 4/4: Pulling...</div>';
+        }
+        await sendTaskCommand('task_pull');
+        await waitForProgramCompletion();
+        console.log('Step 4/4: task_pull completed');
+        
+        // Update status to show completion
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-green-600 font-medium">✅ Extract Server sequence completed successfully</div>';
+            setTimeout(() => {
+                statusElement.innerHTML = 'Ready to send commands';
+                statusElement.className = 'text-sm text-gray-600';
+            }, 5000);
+        }
+        
+        console.log('Extract Server composite task completed successfully');
+        logCommand('Extract Server', 'Composite task completed', 'success');
+        
+    } catch (error) {
+        console.error('Error executing Extract Server task:', error);
+        const statusElement = document.getElementById('commandStatus');
+        if (statusElement) {
+            statusElement.innerHTML = `<div class="text-red-600 font-medium">❌ Error: ${error.message}</div>`;
+            setTimeout(() => {
+                statusElement.innerHTML = 'Ready to send commands';
+                statusElement.className = 'text-sm text-gray-600';
+            }, 5000);
+        }
+        logCommand('Extract Server', `Error: ${error.message}`, 'error');
+    }
+}
+
+// Send Insert Server composite task - combines get_stickP and task_pushbox
+async function sendInsertServerTask() {
+    console.log('Starting Insert Server composite task...');
+    
+    try {
+        // Update status to show sequence started
+        const statusElement = document.getElementById('commandStatus');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🗄️ Executing Insert Server sequence...</div>';
+        }
+        
+        // Step 1: Execute get_stickP operation (ensure we have stickP first)
+        console.log('Step 1/2: Executing get_stickP...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🗄️ Step 1/2: Getting StickP...</div>';
+        }
+        await executeGetStickP();
+        console.log('Step 1/2: get_stickP completed');
+        
+        // Step 2: Execute task_pushbox
+        console.log('Step 2/2: Executing task_pushbox...');
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-blue-600 font-medium">🗄️ Step 2/2: Pushing server...</div>';
+        }
+        await sendTaskCommand('task_pushbox');
+        await waitForProgramCompletion();
+        console.log('Step 2/2: task_pushbox completed');
+        
+        // Update status to show completion
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="text-green-600 font-medium">✅ Insert Server sequence completed successfully</div>';
+            setTimeout(() => {
+                statusElement.innerHTML = 'Ready to send commands';
+                statusElement.className = 'text-sm text-gray-600';
+            }, 5000);
+        }
+        
+        console.log('Insert Server composite task completed successfully');
+        logCommand('Insert Server', 'Composite task completed', 'success');
+        
+    } catch (error) {
+        console.error('Error executing Insert Server task:', error);
+        const statusElement = document.getElementById('commandStatus');
+        if (statusElement) {
+            statusElement.innerHTML = `<div class="text-red-600 font-medium">❌ Error: ${error.message}</div>`;
+            setTimeout(() => {
+                statusElement.innerHTML = 'Ready to send commands';
+                statusElement.className = 'text-sm text-gray-600';
+            }, 5000);
+        }
+        logCommand('Insert Server', `Error: ${error.message}`, 'error');
+    }
+}
+
+// Execute get_stickR operation (using ToolStateManager logic)
+async function executeGetStickR() {
+    console.log('Executing get_stickR operation...');
+    
+    // Get current robot state to determine the path for stickR
+    if (robotStateData && robotStateData.boolRegisterOutput) {
+        const boolRegisterOutput = robotStateData.boolRegisterOutput;
+        const gripperState = boolRegisterOutput[0] ? 1 : 0;
+        const frameState = boolRegisterOutput[1] ? 1 : 0;
+        const stickPState = boolRegisterOutput[2] ? 1 : 0;
+        const stickRState = boolRegisterOutput[3] ? 1 : 0;
+        
+        const currentState = [gripperState, frameState, stickPState, stickRState];
+        
+        console.log(`Current state: ${currentState.join('')}`);
+        
+        // Check if stickR is already taken out (AWAY = 0)
+        if (stickRState === 0) {
+            console.log('StickR is already taken out (AWAY state), no action needed');
+            return;
+        }
+        
+        // StickR needs to be taken out, calculate target state for stickR operation
+        const targetState = toolStateManager.calculateTargetState(currentState, 'stickR');
+        
+        console.log(`Target state for stickR: ${targetState.join('')}`);
+        
+        // Use ToolStateManager to find shortest path
+        const path = toolStateManager.findShortestPath(currentState, targetState);
+        
+        if (path.length > 0 && path[0] !== 'No valid path found') {
+            console.log('Executing stickR path:', path);
+            
+            // Map BFS action names to task command names (same mapping as in handleToolControlClick)
+            const actionToTaskCommand = {
+                'zero2gripper': 'task_zero2gripper',
+                'gripper2zero': 'task_gripper2zero',
+                'zero2frame': 'task_zero2frame',
+                'frame2zero': 'task_frame2zero',
+                'zero2stickP': 'task_zero2stickP',
+                'stickP2zero': 'task_stickP2zero',
+                'zero2stickR': 'task_zero2stickR',
+                'stickR2zero': 'task_stickR2zero'
+            };
+            
+            // Execute each action in sequence
+            for (let i = 0; i < path.length; i++) {
+                const action = path[i];
+                const taskCommand = actionToTaskCommand[action];
+                
+                if (taskCommand) {
+                    console.log(`Executing stickR step ${i + 1}/${path.length}: ${action} -> ${taskCommand}`);
+                    await sendTaskCommand(taskCommand);
+                    await waitForProgramCompletion();
+                    console.log(`Completed stickR step ${i + 1}/${path.length}: ${action}`);
+                } else {
+                    throw new Error(`Unknown action: ${action}`);
+                }
+            }
+        } else {
+            console.log('StickR already at target state or no valid path found');
+        }
+    } else {
+        throw new Error('Robot state data not available');
+    }
+}
+
+// Execute get_stickP operation (using ToolStateManager logic)
+async function executeGetStickP() {
+    console.log('Executing get_stickP operation...');
+    
+    // Get current robot state to determine the path for stickP
+    if (robotStateData && robotStateData.boolRegisterOutput) {
+        const boolRegisterOutput = robotStateData.boolRegisterOutput;
+        const gripperState = boolRegisterOutput[0] ? 1 : 0;
+        const frameState = boolRegisterOutput[1] ? 1 : 0;
+        const stickPState = boolRegisterOutput[2] ? 1 : 0;
+        const stickRState = boolRegisterOutput[3] ? 1 : 0;
+        
+        const currentState = [gripperState, frameState, stickPState, stickRState];
+        
+        console.log(`Current state: ${currentState.join('')}`);
+        
+        // Check if stickP is already taken out (AWAY = 0)
+        if (stickPState === 0) {
+            console.log('StickP is already taken out (AWAY state), no action needed');
+            return;
+        }
+        
+        // StickP needs to be taken out, calculate target state for stickP operation
+        const targetState = toolStateManager.calculateTargetState(currentState, 'stickP');
+        
+        console.log(`Target state for stickP: ${targetState.join('')}`);
+        
+        // Use ToolStateManager to find shortest path
+        const path = toolStateManager.findShortestPath(currentState, targetState);
+        
+        if (path.length > 0 && path[0] !== 'No valid path found') {
+            console.log('Executing stickP path:', path);
+            
+            // Map BFS action names to task command names (same mapping as in handleToolControlClick)
+            const actionToTaskCommand = {
+                'zero2gripper': 'task_zero2gripper',
+                'gripper2zero': 'task_gripper2zero',
+                'zero2frame': 'task_zero2frame',
+                'frame2zero': 'task_frame2zero',
+                'zero2stickP': 'task_zero2stickP',
+                'stickP2zero': 'task_stickP2zero',
+                'zero2stickR': 'task_zero2stickR',
+                'stickR2zero': 'task_stickR2zero'
+            };
+            
+            // Execute each action in sequence
+            for (let i = 0; i < path.length; i++) {
+                const action = path[i];
+                const taskCommand = actionToTaskCommand[action];
+                
+                if (taskCommand) {
+                    console.log(`Executing stickP step ${i + 1}/${path.length}: ${action} -> ${taskCommand}`);
+                    await sendTaskCommand(taskCommand);
+                    await waitForProgramCompletion();
+                    console.log(`Completed stickP step ${i + 1}/${path.length}: ${action}`);
+                } else {
+                    throw new Error(`Unknown action: ${action}`);
+                }
+            }
+        } else {
+            console.log('StickP already at target state or no valid path found');
+        }
+    } else {
+        throw new Error('Robot state data not available');
+    }
+}
+
 // Toggle FT Sensor function
 function toggleFTSensor() {
     const button = document.getElementById('ftSensorToggleBtn');
@@ -2053,9 +3075,54 @@ function getButtonId(command) {
         'power_on': 'powerOnBtn',
         'power_off': 'powerOffBtn',
         'enable': 'enableBtn',
-        'disable': 'disableBtn'
+        'disable': 'disableBtn',
+        'pause': 'pauseResumeBtn',
+        'resume': 'pauseResumeBtn',
+        'stop_program': 'stopProgramBtn'
     };
     return buttonMap[command];
+}
+
+// Toggle pause/resume function
+async function togglePauseResume() {
+    const button = document.getElementById('pauseResumeBtn');
+    
+    try {
+        if (isProgramPaused) {
+            // Currently paused, so resume
+            console.log('📋 RESUME: Task sequence will continue from where it was paused');
+            await sendCommand('resume');
+            isProgramPaused = false;
+            programShouldPause = false; // Clear pause flag
+            button.innerHTML = '⏸️ Pause Program';
+            button.className = 'robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base';
+            logCommand('System', 'Program resumed - execution will continue', 'success');
+        } else {
+            // Currently running, so pause
+            console.log('⏸️ PAUSE: Sending pause command with MEDIUM PRIORITY');
+            await sendCommand('pause'); // Use correct pause command
+            isProgramPaused = true;
+            // Note: programShouldPause flag is set in sendCommand() for pause
+            button.innerHTML = '▶️ Resume Program';
+            button.className = 'robot-arm-button status-style-button status-button-green font-semibold rounded-lg text-base';
+            logCommand('System', '💡 Program paused - Click Resume to continue execution', 'success');
+        }
+    } catch (error) {
+        console.error('Error toggling pause/resume:', error);
+        logCommand('System', `Pause/Resume error: ${error.message}`, 'error');
+    }
+}
+
+// Initialize pause/resume button state
+function initializePauseResumeState() {
+    const button = document.getElementById('pauseResumeBtn');
+    if (button) {
+        // Reset to default state (not paused)
+        isProgramPaused = false;
+        button.innerHTML = '⏸️ Pause Program';
+        button.className = 'robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base';
+        console.log('Pause/Resume button initialized');
+    }
 }
 
 // Update connection status indicator
@@ -3597,16 +4664,18 @@ async function updateCameraStatus() {
 
 // Update camera connection status display
 function updateCameraConnectionStatus(connected) {
-    const statusDot = document.getElementById('cameraStatusDot');
-    const statusText = document.getElementById('cameraStatusText');
+    const statusBarCamera = document.getElementById('cameraStatusBar');
     
-    if (statusDot && statusText) {
+    cameraConnected = connected; // Update global variable
+    
+    // Update camera status in the status bar
+    if (statusBarCamera) {
         if (connected) {
-            statusDot.classList.add('connected');
-            statusText.textContent = 'Connected';
+            statusBarCamera.textContent = 'Connected';
+            statusBarCamera.className = 'status-bar-value connected';
         } else {
-            statusDot.classList.remove('connected');
-            statusText.textContent = 'Disconnected';
+            statusBarCamera.textContent = 'Disconnected';
+            statusBarCamera.className = 'status-bar-value disconnected';
         }
     }
     
