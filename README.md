@@ -14,6 +14,7 @@ robot_dc/
 │       ├── leadshine_motor/       # Leadshine motor control node and simulation logic
 │       ├── modbus_driver/         # Central Modbus RTU driver and simulator
 │       ├── modbus_driver_interfaces/ # Shared service/message interface definitions
+│       ├── monitor/               # Robot data monitoring and recording
 │       ├── robot_bringup/         # Unified system-level launch entry points
 │       ├── robot_teleop/          # Joystick teleoperation support
 │       └── robot_web/             # Web-based interface for control and monitoring
@@ -22,6 +23,8 @@ robot_dc/
 │       ├── enable_ch340_usb_serial_on_jetson.md
 │       └── setup_joystick_ros2.md
 ├── scripts/                      # Utility and testing scripts
+│   ├── robot_monitor_manager.py  # Unified data management tool
+│   ├── test_udp_send.py          # UDP test data sender
 │   ├── cam.py                    # Original camera script (reference)
 │   ├── jog_motor.py
 │   └── serial_port_finder.py
@@ -41,9 +44,11 @@ robot_dc/
   * [cam\_node](colcon_ws/src/cam_node/README.md)
   * [leadshine\_motor](colcon_ws/src/leadshine_motor/README.md)
   * [modbus\_driver](colcon_ws/src/modbus_driver/README.md)
+  * [monitor](colcon_ws/src/monitor/README.md) - **Robot data monitoring and recording**
   * [robot\_teleop](colcon_ws/src/robot_teleop/README.md)
   * [robot\_web](colcon_ws/src/robot_web/README.md)
 * Shared interfaces are in [`modbus_driver_interfaces`](colcon_ws/src/modbus_driver_interfaces).
+* **Robot monitoring** tools are in [`scripts/robot_monitor_manager.py`](scripts/robot_monitor_manager.py) for unified data management.
 * Documentation and troubleshooting FAQs are available in the `doc/FAQ/` folder:
 
   * [Enable CH340 USB serial on Jetson](doc/FAQ/enable_ch340_usb_serial_on_jetson.md)
@@ -56,45 +61,149 @@ robot_dc/
 
 ## Quick Start
 
-1. **Build and source the workspace:**
+### 1. System Setup
 
-   ```bash
-   cd colcon_ws
-   colcon build
-   source install/setup.bash
-   ```
+**Build and source the workspace:**
 
-2. **Launch the full robot system (real hardware):**
+```bash
+cd colcon_ws
+colcon build
+source install/setup.bash
+```
 
-   ```bash
-   ros2 launch robot_bringup robot_launch.py
-   ```
+### 2. Robot Control
 
-3. **Alternatively, run in simulation mode (no physical hardware required):**
+**Launch the full robot system (real hardware):**
 
-   ```bash
-   ros2 launch robot_bringup simulate_motor_launch.py
-   ```
+```bash
+ros2 launch robot_bringup robot_launch.py
+```
 
-4. **Access the web interface for control and monitoring:**
+**Alternatively, run in simulation mode (no physical hardware required):**
 
-   Open a browser and navigate to:
+```bash
+ros2 launch robot_bringup simulate_motor_launch.py
+```
 
-   ```
-   http://<hostname>:8000
-   ```
+**Access the web interface for control and monitoring:**
 
-   > On Linux, you may need to allow port 8000 through your firewall to access from other PCs.
+Open a browser and navigate to:
+```
+http://<hostname>:8000
+```
 
-5. **Take camera snapshots via the web interface:**
+### 3. Robot Data Monitoring
 
-   The system includes a dual-camera RTSP snapshot service. Once the system is running, you can:
-   - Access the web interface at `http://<hostname>:8000`
-   - Use the "Take Snapshot" button to capture images from both cameras
-   - Images are automatically displayed in the web interface
-   - Service endpoint: `/snapshot` (std_srvs/srv/Trigger)
+**Start monitoring (automatic data recording):**
 
-6. **Refer to individual package READMEs for usage examples, APIs, and command formats.**
+```bash
+ros2 launch monitor monitor.launch.py
+```
+
+**List recorded sessions:**
+
+```bash
+python3 scripts/robot_monitor_manager.py --list --detailed
+```
+
+**Analyze a specific session:**
+
+```bash
+python3 scripts/robot_monitor_manager.py --analyze ~/robot_data/2025-XX-XX/robot_monitor_HHMMSS
+```
+
+**View actual data content:**
+
+```bash
+# View robot data (TCP position, joint angles, force sensor)
+python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-XX-XX/robot_monitor_HHMMSS --topic /robot_data --limit 5 --full
+
+# View log data
+python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-XX-XX/robot_monitor_HHMMSS --topic /log_data --limit 5
+```
+
+**Stop monitoring:**
+
+```bash
+pkill -f monitor_node
+```
+
+> 💡 **Tip:** Replace `HHMMSS` with the actual session timestamp from the `--list` command output.
+
+### 4. Camera Monitoring
+
+**Take camera snapshots via the web interface:**
+
+The system includes a dual-camera RTSP snapshot service. Once the system is running, you can:
+- Access the web interface at `http://<hostname>:8000`
+- Use the "Take Snapshot" button to capture images from both cameras
+- Images are automatically displayed in the web interface
+- Service endpoint: `/snapshot` (std_srvs/srv/Trigger)
+
+> 💡 **For detailed usage examples, APIs, and command formats, refer to individual package READMEs.**
+
+---
+
+## Robot Data Monitoring
+
+The system includes a comprehensive monitoring solution that automatically records robot data to ROS 2 bags for analysis and replay.
+
+### Monitoring Workflow
+
+1. **Start Monitoring** → 2. **List Sessions** → 3. **Analyze Data** → 4. **View Content**
+
+```bash
+# 1. Start monitoring (records UDP data to ROS 2 bags)
+ros2 launch monitor monitor.launch.py &
+
+# 2. Send test data (optional)
+python3 scripts/test_udp_send.py -n 20 -i 0.5
+
+# 3. List all recorded sessions
+python3 scripts/robot_monitor_manager.py --list --detailed
+
+# 4. Analyze specific session
+python3 scripts/robot_monitor_manager.py --analyze ~/robot_data/2025-XX-XX/robot_monitor_HHMMSS
+
+# 5. View actual data content
+python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-XX-XX/robot_monitor_HHMMSS --topic /robot_data --limit 5 --full
+```
+
+### Monitoring Data Types
+
+**Robot Data** (`/robot_data` topic):
+- **RobotTcpPos**: TCP position [x, y, z, rx, ry, rz] in mm and degrees
+- **RobotAxis**: Joint angles [J1-J6] in degrees
+- **RobotTrack**: Track position
+- **FTSensorData**: Force/torque sensor readings [Fx, Fy, Fz, Mx, My, Mz]
+- **FTTarget**: Force/torque target values
+
+**Log Data** (`/log_data` topic):
+- System log messages and events
+- Error notifications and status updates
+
+### Management Commands
+
+```bash
+# Show configuration and status
+python3 scripts/robot_monitor_manager.py --config
+
+# List sessions for specific date
+python3 scripts/robot_monitor_manager.py --list --date 2025-08-25
+
+# Clean up old data (dry run)
+python3 scripts/robot_monitor_manager.py --cleanup 30
+
+# Test UDP connection
+python3 scripts/robot_monitor_manager.py --test
+```
+
+### Data Storage
+
+- **Location**: `~/robot_data/YYYY-MM-DD/robot_monitor_HHMMSS.microsec/`
+- **Format**: ROS 2 bag files (SQLite + zstd compression)
+- **Metadata**: Session info, topic statistics, duration tracking
+- **Compatibility**: Works with standard `ros2 bag play/info` commands
 
 ---
 
@@ -135,23 +244,43 @@ For remote visual monitoring of the robot or workspace, you can launch a USB cam
 
 ## Features
 
-* Centralized Modbus RTU management
-* Leadshine motor control via ROS 2 service interface
-* RTSP camera snapshot service for dual-camera systems
-* Web-based interface for visualization and command
-* Simulation mode for development without hardware
-* Joystick teleoperation support
-* Modular architecture for easy extension
+* **Centralized Modbus RTU management** - Unified control of all Modbus devices
+* **Leadshine motor control** via ROS 2 service interface
+* **Real-time robot data monitoring** - UDP data collection and ROS 2 bag recording
+* **Comprehensive data analysis tools** - Session management, data viewing, and statistics
+* **RTSP camera snapshot service** for dual-camera systems
+* **Web-based interface** for visualization and command
+* **Simulation mode** for development without hardware
+* **Joystick teleoperation support**
+* **Modular architecture** for easy extension
+
+### Robot Monitoring Features
+
+* ✅ **UDP data monitoring** - Listens on ports 5566 (robot data) and 5577 (log data)
+* ✅ **Automatic ROS 2 bag recording** - Saves data to `~/robot_data/` with timestamps
+* ✅ **Data compression** - Uses zstd compression for efficient storage
+* ✅ **Session management** - Automatic session info and metadata generation
+* ✅ **Unified data viewer** - View robot TCP position, joint angles, force sensor data
+* ✅ **Analysis tools** - Session statistics, message counts, duration tracking
+* ✅ **Native ROS 2 integration** - Compatible with standard `ros2 bag` tools
 
 ---
 
 ## Documentation
 
-* Detailed FAQs and setup guides are available in the [`doc/FAQ/`](doc/FAQ/) folder.
-* Examples:
+* **Package-specific documentation**:
+  * [Robot Monitor (monitor)](colcon_ws/src/monitor/README.md) - Data monitoring and recording
+  * [Leadshine Motor](colcon_ws/src/leadshine_motor/README.md) - Motor control
+  * [Modbus Driver](colcon_ws/src/modbus_driver/README.md) - Communication layer
+  * [Robot Web](colcon_ws/src/robot_web/README.md) - Web interface
 
+* **FAQ and setup guides** are available in the [`doc/FAQ/`](doc/FAQ/) folder:
   * [Enabling CH340 USB serial devices on Jetson](doc/FAQ/enable_ch340_usb_serial_on_jetson.md)
   * [Setting up joystick support in ROS 2](doc/FAQ/setup_joystick_ros2.md)
+
+* **Monitoring tools**:
+  * [`robot_monitor_manager.py`](scripts/robot_monitor_manager.py) - Unified data management
+  * [`test_udp_send.py`](scripts/test_udp_send.py) - UDP test data generator
 
 ---
 

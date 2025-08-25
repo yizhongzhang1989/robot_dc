@@ -392,6 +392,12 @@ class RobotArmWebServer(Node):
         """Start UDP receiver for FT sensor data in a separate thread"""
         def udp_receiver():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            # Allow multiple sockets to bind to the same port
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except AttributeError:
+                pass  # SO_REUSEPORT not available on this system
             try:
                 sock.bind(('0.0.0.0', 5566))  # Port 5566 for FT sensor data
                 self.get_logger().info('FT Sensor UDP receiver started on port 5566')
