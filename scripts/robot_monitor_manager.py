@@ -23,7 +23,7 @@ class RobotMonitorManager:
         self.data_dir = data_dir
     
     def format_timestamp(self, timestamp_ns):
-        """Convert nanosecond timestamp to readable format"""
+        """Convert nanosecond timestamp to readable                     print("🧹 Cleaned up temporary files")ormat"""
         timestamp_sec = timestamp_ns / 1_000_000_000
         dt = datetime.fromtimestamp(timestamp_sec)
         return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]  # Remove last 3 digits for ms precision
@@ -392,13 +392,13 @@ class RobotMonitorManager:
                 readable_time = self.format_timestamp(timestamp)
                 
                 print(f"📨 Message {i:3d} (DB ID: {msg_id})")
-                print(f"   🕐 ROS2接收时间: {readable_time}")
-                print(f"   📡 原始时间戳: {timestamp} 纳秒")
-                print(f"   💾 数据大小: {data_size} 字节")
+                print(f"   🕐 ROS2 Receive Time: {readable_time}")
+                print(f"   📡 Raw Timestamp: {timestamp} nanoseconds")
+                print(f"   💾 Data Size: {data_size} bytes")
                 
                 if show_raw:
                     # Show raw binary data format
-                    print(f"   📄 原始二进制数据 ({data_size} 字节):")
+                    print(f"   📄 Raw Binary Data ({data_size} bytes):")
                     if isinstance(data_bytes, bytes):
                         # Show hex dump
                         hex_data = data_bytes.hex()
@@ -412,16 +412,16 @@ class RobotMonitorManager:
                                 ascii_repr += chr(byte)
                             else:
                                 ascii_repr += "."
-                        print("   📄 ASCII表示:")
+                        print("   📄 ASCII Representation:")
                         for j in range(0, len(ascii_repr), 64):
                             print(f"      {ascii_repr[j:j+64]}")
                     else:
                         print(f"      {data_bytes}")
                     
-                    print("   📝 存储说明:")
-                    print("      - 时间戳存储在messages表的timestamp字段（INTEGER类型，纳秒精度）")
-                    print("      - 数据存储在messages表的data字段（BLOB类型，CDR序列化格式）")
-                    print("      - 时间戳 = ROS2节点接收UDP数据包的时间")
+                    print("   📝 Storage Information:")
+                    print("      - Timestamp stored in messages table timestamp field (INTEGER type, nanosecond precision)")
+                    print("      - Data stored in messages table data field (BLOB type, CDR serialization format)")
+                    print("      - Timestamp = Time when ROS2 node received UDP packet")
                     print("-" * 60)
                     continue
                 
@@ -606,9 +606,9 @@ class RobotMonitorManager:
             print(f"❌ No .db3 or .db3.zstd file found in: {session_path}")
             return
 
-        print("🗄️  数据库结构分析")
+        print("🗄️  Database Structure Analysis")
         print("=" * 80)
-        print(f"📁 数据库文件: {db_file}")
+        print(f"📁 Database File: {db_file}")
         
         try:
             # Connect to SQLite database
@@ -616,14 +616,14 @@ class RobotMonitorManager:
             cursor = conn.cursor()
             
             # Show schema
-            print("\n📋 数据库模式:")
+            print("\n📋 Database Schema:")
             cursor.execute("SELECT sql FROM sqlite_master WHERE type='table'")
             schemas = cursor.fetchall()
             for schema in schemas:
                 print(f"   {schema[0]}")
             
             # Show topics
-            print("\n📡 话题信息:")
+            print("\n📡 Topic Information:")
             cursor.execute("SELECT id, name, type, serialization_format FROM topics")
             topics = cursor.fetchall()
             for topic_id, name, msg_type, format_type in topics:
@@ -637,37 +637,37 @@ class RobotMonitorManager:
                     min_time = self.format_timestamp(min_ts)
                     max_time = self.format_timestamp(max_ts)
                     duration = (max_ts - min_ts) / 1_000_000_000  # Convert to seconds
-                    print(f"      消息数量: {count}")
-                    print(f"      时间范围: {min_time} 至 {max_time}")
-                    print(f"      录制时长: {duration:.2f} 秒")
+                    print(f"      Message Count: {count}")
+                    print(f"      Time Range: {min_time} to {max_time}")
+                    print(f"      Recording Duration: {duration:.2f} seconds")
                     if count > 1:
                         avg_rate = count / duration if duration > 0 else 0
-                        print(f"      平均频率: {avg_rate:.2f} Hz")
+                        print(f"      Average Rate: {avg_rate:.2f} Hz")
                 else:
-                    print("      消息数量: 0")
+                    print("      Message Count: 0")
             
             # Show message storage details
-            print("\n💾 存储详情:")
+            print("\n💾 Storage Details:")
             cursor.execute("SELECT COUNT(*) FROM messages")
             total_messages = cursor.fetchone()[0]
-            print(f"   总消息数: {total_messages}")
+            print(f"   Total Messages: {total_messages}")
             
             cursor.execute("SELECT AVG(LENGTH(data)), MIN(LENGTH(data)), MAX(LENGTH(data)) FROM messages")
             avg_size, min_size, max_size = cursor.fetchone()
             if avg_size:
-                print(f"   消息大小: 平均 {avg_size:.1f} 字节, 范围 {min_size}-{max_size} 字节")
+                print(f"   Message Size: Average {avg_size:.1f} bytes, Range {min_size}-{max_size} bytes")
             
             # Show timestamp details
-            print("\n⏰ 时间戳详情:")
-            print("   存储位置: messages表的timestamp字段")
-            print("   数据类型: INTEGER (64位)")
-            print("   精度: 纳秒级")
-            print("   来源: ROS2节点接收UDP数据包的系统时间")
+            print("\n⏰ Timestamp Details:")
+            print("   Storage Location: timestamp field in messages table")
+            print("   Data Type: INTEGER (64-bit)")
+            print("   Precision: Nanosecond level")
+            print("   Source: System time when ROS2 node received UDP packet")
             
             # Sample timestamps
             cursor.execute("SELECT timestamp FROM messages ORDER BY timestamp LIMIT 3")
             sample_timestamps = cursor.fetchall()
-            print("   示例时间戳:")
+            print("   Sample Timestamps:")
             for ts_tuple in sample_timestamps:
                 ts = ts_tuple[0]
                 readable = self.format_timestamp(ts)

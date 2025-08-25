@@ -207,25 +207,25 @@ python3 scripts/test_udp_send.py -n 20 -i 0.5  # 发送20条消息，间隔0.5�
 - **精度**: 纳秒级 (1756108145806574972 = 2025-08-25 15:49:05.806574972)
 - **来源**: ROS2节点接收UDP数据包的系统时间
 
-**数据库字段说明**：
+**Database Field Description**:
 
-| 字段名      | 类型      | 作用                                        | 您的实际数据例子              |
+| Field Name  | Type      | Purpose                                     | Your Actual Data Example     |
 |-------------|-----------|---------------------------------------------|------------------------------|
-| `id`        | INTEGER   | 消息的唯一编号                              | 1, 2, 3...                   |
-| `topic_id`  | INTEGER   | 话题编号（1=/robot_data, 2=/log_data）      | 1                            |
-| `timestamp` | INTEGER   | **时间戳（纳秒）**                         | 1756108145806574972          |
-| `data`      | BLOB      | **机器人数据（二进制）**                   | 232字节的机器人数据          |
+| `id`        | INTEGER   | Unique message identifier                   | 1, 2, 3...                   |
+| `topic_id`  | INTEGER   | Topic ID (1=/robot_data, 2=/log_data)      | 1                            |
+| `timestamp` | INTEGER   | **Timestamp (nanoseconds)**                | 1756108145806574972          |
+| `data`      | BLOB      | **Robot data (binary)**                    | 232 bytes of robot data      |
 
-**为什么使用接收时间戳**：
-1. 机器人发送的原始数据不包含时间戳，只有位置、角度、力传感器等数据
-2. 使用接收时间戳能更准确反映数据被记录的时间点
-3. 避免了网络延迟和时钟同步问题的影响
+**Why Use Reception Timestamp**:
+1. Robot's raw data contains no timestamp, only position, angle, force sensor data
+2. Reception timestamp more accurately reflects when data was recorded
+3. Avoids network delay and clock synchronization issues
 
-**查看完整数据库信息**：
+**View Complete Database Information**:
 ```bash
 python3 scripts/robot_monitor_manager.py --db-info ~/robot_data/2025-08-25/robot_monitor_HHMMSS
 ```
-显示：数据库结构、时间戳存储详情、消息统计、录制时长等。
+Shows: database structure, timestamp storage details, message statistics, recording duration, etc.
 
 **原始数据格式**：
 ```json
