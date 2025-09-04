@@ -221,7 +221,7 @@ def FTC_task_unlockleftknob(robot,op):
     time.sleep(1)
 
     ftEnabled = [False,False,True,False,False,True]
-    ftSet = [0,0,0,0,0,3]
+    ftSet = [0,0,-2,0,0,3]
     ftcEndType = 7
     maxForce_1 = [10,10,30,0,0,0.5]
     ifDKStopOnMaxForce_1 = True
@@ -429,7 +429,7 @@ def FTC_task_unlockrightknob(robot,op):
     time.sleep(1)
 
     ftEnabled = [False,False,True,False,False,True]
-    ftSet = [0,0,0,0,0,-3]
+    ftSet = [0,0,-2,0,0,-3]
     ftcEndType = 7
     maxForce_1 = [10,10,30,0,0,0.5]
     ifDKStopOnMaxForce_1 = True
@@ -523,7 +523,7 @@ def FTC_task_unlockrightknob(robot,op):
     time.sleep(1)
 
     # 5.6 backward to avoid the handle
-    offset2 = [10/1000, 0/1000, -80/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    offset2 = [0/1000, 0/1000, -80/1000, np.radians(0), np.radians(0), np.radians(0)]  
     res = robot.tcp_move(offset2, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(1)
 
