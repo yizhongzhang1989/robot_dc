@@ -47,29 +47,59 @@ This implementation follows the **official ROS2 Control architecture**, replacin
 
 ### 1. Configuration Files
 
+## Package Structure
+
+### 1. Core Packages (Official ROS2 Control)
+
 ```
-duco_gcr5_910_moveit_config/
-├── config/
-│   ├── gcr5_910.ros2_control.xacro      # ROS2 Control hardware definition
-│   ├── ros2_controllers.yaml            # Controller configuration
-│   ├── joint_limits.yaml               # Joint limits and safety parameters
-│   ├── kinematics.yaml                 # Kinematics solver configuration
-│   ├── ompl_planning.yaml              # OMPL planner configuration
-│   ├── pilz_cartesian_limits.yaml      # Cartesian velocity/acceleration limits
-│   ├── sensors_3d.yaml                 # 3D sensor configuration
-│   └── moveit.rviz                     # RViz2 configuration
-├── launch/
-│   ├── demo.launch.py                  # Main launch file
-│   ├── move_group.launch.py            # MoveGroup launch
-│   ├── moveit_rviz.launch.py          # RViz2 launch
-│   ├── rsp.launch.py                  # Robot State Publisher
-│   ├── spawn_controllers.launch.py    # Controller spawning
-│   ├── static_virtual_joint_tfs.launch.py  # Virtual joint TFs
-│   └── warehouse_db.launch.py         # Database launch
-├── srdf/
-│   └── gcr5_910.srdf.xacro            # Semantic Robot Description
-└── README.md
+├── duco_hardware/                      # Hardware Interface Package
+│   ├── include/duco_hardware/
+│   │   └── duco_hardware_interface.hpp # Hardware interface header
+│   ├── src/
+│   │   └── duco_hardware_interface.cpp # Hardware interface implementation
+│   ├── duco_hardware.xml              # Plugin description
+│   └── package.xml                    # Package configuration
+│
+├── duco_gcr5_910_moveit_config/       # MoveIt Configuration Package
+│   ├── config/                        # Configuration files
+│   ├── launch/                        # Launch files
+│   └── README.md                      # This documentation
+│
+└── duco_ros_driver/                   # DUCO RPC Library (Headers + Static Library)
+    ├── include/duco_ros_driver/
+    │   └── DucoCobot.h                # DUCO RPC API header
+    ├── lib/
+    │   └── libDucoCobotAPI.a          # DUCO communication library
+    └── package.xml                    # Package configuration (library only)
 ```
+
+### 2. Supporting Packages
+
+```
+├── duco_support/                      # URDF and mesh files
+│   ├── urdf/
+│   │   └── duco_gcr5_910.urdf        # Robot URDF description
+│   └── meshes/                       # 3D mesh files
+│
+└── duco_gcr5_910_urdf/               # URDF package
+    └── urdf/                         # URDF files
+```
+
+### 3. Legacy Packages (Other Functions)
+
+The following packages remain for other robot functions but are not used by the official ROS2 Control system:
+- `duco_robot_arm` - Legacy robot arm node
+- `duco_robot_arm_state` - Legacy state monitoring  
+- `robot_arm_web`, `robot_web` - Web interfaces
+- `robot_bringup`, `robot_teleop` - Legacy control packages
+- Other motor and sensor packages
+
+### 4. Removed Packages
+
+The following packages have been removed as part of the migration to official ROS2 Control:
+- `duco_msg` - Custom message definitions (replaced by standard ROS2 messages)
+- `duco_arms` - Dual-arm configuration (current system uses single arm)
+- `robot_control` - Custom controllers (replaced by official joint_trajectory_controller)
 
 ### 2. Related Packages
 
@@ -193,6 +223,8 @@ controller_manager:
 ## Usage
 
 ### 1. Launch the Complete System
+
+#### Default Network Configuration (192.168.1.10:7003)
 ```bash
 # Navigate to workspace
 cd /home/robot/robot_dc/colcon_ws
@@ -200,9 +232,68 @@ cd /home/robot/robot_dc/colcon_ws
 # Source the workspace
 source install/setup.bash
 
-# Launch the complete system
+# Launch with default network settings
 ros2 launch duco_gcr5_910_moveit_config demo.launch.py
 ```
+
+#### Custom Network Configuration (VMware/Different IP)
+```bash
+# Launch with custom IP address
+ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.2.100
+
+# Launch with custom IP and port
+ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.2.100 robot_port:=7004
+
+# For VMware environments with different network settings
+ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=10.0.0.50 robot_port:=7003
+```
+
+#### Available Launch Parameters
+- `robot_ip`: Robot IP address (default: `192.168.1.10`)
+- `robot_port`: Robot communication port (default: `7003`)
+- `arm_num`: Number of arms (default: `1`)
+- `arm_dof`: Degrees of freedom (default: `6`)
+- `use_rviz`: Launch RViz2 visualization (default: `true`)
+- `db`: Start warehouse database (default: `false`)
+- `debug`: Enable debug mode (default: `false`)
+
+## VMware Deployment Guide
+
+When running this system in VMware environments, the robot's IP address may differ from the default `192.168.1.10`. Use the launch parameters to specify the correct network configuration:
+
+### Step 1: Identify Robot Network Settings
+- Check your robot's actual IP address (usually displayed on robot's panel or configuration)
+- Note the communication port (typically 7003, but may vary)
+
+### Step 2: Launch with Correct Parameters
+```bash
+# Example for robot at 192.168.56.100 (common VMware NAT network)
+ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.56.100
+
+# Example for robot at 10.0.0.50 with custom port
+ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=10.0.0.50 robot_port:=7004
+
+# Example for bridged network configuration
+ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.1.200
+```
+
+### Step 3: Verify Connection
+After launching, check the terminal output for successful connection:
+```
+[duco_hardware]: Successfully connected to robot at 192.168.56.100:7003
+[duco_hardware]: Hardware interface configured and activated
+```
+
+### Common VMware Network Scenarios
+- **NAT Network**: Robot typically accessible via `192.168.56.x` range
+- **Bridged Network**: Robot accessible via main network IP range
+- **Host-Only**: Robot accessible via `192.168.x.x` host-only adapter range
+
+### Troubleshooting Network Issues
+1. Verify robot is powered on and network-accessible
+2. Test connectivity: `ping <robot_ip>`
+3. Check firewall settings in VMware and host OS
+4. Ensure robot's network configuration matches VMware adapter settings
 
 ### 2. Verify System Status
 ```bash

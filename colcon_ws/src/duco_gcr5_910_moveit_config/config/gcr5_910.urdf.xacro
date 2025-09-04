@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="gcr5_910">
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
+    <xacro:arg name="robot_ip" default="192.168.1.10" />
+    <xacro:arg name="robot_port" default="7003" />
 
     <!-- Import gcr5_910 urdf file -->
     <xacro:include filename="$(find duco_support)/urdf/duco_gcr5_910.urdf" />
@@ -9,6 +11,6 @@
     <xacro:include filename="gcr5_910.ros2_control.xacro" />
 
 
-    <xacro:gcr5_910_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+    <xacro:gcr5_910_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)" robot_ip="$(arg robot_ip)" robot_port="$(arg robot_port)"/>
 
 </robot>

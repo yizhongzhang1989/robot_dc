@@ -42,11 +42,12 @@ from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 #from moveit_configs_utils.launches import generate_demo_launch
 
-def generate_demo_launch(moveit_config, launch_package_path=None):
+def generate_demo_launch(moveit_config, launch_package_path=None, declared_arguments=None):
     """
     Launches a self contained demo
 
     launch_package_path is optional to use different launch and config packages
+    declared_arguments is optional list of declared launch arguments
 
     Includes
      * static_virtual_joint_tfs
@@ -60,6 +61,11 @@ def generate_demo_launch(moveit_config, launch_package_path=None):
         launch_package_path = moveit_config.package_path
 
     ld = LaunchDescription()
+    
+    # Add declared arguments if provided
+    if declared_arguments:
+        for arg in declared_arguments:
+            ld.add_action(arg)
     ld.add_action(
         DeclareBooleanLaunchArg(
             "db",
@@ -135,19 +141,27 @@ def generate_demo_launch(moveit_config, launch_package_path=None):
     	default_value='6',
     	)
     )
-    ld.add_action(
-    	DeclareLaunchArgument(
-    	'server_host_1', 
-    	default_value='192.168.1.10',
-    	)
-    )
     
     # Official ROS2 Control Node with DUCO hardware interface
+    # Override robot_description with network parameters
+    from launch_ros.parameter_descriptions import ParameterValue
+    from launch.substitutions import Command
+    
+    robot_description_content = Command([
+        "xacro ", str(moveit_config.package_path / "config/gcr5_910.urdf.xacro"),
+        " robot_ip:=", LaunchConfiguration("robot_ip"),
+        " robot_port:=", LaunchConfiguration("robot_port")
+    ])
+    
+    robot_description_param = {
+        "robot_description": ParameterValue(robot_description_content, value_type=str)
+    }
+    
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[
-            moveit_config.robot_description,
+            robot_description_param,
             str(moveit_config.package_path / "config/ros2_controllers.yaml"),
         ],
         output="both",
@@ -174,5 +188,26 @@ def generate_demo_launch(moveit_config, launch_package_path=None):
 
 
 def generate_launch_description():
+    # Declare launch arguments for network configuration
+    declared_arguments = []
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "robot_ip",
+            default_value="192.168.1.10",
+            description="Robot IP address",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "robot_port", 
+            default_value="7003",
+            description="Robot port number",
+        )
+    )
+    
+    # Build robot description with network parameters  
     moveit_config = MoveItConfigsBuilder("gcr5_910", package_name="duco_gcr5_910_moveit_config").to_moveit_configs()
-    return generate_demo_launch(moveit_config)
+    
+    launch_description = generate_demo_launch(moveit_config, declared_arguments=declared_arguments)
+    
+    return launch_description
