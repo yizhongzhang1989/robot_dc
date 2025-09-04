@@ -138,49 +138,37 @@ def generate_demo_launch(moveit_config, launch_package_path=None):
     ld.add_action(
     	DeclareLaunchArgument(
     	'server_host_1', 
-    	default_value='127.0.0.1',
+    	default_value='192.168.1.10',
     	)
     )
-    # Fake joint driver
-    #ld.add_action(
-    #    Node(
-    #        package="controller_manager",
-    #        executable="ros2_control_node",
-    #        parameters=[
-    #            moveit_config.robot_description,
-    #            str(moveit_config.package_path / "config/ros2_controllers.yaml"),
-    #        ],
-    #    )
-    #)
-        # Fake joint driver
-    ld.add_action(
-        Node(
-            package="duco_ros_driver",
-            executable="DucoDriver",
-            parameters=[{'arm_num':LaunchConfiguration('arm_num')},{'server_host_1':LaunchConfiguration('server_host_1')}]
-        )
+    
+    # Official ROS2 Control Node with DUCO hardware interface
+    ros2_control_node = Node(
+        package="controller_manager",
+        executable="ros2_control_node",
+        parameters=[
+            moveit_config.robot_description,
+            str(moveit_config.package_path / "config/ros2_controllers.yaml"),
+        ],
+        output="both",
     )
-    ld.add_action(
-        Node(
-            package="duco_ros_driver",
-            executable="DucoRobotStatus",
-            parameters=[{'arm_num':LaunchConfiguration('arm_num')},{"arm_dof":LaunchConfiguration("arm_dof")},{'server_host_1':LaunchConfiguration('server_host_1')}]
-        )
+    ld.add_action(ros2_control_node)
+
+    # Joint state broadcaster
+    joint_state_broadcaster_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
     )
-    ld.add_action(
-        Node(
-            package="duco_ros_driver",
-            executable="DucoTrajectoryAction",
-            parameters=[{'arm_num':LaunchConfiguration('arm_num')},{'server_host_1':LaunchConfiguration('server_host_1')}]
-        )
+    ld.add_action(joint_state_broadcaster_spawner)
+    
+    # Joint trajectory controller  
+    arm_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["arm_1_controller", "--controller-manager", "/controller_manager"],
     )
-    ld.add_action(
-        Node(
-            package="duco_ros_driver",
-            executable="DucoRobotControl",
-            parameters=[{'arm_num':LaunchConfiguration('arm_num')},{"arm_dof":LaunchConfiguration("arm_dof")},{'server_host_1':LaunchConfiguration('server_host_1')}]
-        )
-    )
+    ld.add_action(arm_controller_spawner)
 
     return ld
 
