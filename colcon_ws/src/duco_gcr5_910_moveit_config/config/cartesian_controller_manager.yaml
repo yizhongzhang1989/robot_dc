@@ -12,12 +12,12 @@ controller_manager:
     # (heecheol) Cartesian controllers are added. For simplicity, only motion controller is activated.
     cartesian_motion_controller:
       type: cartesian_motion_controller/CartesianMotionController
-    # cartesian_compliance_controller:
-    #   type: cartesian_compliance_controller/CartesianComplianceController
-    # cartesian_force_controller:
-    #   type: cartesian_force_controller/CartesianForceController
-    # motion_control_handle:
-    #   type: cartesian_controller_handles/MotionControlHandle
+    cartesian_compliance_controller:
+      type: cartesian_compliance_controller/CartesianComplianceController
+    cartesian_force_controller:
+      type: cartesian_force_controller/CartesianForceController
+    motion_control_handle:
+      type: cartesian_controller_handles/MotionControlHandle
 
 # arm_1_controller:
 #   ros__parameters:
@@ -71,7 +71,7 @@ joint_state_broadcaster:
 
 cartesian_motion_controller:
   ros__parameters:
-    end_effector_link: "tool0"     # End-effector link, must match URDF
+    end_effector_link: "link_6"    # End-effector link, must match URDF
     robot_base_link:   "base_link" # Base link, must match URDF
     joints:
       - arm_1_joint_1
@@ -94,3 +94,68 @@ cartesian_motion_controller:
       rot_x:  {p: 0.5}
       rot_y:  {p: 0.5}
       rot_z:  {p: 0.5}
+
+cartesian_compliance_controller:
+  ros__parameters:
+    end_effector_link: "link_6"
+    robot_base_link: "base_link"
+    joints:
+      - arm_1_joint_1
+      - arm_1_joint_2
+      - arm_1_joint_3
+      - arm_1_joint_4
+      - arm_1_joint_5
+      - arm_1_joint_6
+    command_interfaces:
+      - position
+    solver:
+      error_scale: 1.0
+      iterations: 10
+      publish_state_feedback: true
+    stiffness:  # Cartesian stiffness matrix
+      trans_x: 500.0
+      trans_y: 500.0
+      trans_z: 500.0
+      rot_x: 20.0
+      rot_y: 20.0
+      rot_z: 20.0
+    damping_ratio: 1.0
+
+cartesian_force_controller:
+  ros__parameters:
+    end_effector_link: "link_6"
+    robot_base_link: "base_link"
+    joints:
+      - arm_1_joint_1
+      - arm_1_joint_2
+      - arm_1_joint_3
+      - arm_1_joint_4
+      - arm_1_joint_5
+      - arm_1_joint_6
+    command_interfaces:
+      - position
+    solver:
+      error_scale: 1.0
+      iterations: 10
+      publish_state_feedback: true
+    pd_gains:
+      trans_x: {p: 0.05}
+      trans_y: {p: 0.05}
+      trans_z: {p: 0.05}
+      rot_x: {p: 0.01}
+      rot_y: {p: 0.01}
+      rot_z: {p: 0.01}
+
+motion_control_handle:
+  ros__parameters:
+    end_effector_link: "link_6"
+    robot_base_link: "base_link"
+    joints:
+      - arm_1_joint_1
+      - arm_1_joint_2
+      - arm_1_joint_3
+      - arm_1_joint_4
+      - arm_1_joint_5
+      - arm_1_joint_6
+    command_interfaces:
+      - position
