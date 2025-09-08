@@ -203,8 +203,9 @@ hardware_interface::return_type DucoHardwareInterface::write(
       // Send joint commands to DUCO robot
       std::vector<double> commands(hw_commands_.begin(), hw_commands_.end());
       
-      // Use movej for position control (joint space movement)
-      duco_robot_->movej(commands, 1.5, 1.0, 0.0, false);  // speed=1.5, acceleration=1.0, radius=0.0, non-blocking
+      // Use servoj for continuous servo control (better trajectory following)
+      // Parameters: joints, velocity, acceleration, non-blocking, kp, kd, smooth_vel, smooth_acc
+      duco_robot_->servoj(commands, 2.0, 2.0, false, 300, 50, 15, 2);
       
       // Update previous commands
       hw_commands_prev_ = hw_commands_;
