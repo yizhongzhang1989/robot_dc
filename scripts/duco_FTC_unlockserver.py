@@ -231,13 +231,13 @@ def FTC_task_unlockleftknob(robot,op):
     time.sleep(0.5)
 
     ftEnabled = [False,False,True,False,True,True]
-    ftSet = [0,0,0,0,0,3]
+    ftSet = [0,0,-2,0,0,3]
     maxForce_1 = [0,0,30,0,0,1]
     ifDKStopOnMaxForce_1 = True
     B = [2000,2000,4000,1500,7500,1500]
     M = [200,200,400,150,750,150]
     ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
-    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,130,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
+    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,135,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
     if res.status_code == 200:
         print(f"Response:{res.text}, set FTC parameters successfully!")
     time.sleep(0.5)
@@ -273,265 +273,271 @@ def FTC_task_unlockleftknob(robot,op):
         print(f"Response:{res.text}, FTC stopped!")
     time.sleep(1)
 
-    # # ==========================5.6 reverse rotate to release the knob=================================
-    # res = FTC_start()
-    # if res.status_code == 200:
-    #     print(f"FTC started! Response:{res.text}")
-    # time.sleep(1)
+    # ==========================5.6 reverse rotate to release the knob=================================
+    res = FTC_start()
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC started!")
+    time.sleep(0.5)
 
-    # ftEnabled = [True,True,True,False,False,True]
-    # ftSet = [0,0,0,0,0,-2]
-    # ftcEndType = 7
-    # maxForce_1 = [20,20,20,0,0,0.5]
-    # ifDKStopOnMaxForce_1 = True
-    # disAng6D_EndLimit = [5,5,0,0,0,0]  # must positive value in base frame
-    # B = [15000,15000,15000,1500,1500,1500]
-    # M = [1000,1000,1000,150,150,150]
-    # ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
-    # res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=ftcEndType, maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, disAng6D_EndLimit=disAng6D_EndLimit,ifNeedInit=ifNeedInit)
-    # if res.status_code == 200:
-    #     print(f"Set FTC parameters successfully! Response:{res.text}")
-    # time.sleep(1)
+    ftEnabled = [True,True,True,False,True,True]
+    ftSet = [0,0,3,0,0,-2]
+    maxForce_1 = [20,20,20,0,0,0.5]
+    ifDKStopOnMaxForce_1 = True
+    B = [15000,15000,15000,1500,7500,1500]
+    M = [1000,1000,1000,150,750,150]
+    ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
+    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7 , disAng6D_EndLimit=[0,0,0,0,45,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
+    if res.status_code == 200:
+        print(f"Response:{res.text}, set FTC parameters successfully!")
+    time.sleep(0.5)
     
-    # # set FTC program index
-    # FTC_program_index = 10    
-    # res = FTC_SetIndex(FTC_program_index)
-    # if res.status_code == 200:
-    #     print(f"Set FTC Program Index to {FTC_program_index}! Response:{res.text}")
-    # time.sleep(1)
+    # set FTC program index
+    FTC_program_index = 10    
+    res = FTC_SetIndex(FTC_program_index)
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC Program Index is set to {FTC_program_index}!")
+    time.sleep(0.5)
 
-    # # enable the program
-    # res = FTC_SetDKAssemFlag(1)   
-    # if res.status_code == 200:
-    #     print(f"Enable the FTC Program Successfully! Response:{res.text}")
-    # time.sleep(1)
+    # enable the program
+    res = FTC_SetDKAssemFlag(1)   
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC Program is enabled! Arm is releasing the left knob.")
+    time.sleep(0.5)
 
-    # # ensure the program finish
-    # flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-    # print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-    # time.sleep(1)
-    # # when reaching the threshold of max force 1, Flag_maxf1 will be True, Flag_ok also become False
-    # while flag_ok:
-    #     flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-    #     print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-    #     time.sleep(1)
-    # print(f"FTC task is finished! Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+    # ensure the program finish
+    flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
+    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+    time.sleep(0.5)
+    # when reaching the threshold of max force 1, Flag_maxf1 will be True, Flag_ok also become False
+    while flag_ok:
+        flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
+        # print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+        time.sleep(1)
+    print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
 
-    # # stop FTC to avoid the move function of robot arm
-    # res = FTC_stop()
-    # if res.status_code == 200:
-    #     print(f"FTC stopped! Response:{res.text}")
-    # time.sleep(1)
+    # stop FTC to avoid the move function of robot arm
+    res = FTC_stop()
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC stopped!")
+    time.sleep(1)
 
-    # # 5.7 backward to avoid the handle
-    # offset2 = [0/1000, 0/1000, -80/1000, np.radians(0), np.radians(0), np.radians(0)]  
-    # res = robot.tcp_move(offset2, 0.2, 0.2, 0.0, '', True, op)
-    # time.sleep(1)
+    # ===========================5.7 backward to avoid the handle=================================
+    offset = [0/1000, 0/1000, -80/1000, np.radians(0), np.radians(0), np.radians(0)]  
+    res = robot.tcp_move(offset, 0.2, 0.2, 0.0, '', True, op)
+    time.sleep(1)
 
-    # Move2_taskunlockleft_startpoint(robot,op)
-
+    Move2_taskunlockleft_startpoint(robot,op)
+    
     return res
 
 '''FTC Task: step unlock right knob in task extract server'''
 def FTC_task_unlockrightknob(robot,op):
 
-    # 5.1 locate at the position of unlock right knob
+    # ========================5.1 locate at the position of unlock right knob==========================
     Move2_taskunlockright_startpoint(robot,op)
 
-    # 5.2 move stickR to hold the knob (FTC control)
+    # ========================5.2 move stickR to hold the knob (FTC control)=========================
     res = FTC_start()
     if res.status_code == 200:
-        print(f"FTC started! Response:{res.text}")
-    time.sleep(1)
+        print(f"Response:{res.text}, FTC started!")
+    time.sleep(0.5)
 
     ftEnabled = [True,True,True,False,False,False]
-    ftSet = [0,0,-40,0,0,0]
-    ftcEndType = 6
+    ftSet = [0,0,0,0,0,0]
     maxForce_1 = [0,0,10,0,0,0]
-    ifDKStopOnMaxForce_1 = True
-    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=ftcEndType, maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1)
+    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=3, timeEndLimit=20, maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=True)
     if res.status_code == 200:
-        print(f"Set FTC parameters successfully! Response:{res.text}")
-    time.sleep(1)
+        print(f"Response:{res.text}, set FTC parameters successfully!")
+    time.sleep(0.5)
     
     # set FTC program index
     FTC_program_index = 10    
     res = FTC_SetIndex(FTC_program_index)
     if res.status_code == 200:
-        print(f"Set FTC Program Index to {FTC_program_index}! Response:{res.text}")
-    time.sleep(1)
+        print(f"Response:{res.text}, FTC Program Index is set to {FTC_program_index}! ")
+    time.sleep(0.5)
 
     # enable the program
     res = FTC_SetDKAssemFlag(1)   
     if res.status_code == 200:
-        print(f"Enable the FTC Program Successfully! Response:{res.text}")
-    time.sleep(1)
+        print(f"Response:{res.text}, FTC Program is enabled! Arm is going to hold the right knob.")
+    time.sleep(0.5)
+
+    # gradually increase the force
+    target_force = [0,0,-40,0,0,0]
+    current_force = ftSet[:]  # create a copy
+    ftSetRT = [0, 0, 0, 0, 0, 0]
+    while current_force[2] > target_force[2]:
+        current_force[2] = current_force[2] - 10
+        if current_force[2] < target_force[2]:
+            current_force[2] = target_force[2]
+        ftSetRT[2] = current_force[2]
+        FTC_setFTValueRT(ftSetRT)
+        time.sleep(0.5)
 
     # ensure the program finish
     flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-    time.sleep(1)
+    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]...")
+    time.sleep(0.5)
     # when reaching the threshold of max force 1, Flag_maxf1 will be True, Flag_ok also become False
     while flag_ok:
         flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-        print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+        # print(f"Current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
         time.sleep(1)
-    print(f"FTC task hold knob is finished! Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+    print(f"Current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+    time.sleep(0.5)
 
     # stop FTC to avoid the move function of robot arm
     res = FTC_stop()
     if res.status_code == 200:
-        print(f"FTC stopped! Response:{res.text}")
+        print(f"Response:{res.text}, FTC stopped! Arm is holding the right knob.")
     time.sleep(1)
 
-    # 5.3 release the force
+    # ============================5.3 release the force=============================================
     res = FTC_start()
     if res.status_code == 200:
-        print(f"FTC started! Response:{res.text}")
-    time.sleep(1)
+        print(f"Response:{res.text}, FTC started!")
+    time.sleep(0.5)
 
     ftEnabled = [False,False,True,False,False,False]
     ftSet = [0,0,0,0,0,0]
-    ftcEndType = 3
-    timeEndLimit = 2
     ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
-    B = [15000,15000,18000,1500,1500,1500]
-    M = [1000,1000,1000,150,150,150]
-    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=ftcEndType, timeEndLimit=timeEndLimit, ifNeedInit=ifNeedInit, B=B, M=M)
-    if res.status_code == 200:
-        print(f"Set FTC parameters successfully! Response:{res.text}")
-    time.sleep(1)
-    
-    # set FTC program index
-    FTC_program_index = 10    
-    res = FTC_SetIndex(FTC_program_index)
-    if res.status_code == 200:
-        print(f"Set FTC Program Index to {FTC_program_index}! Response:{res.text}")
-    time.sleep(1)
-
-    # enable the program
-    res = FTC_SetDKAssemFlag(1)   
-    if res.status_code == 200:
-        print(f"Enable the FTC Program Successfully! Response:{res.text}")
-    time.sleep(1)
-
-    # ensure the program finish
-    flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-    # when reaching the threshold of max force 1, Flag_maxf1 will be True, Flag_ok also become False
-    while flag_ok:
-        flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-        print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-        time.sleep(1)
-    print(f"FTC task release force is finished! Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-
-    # stop FTC to avoid the move function of robot arm
-    res = FTC_stop()
-    if res.status_code == 200:
-        print(f"FTC stopped! Response:{res.text}")
-    time.sleep(1)
-
-    # 5.4 turn the right knob to the limited max angle (FTC control)
-    res = FTC_start()
-    if res.status_code == 200:
-        print(f"FTC started! Response:{res.text}")
-    time.sleep(1)
-
-    ftEnabled = [False,False,True,False,False,True]
-    ftSet = [0,0,-2,0,0,-3]
-    ftcEndType = 7
-    maxForce_1 = [10,10,30,0,0,0.5]
-    ifDKStopOnMaxForce_1 = True
-    disAng6D_EndLimit = [0,0,0,0,0,150]  # must positive value in base frame
-    B = [2000,2000,4000,1500,1500,1500]
-    M = [200,200,400,150,150,150]
-    ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
-    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=ftcEndType, maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, disAng6D_EndLimit=disAng6D_EndLimit,ifNeedInit=ifNeedInit)
-    if res.status_code == 200:
-        print(f"Set FTC parameters successfully! Response:{res.text}")
-    time.sleep(1)
-    
-    # set FTC program index
-    FTC_program_index = 10    
-    res = FTC_SetIndex(FTC_program_index)
-    if res.status_code == 200:
-        print(f"Set FTC Program Index to {FTC_program_index}! Response:{res.text}")
-    time.sleep(1)
-
-    # enable the program
-    res = FTC_SetDKAssemFlag(1)   
-    if res.status_code == 200:
-        print(f"Enable the FTC Program Successfully! Response:{res.text}")
-    time.sleep(1)
-
-    # ensure the program finish
-    flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-    time.sleep(1)
-    # when reaching the threshold of max force 1, Flag_maxf1 will be True, Flag_ok also become False
-    while flag_ok:
-        flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-        print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-        time.sleep(1)
-    print(f"FTC task is finished! Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-
-    # stop FTC to avoid the move function of robot arm
-    res = FTC_stop()
-    if res.status_code == 200:
-        print(f"FTC stopped! Response:{res.text}")
-    time.sleep(1)
-
-    # 5.6 reverse rotate to release the knob
-    res = FTC_start()
-    if res.status_code == 200:
-        print(f"FTC started! Response:{res.text}")
-    time.sleep(1)
-
-    ftEnabled = [True,True,True,False,False,True]
-    ftSet = [0,0,0,0,0,2]
-    ftcEndType = 7
-    maxForce_1 = [20,20,20,0,0,0.5]
-    ifDKStopOnMaxForce_1 = True
-    disAng6D_EndLimit = [5,5,0,0,0,0]  # must positive value in base frame
     B = [15000,15000,15000,1500,1500,1500]
-    M = [1000,1000,1000,150,150,150]
-    ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
-    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=ftcEndType, maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, disAng6D_EndLimit=disAng6D_EndLimit,ifNeedInit=ifNeedInit)
+    M = [1500,1500,1500,150,150,150]
+    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=3, timeEndLimit=2, ifNeedInit=ifNeedInit, B=B, M=M)
     if res.status_code == 200:
-        print(f"Set FTC parameters successfully! Response:{res.text}")
-    time.sleep(1)
+        print(f"Response:{res.text}, set FTC parameters successfully! ")
+    time.sleep(0.5)
     
     # set FTC program index
     FTC_program_index = 10    
     res = FTC_SetIndex(FTC_program_index)
     if res.status_code == 200:
-        print(f"Set FTC Program Index to {FTC_program_index}! Response:{res.text}")
-    time.sleep(1)
+        print(f"Response:{res.text}, FTC Program Index is set to {FTC_program_index}! ")
+    time.sleep(0.5)
 
     # enable the program
     res = FTC_SetDKAssemFlag(1)   
     if res.status_code == 200:
-        print(f"Enable the FTC Program Successfully! Response:{res.text}")
-    time.sleep(1)
+        print(f"Response:{res.text}, FTC Program is enabled! Arm is releasing the holding force.")
+    time.sleep(0.5)
 
     # ensure the program finish
     flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
-    time.sleep(1)
+    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]...")
+    time.sleep(0.5)
     # when reaching the threshold of max force 1, Flag_maxf1 will be True, Flag_ok also become False
     while flag_ok:
         flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
-        print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+        # print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
         time.sleep(1)
-    print(f"FTC task is finished! Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+    print(f"Current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+    time.sleep(0.5)
 
     # stop FTC to avoid the move function of robot arm
     res = FTC_stop()
     if res.status_code == 200:
-        print(f"FTC stopped! Response:{res.text}")
+        print(f"Response:{res.text}, FTC stopped!")
     time.sleep(1)
 
-    # 5.6 backward to avoid the handle
+    # =================5.4 turn the right knob to the limited max angle (FTC control)=================
+    res = FTC_start()
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC started! ")
+    time.sleep(0.5)
+
+    ftEnabled = [False,False,True,False,True,True]
+    ftSet = [0,0,-3,0,0,-3]
+    maxForce_1 = [0,0,30,0,0,1]
+    ifDKStopOnMaxForce_1 = True
+    B = [2000,2000,4000,1500,7500,1500]
+    M = [200,200,400,150,750,150]
+    ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
+    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,165,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
+    if res.status_code == 200:
+        print(f"Response:{res.text}, set FTC parameters successfully!")
+    time.sleep(0.5)
+    
+    # set FTC program index
+    FTC_program_index = 10    
+    res = FTC_SetIndex(FTC_program_index)
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC Program Index is set to {FTC_program_index}!")
+    time.sleep(0.5)
+
+    # enable the program
+    res = FTC_SetDKAssemFlag(1)   
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC Program is enabled! Arm is unlocking the right knob.")
+    time.sleep(0.5)
+
+    # ensure the program finish
+    flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
+    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]...")
+    time.sleep(0.5)
+    # when reaching the threshold of max force 1, Flag_maxf1 will be True, Flag_ok also become False
+    while flag_ok:
+        flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
+        # print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+        time.sleep(1)
+    print(f"Current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+    time.sleep(0.5)
+
+    # stop FTC to avoid the move function of robot arm
+    res = FTC_stop()
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC stopped!")
+    time.sleep(1)
+
+    # ==========================5.6 reverse rotate to release the knob=================================
+    res = FTC_start()
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC started!")
+    time.sleep(0.5)
+
+    ftEnabled = [True,True,True,False,True,True]
+    ftSet = [0,0,3,0,0,2]
+    maxForce_1 = [20,20,20,0,1,1]
+    ifDKStopOnMaxForce_1 = True
+    B = [15000,15000,15000,1500,7500,1500]
+    M = [1000,1000,1000,150,750,150]
+    ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
+    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,75,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
+    if res.status_code == 200:
+        print(f"Response:{res.text}, set FTC parameters successfully!")
+    time.sleep(0.5)
+    
+    # set FTC program index
+    FTC_program_index = 10    
+    res = FTC_SetIndex(FTC_program_index)
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC Program Index is set to {FTC_program_index}!")
+    time.sleep(0.5)
+
+    # enable the program
+    res = FTC_SetDKAssemFlag(1)   
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC Program is enabled! Arm is releasing the right knob.")
+    time.sleep(0.5)
+
+    # ensure the program finish
+    flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
+    print(f"Initial FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+    time.sleep(0.5)
+    # when reaching the threshold of max force 1, Flag_maxf1 will be True, Flag_ok also become False
+    while flag_ok:
+        flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
+        # print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+        time.sleep(1)
+    print(f"current FTC Task Flag: [{flag_ok},{flag_maxf1},{flag_maxf2},{flag_timedis}]")
+
+    # stop FTC to avoid the move function of robot arm
+    res = FTC_stop()
+    if res.status_code == 200:
+        print(f"Response:{res.text}, FTC stopped!")
+    time.sleep(1)
+
+    # ===========================5.6 backward to avoid the handle=================================
     offset2 = [0/1000, 0/1000, -80/1000, np.radians(0), np.radians(0), np.radians(0)]  
     res = robot.tcp_move(offset2, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(1)
@@ -651,14 +657,11 @@ def main():
     Move2_task_startpoint(robot,op)
     
     # 3. task unlock server (finished)
-    # unlock the left knob (finished)
     FTC_task_unlockleftknob(robot,op)
 
-    # # unlock the right knob (finished)
-    # FTC_task_unlockrightknob(robot,op)
+    FTC_task_unlockrightknob(robot,op)
 
-    # # unlock the handles (finished)
-    # task_unlock2handle(robot,op)
+    task_unlock2handle(robot,op)
 
 
     # ======================close the robot arm================================
