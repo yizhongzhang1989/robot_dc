@@ -19,6 +19,12 @@ def generate_launch_description():
         'lift_robot_launch.py'
     )
 
+    cable_sensor_path = os.path.join(
+        get_package_share_directory('lift_robot_cable_sensor'),
+        'launch',
+        'cable_sensor_launch.py'
+    )
+
     # Launch descriptions
     modbus_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(modbus_path)
@@ -30,7 +36,14 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(lift_robot_path))]
     )
 
+    # Start cable sensor after modbus driver is ready
+    cable_sensor_launch = TimerAction(
+        period=4.0,  # Wait 4 seconds for modbus driver to initialize
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cable_sensor_path))]
+    )
+
     return LaunchDescription([
         modbus_launch,
         lift_robot_launch,
+        cable_sensor_launch,
     ])
