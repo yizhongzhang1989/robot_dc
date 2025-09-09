@@ -1107,10 +1107,221 @@
       padding: 0.75rem 0.75rem;
       font-size: 1rem;
     }
+
+    /* Page Navigation Bar Styles */
+    .page-nav-bar {
+      background: rgba(45, 55, 72, 0.85);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      padding: 0.5rem 0;
+      box-shadow: 
+        0 2px 10px rgba(0, 0, 0, 0.3),
+        0 8px 32px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      width: 100%;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .page-nav-container {
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 0 1rem;
+      perspective: 1000px;
+    }
+
+    .page-nav-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 120px;
+      justify-content: center;
+      position: relative;
+      transform-style: preserve-3d;
+      box-shadow: 
+        0 2px 8px rgba(0, 0, 0, 0.15),
+        0 4px 16px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+    }
+
+    .page-nav-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+      border-radius: 20px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .page-nav-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-3px) rotateX(5deg) scale(1.02);
+      box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.25),
+        0 10px 40px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+    }
+
+    .page-nav-btn:hover::before {
+      opacity: 1;
+    }
+
+    .page-nav-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      color: #2d3748;
+      border-color: rgba(255, 255, 255, 0.8);
+      box-shadow: 
+        0 4px 20px rgba(0, 0, 0, 0.3),
+        0 8px 32px rgba(0, 0, 0, 0.2),
+        inset 0 2px 4px rgba(255, 255, 255, 0.8),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+      transform: translateY(-1px) rotateX(2deg);
+    }
+
+    .page-nav-btn.active::before {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.1) 100%);
+      opacity: 1;
+    }
+
+    .page-nav-btn.active:hover {
+      background: white;
+      transform: translateY(-4px) rotateX(8deg) scale(1.03);
+      box-shadow: 
+        0 8px 25px rgba(0, 0, 0, 0.35),
+        0 12px 40px rgba(0, 0, 0, 0.25),
+        inset 0 2px 4px rgba(255, 255, 255, 0.9),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .page-nav-btn:active {
+      transform: translateY(-1px) rotateX(2deg) scale(0.98);
+      transition: all 0.1s ease;
+    }
+
+    /* Content Container Styles */
+    body {
+      padding-top: 70px; /* Add padding to prevent content being hidden behind fixed navbar */
+    }
+    
+    .main-content-page {
+      display: block;
+    }
+
+    .new-page-content {
+      display: none;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      body {
+        padding-top: 100px; /* Increase padding for mobile due to potential wrap */
+      }
+      
+      .page-nav-bar {
+        padding: 0.75rem 0;
+        backdrop-filter: blur(15px) saturate(150%);
+        -webkit-backdrop-filter: blur(15px) saturate(150%);
+      }
+      
+      .page-nav-container {
+        flex-direction: row; /* Keep horizontal layout but allow wrap */
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+        perspective: 800px;
+      }
+      
+      .page-nav-btn {
+        min-width: 110px;
+        max-width: 140px;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.8rem;
+      }
+      
+      .page-nav-btn:hover {
+        transform: translateY(-2px) rotateX(3deg) scale(1.01);
+      }
+      
+      .page-nav-btn.active:hover {
+        transform: translateY(-3px) rotateX(5deg) scale(1.02);
+      }
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding-top: 120px;
+      }
+      
+      .page-nav-bar {
+        backdrop-filter: blur(12px) saturate(120%);
+        -webkit-backdrop-filter: blur(12px) saturate(120%);
+      }
+      
+      .page-nav-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        perspective: 600px;
+      }
+      
+      .page-nav-btn {
+        width: 90%;
+        max-width: 200px;
+        justify-content: center;
+      }
+      
+      /* 减少移动端的3D效果，避免性能问题 */
+      .page-nav-btn:hover {
+        transform: translateY(-1px) scale(1.01);
+      }
+      
+      .page-nav-btn.active:hover {
+        transform: translateY(-2px) scale(1.02);
+      }
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
-  <div class="container mx-auto p-6">
+  <!-- Page Navigation Bar -->
+  <div class="page-nav-bar">
+    <div class="page-nav-container">
+      <button id="pageNavBtn1" class="page-nav-btn active" onclick="switchToPage(1)">
+        🤖 Control
+      </button>
+      <button id="pageNavBtn2" class="page-nav-btn" onclick="switchToPage(2)">
+        📷 Calibrate
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Content Container -->
+  <div id="mainContent" class="main-content-page">
+    <div class="container mx-auto p-6">
     <!-- Header -->
     <div class="text-center mb-8">
       <h1 class="text-3xl font-bold text-gray-800 mb-2">🤖 Robot Arm Control</h1>
@@ -2413,12 +2624,594 @@
       </div>
     </div>
   </div>
+  </div> <!-- End Main Content Container -->
+
+  <!-- New Page Content -->
+  <div id="newPageContent" class="new-page-content" style="display: none;">
+    <div class="container mx-auto p-6">
+      <!-- Header for new page -->
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">📷 Camera Calibration</h1>
+        <p class="text-gray-600">Robot Arm Camera Calibration Tool</p>
+      </div>
+
+      <!-- Camera Calibration Interface -->
+      <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+        <div class="flex flex-col xl:flex-row gap-6 p-6">
+          <!-- Main Camera View -->
+          <div class="flex-1">
+            <div class="camera-container bg-gray-900 rounded-lg overflow-hidden mb-4">
+              <img id="calibrationCameraFeed" 
+                   src="/video_feed" 
+                   alt="Camera Feed" 
+                   class="w-full h-auto object-contain min-h-64"
+                   style="max-height: 500px;">
+            </div>
+            
+            <!-- Camera Controls -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <button id="takeScreenshotBtn" onclick="takeCalibrationScreenshot()" 
+                      class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                📸 Take Screenshot
+              </button>
+              <button id="cornerDetectionBtn" onclick="toggleCornerDetection()" 
+                      class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                🎯 Corner Detection
+              </button>
+              <button onclick="refreshCalibrationFeed()" 
+                      class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                🔄 Refresh Feed
+              </button>
+              <button onclick="clearCalibrationImages()" 
+                      class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                🗑️ Clear Images
+              </button>
+            </div>
+
+            <!-- Status Information -->
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span class="font-medium text-gray-600">Camera Status:</span>
+                  <span id="calibrationCameraStatus" class="ml-2 font-mono">Connecting...</span>
+                </div>
+                <div>
+                  <span class="font-medium text-gray-600">Image Count:</span>
+                  <span id="calibrationImageCount" class="ml-2 font-mono">0</span>
+                </div>
+                <div>
+                  <span class="font-medium text-gray-600">Robot Status:</span>
+                  <span id="calibrationRobotStatus" class="ml-2 font-mono">Disconnected</span>
+                </div>
+                <div>
+                  <span class="font-medium text-gray-600">Corner Detection:</span>
+                  <span id="calibrationCornerStatus" class="ml-2 font-mono">Disabled</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Side Panels -->
+          <div class="flex gap-6">
+            <!-- Robot Status and TCP Position -->
+            <div class="w-48 flex flex-col">
+              <!-- Robot Joint Information -->
+              <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h3 class="font-semibold text-blue-800 mb-3 flex items-center">
+                  🤖 Robot Status
+                </h3>
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 1:</div>
+                    <div id="calibrationJoint1" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 2:</div>
+                    <div id="calibrationJoint2" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 3:</div>
+                    <div id="calibrationJoint3" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 4:</div>
+                    <div id="calibrationJoint4" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 5:</div>
+                    <div id="calibrationJoint5" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 6:</div>
+                    <div id="calibrationJoint6" class="font-mono text-right">0.00°</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TCP Position Information -->
+              <div class="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+                <h3 class="font-semibold text-green-800 mb-3 flex items-center">
+                  📍 TCP Position
+                </h3>
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">X:</div>
+                    <div id="calibrationTcpX" class="font-mono text-right">0.000 mm</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Y:</div>
+                    <div id="calibrationTcpY" class="font-mono text-right">0.000 mm</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Z:</div>
+                    <div id="calibrationTcpZ" class="font-mono text-right">0.000 mm</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Rx:</div>
+                    <div id="calibrationTcpRx" class="font-mono text-right">0.000°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Ry:</div>
+                    <div id="calibrationTcpRy" class="font-mono text-right">0.000°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Rz:</div>
+                    <div id="calibrationTcpRz" class="font-mono text-right">0.000°</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Screenshot Thumbnails -->
+            <div class="w-80 self-stretch">
+              <div class="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-200 rounded-lg p-4 h-full flex flex-col">
+                <h3 class="font-semibold text-purple-800 mb-3 flex items-center">
+                  🖼️ Screenshot Thumbnails
+                </h3>
+                <div id="calibrationThumbnailGrid" class="grid grid-cols-2 gap-2 auto-rows-min overflow-y-auto flex-1">
+                  <div class="text-center text-gray-500 col-span-2 py-8">
+                    No screenshots yet
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Corner Detection Settings Modal -->
+  <div id="cornerDetectionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+      <div class="bg-blue-500 text-white px-6 py-4 rounded-t-lg relative">
+        <h3 class="text-lg font-semibold">Corner Detection Settings</h3>
+        <button onclick="closeCornerDetectionModal()" class="absolute top-4 right-4 text-white hover:text-gray-200">
+          ✕
+        </button>
+      </div>
+      <div class="p-6">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Chessboard Width:
+          </label>
+          <input type="number" id="chessboardWidth" value="12" min="2" max="20" 
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Chessboard Height:
+          </label>
+          <input type="number" id="chessboardHeight" value="9" min="2" max="20" 
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="flex justify-end space-x-3">
+          <button onclick="closeCornerDetectionModal()" 
+                  class="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
+            Cancel
+          </button>
+          <button onclick="confirmCornerDetection()" 
+                  class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Hidden elements for JavaScript compatibility -->
   <div style="display: none;">
     <span id="connectionStatus"></span>
     <span id="topicName"></span>
   </div>
+
+  <script>
+    // Page Navigation Functions
+    function switchToPage(pageNumber) {
+      // Get page containers
+      const mainContent = document.getElementById('mainContent');
+      const newPageContent = document.getElementById('newPageContent');
+      
+      // Get navigation buttons
+      const btn1 = document.getElementById('pageNavBtn1');
+      const btn2 = document.getElementById('pageNavBtn2');
+      
+      if (pageNumber === 1) {
+        // Show main content, hide new page
+        mainContent.style.display = 'block';
+        newPageContent.style.display = 'none';
+        
+        // Update button states
+        btn1.classList.add('active');
+        btn2.classList.remove('active');
+        
+        // Update page title
+        document.title = 'Robot Arm Control Center';
+        
+        console.log('Switched to main page (Robot Arm Control)');
+      } else if (pageNumber === 2) {
+        // Show new page, hide main content
+        mainContent.style.display = 'none';
+        newPageContent.style.display = 'block';
+        
+        // Update button states
+        btn1.classList.remove('active');
+        btn2.classList.add('active');
+        
+        // Update page title
+        document.title = 'New Page - Robot Control System';
+        
+        console.log('Switched to new page');
+      }
+      
+      // Trigger window resize event to update any responsive components
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 100);
+    }
+
+    // Initialize page navigation on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      // Ensure main content is shown by default
+      switchToPage(1);
+      
+      console.log('Page navigation initialized');
+    });
+
+    // Keyboard shortcuts for page navigation
+    document.addEventListener('keydown', function(event) {
+      // Alt + 1: Switch to main page
+      if (event.altKey && event.key === '1') {
+        event.preventDefault();
+        switchToPage(1);
+      }
+      // Alt + 2: Switch to new page
+      else if (event.altKey && event.key === '2') {
+        event.preventDefault();
+        switchToPage(2);
+      }
+    });
+
+    // Camera Calibration Functions
+    let cornerDetectionEnabled = false;
+    let calibrationImageCount = 0;
+    
+    // Initialize camera calibration when page loads
+    function initializeCameraCalibration() {
+      // Update camera feed with existing camera stream
+      const calibrationFeed = document.getElementById('calibrationCameraFeed');
+      if (calibrationFeed) {
+        calibrationFeed.src = document.querySelector('#cameraImage')?.src || '/video_feed';
+        calibrationFeed.onerror = function() {
+          this.src = '/images/camera_placeholder.png';
+        };
+      }
+      
+      // Initialize status update for calibration page
+      updateCalibrationStatus();
+      
+      // Set up periodic updates for calibration page
+      setInterval(() => {
+        if (document.getElementById('newPageContent').style.display !== 'none') {
+          updateCalibrationStatus();
+          updateCalibrationThumbnails();
+        }
+      }, 1000);
+    }
+
+    // Update calibration status from existing robot state
+    function updateCalibrationStatus() {
+      // Update camera status
+      const cameraStatus = document.getElementById('calibrationCameraStatus');
+      if (cameraStatus) {
+        cameraStatus.textContent = cameraConnected ? 'Connected' : 'Disconnected';
+        cameraStatus.className = cameraConnected ? 'ml-2 font-mono text-green-600' : 'ml-2 font-mono text-red-600';
+      }
+      
+      // Update robot status
+      const robotStatus = document.getElementById('calibrationRobotStatus');
+      if (robotStatus) {
+        if (robotStateData && robotStateData.robotStatus !== undefined) {
+          // Use the same status mapping as main page
+          const robotStates = {
+            0: "Start", 
+            1: "Initialize", 
+            2: "Logout", 
+            3: "Login", 
+            4: "PowerOff", 
+            5: "Disable/PowerOn", 
+            6: "Enable"
+          };
+          const statusText = robotStates[robotStateData.robotStatus] || `Unknown (${robotStateData.robotStatus})`;
+          robotStatus.textContent = statusText;
+          // Status 6 (Enable) is normal, others are warning
+          robotStatus.className = robotStateData.robotStatus === 6 ? 'ml-2 font-mono text-green-600' : 'ml-2 font-mono text-orange-500';
+        } else {
+          // Default status when no robot data available
+          robotStatus.textContent = '-';
+          robotStatus.className = 'ml-2 font-mono text-gray-500';
+        }
+      }
+      
+      // Update joint angles
+      if (robotStateData && robotStateData.jointActualPosition) {
+        for (let i = 0; i < 6; i++) {
+          const jointElement = document.getElementById(`calibrationJoint${i + 1}`);
+          if (jointElement && robotStateData.jointActualPosition[i] !== undefined) {
+            const angleInDegrees = (robotStateData.jointActualPosition[i] * 180 / Math.PI).toFixed(2);
+            jointElement.textContent = `${angleInDegrees}°`;
+          }
+        }
+      }
+      
+      // Update TCP position
+      if (robotStateData && robotStateData.TCPActualPosition) {
+        const tcpElements = ['calibrationTcpX', 'calibrationTcpY', 'calibrationTcpZ', 
+                           'calibrationTcpRx', 'calibrationTcpRy', 'calibrationTcpRz'];
+        tcpElements.forEach((elementId, index) => {
+          const element = document.getElementById(elementId);
+          if (element && robotStateData.TCPActualPosition[index] !== undefined) {
+            let value, unit;
+            if (index < 3) {
+              // Position in mm
+              value = (robotStateData.TCPActualPosition[index] * 1000).toFixed(3);
+              unit = ' mm';
+            } else {
+              // Rotation in degrees
+              value = (robotStateData.TCPActualPosition[index] * 180 / Math.PI).toFixed(3);
+              unit = '°';
+            }
+            element.textContent = value + unit;
+          }
+        });
+      }
+      
+      // Update corner detection status
+      const cornerStatus = document.getElementById('calibrationCornerStatus');
+      if (cornerStatus) {
+        cornerStatus.textContent = cornerDetectionEnabled ? 'Enabled' : 'Disabled';
+        cornerStatus.className = cornerDetectionEnabled ? 'ml-2 font-mono text-green-600' : 'ml-2 font-mono text-red-600';
+      }
+    }
+
+    // Take screenshot for calibration
+    async function takeCalibrationScreenshot() {
+      try {
+        const response = await fetch('/api/calibration/screenshot', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            joint_angles: robotStateData?.jointActualPosition || [],
+            tcp_pose: robotStateData?.TCPActualPosition || []
+          })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          calibrationImageCount++;
+          document.getElementById('calibrationImageCount').textContent = calibrationImageCount;
+          updateCalibrationThumbnails();
+        } else {
+          console.error('Screenshot failed:', data.message);
+        }
+      } catch (error) {
+        console.error('Screenshot error:', error);
+      }
+    }
+
+    // Toggle corner detection
+    function toggleCornerDetection() {
+      if (!cornerDetectionEnabled) {
+        showCornerDetectionModal();
+      } else {
+        disableCornerDetection();
+      }
+    }
+
+    function showCornerDetectionModal() {
+      document.getElementById('cornerDetectionModal').classList.remove('hidden');
+    }
+
+    function closeCornerDetectionModal() {
+      document.getElementById('cornerDetectionModal').classList.add('hidden');
+    }
+
+    async function confirmCornerDetection() {
+      const width = parseInt(document.getElementById('chessboardWidth').value);
+      const height = parseInt(document.getElementById('chessboardHeight').value);
+      
+      if (isNaN(width) || isNaN(height) || width <= 1 || height <= 1) {
+        alert('Please enter valid chessboard size (greater than 1)');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/calibration/corner-detection', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            enable: true,
+            chessboard_width: width - 1,  // Convert grid size to corner size
+            chessboard_height: height - 1,
+            grid_width: width,
+            grid_height: height
+          })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          cornerDetectionEnabled = true;
+          document.getElementById('cornerDetectionBtn').textContent = '🛑 Stop Detection';
+          document.getElementById('cornerDetectionBtn').className = 'bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200';
+          closeCornerDetectionModal();
+        } else {
+          console.error('Failed to enable corner detection:', data.message);
+        }
+      } catch (error) {
+        console.error('Corner detection error:', error);
+      }
+    }
+
+    async function disableCornerDetection() {
+      try {
+        const response = await fetch('/api/calibration/corner-detection', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ enable: false })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          cornerDetectionEnabled = false;
+          document.getElementById('cornerDetectionBtn').textContent = '🎯 Corner Detection';
+          document.getElementById('cornerDetectionBtn').className = 'bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200';
+        } else {
+          console.error('Failed to disable corner detection:', data.message);
+        }
+      } catch (error) {
+        console.error('Corner detection error:', error);
+      }
+    }
+
+    // Refresh calibration camera feed
+    function refreshCalibrationFeed() {
+      const calibrationFeed = document.getElementById('calibrationCameraFeed');
+      if (calibrationFeed) {
+        // Force refresh the video feed
+        calibrationFeed.src = '/video_feed?t=' + Date.now();
+      }
+    }
+
+    // Clear calibration images
+    async function clearCalibrationImages() {
+      if (!confirm('Are you sure you want to clear all calibration images? This action cannot be undone.')) {
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/calibration/clear', {
+          method: 'POST'
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          calibrationImageCount = 0;
+          document.getElementById('calibrationImageCount').textContent = '0';
+          updateCalibrationThumbnails();
+        } else {
+          console.error('Clear failed:', data.message);
+        }
+      } catch (error) {
+        console.error('Clear images error:', error);
+      }
+    }
+
+    // Update calibration thumbnails
+    async function updateCalibrationThumbnails() {
+      try {
+        const response = await fetch('/api/calibration/thumbnails');
+        const data = await response.json();
+        
+        const thumbnailGrid = document.getElementById('calibrationThumbnailGrid');
+        if (!thumbnailGrid) return;
+        
+        if (data.thumbnails && data.thumbnails.length > 0) {
+          thumbnailGrid.innerHTML = '';
+          data.thumbnails.forEach((thumbnail, index) => {
+            const thumbnailDiv = document.createElement('div');
+            thumbnailDiv.className = 'relative cursor-pointer hover:scale-105 transition-transform duration-200 h-20';
+            thumbnailDiv.onclick = () => openCalibrationImageModal(thumbnail.filename);
+            
+            // Extract sequence number from filename
+            let sequenceNumber = '0';
+            const nameWithoutExt = thumbnail.filename.replace('.jpg', '');
+            if (/^\d+$/.test(nameWithoutExt)) {
+              sequenceNumber = nameWithoutExt;
+            }
+            
+            thumbnailDiv.innerHTML = `
+              <div class="relative">
+                <img src="/api/calibration/thumbnail/${thumbnail.filename}" 
+                     alt="${thumbnail.filename}" 
+                     class="w-full h-20 object-cover rounded-lg">
+                <div class="absolute bottom-1 left-1 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                  ${sequenceNumber}
+                </div>
+              </div>
+            `;
+            
+            thumbnailGrid.appendChild(thumbnailDiv);
+          });
+          
+          calibrationImageCount = data.thumbnails.length;
+          document.getElementById('calibrationImageCount').textContent = calibrationImageCount;
+        } else {
+          thumbnailGrid.innerHTML = '<div class="text-center text-gray-500 col-span-2 py-8">No screenshots</div>';
+        }
+      } catch (error) {
+        console.error('Failed to fetch calibration thumbnails:', error);
+      }
+    }
+
+    // Open calibration image modal
+    function openCalibrationImageModal(filename) {
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50';
+      modal.style.cursor = 'pointer';
+      
+      const img = document.createElement('img');
+      img.src = `/api/calibration/image/${filename}`;
+      img.className = 'max-w-90vw max-h-90vh object-contain rounded-lg';
+      
+      modal.appendChild(img);
+      modal.onclick = () => document.body.removeChild(modal);
+      document.body.appendChild(modal);
+    }
+
+    // Initialize camera calibration when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      initializeCameraCalibration();
+    });
+
+    // Close modal when clicking outside or pressing Escape
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeCornerDetectionModal();
+      }
+    });
+
+    document.getElementById('cornerDetectionModal')?.addEventListener('click', function(event) {
+      if (event.target === this) {
+        closeCornerDetectionModal();
+      }
+    });
+  </script>
 
       <script src="/js/robot_arm_control.js?v=6&ts=1755534000"></script>
 </body>

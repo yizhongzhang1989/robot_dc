@@ -135,3 +135,6 @@ Thumbs.db
 *.temp
 *.bak
 *.backup
+
+# Image storage directory
+temp/

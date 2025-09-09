@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse, Response
 from ament_index_python.packages import get_package_share_directory
 import os
 import sys
-from ament_index_python.packages import get_package_share_directory
 import threading
 import json
 import asyncio
@@ -259,6 +258,11 @@ class RobotArmWebServer(Node):
         # CV Bridge for image conversion
         self.bridge = CvBridge()
         
+        # Camera calibration attributes
+        self.corner_detection_enabled = False
+        self.chessboard_size = (11, 8)  # Default chessboard size (corners)
+        self.latest_image = None  # For calibration API compatibility
+        
         self.get_logger().info("Subscribed to camera topic: /robot_arm_camera/image_raw")
         
         # FT Sensor UDP data
@@ -285,11 +289,59 @@ class RobotArmWebServer(Node):
             # Convert ROS Image to OpenCV format
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
             
+            # Process corner detection if enabled
+            processed_image = self.process_corner_detection(cv_image.copy())
+            
             with self.camera_image_lock:
-                self.latest_camera_image = cv_image
+                self.latest_camera_image = processed_image
+                # Store both formats for compatibility
+                self.latest_image = msg  # Keep original ROS message for calibration API
                 
         except Exception as e:
             self.get_logger().error(f'Error processing camera image: {e}')
+    
+    def process_corner_detection(self, image):
+        """Process corner detection and draw corners on image if enabled"""
+        if not hasattr(self, 'corner_detection_enabled') or not self.corner_detection_enabled:
+            return image
+            
+        try:
+            # Convert to grayscale for corner detection
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            
+            # Get chessboard size (default if not set)
+            chessboard_size = getattr(self, 'chessboard_size', (11, 8))
+            
+            # Find chessboard corners
+            ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
+            
+            if ret:
+                # Refine corner positions for better accuracy
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                
+                # Draw corners on the image
+                cv2.drawChessboardCorners(image, chessboard_size, corners, ret)
+                
+                # Add status text
+                cv2.putText(image, f'Corners: {len(corners)} found', (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            else:
+                # No corners found
+                cv2.putText(image, 'No corners detected', (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                           
+            # Add chessboard size info
+            cv2.putText(image, f'Target: {chessboard_size[0]}x{chessboard_size[1]}', (10, 70), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                       
+        except Exception as e:
+            self.get_logger().error(f'Error in corner detection: {e}')
+            # Add error text to image
+            cv2.putText(image, 'Corner detection error', (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
+        return image
     
     def add_scripts_to_path(self):
         """Add the scripts directory to Python path for importing FTC modules"""
@@ -921,6 +973,337 @@ class RobotArmWebServer(Node):
                     return JSONResponse(content={'status': 'success', 'message': 'FTC RT parameters set successfully'})
                 except Exception as e:
                     self.get_logger().error(f"Error executing FTC setFTSetAllRT: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            # Camera Calibration API endpoints
+            @app.post("/api/calibration/screenshot")
+            async def take_calibration_screenshot(request: Request):
+                """Take a screenshot for camera calibration"""
+                try:
+                    data = await request.json()
+                    joint_angles = data.get('joint_angles', [])
+                    tcp_pose = data.get('tcp_pose', [])
+                    
+                    # Create calibration directory if it doesn't exist
+                    # Find workspace root by looking for 'robot_dc2' directory in the path
+                    current_file = os.path.abspath(__file__)
+                    workspace_root = None
+                    
+                    # Split the path and find robot_dc2 directory
+                    path_parts = current_file.split(os.sep)
+                    for i, part in enumerate(path_parts):
+                        if part == 'robot_dc2':
+                            workspace_root = os.sep.join(path_parts[:i+1])
+                            break
+                    
+                    if workspace_root is None:
+                        # Fallback: use a more general approach
+                        workspace_root = '/home/a/Documents/robot_dc2'
+                    
+                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    
+                    os.makedirs(calibration_dir, exist_ok=True)
+                    
+                    # Get current camera image
+                    if self.latest_image is not None:
+                        # Convert ROS image to OpenCV format
+                        cv_image = self.bridge.imgmsg_to_cv2(self.latest_image, "bgr8")
+                        
+                        # Find next available sequence number
+                        import glob
+                        existing_files = glob.glob(os.path.join(calibration_dir, '*.jpg'))
+                        used_numbers = set()
+                        for file_path in existing_files:
+                            filename = os.path.basename(file_path)
+                            name_without_ext = filename.replace('.jpg', '')
+                            try:
+                                counter = int(name_without_ext)
+                                used_numbers.add(counter)
+                            except ValueError:
+                                # Skip files that don't match the numeric format
+                                continue
+                        
+                        # Find the next available number starting from 0
+                        next_sequence = 0
+                        while next_sequence in used_numbers:
+                            next_sequence += 1
+                        
+                        # Save image with simple numeric filename (matching duco_camera_collect.py)
+                        filename = f"{next_sequence}.jpg"
+                        filepath = os.path.join(calibration_dir, filename)
+                        
+                        cv2.imwrite(filepath, cv_image)
+                        
+                        # Save robot state data with matching format
+                        state_filename = f"{next_sequence}.json"
+                        state_filepath = os.path.join(calibration_dir, state_filename)
+                        
+                        # Convert joint angles and tcp pose to match duco_camera_collect.py format
+                        import math
+                        import numpy as np
+                        
+                        # Convert joint_angles from degrees to radians (if they were in degrees)
+                        joint_angles_rad = joint_angles if isinstance(joint_angles, list) and len(joint_angles) >= 6 else [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                        
+                        # Convert tcp_pose to proper format (if available)
+                        if isinstance(tcp_pose, list) and len(tcp_pose) >= 6:
+                            tcp_pose_data = {
+                                "x": tcp_pose[0] / 1000.0 if tcp_pose[0] > 100 else tcp_pose[0],  # Convert mm to m if needed
+                                "y": tcp_pose[1] / 1000.0 if tcp_pose[1] > 100 else tcp_pose[1],
+                                "z": tcp_pose[2] / 1000.0 if tcp_pose[2] > 100 else tcp_pose[2], 
+                                "rx": math.radians(tcp_pose[3]) if abs(tcp_pose[3]) > 6.28 else tcp_pose[3],  # Convert degrees to radians if needed
+                                "ry": math.radians(tcp_pose[4]) if abs(tcp_pose[4]) > 6.28 else tcp_pose[4],
+                                "rz": math.radians(tcp_pose[5]) if abs(tcp_pose[5]) > 6.28 else tcp_pose[5]
+                            }
+                            
+                            # Create 4x4 transformation matrix from tcp pose
+                            x, y, z, rx, ry, rz = tcp_pose_data["x"], tcp_pose_data["y"], tcp_pose_data["z"], tcp_pose_data["rx"], tcp_pose_data["ry"], tcp_pose_data["rz"]
+                            
+                            # Create rotation matrices for each axis
+                            cos_rx, sin_rx = math.cos(rx), math.sin(rx)
+                            cos_ry, sin_ry = math.cos(ry), math.sin(ry)
+                            cos_rz, sin_rz = math.cos(rz), math.sin(rz)
+                            
+                            # Rotation matrix around X axis
+                            R_x = np.array([
+                                [1, 0, 0],
+                                [0, cos_rx, -sin_rx],
+                                [0, sin_rx, cos_rx]
+                            ])
+                            
+                            # Rotation matrix around Y axis
+                            R_y = np.array([
+                                [cos_ry, 0, sin_ry],
+                                [0, 1, 0],
+                                [-sin_ry, 0, cos_ry]
+                            ])
+                            
+                            # Rotation matrix around Z axis
+                            R_z = np.array([
+                                [cos_rz, -sin_rz, 0],
+                                [sin_rz, cos_rz, 0],
+                                [0, 0, 1]
+                            ])
+                            
+                            # Combined rotation matrix (order: Z-Y-X)
+                            R = R_z @ R_y @ R_x
+                            
+                            # Create 4x4 transformation matrix
+                            transform_matrix = np.eye(4)
+                            transform_matrix[:3, :3] = R
+                            transform_matrix[:3, 3] = [x, y, z]
+                        else:
+                            tcp_pose_data = {
+                                "x": 0.0, "y": 0.0, "z": 0.0,
+                                "rx": 0.0, "ry": 0.0, "rz": 0.0
+                            }
+                            transform_matrix = np.eye(4)
+                        
+                        # Create JSON data matching duco_camera_collect.py format
+                        state_data = {
+                            "joint_angles": joint_angles_rad[:6],
+                            "end_xyzrpy": tcp_pose_data,
+                            "end2base": transform_matrix.tolist()
+                        }
+                        with open(state_filepath, 'w') as f:
+                            json.dump(state_data, f, indent=2)
+                        
+                        self.get_logger().info(f"Calibration screenshot saved: {filename}")
+                        return JSONResponse(content={
+                            'success': True, 
+                            'filename': filename,
+                            'sequence': next_sequence
+                        })
+                    else:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': 'No camera image available'
+                        }, status_code=400)
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error taking calibration screenshot: {str(e)}")
+                    return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
+            
+            @app.post("/api/calibration/corner-detection")
+            async def toggle_corner_detection(request: Request):
+                """Toggle corner detection for calibration"""
+                try:
+                    data = await request.json()
+                    enable = data.get('enable', False)
+                    
+                    if enable:
+                        chessboard_width = data.get('chessboard_width', 11)
+                        chessboard_height = data.get('chessboard_height', 8)
+                        
+                        # Store corner detection parameters
+                        self.corner_detection_enabled = True
+                        self.chessboard_size = (chessboard_width, chessboard_height)
+                        
+                        self.get_logger().info(f"Corner detection enabled: {chessboard_width}x{chessboard_height}")
+                        return JSONResponse(content={
+                            'success': True,
+                            'message': f'Corner detection enabled ({chessboard_width}x{chessboard_height})'
+                        })
+                    else:
+                        self.corner_detection_enabled = False
+                        self.get_logger().info("Corner detection disabled")
+                        return JSONResponse(content={
+                            'success': True,
+                            'message': 'Corner detection disabled'
+                        })
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error toggling corner detection: {str(e)}")
+                    return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
+            
+            @app.post("/api/calibration/clear")
+            async def clear_calibration_images():
+                """Clear all calibration images"""
+                try:
+                    # Get the workspace root directory
+                    current_file = os.path.abspath(__file__)
+                    workspace_root = None
+                    
+                    # Split the path and find robot_dc2 directory
+                    path_parts = current_file.split(os.sep)
+                    for i, part in enumerate(path_parts):
+                        if part == 'robot_dc2':
+                            workspace_root = os.sep.join(path_parts[:i+1])
+                            break
+                    
+                    if workspace_root is None:
+                        workspace_root = '/home/a/Documents/robot_dc2'
+                    
+                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    
+                    if os.path.exists(calibration_dir):
+                        import glob
+                        
+                        # Remove all jpg and json files
+                        for pattern in ['*.jpg', '*.json']:
+                            files = glob.glob(os.path.join(calibration_dir, pattern))
+                            for file_path in files:
+                                os.remove(file_path)
+                        
+                        self.get_logger().info("Calibration images cleared")
+                        return JSONResponse(content={'success': True, 'message': 'Images cleared successfully'})
+                    else:
+                        return JSONResponse(content={'success': True, 'message': 'No images to clear'})
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error clearing calibration images: {str(e)}")
+                    return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
+            
+            @app.get("/api/calibration/thumbnails")
+            async def get_calibration_thumbnails():
+                """Get list of calibration image thumbnails"""
+                try:
+                    # Get the workspace root directory
+                    current_file = os.path.abspath(__file__)
+                    workspace_root = None
+                    
+                    # Split the path and find robot_dc2 directory
+                    path_parts = current_file.split(os.sep)
+                    for i, part in enumerate(path_parts):
+                        if part == 'robot_dc2':
+                            workspace_root = os.sep.join(path_parts[:i+1])
+                            break
+                    
+                    if workspace_root is None:
+                        workspace_root = '/home/a/Documents/robot_dc2'
+                    
+                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    
+                    if not os.path.exists(calibration_dir):
+                        return JSONResponse(content={'thumbnails': []})
+                    
+                    import glob
+                    image_files = glob.glob(os.path.join(calibration_dir, '*.jpg'))
+                    
+                    thumbnails = []
+                    for file_path in sorted(image_files):
+                        filename = os.path.basename(file_path)
+                        thumbnails.append({'filename': filename})
+                    
+                    return JSONResponse(content={'thumbnails': thumbnails})
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error getting calibration thumbnails: {str(e)}")
+                    return JSONResponse(content={'thumbnails': []}, status_code=500)
+            
+            @app.get("/api/calibration/thumbnail/{filename}")
+            async def get_calibration_thumbnail(filename: str):
+                """Get a calibration image thumbnail"""
+                try:
+                    # Get the workspace root directory
+                    current_file = os.path.abspath(__file__)
+                    workspace_root = None
+                    
+                    # Split the path and find robot_dc2 directory
+                    path_parts = current_file.split(os.sep)
+                    for i, part in enumerate(path_parts):
+                        if part == 'robot_dc2':
+                            workspace_root = os.sep.join(path_parts[:i+1])
+                            break
+                    
+                    if workspace_root is None:
+                        workspace_root = '/home/a/Documents/robot_dc2'
+                    
+                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    file_path = os.path.join(calibration_dir, filename)
+                    
+                    if os.path.exists(file_path) and os.path.isfile(file_path):
+                        # Read and resize image for thumbnail
+                        import cv2
+                        image = cv2.imread(file_path)
+                        if image is not None:
+                            # Resize to thumbnail size
+                            height, width = image.shape[:2]
+                            thumbnail_height = 150
+                            thumbnail_width = int(width * thumbnail_height / height)
+                            thumbnail = cv2.resize(image, (thumbnail_width, thumbnail_height))
+                            
+                            # Encode as JPEG
+                            _, buffer = cv2.imencode('.jpg', thumbnail)
+                            
+                            return Response(content=buffer.tobytes(), media_type="image/jpeg")
+                        else:
+                            return JSONResponse(content={'error': 'Unable to read image'}, status_code=400)
+                    else:
+                        return JSONResponse(content={'error': 'Image not found'}, status_code=404)
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error getting calibration thumbnail: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            @app.get("/api/calibration/image/{filename}")
+            async def get_calibration_image(filename: str):
+                """Get a full calibration image"""
+                try:
+                    # Get the workspace root directory
+                    current_file = os.path.abspath(__file__)
+                    workspace_root = None
+                    
+                    # Split the path and find robot_dc2 directory
+                    path_parts = current_file.split(os.sep)
+                    for i, part in enumerate(path_parts):
+                        if part == 'robot_dc2':
+                            workspace_root = os.sep.join(path_parts[:i+1])
+                            break
+                    
+                    if workspace_root is None:
+                        workspace_root = '/home/a/Documents/robot_dc2'
+                    
+                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    file_path = os.path.join(calibration_dir, filename)
+                    
+                    if os.path.exists(file_path) and os.path.isfile(file_path):
+                        return FileResponse(file_path, media_type="image/jpeg")
+                    else:
+                        return JSONResponse(content={'error': 'Image not found'}, status_code=404)
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error getting calibration image: {str(e)}")
                     return JSONResponse(content={'error': str(e)}, status_code=500)
             
             # Static file serving for urdf-loaders library
