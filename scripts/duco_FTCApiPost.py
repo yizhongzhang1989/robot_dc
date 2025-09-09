@@ -72,7 +72,7 @@ def FTC_setFTValueRT(force):
     return response
 
 # set All FTC parameters of current programs
-def FTC_setFTValueAll(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ftSet,dead_zone,disEndLimit,timeEndLimit,ftEndLimit,disAng6D_EndLimit,ftcEndType,quickSetIndex,B,M,vel_limit,cor_pos_limit,maxForce_1,ifDKStopOnMaxForce_1,ifRobotStopOnMaxForce_1,maxForce_2,ifDKStopOnMaxForce_2,ifRobotStopOnMaxForce_2,ifDKStopOnTimeDisMon,ifRobotStopOnTimeDisMon,ifNeedInit,withGroup,ftcSetGroup,ignoreSensor):
+def FTC_setFTValueAll(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ftSet,dead_zone,disEndLimit,angleEndLimit,timeEndLimit,ftEndLimit,disAng6D_EndLimit,ftcEndType,quickSetIndex,B,M,vel_limit,cor_pos_limit,maxForce_1,ifDKStopOnMaxForce_1,ifRobotStopOnMaxForce_1,maxForce_2,ifDKStopOnMaxForce_2,ifRobotStopOnMaxForce_2,ifDKStopOnTimeDisMon,ifRobotStopOnTimeDisMon,ifNeedInit,withGroup,ftcSetGroup,ignoreSensor):
     url_setFTValueAll = "http://192.168.1.20:8080/setFTValueAll"
     params_setFTValueAll = {"CmdName": "setFTSetAll",
                             "FTSetName": "default",
@@ -84,6 +84,7 @@ def FTC_setFTValueAll(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ft
                                           "ftSet": ftSet,
                                           "dead_zone": dead_zone,
                                           "disEndLimit": disEndLimit,
+                                          "angleEndLimit":angleEndLimit,
                                           "timeEndLimit": timeEndLimit,
                                           "ftEndLimit": ftEndLimit,
                                           "disAng6D_EndLimit": disAng6D_EndLimit,
@@ -113,7 +114,7 @@ def FTC_setFTValueAll(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ft
     return response
 
 # set All FTC parameters of current programs in real-time
-def FTC_setFTsetAllRT(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ftSet,dead_zone,disEndLimit,timeEndLimit,ftEndLimit,disAng6D_EndLimit,ftcEndType,quickSetIndex,B,M,vel_limit,cor_pos_limit,maxForce_1,ifDKStopOnMaxForce_1,ifRobotStopOnMaxForce_1,maxForce_2,ifDKStopOnMaxForce_2,ifRobotStopOnMaxForce_2,ifDKStopOnTimeDisMon,ifRobotStopOnTimeDisMon,ifNeedInit,withGroup,ftcSetGroup,ignoreSensor):
+def FTC_setFTsetAllRT(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ftSet,dead_zone,disEndLimit,angleEndLimit,timeEndLimit,ftEndLimit,disAng6D_EndLimit,ftcEndType,quickSetIndex,B,M,vel_limit,cor_pos_limit,maxForce_1,ifDKStopOnMaxForce_1,ifRobotStopOnMaxForce_1,maxForce_2,ifDKStopOnMaxForce_2,ifRobotStopOnMaxForce_2,ifDKStopOnTimeDisMon,ifRobotStopOnTimeDisMon,ifNeedInit,withGroup,ftcSetGroup,ignoreSensor):
     url_setFTSetAllRT = "http://192.168.1.20:8080/setFTValueAllRT"
     params_setFTSetAllRT = {"CmdName": "setFTSetAllRT",
                             "ftSetJson": {"isProgram": isProgram,
@@ -124,6 +125,7 @@ def FTC_setFTsetAllRT(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ft
                                           "ftSet": ftSet,
                                           "dead_zone": dead_zone,
                                           "disEndLimit": disEndLimit,
+                                          "angleEndLimit":angleEndLimit,
                                           "timeEndLimit": timeEndLimit,
                                           "ftEndLimit": ftEndLimit,
                                           "disAng6D_EndLimit": disAng6D_EndLimit,

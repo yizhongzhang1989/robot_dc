@@ -97,7 +97,7 @@ def Move2_taskunlockright_startpoint(robot,op):
 # ===========================execution functions for FTC tasks===============================
 '''general function of FTC tasks'''
 def FTC_setparams(ftEnabled, ftSet, isProgram=False, ftcProgram=None, onlyMonitor=False, graCalcIndex=3, 
-                  dead_zone=[1,1,1,0.1,0.1,0.1], disEndLimit=5000, timeEndLimit=180, ftEndLimit=[0,0,0,0,0,0], 
+                  dead_zone=[1,1,1,0.1,0.1,0.1], disEndLimit=5000, angleEndLimit=30,timeEndLimit=60, ftEndLimit=[0,0,0,0,0,0], 
                   disAng6D_EndLimit=[0,0,0,0,0,0], ftcEndType=6, quickSetIndex=[0,0,0,0,0,0], 
                   B=[2000,2000,2000,1500,1500,1500], M=[200,200,200,150,150,150], vel_limit=[500,500,500,500,500,500], cor_pos_limit=[1,1,1,0.5,0.5,0.5], 
                   maxForce_1=[0,0,0,0,0,0], ifDKStopOnMaxForce_1=False, ifRobotStopOnMaxForce_1=False, 
@@ -107,7 +107,7 @@ def FTC_setparams(ftEnabled, ftSet, isProgram=False, ftcProgram=None, onlyMonito
 
     # for move alone positive direction of z-axis, ftSet_z = negtive 
 
-    res = FTC_setFTValueAll(isProgram, ftcProgram, onlyMonitor, graCalcIndex, ftEnabled, ftSet, dead_zone, disEndLimit,
+    res = FTC_setFTValueAll(isProgram, ftcProgram, onlyMonitor, graCalcIndex, ftEnabled, ftSet, dead_zone, disEndLimit, angleEndLimit,
                       timeEndLimit, ftEndLimit, disAng6D_EndLimit, ftcEndType, quickSetIndex, B, M, vel_limit,
                       cor_pos_limit, maxForce_1, ifDKStopOnMaxForce_1, ifRobotStopOnMaxForce_1, maxForce_2,
                       ifDKStopOnMaxForce_2, ifRobotStopOnMaxForce_2, ifDKStopOnTimeDisMon, ifRobotStopOnTimeDisMon,
