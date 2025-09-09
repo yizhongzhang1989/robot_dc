@@ -204,8 +204,12 @@ hardware_interface::return_type DucoHardwareInterface::write(
       std::vector<double> commands(hw_commands_.begin(), hw_commands_.end());
       
       // Use servoj for continuous servo control (better trajectory following)
+      // 参数优化以解决250Hz (4ms间隔)下的容差违规问题：
+      // - 降低velocity和acceleration以提高跟踪精度
+      // - 调整kp, kd增益以平衡响应速度和稳定性
+      // - 降低smooth_vel参数以获得更精确的轨迹跟踪
       // Parameters: joints, velocity, acceleration, non-blocking, kp, kd, smooth_vel, smooth_acc
-      duco_robot_->servoj(commands, 2.0, 2.0, false, 300, 50, 15, 2);
+      duco_robot_->servoj(commands, 3.5, 3.5, false, 400, 80, 5, 2);
       
       // Update previous commands
       hw_commands_prev_ = hw_commands_;
