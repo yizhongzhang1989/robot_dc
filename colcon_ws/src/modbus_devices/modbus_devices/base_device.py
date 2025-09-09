@@ -37,7 +37,7 @@ class ModbusDevice(ABC):
     def send(self, func_code, addr, values, seq_id=None, callback=None):
         # Check if the Modbus service is available
         if not self.cli.service_is_ready():
-            self.get_logger().warn("Modbus service not available. Skipping write request.")
+            self.node.get_logger().warn("Modbus service not available. Skipping write request.")
             return
 
         # Build the ModbusRequest message

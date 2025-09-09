@@ -41,7 +41,7 @@ class ModbusManagerNode(Node):
 
                 if fc == 1:
                     # Read coils
-                    result = self.client.read_coils(address=addr, count=request.count, slave=slave)
+                    result = self.client.read_coils(address=addr, count=request.count, device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
@@ -50,7 +50,7 @@ class ModbusManagerNode(Node):
 
                 elif fc == 3:
                     # Read holding registers
-                    result = self.client.read_holding_registers(address=addr, count=request.count, slave=slave)
+                    result = self.client.read_holding_registers(address=addr, count=request.count, device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
@@ -59,7 +59,7 @@ class ModbusManagerNode(Node):
 
                 elif fc == 5:
                     # Write single coil (ON=0xFF00, OFF=0x0000)
-                    result = self.client.write_coil(address=addr, value=bool(values[0]), slave=slave)
+                    result = self.client.write_coil(address=addr, value=bool(values[0]), device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
@@ -68,7 +68,7 @@ class ModbusManagerNode(Node):
 
                 elif fc == 6:
                     # Write single register
-                    result = self.client.write_register(address=addr, value=values[0], slave=slave)
+                    result = self.client.write_register(address=addr, value=values[0], device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
@@ -78,7 +78,7 @@ class ModbusManagerNode(Node):
                 elif fc == 15:
                     # Write multiple coils
                     coil_values = [bool(v) for v in values]
-                    result = self.client.write_coils(address=addr, values=coil_values, slave=slave)
+                    result = self.client.write_coils(address=addr, values=coil_values, device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
@@ -87,7 +87,7 @@ class ModbusManagerNode(Node):
 
                 elif fc == 16:
                     # Write multiple registers
-                    result = self.client.write_registers(address=addr, values=values, slave=slave)
+                    result = self.client.write_registers(address=addr, values=values, device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
