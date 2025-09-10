@@ -1306,6 +1306,471 @@ class RobotArmWebServer(Node):
                     self.get_logger().error(f"Error getting calibration image: {str(e)}")
                     return JSONResponse(content={'error': str(e)}, status_code=500)
             
+            @app.post("/api/calibration/intrinsic")
+            async def run_intrinsic_calibration(request: Request):
+                """Run intrinsic camera calibration using the camera calibration toolkit"""
+                try:
+                    data = await request.json()
+                    chessboard_width = data.get('chessboard_width', 11)
+                    chessboard_height = data.get('chessboard_height', 8) 
+                    square_size = data.get('square_size', 0.02)  # 20mm
+                    
+                    # Get workspace root directory
+                    current_file = os.path.abspath(__file__)
+                    workspace_root = None
+                    
+                    path_parts = current_file.split(os.sep)
+                    for i, part in enumerate(path_parts):
+                        if part == 'robot_dc2':
+                            workspace_root = os.sep.join(path_parts[:i+1])
+                            break
+                    
+                    if workspace_root is None:
+                        workspace_root = '/home/a/Documents/robot_dc2'
+                    
+                    # Set up paths
+                    temp_dir = os.path.join(workspace_root, 'temp')
+                    scripts_dir = os.path.join(workspace_root, 'scripts', 'ThirdParty', 'camera_calibration_toolkit')
+                    
+                    if not os.path.exists(temp_dir):
+                        return JSONResponse(content={'success': False, 'message': 'No calibration images found in temp directory'}, status_code=400)
+                    
+                    if not os.path.exists(scripts_dir):
+                        return JSONResponse(content={'success': False, 'message': 'Camera calibration toolkit not found'}, status_code=500)
+                    
+                    # Check for image files
+                    import glob
+                    image_files = glob.glob(os.path.join(temp_dir, '*.jpg'))
+                    if len(image_files) < 10:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': f'Not enough calibration images. Found {len(image_files)} images, need at least 10'
+                        }, status_code=400)
+                    
+                    self.get_logger().info(f"Starting intrinsic calibration with {len(image_files)} images")
+                    
+                    # Create chessboard config file
+                    config_data = {
+                        "pattern_id": "standard_chessboard",
+                        "name": "Standard Chessboard",
+                        "description": "Traditional black and white checkerboard pattern",
+                        "is_planar": True,
+                        "parameters": {
+                            "width": chessboard_width,
+                            "height": chessboard_height,
+                            "square_size": square_size
+                        }
+                    }
+                    
+                    config_path = os.path.join(temp_dir, 'chessboard_config.json')
+                    with open(config_path, 'w') as f:
+                        json.dump(config_data, f, indent=2)
+                    
+                    # Run calibration using subprocess to call the calibration script
+                    import subprocess
+                    import sys
+                    
+                    # Create a Python script to run the calibration
+                    calibration_script = f'''
+import os
+import sys
+import glob
+import json
+import numpy as np
+
+# Add the camera calibration toolkit to Python path
+sys.path.append('{scripts_dir}')
+
+try:
+    from core.intrinsic_calibration import IntrinsicCalibrator
+    from core.calibration_patterns import load_pattern_from_json
+    
+    # Set up paths
+    temp_dir = '{temp_dir}'
+    image_paths = sorted(glob.glob(os.path.join(temp_dir, '*.jpg')))
+    config_path = os.path.join(temp_dir, 'chessboard_config.json')
+    
+    print(f"Found {{len(image_paths)}} images for calibration")
+    
+    # Load pattern configuration
+    with open(config_path, 'r') as f:
+        config_data = json.load(f)
+    pattern = load_pattern_from_json(config_data)
+    
+    # Create calibrator
+    calibrator = IntrinsicCalibrator(
+        image_paths=image_paths,
+        calibration_pattern=pattern
+    )
+    
+    # Run calibration
+    result = calibrator.calibrate(
+        cameraMatrix=None,
+        distCoeffs=None,
+        flags=0,
+        criteria=None,
+        verbose=True
+    )
+    
+    # Generate report in temp directory
+    report_result = calibrator.generate_calibration_report(os.path.join(temp_dir, "intrinsic_calibration_report"))
+    
+    # Save results to JSON file for the web interface
+    output_data = {{
+        'success': True,
+        'rms_error': float(result['rms_error']),
+        'camera_matrix': result['camera_matrix'].tolist(),
+        'distortion_coefficients': result['distortion_coefficients'].flatten().tolist(),
+        'image_count': len(image_paths),
+        'report_html': report_result.get('html_report', '') if report_result else '',
+        'report_json': report_result.get('json_data', '') if report_result else ''
+    }}
+    
+    output_path = os.path.join(temp_dir, 'calibration_result.json')
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    
+    print("✅ Calibration completed successfully!")
+    print(f"RMS Error: {{result['rms_error']}}")
+    
+except Exception as e:
+    print(f"❌ Calibration failed: {{str(e)}}")
+    import traceback
+    traceback.print_exc()
+    
+    # Save error result
+    error_data = {{
+        'success': False,
+        'message': str(e),
+        'error_type': type(e).__name__
+    }}
+    
+    output_path = os.path.join('{temp_dir}', 'calibration_result.json')
+    with open(output_path, 'w') as f:
+        json.dump(error_data, f, indent=2)
+'''
+                    
+                    # Write the calibration script to a temporary file
+                    script_path = os.path.join(temp_dir, 'run_calibration.py')
+                    with open(script_path, 'w') as f:
+                        f.write(calibration_script)
+                    
+                    # Run the calibration script
+                    result_file = os.path.join(temp_dir, 'calibration_result.json')
+                    
+                    # Remove any existing result file
+                    if os.path.exists(result_file):
+                        os.remove(result_file)
+                    
+                    # Run the script with proper Python environment
+                    process = subprocess.run([
+                        sys.executable, script_path
+                    ], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=300,  # 5 minute timeout
+                    cwd=scripts_dir
+                    )
+                    
+                    self.get_logger().info(f"Calibration process stdout: {process.stdout}")
+                    if process.stderr:
+                        self.get_logger().warning(f"Calibration process stderr: {process.stderr}")
+                    
+                    # Read the result
+                    if os.path.exists(result_file):
+                        with open(result_file, 'r') as f:
+                            result_data = json.load(f)
+                        
+                        # Clean up temporary files
+                        try:
+                            os.remove(script_path)
+                            os.remove(config_path)
+                        except Exception:
+                            pass
+                        
+                        return JSONResponse(content=result_data)
+                    else:
+                        return JSONResponse(content={
+                            'success': False,
+                            'message': f'Calibration process failed. Return code: {process.returncode}',
+                            'stdout': process.stdout,
+                            'stderr': process.stderr
+                        }, status_code=500)
+                    
+                except subprocess.TimeoutExpired:
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': 'Calibration process timed out (>5 minutes). Please try with fewer images or check the calibration target.'
+                    }, status_code=500)
+                except Exception as e:
+                    self.get_logger().error(f"Error running intrinsic calibration: {str(e)}")
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': f'Server error: {str(e)}'
+                    }, status_code=500)
+            
+            @app.post("/api/calibration/eye-in-hand")
+            async def run_eye_in_hand_calibration(request: Request):
+                """Run eye-in-hand camera calibration using the camera calibration toolkit"""
+                try:
+                    data = await request.json()
+                    chessboard_width = data.get('chessboard_width', 11)
+                    chessboard_height = data.get('chessboard_height', 8) 
+                    square_size = data.get('square_size', 0.02)  # 20mm
+                    
+                    # Get workspace root directory
+                    current_file = os.path.abspath(__file__)
+                    workspace_root = None
+                    
+                    path_parts = current_file.split(os.sep)
+                    for i, part in enumerate(path_parts):
+                        if part == 'robot_dc2':
+                            workspace_root = os.sep.join(path_parts[:i+1])
+                            break
+                    
+                    if workspace_root is None:
+                        workspace_root = '/home/a/Documents/robot_dc2'
+                    
+                    # Set up paths
+                    temp_dir = os.path.join(workspace_root, 'temp')
+                    scripts_dir = os.path.join(workspace_root, 'scripts', 'ThirdParty', 'camera_calibration_toolkit')
+                    
+                    if not os.path.exists(temp_dir):
+                        return JSONResponse(content={'success': False, 'message': 'No calibration images found in temp directory'}, status_code=400)
+                    
+                    if not os.path.exists(scripts_dir):
+                        return JSONResponse(content={'success': False, 'message': 'Camera calibration toolkit not found'}, status_code=500)
+                    
+                    # Check for image files and corresponding JSON files
+                    import glob
+                    image_files = glob.glob(os.path.join(temp_dir, '*.jpg'))
+                    
+                    if len(image_files) < 5:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': f'Not enough calibration images. Found {len(image_files)} images, need at least 5'
+                        }, status_code=400)
+                    
+                    # Check if we have pose data for images
+                    pose_count = 0
+                    for img_file in image_files:
+                        img_basename = os.path.basename(img_file).replace('.jpg', '')
+                        json_file = os.path.join(temp_dir, f'{img_basename}.json')
+                        if os.path.exists(json_file):
+                            pose_count += 1
+                    
+                    if pose_count < 5:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': f'Not enough pose data. Found {pose_count} poses, need at least 5'
+                        }, status_code=400)
+                    
+                    self.get_logger().info(f"Starting eye-in-hand calibration with {len(image_files)} images and {pose_count} poses")
+                    
+                    # Create chessboard config file
+                    config_data = {
+                        "pattern_id": "standard_chessboard",
+                        "name": "Standard Chessboard",
+                        "description": "Traditional black and white checkerboard pattern",
+                        "is_planar": True,
+                        "parameters": {
+                            "width": chessboard_width,
+                            "height": chessboard_height,
+                            "square_size": square_size
+                        }
+                    }
+                    
+                    config_path = os.path.join(temp_dir, 'chessboard_config.json')
+                    with open(config_path, 'w') as f:
+                        json.dump(config_data, f, indent=2)
+                    
+                    # Create a Python script to run the eye-in-hand calibration
+                    calibration_script = f'''
+import os
+import sys
+import glob
+import json
+import numpy as np
+import cv2
+
+# Add the camera calibration toolkit to Python path
+sys.path.append('{scripts_dir}')
+
+try:
+    from core.eye_in_hand_calibration import EyeInHandCalibrator
+    from core.intrinsic_calibration import IntrinsicCalibrator
+    from core.calibration_patterns import load_pattern_from_json
+    
+    # Set up paths
+    temp_dir = '{temp_dir}'
+    config_path = os.path.join(temp_dir, 'chessboard_config.json')
+    
+    # Load pattern configuration
+    with open(config_path, 'r') as f:
+        config_data = json.load(f)
+    pattern = load_pattern_from_json(config_data)
+    
+    # Load images and poses
+    image_files = sorted(glob.glob(os.path.join(temp_dir, '*.jpg')))
+    images = []
+    end2base_matrices = []
+    
+    for img_file in image_files:
+        # Load image
+        img = cv2.imread(img_file)
+        if img is not None:
+            # Load corresponding pose
+            img_basename = os.path.basename(img_file).replace('.jpg', '')
+            json_file = os.path.join(temp_dir, f'{{img_basename}}.json')
+            
+            if os.path.exists(json_file):
+                with open(json_file, 'r') as f:
+                    pose_data = json.load(f)
+                end2base_matrix = np.array(pose_data['end2base'])
+                
+                images.append(img)
+                end2base_matrices.append(end2base_matrix)
+            else:
+                print(f"Warning: No pose file found for {{img_file}}")
+    
+    print(f"Loaded {{len(images)}} images and {{len(end2base_matrices)}} robot poses")
+    
+    if len(images) < 5 or len(end2base_matrices) < 5:
+        raise Exception(f"Insufficient data: {{len(images)}} images, {{len(end2base_matrices)}} poses")
+    
+    # Step 1: Perform intrinsic calibration
+    print("Performing intrinsic calibration...")
+    intrinsic_calibrator = IntrinsicCalibrator(images=images, calibration_pattern=pattern)
+    intrinsic_results = intrinsic_calibrator.calibrate(verbose=True)
+    
+    if not intrinsic_results:
+        raise Exception("Intrinsic calibration failed")
+    
+    camera_matrix = intrinsic_results['camera_matrix']
+    distortion_coeffs = intrinsic_results['distortion_coefficients']
+    intrinsic_rms = intrinsic_results['rms_error']
+    print(f"Intrinsic calibration completed - RMS: {{intrinsic_rms:.4f}} pixels")
+    
+    # Step 2: Perform eye-in-hand calibration
+    print("Performing eye-in-hand calibration...")
+    calibrator = EyeInHandCalibrator(
+        images=images,
+        end2base_matrices=end2base_matrices,
+        calibration_pattern=pattern,
+        camera_matrix=camera_matrix,
+        distortion_coefficients=distortion_coeffs.flatten(),
+        verbose=True
+    )
+    
+    result = calibrator.calibrate(verbose=True)
+    
+    if result is None:
+        raise Exception("Eye-in-hand calibration failed")
+    
+    # Generate report in temp directory
+    report_result = calibrator.generate_calibration_report(os.path.join(temp_dir, "eye_in_hand_calibration_report"))
+    
+    # Save results to JSON file for the web interface
+    output_data = {{
+        'success': True,
+        'rms_error': float(result['rms_error']),
+        'intrinsic_rms_error': float(intrinsic_rms),
+        'cam2end_matrix': result['cam2end_matrix'].tolist(),
+        'target2base_matrix': result['target2base_matrix'].tolist(),
+        'camera_matrix': camera_matrix.tolist(),
+        'distortion_coefficients': distortion_coeffs.flatten().tolist(),
+        'image_count': len(images),
+        'pose_count': len(end2base_matrices),
+        'report_html': report_result.get('html_report', '') if report_result else '',
+        'report_json': report_result.get('json_data', '') if report_result else ''
+    }}
+    
+    output_path = os.path.join(temp_dir, 'eye_in_hand_result.json')
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    
+    print("✅ Eye-in-hand calibration completed successfully!")
+    print(f"Intrinsic RMS Error: {{intrinsic_rms:.4f}} pixels")
+    print(f"Eye-in-hand RMS Error: {{result['rms_error']:.4f}} pixels")
+    
+except Exception as e:
+    print(f"❌ Eye-in-hand calibration failed: {{str(e)}}")
+    import traceback
+    traceback.print_exc()
+    
+    # Save error result
+    error_data = {{
+        'success': False,
+        'message': str(e),
+        'error_type': type(e).__name__
+    }}
+    
+    output_path = os.path.join('{temp_dir}', 'eye_in_hand_result.json')
+    with open(output_path, 'w') as f:
+        json.dump(error_data, f, indent=2)
+'''
+                    
+                    # Write the calibration script to a temporary file
+                    script_path = os.path.join(temp_dir, 'run_eye_in_hand_calibration.py')
+                    with open(script_path, 'w') as f:
+                        f.write(calibration_script)
+                    
+                    # Run the calibration script
+                    result_file = os.path.join(temp_dir, 'eye_in_hand_result.json')
+                    
+                    # Remove any existing result file
+                    if os.path.exists(result_file):
+                        os.remove(result_file)
+                    
+                    # Run the script with proper Python environment
+                    import subprocess
+                    import sys
+                    process = subprocess.run([
+                        sys.executable, script_path
+                    ], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=600,  # 10 minute timeout for eye-in-hand calibration
+                    cwd=scripts_dir
+                    )
+                    
+                    self.get_logger().info(f"Eye-in-hand calibration process stdout: {process.stdout}")
+                    if process.stderr:
+                        self.get_logger().warning(f"Eye-in-hand calibration process stderr: {process.stderr}")
+                    
+                    # Read the result
+                    if os.path.exists(result_file):
+                        with open(result_file, 'r') as f:
+                            result_data = json.load(f)
+                        
+                        # Clean up temporary files
+                        try:
+                            os.remove(script_path)
+                            os.remove(config_path)
+                        except Exception:
+                            pass
+                        
+                        return JSONResponse(content=result_data)
+                    else:
+                        return JSONResponse(content={
+                            'success': False,
+                            'message': f'Eye-in-hand calibration process failed. Return code: {process.returncode}',
+                            'stdout': process.stdout,
+                            'stderr': process.stderr
+                        }, status_code=500)
+                    
+                except subprocess.TimeoutExpired:
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': 'Eye-in-hand calibration process timed out (>10 minutes). Please try with fewer images or check the calibration setup.'
+                    }, status_code=500)
+                except Exception as e:
+                    self.get_logger().error(f"Error running eye-in-hand calibration: {str(e)}")
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': f'Server error: {str(e)}'
+                    }, status_code=500)
+            
             # Static file serving for urdf-loaders library
             @app.get("/third_party/{path:path}")
             async def serve_urdf_loader_files(path: str):
