@@ -1,28 +1,31 @@
 # DUCO GCR5-910 ROS2 Control & MoveIt2 Configuration
 
-This package provides the official ROS2 Control implementation for the DUCO GCR5-910 6-DOF robotic arm, fully integrated with MoveIt2 for motion planning and control.
+This package provides the official ROS2 Control implementation for the DUCO GCR5-910 6-DOF robotic arm with two control modes:
+- **MoveIt2 Motion Planning**: Advanced trajectory planning with obstacle avoidance
+- **Direct Cartesian Control**: Real-time Cartesian space control via command line
 
 ## Overview
 
-This implementation follows the **official ROS2 Control architecture**, replacing custom DUCO nodes with standardized hardware interfaces and controllers. The system provides seamless integration between DUCO robots and the ROS2 ecosystem.
+This implementation follows the **official ROS2 Control architecture** with support for both joint space (MoveIt2) and Cartesian space control methods.
 
-## Architecture
+## Architecture (Simplified)
 
 ### ROS2 Control Stack
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        MoveIt2                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │ Motion Planning │  │ Trajectory      │  │ RViz2       │ │
-│  │ Framework       │  │ Execution       │  │ Interface   │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+│                     Control Methods                        │
+│  ┌─────────────────┐              ┌─────────────────────┐   │
+│  │ MoveIt2         │              │ Cartesian Control   │   │
+│  │ - Planning      │              │ - Direct Control    │   │
+│  │ - RViz2         │              │ - /target_frame     │   │
+│  └─────────────────┘              └─────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────────────────────────────────────┐
 │                   ROS2 Control                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │ Controller      │  │ Joint Trajectory│  │ Joint State │ │
-│  │ Manager         │  │ Controller      │  │ Broadcaster │ │
+│  │ Controller      │  │ Joint/Cartesian │  │ Joint State │ │
+│  │ Manager         │  │ Controllers     │  │ Broadcaster │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────┘ │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -45,388 +48,236 @@ This implementation follows the **official ROS2 Control architecture**, replacin
 
 ## Package Structure
 
-### 1. Configuration Files
+```
+duco_gcr5_910_moveit_config/           # MoveIt Configuration Package
+├── config/                            # Configuration files
+│   ├── ros2_controllers.yaml          # Standard joint control config
+│   ├── cartesian_controller_manager.yaml  # Cartesian control config
+│   ├── joint_limits.yaml              # Joint limits and scaling
+│   ├── gcr5_910.ros2_control.xacro     # Hardware interface config
+│   └── gcr5_910.urdf.xacro            # Robot description
+├── launch/                            # Launch files
+│   ├── demo.launch.py                 # MoveIt2 demo with planning
+│   └── cartesian_controller.launch.py # Direct Cartesian control
+└── README.md                          # This documentation
+```
 
-## Package Structure
-
-### 1. Core Packages (Official ROS2 Control)
-
+### Related Packages
 ```
 ├── duco_hardware/                      # Hardware Interface Package
-│   ├── include/duco_hardware/
-│   │   └── duco_hardware_interface.hpp # Hardware interface header
-│   ├── src/
-│   │   └── duco_hardware_interface.cpp # Hardware interface implementation
-│   ├── duco_hardware.xml              # Plugin description
-│   └── package.xml                    # Package configuration
-│
-├── duco_gcr5_910_moveit_config/       # MoveIt Configuration Package
-│   ├── config/                        # Configuration files
-│   ├── launch/                        # Launch files
-│   └── README.md                      # This documentation
-│
-└── duco_ros_driver/                   # DUCO RPC Library (Headers + Static Library)
-    ├── include/duco_ros_driver/
-    │   └── DucoCobot.h                # DUCO RPC API header
-    ├── lib/
-    │   └── libDucoCobotAPI.a          # DUCO communication library
-    └── package.xml                    # Package configuration (library only)
+├── duco_ros_driver/                   # DUCO RPC Library
+├── duco_gcr5_910_urdf/               # Robot URDF files
+└── cartesian_controllers/             # Cartesian control packages
 ```
 
-### 2. Supporting Packages
+## Technical Details
 
-```
-├── duco_support/                      # URDF and mesh files
-│   ├── urdf/
-│   │   └── duco_gcr5_910.urdf        # Robot URDF description
-│   └── meshes/                       # 3D mesh files
-│
-└── duco_gcr5_910_urdf/               # URDF package
-    └── urdf/                         # URDF files
-```
+### Controllers Available
 
-### 3. Legacy Packages (Other Functions)
+#### 1. Joint Trajectory Controller (MoveIt2)
+- **Type**: `joint_trajectory_controller/JointTrajectoryController`
+- **Purpose**: Executes planned trajectories from MoveIt2
+- **Update Rate**: 100Hz (configurable to 250Hz for 4ms control)
+- **Interface**: Position control with trajectory interpolation
 
-The following packages remain for other robot functions but are not used by the official ROS2 Control system:
-- `duco_robot_arm` - Legacy robot arm node
-- `duco_robot_arm_state` - Legacy state monitoring  
-- `robot_arm_web`, `robot_web` - Web interfaces
-- `robot_bringup`, `robot_teleop` - Legacy control packages
-- Other motor and sensor packages
+#### 2. Cartesian Motion Controller
+- **Type**: `cartesian_motion_controller/CartesianMotionController`
+- **Purpose**: Direct Cartesian space control
+- **Input Topic**: `/target_frame` (geometry_msgs/PoseStamped)
+- **Control**: Real-time end-effector positioning
 
-### 4. Removed Packages
+#### 3. Joint State Broadcaster
+- **Type**: `joint_state_broadcaster/JointStateBroadcaster`
+- **Purpose**: Publishes joint states for visualization
+- **Output Topic**: `/joint_states` (sensor_msgs/JointState)
 
-The following packages have been removed as part of the migration to official ROS2 Control:
-- `duco_msg` - Custom message definitions (replaced by standard ROS2 messages)
-- `duco_arms` - Dual-arm configuration (current system uses single arm)
-- `robot_control` - Custom controllers (replaced by official joint_trajectory_controller)
+### Hardware Interface
+- **Plugin**: `duco_hardware/DucoHardwareInterface`
+- **Communication**: TCP/Thrift protocol
+- **Default Network**: 192.168.1.10:7003
+- **Update Rate**: 100Hz (standard) / 250Hz (high-frequency mode)
 
-### 2. Related Packages
+### Network Configuration
+- **Protocol**: TCP/Thrift
+- **Default IP**: 192.168.1.10
+- **Default Port**: 7003
+- **Connection**: Ethernet
 
-```
-robot_dc/colcon_ws/src/
-├── duco_hardware/                      # Hardware Interface Package
-│   ├── include/duco_hardware/
-│   │   └── duco_hardware_interface.hpp # Hardware interface header
-│   ├── src/
-│   │   └── duco_hardware_interface.cpp # Hardware interface implementation
-│   ├── duco_hardware.xml              # Plugin description
-│   ├── CMakeLists.txt                 # Build configuration
-│   └── package.xml                    # Package manifest
-├── duco_gcr5_910_urdf/                # Robot Description
-│   └── urdf/
-│       └── gcr5_910.urdf.xacro       # Robot URDF model
-└── duco_ros_driver/                   # DUCO RPC Library
-    ├── include/duco_ros_driver/
-    │   └── DucoCobot.h               # DUCO RPC interface
-    └── lib/
-        └── libDucoCobotAPI.a         # Static library
-```
+## Control Methods
 
-## Core Components
+### 1. MoveIt2 Motion Planning (Joint Space Control)
 
-### 1. Hardware Interface (`duco_hardware`)
+Launch the complete MoveIt2 system with planning capabilities:
 
-**Purpose**: Official ROS2 Control hardware interface for DUCO robots
-
-**Key Features**:
-- Implements `hardware_interface::SystemInterface`
-- Standard lifecycle management (`configure` → `activate` → `read/write` → `deactivate`)
-- Real-time communication with DUCO robot via RPC
-- 100Hz update rate for smooth control
-
-**Interfaces**:
-```cpp
-State Interfaces (12 total):
-- arm_1_joint_1/position, arm_1_joint_1/velocity
-- arm_1_joint_2/position, arm_1_joint_2/velocity
-- arm_1_joint_3/position, arm_1_joint_3/velocity
-- arm_1_joint_4/position, arm_1_joint_4/velocity
-- arm_1_joint_5/position, arm_1_joint_5/velocity
-- arm_1_joint_6/position, arm_1_joint_6/velocity
-
-Command Interfaces (6 total):
-- arm_1_joint_1/position
-- arm_1_joint_2/position
-- arm_1_joint_3/position
-- arm_1_joint_4/position
-- arm_1_joint_5/position
-- arm_1_joint_6/position
-```
-
-### 2. ROS2 Control Configuration
-
-#### Hardware Configuration (`gcr5_910.ros2_control.xacro`)
-```xml
-<ros2_control name="FakeSystem" type="system">
-  <hardware>
-    <plugin>duco_hardware/DucoHardwareInterface</plugin>
-    <param name="robot_ip">192.168.1.10</param>
-    <param name="robot_port">7003</param>
-  </hardware>
-  <!-- Joint definitions with position/velocity interfaces -->
-</ros2_control>
-```
-
-#### Controller Configuration (`ros2_controllers.yaml`)
-```yaml
-controller_manager:
-  ros__parameters:
-    update_rate: 100  # Hz
-    
-    # Active Controllers
-    arm_1_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-    joint_state_broadcaster:
-      type: joint_state_broadcaster/JointStateBroadcaster
-```
-
-### 3. Controllers
-
-#### Joint State Broadcaster
-- **Package**: `joint_state_broadcaster`
-- **Purpose**: Publishes robot joint states to `/joint_states` topic
-- **Update Rate**: 100Hz
-- **Topics Published**: `/joint_states` (sensor_msgs/JointState)
-
-#### Joint Trajectory Controller
-- **Package**: `joint_trajectory_controller`
-- **Purpose**: Executes joint trajectory commands from MoveIt2
-- **Action Server**: `/arm_1_controller/follow_joint_trajectory`
-- **Command Interface**: Position control
-- **Features**: 
-  - Trajectory interpolation
-  - Goal tolerance checking
-  - Real-time trajectory execution
-
-### 4. MoveIt2 Integration
-
-#### Move Group Node
-- **Package**: `moveit_ros_move_group`
-- **Purpose**: Main MoveIt2 planning and execution node
-- **Services**: Motion planning, trajectory execution, scene management
-- **Action Servers**: `/move_action`, `/execute_trajectory`
-
-#### Planning Pipelines
-1. **OMPL** (Open Motion Planning Library)
-   - Sampling-based motion planning
-   - Multiple planning algorithms (RRT, PRM, etc.)
-
-2. **Pilz Industrial Motion Planner**
-   - Deterministic planning for industrial applications
-   - LIN, PTP, CIRC motion types
-
-3. **CHOMP** (Covariant Hamiltonian Optimization)
-   - Trajectory optimization
-   - Obstacle avoidance
-
-## Usage
-
-### 1. Launch the Complete System
-
-#### Default Network Configuration (192.168.1.10:7003)
 ```bash
 # Navigate to workspace
 cd /home/robot/robot_dc/colcon_ws
-
-# Source the workspace
 source install/setup.bash
 
-# Launch with default network settings
+# Launch MoveIt2 demo (default: 192.168.1.10:7003)
 ros2 launch duco_gcr5_910_moveit_config demo.launch.py
+
+# Launch with custom robot IP
+ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.20.128
 ```
 
-#### Custom Network Configuration (VMware/Different IP)
+**Features:**
+- Advanced trajectory planning with obstacle avoidance
+- Multiple planning algorithms (OMPL, Pilz, CHOMP)
+- RViz2 visualization and interactive planning
+- Collision detection and safety monitoring
+
+### 2. Direct Cartesian Control (Real-time Control)
+
+Launch the Cartesian controller for direct end-effector control:
+
 ```bash
-# Launch with custom IP address
-ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.2.100
-
-# Launch with custom IP and port
-ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.2.100 robot_port:=7004
-
-# For VMware environments with different network settings
-ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=10.0.0.50 robot_port:=7003
+# Launch Cartesian controller
+ros2 launch duco_gcr5_910_moveit_config cartesian_controller.launch.py robot_ip:=192.168.20.128
 ```
 
-#### Available Launch Parameters
+**Send target positions using command line:**
+
+```bash
+# Basic target position (x=0.3m, y=0.0m, z=0.4m, no rotation)
+ros2 topic pub --once /target_frame geometry_msgs/msg/PoseStamped '{
+  header: {
+    stamp: {sec: 0, nanosec: 0},
+    frame_id: "base_link"
+  },
+  pose: {
+    position: {x: 0.3, y: 0.0, z: 0.4},
+    orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+  }
+}'
+
+# Move to different position (x=0.2m, y=0.1m, z=0.5m)
+ros2 topic pub --once /target_frame geometry_msgs/msg/PoseStamped '{
+  header: {
+    stamp: {sec: 0, nanosec: 0},
+    frame_id: "base_link"
+  },
+  pose: {
+    position: {x: 0.2, y: 0.1, z: 0.5},
+    orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+  }
+}'
+
+# Move with rotation (45 degrees around Z-axis)
+ros2 topic pub --once /target_frame geometry_msgs/msg/PoseStamped '{
+  header: {
+    stamp: {sec: 0, nanosec: 0},
+    frame_id: "base_link"
+  },
+  pose: {
+    position: {x: 0.25, y: 0.0, z: 0.4},
+    orientation: {x: 0.0, y: 0.0, z: 0.383, w: 0.924}
+  }
+}'
+```
+
+**Cartesian Control Features:**
+- Real-time end-effector position control
+- Direct command line interface
+- No trajectory planning (immediate response)
+- Suitable for manual positioning and testing
+
+**Safety Notes:**
+- Ensure robot workspace is clear before sending commands
+- Start with small position changes to test system response
+- Monitor robot movement and be ready to stop if needed
+- Position coordinates are relative to robot base frame (`base_link`)
+
+## Usage
+
+### Available Launch Parameters
 - `robot_ip`: Robot IP address (default: `192.168.1.10`)
 - `robot_port`: Robot communication port (default: `7003`)
-- `arm_num`: Number of arms (default: `1`)
-- `arm_dof`: Degrees of freedom (default: `6`)
 - `use_rviz`: Launch RViz2 visualization (default: `true`)
-- `db`: Start warehouse database (default: `false`)
 - `debug`: Enable debug mode (default: `false`)
 
-## VMware Deployment Guide
+## System Verification
 
-When running this system in VMware environments, the robot's IP address may differ from the default `192.168.1.10`. Use the launch parameters to specify the correct network configuration:
-
-### Step 1: Identify Robot Network Settings
-- Check your robot's actual IP address (usually displayed on robot's panel or configuration)
-- Note the communication port (typically 7003, but may vary)
-
-### Step 2: Launch with Correct Parameters
+### Check Active Controllers
 ```bash
-# Example for robot at 192.168.56.100 (common VMware NAT network)
-ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.56.100
-
-# Example for robot at 10.0.0.50 with custom port
-ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=10.0.0.50 robot_port:=7004
-
-# Example for bridged network configuration
-ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.1.200
-```
-
-### Step 3: Verify Connection
-After launching, check the terminal output for successful connection:
-```
-[duco_hardware]: Successfully connected to robot at 192.168.56.100:7003
-[duco_hardware]: Hardware interface configured and activated
-```
-
-### Common VMware Network Scenarios
-- **NAT Network**: Robot typically accessible via `192.168.56.x` range
-- **Bridged Network**: Robot accessible via main network IP range
-- **Host-Only**: Robot accessible via `192.168.x.x` host-only adapter range
-
-### Troubleshooting Network Issues
-1. Verify robot is powered on and network-accessible
-2. Test connectivity: `ping <robot_ip>`
-3. Check firewall settings in VMware and host OS
-4. Ensure robot's network configuration matches VMware adapter settings
-
-### 2. Verify System Status
-```bash
-# Check active controllers
+# List all controllers
 ros2 control list_controllers
 
 # Monitor joint states
 ros2 topic echo /joint_states
 
+# Check Cartesian control topic
+ros2 topic echo /target_frame
+```
+
+### Monitor Robot Status
+```bash
 # Check hardware interface status
 ros2 control list_hardware_interfaces
+
+# View controller manager status
+ros2 service call /controller_manager/list_controllers controller_manager_msgs/srv/ListControllers
 ```
-
-### 3. Programming Interface
-```python
-#!/usr/bin/env python3
-import rclpy
-from moveit2_python_interface import MoveGroupInterface
-
-# Initialize MoveIt2 interface
-move_group = MoveGroupInterface("arm_1")
-
-# Plan and execute motion
-move_group.go_to_joint_state([0.0, -1.57, 0.0, -1.57, 0.0, 0.0])
-```
-
-## Communication Flow
-
-### 1. Data Flow (Read Cycle)
-```
-DUCO Robot → RPC/Thrift → DucoHardwareInterface::read() → 
-Controller Manager → JointStateBroadcaster → /joint_states → 
-MoveIt2/RViz2
-```
-
-### 2. Command Flow (Write Cycle)
-```
-MoveIt2 → FollowJointTrajectory Action → JointTrajectoryController → 
-Controller Manager → DucoHardwareInterface::write() → 
-RPC/Thrift → DUCO Robot
-```
-
-## Network Configuration
-
-- **Robot IP**: 192.168.1.10
-- **Robot Port**: 7003
-- **Protocol**: TCP/Thrift
-- **Update Rate**: 100Hz
-- **Connection**: Ethernet
-
-## Dependencies
-
-### ROS2 Packages
-```xml
-<!-- Core ROS2 Control -->
-<depend>controller_manager</depend>
-<depend>joint_state_broadcaster</depend>
-<depend>joint_trajectory_controller</depend>
-<depend>hardware_interface</depend>
-
-<!-- MoveIt2 -->
-<depend>moveit_ros_move_group</depend>
-<depend>moveit_ros_planning_interface</depend>
-<depend>moveit_planners_ompl</depend>
-<depend>pilz_industrial_motion_planner</depend>
-
-<!-- Visualization -->
-<depend>rviz2</depend>
-<depend>moveit_ros_visualization</depend>
-```
-
-### System Requirements
-- **ROS2**: Humble or later
-- **Operating System**: Ubuntu 22.04
-- **Network**: Ethernet connection to DUCO robot
-- **Real-time Kernel**: Recommended for optimal performance
 
 ## Troubleshooting
 
-### 1. Connection Issues
+### Connection Issues
 ```bash
 # Check network connectivity
-ping 192.168.1.10
+ping 192.168.20.128  # or your robot IP
 
-# Verify robot status
+# Verify robot response
 ros2 topic echo /joint_states --once
+
+# Check active topics
+ros2 topic list | grep -E "(joint_states|target_frame)"
 ```
 
-### 2. Controller Issues
+### Controller Issues
 ```bash
-# Restart controllers
-ros2 control switch_controllers --stop arm_1_controller
-ros2 control switch_controllers --start arm_1_controller
+# List active controllers
+ros2 control list_controllers
+
+# Restart specific controller
+ros2 control switch_controllers --stop cartesian_motion_controller
+ros2 control switch_controllers --start cartesian_motion_controller
+
+# Check controller status
+ros2 control list_controllers | grep cartesian
 ```
 
-### 3. Hardware Interface Issues
+### Cartesian Control Issues
 ```bash
-# Check hardware interface logs
-ros2 run rqt_console rqt_console
+# Check if target_frame topic exists
+ros2 topic info /target_frame
 
-# Manual hardware interface reset
-ros2 service call /controller_manager/reload_controller_libraries \
-  controller_manager_msgs/srv/ReloadControllerLibraries
+# Monitor commands being sent
+ros2 topic echo /target_frame
+
+# Test with a simple position
+ros2 topic pub --once /target_frame geometry_msgs/msg/PoseStamped '{
+  header: {frame_id: "base_link"},
+  pose: {
+    position: {x: 0.3, y: 0.0, z: 0.4},
+    orientation: {w: 1.0}
+  }
+}'
 ```
 
-## Development
+## Quick Start Guide
 
-### Adding New Controllers
-1. Define controller in `ros2_controllers.yaml`
-2. Add controller spawning in launch file
-3. Configure controller parameters
+### 1. For MoveIt2 Planning
+```bash
+cd /home/robot/robot_dc/colcon_ws
+source install/setup.bash
+ros2 launch duco_gcr5_910_moveit_config demo.launch.py robot_ip:=192.168.20.128
+# Use RViz2 interface for interactive planning
+```
 
-### Modifying Hardware Interface
-1. Edit `duco_hardware_interface.cpp`
-2. Rebuild package: `colcon build --packages-select duco_hardware`
-3. Restart system
-
-### Custom Planning Pipelines
-1. Add configuration in `ompl_planning.yaml`
-2. Define new planning groups in SRDF
-3. Update MoveGroup configuration
-
-## References
-
-- [ROS2 Control Documentation](https://control.ros.org/)
-- [MoveIt2 Documentation](https://moveit.ros.org/)
-- [DUCO Robot Manual](https://www.duco.com/)
-
-## License
-
-This package is released under the BSD License.
-
-## Maintainers
-
-- DUCO Development Team
-- ROS2 Control Contributors
+### 2. For Direct Cartesian Control  
+```bash
+cd /home/robot/robot_dc/colcon_ws
+source install/setup.bash
+ros2 launch duco_gcr5_910_moveit_config cartesian_controller.launch.py robot_ip:=192.168.20.128
+# Use command line to send target positions
+```
