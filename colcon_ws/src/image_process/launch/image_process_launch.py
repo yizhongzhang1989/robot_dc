@@ -4,6 +4,8 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+import os
+from common import get_temp_directory
 
 
 def generate_launch_description():
@@ -46,7 +48,7 @@ def generate_launch_description():
     
     calibration_file_arg = DeclareLaunchArgument(
         'calibration_file',
-        default_value='/home/a/Documents/robot_dc2/temp/calibration_result.json',
+        default_value=os.path.join(get_temp_directory(), 'calibration_result.json'),
         description='Path to camera calibration file'
     )
     

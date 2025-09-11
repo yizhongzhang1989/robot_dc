@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import json
 import os
+from common import get_temp_directory
 
 
 class ImageProcessNode(Node):
@@ -24,7 +25,7 @@ class ImageProcessNode(Node):
         self.declare_parameter('output_resized_compressed_topic', '/camera/image_undistorted_resize_jpeg')
         self.declare_parameter('resize_width', 640)
         self.declare_parameter('resize_height', 480)
-        self.declare_parameter('calibration_file', '/home/a/Documents/robot_dc2/temp/calibration_result.json')
+        self.declare_parameter('calibration_file', os.path.join(get_temp_directory(), 'calibration_result.json'))
         self.declare_parameter('jpeg_quality', 85)
         
         self.input_topic = self.get_parameter('input_topic').value

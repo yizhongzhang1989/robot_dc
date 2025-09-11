@@ -22,6 +22,11 @@ import time
 import cv2
 import subprocess
 import numpy as np
+import glob
+import math
+
+# Import common utilities
+from common import get_temp_directory, get_scripts_directory
 
 def get_stream_resolution(url):
     """获取RTSP流的分辨率，带错误处理"""
@@ -345,32 +350,8 @@ class RobotArmWebServer(Node):
     
     def add_scripts_to_path(self):
         """Add the scripts directory to Python path for importing FTC modules"""
-        # Find the robot_dc2 directory and add scripts to path
-        current_file = os.path.abspath(__file__)
-        self.get_logger().info(f"Current file path: {current_file}")
-        
-        scripts_dir = None
-        path_parts = current_file.split(os.sep)
-        self.get_logger().info(f"Path parts: {path_parts}")
-        
-        for i, part in enumerate(path_parts):
-            if part == 'robot_dc2':
-                scripts_dir = os.sep.join(path_parts[:i+1] + ['scripts'])
-                break
-        
-        if scripts_dir is None:
-            # Fallback: try different approach 
-            # Look for robot_dc2 in the path more flexibly
-            for i, part in enumerate(path_parts):
-                if 'robot_dc2' in part:
-                    base_dir = os.sep.join(path_parts[:i+1])
-                    if part != 'robot_dc2':
-                        # If the directory contains robot_dc2 but has different name
-                        base_dir = os.path.dirname(base_dir)
-                    scripts_dir = os.path.join(base_dir, 'scripts')
-                    break
-        
-        self.get_logger().info(f"Computed scripts directory: {scripts_dir}")
+        scripts_dir = get_scripts_directory()
+        self.get_logger().info(f"Scripts directory: {scripts_dir}")
         
         if scripts_dir and os.path.exists(scripts_dir):
             if scripts_dir not in sys.path:
@@ -984,23 +965,14 @@ class RobotArmWebServer(Node):
                     joint_angles = data.get('joint_angles', [])
                     tcp_pose = data.get('tcp_pose', [])
                     
-                    # Create calibration directory if it doesn't exist
-                    # Find workspace root by looking for 'robot_dc2' directory in the path
-                    current_file = os.path.abspath(__file__)
-                    workspace_root = None
-                    
-                    # Split the path and find robot_dc2 directory
-                    path_parts = current_file.split(os.sep)
-                    for i, part in enumerate(path_parts):
-                        if part == 'robot_dc2':
-                            workspace_root = os.sep.join(path_parts[:i+1])
-                            break
-                    
-                    if workspace_root is None:
-                        # Fallback: use a more general approach
-                        workspace_root = '/home/a/Documents/robot_dc2'
-                    
-                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    # Get calibration directory using common utilities
+                    try:
+                        calibration_dir = get_temp_directory()
+                    except RuntimeError as e:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': f'Could not find workspace root: {str(e)}'
+                        }, status_code=500)
                     
                     os.makedirs(calibration_dir, exist_ok=True)
                     
@@ -1010,7 +982,6 @@ class RobotArmWebServer(Node):
                         cv_image = self.bridge.imgmsg_to_cv2(self.latest_image, "bgr8")
                         
                         # Find next available sequence number
-                        import glob
                         existing_files = glob.glob(os.path.join(calibration_dir, '*.jpg'))
                         used_numbers = set()
                         for file_path in existing_files:
@@ -1039,8 +1010,6 @@ class RobotArmWebServer(Node):
                         state_filepath = os.path.join(calibration_dir, state_filename)
                         
                         # Convert joint angles and tcp pose to match duco_camera_collect.py format
-                        import math
-                        import numpy as np
                         
                         # Convert joint_angles from degrees to radians (if they were in degrees)
                         joint_angles_rad = joint_angles if isinstance(joint_angles, list) and len(joint_angles) >= 6 else [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -1160,24 +1129,13 @@ class RobotArmWebServer(Node):
             async def clear_calibration_images():
                 """Clear all calibration images"""
                 try:
-                    # Get the workspace root directory
-                    current_file = os.path.abspath(__file__)
-                    workspace_root = None
-                    
-                    # Split the path and find robot_dc2 directory
-                    path_parts = current_file.split(os.sep)
-                    for i, part in enumerate(path_parts):
-                        if part == 'robot_dc2':
-                            workspace_root = os.sep.join(path_parts[:i+1])
-                            break
-                    
-                    if workspace_root is None:
-                        workspace_root = '/home/a/Documents/robot_dc2'
-                    
-                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    # Get calibration directory using common utilities
+                    try:
+                        calibration_dir = get_temp_directory()
+                    except RuntimeError:
+                        return JSONResponse(content={'success': True, 'message': 'No images to clear'})
                     
                     if os.path.exists(calibration_dir):
-                        import glob
                         
                         # Remove all jpg and json files
                         for pattern in ['*.jpg', '*.json']:
@@ -1198,21 +1156,11 @@ class RobotArmWebServer(Node):
             async def get_calibration_thumbnails():
                 """Get list of calibration image thumbnails"""
                 try:
-                    # Get the workspace root directory
-                    current_file = os.path.abspath(__file__)
-                    workspace_root = None
-                    
-                    # Split the path and find robot_dc2 directory
-                    path_parts = current_file.split(os.sep)
-                    for i, part in enumerate(path_parts):
-                        if part == 'robot_dc2':
-                            workspace_root = os.sep.join(path_parts[:i+1])
-                            break
-                    
-                    if workspace_root is None:
-                        workspace_root = '/home/a/Documents/robot_dc2'
-                    
-                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    # Get calibration directory using common utilities
+                    try:
+                        calibration_dir = get_temp_directory()
+                    except RuntimeError:
+                        return JSONResponse(content={'thumbnails': []})
                     
                     if not os.path.exists(calibration_dir):
                         return JSONResponse(content={'thumbnails': []})
@@ -1235,26 +1183,16 @@ class RobotArmWebServer(Node):
             async def get_calibration_thumbnail(filename: str):
                 """Get a calibration image thumbnail"""
                 try:
-                    # Get the workspace root directory
-                    current_file = os.path.abspath(__file__)
-                    workspace_root = None
+                    # Get calibration directory using common utilities
+                    try:
+                        calibration_dir = get_temp_directory()
+                    except RuntimeError:
+                        return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
                     
-                    # Split the path and find robot_dc2 directory
-                    path_parts = current_file.split(os.sep)
-                    for i, part in enumerate(path_parts):
-                        if part == 'robot_dc2':
-                            workspace_root = os.sep.join(path_parts[:i+1])
-                            break
-                    
-                    if workspace_root is None:
-                        workspace_root = '/home/a/Documents/robot_dc2'
-                    
-                    calibration_dir = os.path.join(workspace_root, 'temp')
                     file_path = os.path.join(calibration_dir, filename)
                     
                     if os.path.exists(file_path) and os.path.isfile(file_path):
                         # Read and resize image for thumbnail
-                        import cv2
                         image = cv2.imread(file_path)
                         if image is not None:
                             # Resize to thumbnail size
@@ -1280,21 +1218,8 @@ class RobotArmWebServer(Node):
             async def get_calibration_image(filename: str):
                 """Get a full calibration image"""
                 try:
-                    # Get the workspace root directory
-                    current_file = os.path.abspath(__file__)
-                    workspace_root = None
-                    
-                    # Split the path and find robot_dc2 directory
-                    path_parts = current_file.split(os.sep)
-                    for i, part in enumerate(path_parts):
-                        if part == 'robot_dc2':
-                            workspace_root = os.sep.join(path_parts[:i+1])
-                            break
-                    
-                    if workspace_root is None:
-                        workspace_root = '/home/a/Documents/robot_dc2'
-                    
-                    calibration_dir = os.path.join(workspace_root, 'temp')
+                    # Get the temporary directory
+                    calibration_dir = get_temp_directory()
                     file_path = os.path.join(calibration_dir, filename)
                     
                     if os.path.exists(file_path) and os.path.isfile(file_path):
@@ -1315,27 +1240,15 @@ class RobotArmWebServer(Node):
                     chessboard_height = data.get('chessboard_height', 8) 
                     square_size = data.get('square_size', 0.02)  # 20mm
                     
-                    # Get workspace root directory
-                    current_file = os.path.abspath(__file__)
-                    workspace_root = None
-                    
-                    path_parts = current_file.split(os.sep)
-                    for i, part in enumerate(path_parts):
-                        if part == 'robot_dc2':
-                            workspace_root = os.sep.join(path_parts[:i+1])
-                            break
-                    
-                    if workspace_root is None:
-                        workspace_root = '/home/a/Documents/robot_dc2'
-                    
                     # Set up paths
-                    temp_dir = os.path.join(workspace_root, 'temp')
-                    scripts_dir = os.path.join(workspace_root, 'scripts', 'ThirdParty', 'camera_calibration_toolkit')
+                    temp_dir = get_temp_directory()
+                    scripts_base_dir = get_scripts_directory()
+                    scripts_dir = os.path.join(scripts_base_dir, 'ThirdParty', 'camera_calibration_toolkit') if scripts_base_dir else None
                     
                     if not os.path.exists(temp_dir):
                         return JSONResponse(content={'success': False, 'message': 'No calibration images found in temp directory'}, status_code=400)
                     
-                    if not os.path.exists(scripts_dir):
+                    if not scripts_dir or not os.path.exists(scripts_dir):
                         return JSONResponse(content={'success': False, 'message': 'Camera calibration toolkit not found'}, status_code=500)
                     
                     # Check for image files
@@ -1518,27 +1431,15 @@ except Exception as e:
                     chessboard_height = data.get('chessboard_height', 8) 
                     square_size = data.get('square_size', 0.02)  # 20mm
                     
-                    # Get workspace root directory
-                    current_file = os.path.abspath(__file__)
-                    workspace_root = None
-                    
-                    path_parts = current_file.split(os.sep)
-                    for i, part in enumerate(path_parts):
-                        if part == 'robot_dc2':
-                            workspace_root = os.sep.join(path_parts[:i+1])
-                            break
-                    
-                    if workspace_root is None:
-                        workspace_root = '/home/a/Documents/robot_dc2'
-                    
                     # Set up paths
-                    temp_dir = os.path.join(workspace_root, 'temp')
-                    scripts_dir = os.path.join(workspace_root, 'scripts', 'ThirdParty', 'camera_calibration_toolkit')
+                    temp_dir = get_temp_directory()
+                    scripts_base_dir = get_scripts_directory()
+                    scripts_dir = os.path.join(scripts_base_dir, 'ThirdParty', 'camera_calibration_toolkit') if scripts_base_dir else None
                     
                     if not os.path.exists(temp_dir):
                         return JSONResponse(content={'success': False, 'message': 'No calibration images found in temp directory'}, status_code=400)
                     
-                    if not os.path.exists(scripts_dir):
+                    if not scripts_dir or not os.path.exists(scripts_dir):
                         return JSONResponse(content={'success': False, 'message': 'Camera calibration toolkit not found'}, status_code=500)
                     
                     # Check for image files and corresponding JSON files
