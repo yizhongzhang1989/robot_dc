@@ -70,16 +70,10 @@ class ImageProcessNode(Node):
             10
         )
         
-        # Publishers for camera info (intrinsic parameters)
-        self.undistorted_camera_info_publisher = self.create_publisher(
+        # Publisher for original camera info (intrinsic parameters)
+        self.camera_info_publisher = self.create_publisher(
             CameraInfo,
-            self.output_topic.replace('/image_', '/camera_info_'),
-            10
-        )
-        
-        self.resized_camera_info_publisher = self.create_publisher(
-            CameraInfo,
-            self.output_resized_compressed_topic.replace('/image_', '/camera_info_'),
+            self.input_topic.replace('/image_', '/camera_info_'),
             10
         )
         
@@ -88,8 +82,7 @@ class ImageProcessNode(Node):
         self.get_logger().info(f'Publishing uncompressed to: {self.output_topic}')
         self.get_logger().info(f'Publishing compressed to: {self.output_compressed_topic}')
         self.get_logger().info(f'Publishing resized compressed to: {self.output_resized_compressed_topic}')
-        self.get_logger().info(f'Publishing undistorted camera info to: {self.output_topic.replace("/image_", "/camera_info_")}')
-        self.get_logger().info(f'Publishing resized camera info to: {self.output_resized_compressed_topic.replace("/image_", "/camera_info_")}')
+        self.get_logger().info(f'Publishing original camera info to: {self.input_topic.replace("/image_", "/camera_info_")}')
         self.get_logger().info(f'Resize dimensions: {self.resize_width}x{self.resize_height}')
         self.get_logger().info(f'Using calibration file: {self.calibration_file}')
         self.get_logger().info(f'JPEG quality: {self.jpeg_quality}')
@@ -98,10 +91,6 @@ class ImageProcessNode(Node):
         self.map1 = None
         self.map2 = None
         self.image_size = None
-        
-        # Variables for camera info messages
-        self.undistorted_camera_matrix = None
-        self.resized_camera_matrix = None
         
     def load_calibration_parameters(self):
         """Load camera calibration parameters from JSON file"""
@@ -132,13 +121,13 @@ class ImageProcessNode(Node):
         """Compute undistortion maps for the given image size"""
         if self.camera_matrix is None or self.dist_coeffs is None:
             return None, None
-            
-        # Compute optimal new camera matrix
+
+        # Compute optimal new camera matrix for undistortion only
         new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(
             self.camera_matrix, 
             self.dist_coeffs, 
             image_size, 
-            1,  # alpha=1 means keep all pixels
+            0,  # alpha=0 means crop to remove black borders, alpha=1 means keeping all pixels
             image_size
         )
         
@@ -151,18 +140,6 @@ class ImageProcessNode(Node):
             image_size,
             cv2.CV_16SC2
         )
-        
-        # Store the new camera matrix for undistorted images
-        self.undistorted_camera_matrix = new_camera_matrix
-        
-        # Compute resized camera matrix
-        scale_x = self.resize_width / image_size[0]
-        scale_y = self.resize_height / image_size[1]
-        self.resized_camera_matrix = new_camera_matrix.copy()
-        self.resized_camera_matrix[0, 0] *= scale_x  # fx
-        self.resized_camera_matrix[1, 1] *= scale_y  # fy
-        self.resized_camera_matrix[0, 2] *= scale_x  # cx
-        self.resized_camera_matrix[1, 2] *= scale_y  # cy
         
         return map1, map2
         
@@ -211,8 +188,8 @@ class ImageProcessNode(Node):
             # Create and publish resized compressed image
             self.publish_resized_compressed_image(undistorted_image, msg.header)
             
-            # Publish camera info for undistorted and resized images
-            self.publish_camera_info(msg.header)
+            # Publish original camera info
+            self.publish_original_camera_info(msg.header)
             
         except Exception as e:
             self.get_logger().error(f'Error processing image: {str(e)}')
@@ -266,74 +243,44 @@ class ImageProcessNode(Node):
         except Exception as e:
             self.get_logger().error(f'Error creating resized compressed image: {str(e)}')
             
-    def publish_camera_info(self, header):
-        """Publish camera info for undistorted and resized images"""
+    def publish_original_camera_info(self, header):
+        """Publish original camera info (intrinsic parameters from calibration file)"""
         try:
-            if self.undistorted_camera_matrix is None or self.resized_camera_matrix is None:
+            if self.camera_matrix is None or self.dist_coeffs is None:
                 return
                 
-            # Create camera info message for undistorted image
-            undistorted_camera_info = CameraInfo()
-            undistorted_camera_info.header = header
-            undistorted_camera_info.width = self.image_size[0]
-            undistorted_camera_info.height = self.image_size[1]
+            # Create camera info message for original camera parameters
+            camera_info = CameraInfo()
+            camera_info.header = header
+            camera_info.width = self.image_size[0] if self.image_size else 0
+            camera_info.height = self.image_size[1] if self.image_size else 0
             
-            # Camera matrix (K)
-            undistorted_camera_info.k = [
-                float(self.undistorted_camera_matrix[0, 0]), 0.0, float(self.undistorted_camera_matrix[0, 2]),
-                0.0, float(self.undistorted_camera_matrix[1, 1]), float(self.undistorted_camera_matrix[1, 2]),
+            # Original camera matrix (K)
+            camera_info.k = [
+                float(self.camera_matrix[0, 0]), 0.0, float(self.camera_matrix[0, 2]),
+                0.0, float(self.camera_matrix[1, 1]), float(self.camera_matrix[1, 2]),
                 0.0, 0.0, 1.0
             ]
             
-            # Projection matrix (P) - same as K for rectified image
-            undistorted_camera_info.p = [
-                float(self.undistorted_camera_matrix[0, 0]), 0.0, float(self.undistorted_camera_matrix[0, 2]), 0.0,
-                0.0, float(self.undistorted_camera_matrix[1, 1]), float(self.undistorted_camera_matrix[1, 2]), 0.0,
+            # Projection matrix (P) - same as K for single camera
+            camera_info.p = [
+                float(self.camera_matrix[0, 0]), 0.0, float(self.camera_matrix[0, 2]), 0.0,
+                0.0, float(self.camera_matrix[1, 1]), float(self.camera_matrix[1, 2]), 0.0,
                 0.0, 0.0, 1.0, 0.0
             ]
             
-            # Distortion coefficients (should be zero for undistorted image)
-            undistorted_camera_info.d = [0.0, 0.0, 0.0, 0.0, 0.0]
-            undistorted_camera_info.distortion_model = "plumb_bob"
+            # Original distortion coefficients
+            camera_info.d = [float(d) for d in self.dist_coeffs]
+            camera_info.distortion_model = "plumb_bob"
             
             # Rectification matrix (identity for single camera)
-            undistorted_camera_info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            camera_info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
             
-            # Publish undistorted camera info
-            self.undistorted_camera_info_publisher.publish(undistorted_camera_info)
-            
-            # Create camera info message for resized image
-            resized_camera_info = CameraInfo()
-            resized_camera_info.header = header
-            resized_camera_info.width = self.resize_width
-            resized_camera_info.height = self.resize_height
-            
-            # Camera matrix (K) for resized image
-            resized_camera_info.k = [
-                float(self.resized_camera_matrix[0, 0]), 0.0, float(self.resized_camera_matrix[0, 2]),
-                0.0, float(self.resized_camera_matrix[1, 1]), float(self.resized_camera_matrix[1, 2]),
-                0.0, 0.0, 1.0
-            ]
-            
-            # Projection matrix (P) for resized image
-            resized_camera_info.p = [
-                float(self.resized_camera_matrix[0, 0]), 0.0, float(self.resized_camera_matrix[0, 2]), 0.0,
-                0.0, float(self.resized_camera_matrix[1, 1]), float(self.resized_camera_matrix[1, 2]), 0.0,
-                0.0, 0.0, 1.0, 0.0
-            ]
-            
-            # Distortion coefficients (should be zero for undistorted image)
-            resized_camera_info.d = [0.0, 0.0, 0.0, 0.0, 0.0]
-            resized_camera_info.distortion_model = "plumb_bob"
-            
-            # Rectification matrix (identity for single camera)
-            resized_camera_info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-            
-            # Publish resized camera info
-            self.resized_camera_info_publisher.publish(resized_camera_info)
+            # Publish original camera info
+            self.camera_info_publisher.publish(camera_info)
             
         except Exception as e:
-            self.get_logger().error(f'Error publishing camera info: {str(e)}')
+            self.get_logger().error(f'Error publishing original camera info: {str(e)}')
 
 
 def main(args=None):

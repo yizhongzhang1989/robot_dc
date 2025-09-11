@@ -8,6 +8,7 @@ import cv2
 import threading
 import time
 from flask import Flask, render_template_string, Response
+from flask_socketio import SocketIO, emit
 import base64
 
 
@@ -57,15 +58,18 @@ class ImageWebViewerNode(Node):
             10
         )
         
-        # Initialize Flask app
+        # Initialize Flask app and SocketIO
         self.app = Flask(__name__)
+        self.app.config['SECRET_KEY'] = 'image_viewer_secret'
+        self.socketio = SocketIO(self.app, cors_allowed_origins="*")
         self.setup_flask_routes()
+        self.setup_socketio_events()
         
         # Start web server in a separate thread
         self.web_thread = threading.Thread(target=self.start_web_server, daemon=True)
         self.web_thread.start()
         
-        self.get_logger().info('Image web viewer node started')
+        self.get_logger().info('Image web viewer node started with WebSocket support')
         self.get_logger().info(f'Raw image topic: {self.raw_topic}')
         self.get_logger().info(f'Processed image topic: {self.processed_topic}')
         self.get_logger().info(f'Resized compressed image topic: {self.resized_compressed_topic}')
@@ -77,6 +81,11 @@ class ImageWebViewerNode(Node):
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             with self.image_lock:
                 self.raw_image = cv_image.copy()
+            
+            # Send via WebSocket
+            image_b64 = self.get_image_base64(cv_image)
+            if image_b64:
+                self.socketio.emit('raw_image_update', {'image': image_b64})
         except Exception as e:
             self.get_logger().error(f'Error processing raw image: {str(e)}')
             
@@ -86,6 +95,11 @@ class ImageWebViewerNode(Node):
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             with self.image_lock:
                 self.processed_image = cv_image.copy()
+            
+            # Send via WebSocket
+            image_b64 = self.get_image_base64(cv_image)
+            if image_b64:
+                self.socketio.emit('processed_image_update', {'image': image_b64})
         except Exception as e:
             self.get_logger().error(f'Error processing undistorted image: {str(e)}')
             
@@ -100,6 +114,11 @@ class ImageWebViewerNode(Node):
             if cv_image is not None:
                 with self.image_lock:
                     self.resized_compressed_image = cv_image.copy()
+                
+                # Send via WebSocket
+                image_b64 = self.get_image_base64(cv_image)
+                if image_b64:
+                    self.socketio.emit('resized_image_update', {'image': image_b64})
             else:
                 self.get_logger().error('Failed to decode compressed image')
         except Exception as e:
@@ -124,18 +143,30 @@ class ImageWebViewerNode(Node):
         # Convert to base64
         image_base64 = base64.b64encode(buffer).decode('utf-8')
         return image_base64
+    
+    def setup_socketio_events(self):
+        """Setup SocketIO event handlers"""
+        
+        @self.socketio.on('connect')
+        def handle_connect():
+            self.get_logger().info('Client connected to WebSocket')
+            
+        @self.socketio.on('disconnect')
+        def handle_disconnect():
+            self.get_logger().info('Client disconnected from WebSocket')
         
     def setup_flask_routes(self):
         """Setup Flask routes"""
         
         @self.app.route('/')
         def index():
-            """Main page showing both images"""
+            """Main page showing real-time images"""
             html_template = """
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Camera Image Viewer</title>
+                <title>Real-time Camera Image Viewer</title>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
                 <style>
                     body { 
                         font-family: Arial, sans-serif; 
@@ -153,6 +184,27 @@ class ImageWebViewerNode(Node):
                         padding: 20px;
                         border-radius: 10px;
                         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                    }
+                    .connection-info {
+                        text-align: center;
+                        margin-bottom: 20px;
+                        padding: 10px;
+                        background-color: white;
+                        border-radius: 5px;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    }
+                    .connection-status {
+                        display: inline-block;
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 50%;
+                        margin-right: 8px;
+                    }
+                    .connected {
+                        background-color: #4CAF50;
+                    }
+                    .disconnected {
+                        background-color: #f44336;
                     }
                     .images-container {
                         display: flex;
@@ -187,6 +239,8 @@ class ImageWebViewerNode(Node):
                         height: auto;
                         border: 2px solid #ddd;
                         border-radius: 5px;
+                        transition: opacity 0.3s ease;
+                        display: none;
                     }
                     .no-image {
                         width: 400px;
@@ -205,134 +259,129 @@ class ImageWebViewerNode(Node):
                         font-size: 12px;
                         color: #666;
                     }
-                    .refresh-info {
-                        text-align: center;
-                        margin-top: 20px;
-                        color: #666;
-                        font-size: 14px;
-                    }
                 </style>
                 <script>
-                    // Auto-refresh every 2 seconds
-                    setTimeout(function(){
-                        location.reload();
-                    }, 2000);
+                    const socket = io();
+                    
+                    // Connection status
+                    socket.on('connect', function() {
+                        console.log('Connected to server');
+                        document.getElementById('connection-status').className = 'connection-status connected';
+                        document.getElementById('status-text').textContent = 'Connected - Real-time streaming active';
+                    });
+                    
+                    socket.on('disconnect', function() {
+                        console.log('Disconnected from server');
+                        document.getElementById('connection-status').className = 'connection-status disconnected';
+                        document.getElementById('status-text').textContent = 'Disconnected - Trying to reconnect...';
+                    });
+                    
+                    // Image updates
+                    socket.on('raw_image_update', function(data) {
+                        const img = document.getElementById('raw-image');
+                        const placeholder = document.getElementById('raw-placeholder');
+                        const status = document.getElementById('raw-status');
+                        if (img && data.image) {
+                            img.src = 'data:image/jpeg;base64,' + data.image;
+                            img.style.display = 'block';
+                            placeholder.style.display = 'none';
+                            status.innerHTML = '✅ Live stream active';
+                        }
+                    });
+                    
+                    socket.on('processed_image_update', function(data) {
+                        const img = document.getElementById('processed-image');
+                        const placeholder = document.getElementById('processed-placeholder');
+                        const status = document.getElementById('processed-status');
+                        if (img && data.image) {
+                            img.src = 'data:image/jpeg;base64,' + data.image;
+                            img.style.display = 'block';
+                            placeholder.style.display = 'none';
+                            status.innerHTML = '✅ Live stream active';
+                        }
+                    });
+                    
+                    socket.on('resized_image_update', function(data) {
+                        const img = document.getElementById('resized-image');
+                        const placeholder = document.getElementById('resized-placeholder');
+                        const status = document.getElementById('resized-status');
+                        if (img && data.image) {
+                            img.src = 'data:image/jpeg;base64,' + data.image;
+                            img.style.display = 'block';
+                            placeholder.style.display = 'none';
+                            status.innerHTML = '✅ Live stream active';
+                        }
+                    });
                 </script>
             </head>
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>🎥 Camera Image Viewer</h1>
-                        <p>Real-time comparison of raw, undistorted, and resized camera images</p>
+                        <h1>🎥 Real-time Camera Image Viewer</h1>
+                        <p>WebSocket-powered live streaming without page refresh</p>
+                    </div>
+                    
+                    <div class="connection-info">
+                        <span id="connection-status" class="connection-status disconnected"></span>
+                        <span id="status-text">Connecting...</span>
                     </div>
                     
                     <div class="images-container">
                         <div class="image-box">
                             <div class="image-title">🔸 Raw Image</div>
                             <div class="topic-name">{{ raw_topic }}</div>
-                            {% if raw_image %}
-                                <img src="data:image/jpeg;base64,{{ raw_image }}" alt="Raw Image">
-                                <div class="status">✅ Receiving data</div>
-                            {% else %}
-                                <div class="no-image">No image received yet</div>
-                                <div class="status">⏳ Waiting for data...</div>
-                            {% endif %}
+                            <img id="raw-image" alt="Raw Image">
+                            <div id="raw-placeholder" class="no-image">Waiting for live stream...</div>
+                            <div id="raw-status" class="status">⏳ Waiting for data...</div>
                         </div>
                         
                         <div class="image-box">
                             <div class="image-title">🔹 Undistorted Image</div>
                             <div class="topic-name">{{ processed_topic }}</div>
-                            {% if processed_image %}
-                                <img src="data:image/jpeg;base64,{{ processed_image }}" alt="Undistorted Image">
-                                <div class="status">✅ Receiving data</div>
-                            {% else %}
-                                <div class="no-image">No image received yet</div>
-                                <div class="status">⏳ Waiting for data...</div>
-                            {% endif %}
+                            <img id="processed-image" alt="Undistorted Image">
+                            <div id="processed-placeholder" class="no-image">Waiting for live stream...</div>
+                            <div id="processed-status" class="status">⏳ Waiting for data...</div>
                         </div>
                         
                         <div class="image-box">
                             <div class="image-title">🔸 Resized Compressed Image</div>
                             <div class="topic-name">{{ resized_compressed_topic }}</div>
-                            {% if resized_compressed_image %}
-                                <img src="data:image/jpeg;base64,{{ resized_compressed_image }}" alt="Resized Compressed Image">
-                                <div class="status">✅ Receiving data</div>
-                            {% else %}
-                                <div class="no-image">No image received yet</div>
-                                <div class="status">⏳ Waiting for data...</div>
-                            {% endif %}
+                            <img id="resized-image" alt="Resized Compressed Image">
+                            <div id="resized-placeholder" class="no-image">Waiting for live stream...</div>
+                            <div id="resized-status" class="status">⏳ Waiting for data...</div>
                         </div>
-                    </div>
-                    
-                    <div class="refresh-info">
-                        🔄 Page auto-refreshes every 2 seconds | Current time: {{ current_time }}
                     </div>
                 </div>
             </body>
             </html>
             """
             
-            with self.image_lock:
-                raw_image_b64 = self.get_image_base64(self.raw_image)
-                processed_image_b64 = self.get_image_base64(self.processed_image)
-                resized_compressed_image_b64 = self.get_image_base64(self.resized_compressed_image)
-            
             return render_template_string(
                 html_template,
-                raw_image=raw_image_b64,
-                processed_image=processed_image_b64,
-                resized_compressed_image=resized_compressed_image_b64,
                 raw_topic=self.raw_topic,
                 processed_topic=self.processed_topic,
-                resized_compressed_topic=self.resized_compressed_topic,
-                current_time=time.strftime('%Y-%m-%d %H:%M:%S')
+                resized_compressed_topic=self.resized_compressed_topic
             )
-            
-        @self.app.route('/raw')
-        def raw_stream():
-            """Stream raw image"""
-            def generate():
-                while True:
-                    with self.image_lock:
-                        if self.raw_image is not None:
-                            _, buffer = cv2.imencode('.jpg', self.raw_image)
-                            yield (b'--frame\r\n'
-                                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-                    time.sleep(0.1)
-            return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
-            
-        @self.app.route('/processed')
-        def processed_stream():
-            """Stream processed image"""
-            def generate():
-                while True:
-                    with self.image_lock:
-                        if self.processed_image is not None:
-                            _, buffer = cv2.imencode('.jpg', self.processed_image)
-                            yield (b'--frame\r\n'
-                                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-                    time.sleep(0.1)
-            return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
-            
+    
     def start_web_server(self):
-        """Start the Flask web server"""
+        """Start the web server"""
         try:
-            self.app.run(host='0.0.0.0', port=self.web_port, debug=False, use_reloader=False)
+            self.socketio.run(self.app, host='0.0.0.0', port=self.web_port, debug=False, allow_unsafe_werkzeug=True)
         except Exception as e:
-            self.get_logger().error(f'Web server error: {str(e)}')
+            self.get_logger().error(f'Failed to start web server: {str(e)}')
 
 
 def main(args=None):
     rclpy.init(args=args)
     
-    web_viewer_node = ImageWebViewerNode()
+    image_web_viewer_node = ImageWebViewerNode()
     
     try:
-        rclpy.spin(web_viewer_node)
+        rclpy.spin(image_web_viewer_node)
     except KeyboardInterrupt:
         pass
     finally:
-        web_viewer_node.destroy_node()
+        image_web_viewer_node.destroy_node()
         rclpy.shutdown()
 
 
