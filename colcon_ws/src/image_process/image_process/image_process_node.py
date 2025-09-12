@@ -2,6 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from sensor_msgs.msg import Image, CompressedImage, CameraInfo
 from cv_bridge import CvBridge
 import cv2
@@ -42,36 +43,47 @@ class ImageProcessNode(Node):
         self.dist_coeffs = None
         self.load_calibration_parameters()
         
+        # Create QoS profile optimized for real-time video streaming
+        # CRITICAL: Use BEST_EFFORT to prevent blocking when subscribers are slow
+        # This ensures image processing pipeline doesn't block the entire camera system
+        video_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        
         # Create subscriber and publisher
         self.image_subscription = self.create_subscription(
             Image,
             self.input_topic,
             self.image_callback,
-            10
+            video_qos
         )
         
         # Publisher for uncompressed images (for web viewer)
         self.image_publisher = self.create_publisher(
             Image,
             self.output_topic,
-            10
+            video_qos
         )
         
         # Publisher for compressed images
         self.compressed_image_publisher = self.create_publisher(
             CompressedImage,
             self.output_compressed_topic,
-            10
+            video_qos
         )
         
         # Publisher for resized compressed images
         self.resized_compressed_image_publisher = self.create_publisher(
             CompressedImage,
             self.output_resized_compressed_topic,
-            10
+            video_qos
         )
         
         # Publisher for original camera info (intrinsic parameters)
+        # Camera info can use default QoS as it's not high-frequency
         self.camera_info_publisher = self.create_publisher(
             CameraInfo,
             self.input_topic.replace('/image_', '/camera_info_'),

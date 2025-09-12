@@ -962,6 +962,31 @@
       color: #ef4444 !important; /* Red for disconnected */
     }
     
+    /* Calibration board selector styles */
+    .calibration-board-selector {
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    
+    .calibration-board-selector:hover {
+      background: rgba(59, 130, 246, 0.05);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .calibration-board-selector:active {
+      transform: translateY(0);
+      background: rgba(59, 130, 246, 0.1);
+    }
+    
+    .status-bar-value.clickable {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      min-width: 120px;
+    }
+    
     /* Tool status styles */
     .tool-status-card {
       transition: all 0.3s ease;
@@ -1086,6 +1111,36 @@
       border-color: rgba(168, 85, 247, 0.6);
       background: linear-gradient(135deg, rgba(250, 245, 255, 0.9) 0%, rgba(221, 214, 254, 0.9) 100%);
       color: #7c3aed;
+    }
+
+    .status-button-yellow {
+      color: #d97706;
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+    .status-button-yellow:hover {
+      border-color: rgba(245, 158, 11, 0.6);
+      background: linear-gradient(135deg, rgba(255, 251, 235, 0.9) 0%, rgba(254, 243, 199, 0.9) 100%);
+      color: #b45309;
+    }
+
+    .status-button-indigo {
+      color: #4f46e5;
+      border-color: rgba(79, 70, 229, 0.4);
+    }
+    .status-button-indigo:hover {
+      border-color: rgba(79, 70, 229, 0.6);
+      background: linear-gradient(135deg, rgba(238, 242, 255, 0.9) 0%, rgba(199, 210, 254, 0.9) 100%);
+      color: #3730a3;
+    }
+
+    .status-button-cyan {
+      color: #0891b2;
+      border-color: rgba(8, 145, 178, 0.4);
+    }
+    .status-button-cyan:hover {
+      border-color: rgba(8, 145, 178, 0.6);
+      background: linear-gradient(135deg, rgba(236, 254, 255, 0.9) 0%, rgba(165, 243, 252, 0.9) 100%);
+      color: #0e7490;
     }
 
     /* Control buttons grid layout */
@@ -2635,6 +2690,110 @@
         <p class="text-gray-600">Robot Arm IP Camera Calibration Tool</p>
       </div>
 
+      <!-- Calibration Status Bar -->
+      <div class="status-bar mb-6">
+        <div class="status-bar-title">
+          Status
+        </div>
+        <div class="status-bar-content">
+          <div class="status-bar-grid">
+            <div class="status-bar-item">
+              <div class="status-bar-label">Camera Status</div>
+              <div id="calibrationCameraStatus" class="status-bar-value">Connecting...</div>
+            </div>
+            <div class="status-bar-item">
+              <div class="status-bar-label">Robot Status</div>
+              <div id="calibrationRobotStatus" class="status-bar-value">Disconnected</div>
+            </div>
+            <div class="status-bar-item">
+              <div class="status-bar-label">Image Count</div>
+              <div id="calibrationImageCount" class="status-bar-value">0</div>
+            </div>
+            <div class="status-bar-item">
+              <div class="status-bar-label">Corner Detection</div>
+              <div id="calibrationCornerStatus" class="status-bar-value">Disabled</div>
+            </div>
+            <div class="status-bar-item calibration-board-selector" onclick="cycleCalibrationType()">
+              <div class="status-bar-label">Calibration Board</div>
+              <div id="calibrationBoardType" class="status-bar-value clickable">
+                <span id="boardTypeText">ChessBoard</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Calibration Control Buttons -->
+      <div class="status-bar mb-6">
+        <div class="status-bar-title">
+          CTRL
+        </div>
+        <div class="status-bar-content">
+          <div class="control-buttons-grid">
+            <!-- 1. Refresh Feed Button -->
+            <button 
+              class="robot-arm-button status-style-button status-button-green font-semibold rounded-lg text-base"
+              onclick="refreshCalibrationFeed()"
+            >
+              🔄 Refresh Feed
+            </button>
+
+            <!-- 2. Corner Detection Button -->
+            <button 
+              id="cornerDetectionBtn"
+              class="robot-arm-button status-style-button status-button-yellow font-semibold rounded-lg text-base"
+              onclick="toggleCornerDetection()"
+            >
+              🎯 Corner Detection
+            </button>
+
+            <!-- 3. Take Screenshot Button -->
+            <button 
+              id="takeScreenshotBtn"
+              class="robot-arm-button status-style-button status-button-blue font-semibold rounded-lg text-base"
+              onclick="takeCalibrationScreenshot()"
+            >
+              📸 Take Screenshot
+            </button>
+
+            <!-- 4. AutoCollect Button -->
+            <button 
+              id="autoCollectBtn"
+              class="robot-arm-button status-style-button status-button-cyan font-semibold rounded-lg text-base"
+              onclick="runAutoCollect()"
+            >
+              🤖 AutoCollect
+            </button>
+
+            <!-- 5. Clear Images Button -->
+            <button 
+              class="robot-arm-button status-style-button status-button-red font-semibold rounded-lg text-base"
+              onclick="clearCalibrationImages()"
+            >
+              🗑️ Clear Images
+            </button>
+
+            <!-- 6. CalibIntrinsic Button -->
+            <button 
+              id="intrinsicCalibrateBtn"
+              class="robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base"
+              onclick="runIntrinsicCalibration()"
+            >
+              🔧 CalibIntrinsic
+            </button>
+
+            <!-- 7. CalibExtrinsic Button -->
+            <button 
+              id="eyeInHandCalibrateBtn"
+              class="robot-arm-button status-style-button status-button-indigo font-semibold rounded-lg text-base"
+              onclick="runEyeInHandCalibration()"
+            >
+              🤖 CalibExtrinsic
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Camera Calibration Interface -->
       <div class="bg-white rounded-lg shadow-lg overflow-hidden">
         <div class="flex flex-col xl:flex-row gap-6 p-6">
@@ -2648,56 +2807,6 @@
                    style="max-height: 500px;">
             </div>
             
-            <!-- Camera Controls -->
-            <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4">
-              <button id="takeScreenshotBtn" onclick="takeCalibrationScreenshot()" 
-                      class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
-                📸 Take Screenshot
-              </button>
-              <button id="cornerDetectionBtn" onclick="toggleCornerDetection()" 
-                      class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
-                🎯 Corner Detection
-              </button>
-              <button id="intrinsicCalibrateBtn" onclick="runIntrinsicCalibration()" 
-                      class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
-                🔧 Intrinsic Calibrate
-              </button>
-              <button id="eyeInHandCalibrateBtn" onclick="runEyeInHandCalibration()" 
-                      class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
-                🤖 Eye-in-Hand Calibrate
-              </button>
-              <button onclick="refreshCalibrationFeed()" 
-                      class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
-                🔄 Refresh Feed
-              </button>
-              <button onclick="clearCalibrationImages()" 
-                      class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
-                🗑️ Clear Images
-              </button>
-            </div>
-
-            <!-- Status Information -->
-            <div class="bg-gray-50 rounded-lg p-4 mb-4">
-              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span class="font-medium text-gray-600">Camera Status:</span>
-                  <span id="calibrationCameraStatus" class="ml-2 font-mono">Connecting...</span>
-                </div>
-                <div>
-                  <span class="font-medium text-gray-600">Image Count:</span>
-                  <span id="calibrationImageCount" class="ml-2 font-mono">0</span>
-                </div>
-                <div>
-                  <span class="font-medium text-gray-600">Robot Status:</span>
-                  <span id="calibrationRobotStatus" class="ml-2 font-mono">Disconnected</span>
-                </div>
-                <div>
-                  <span class="font-medium text-gray-600">Corner Detection:</span>
-                  <span id="calibrationCornerStatus" class="ml-2 font-mono">Disabled</span>
-                </div>
-              </div>
-            </div>
-
             <!-- Calibration Progress -->
             <div id="calibrationProgress" class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4" style="display: none;">
               <div class="flex items-center mb-2">
@@ -2725,7 +2834,7 @@
               <!-- Robot Joint Information -->
               <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-4">
                 <h3 class="font-semibold text-blue-800 mb-3 flex items-center">
-                  🤖 Robot Status
+                  🤖 Joint Position
                 </h3>
                 <div class="space-y-2 text-sm">
                   <div class="flex justify-between">
@@ -2888,6 +2997,10 @@
         // Update page title
         document.title = 'Camera Calibration Page';
         
+        // Update calibration status when switching to page
+        updateCalibrationStatus();
+        updateCalibrationThumbnails();
+        
         console.log('Switched to Camera Calibration Page');
       }
       
@@ -2952,7 +3065,7 @@
       const cameraStatus = document.getElementById('calibrationCameraStatus');
       if (cameraStatus) {
         cameraStatus.textContent = cameraConnected ? 'Connected' : 'Disconnected';
-        cameraStatus.className = cameraConnected ? 'ml-2 font-mono text-green-600' : 'ml-2 font-mono text-red-600';
+        cameraStatus.className = cameraConnected ? 'status-bar-value connected' : 'status-bar-value disconnected';
       }
       
       // Update robot status
@@ -2972,11 +3085,11 @@
           const statusText = robotStates[robotStateData.robotStatus] || `Unknown (${robotStateData.robotStatus})`;
           robotStatus.textContent = statusText;
           // Status 6 (Enable) is normal, others are warning
-          robotStatus.className = robotStateData.robotStatus === 6 ? 'ml-2 font-mono text-green-600' : 'ml-2 font-mono text-orange-500';
+          robotStatus.className = robotStateData.robotStatus === 6 ? 'status-bar-value connected' : 'status-bar-value';
         } else {
           // Default status when no robot data available
           robotStatus.textContent = '-';
-          robotStatus.className = 'ml-2 font-mono text-gray-500';
+          robotStatus.className = 'status-bar-value';
         }
       }
       
@@ -3017,7 +3130,13 @@
       const cornerStatus = document.getElementById('calibrationCornerStatus');
       if (cornerStatus) {
         cornerStatus.textContent = cornerDetectionEnabled ? 'Enabled' : 'Disabled';
-        cornerStatus.className = cornerDetectionEnabled ? 'ml-2 font-mono text-green-600' : 'ml-2 font-mono text-red-600';
+        cornerStatus.className = cornerDetectionEnabled ? 'status-bar-value connected' : 'status-bar-value disconnected';
+      }
+
+      // Update other status elements
+      const imageCount = document.getElementById('calibrationImageCount');
+      if (imageCount) {
+        imageCount.className = 'status-bar-value';
       }
     }
 
@@ -3044,6 +3163,39 @@
       } catch (error) {
         console.error('Screenshot error:', error);
       }
+    }
+
+    // Calibration board types
+    const calibrationBoardTypes = ['ChessBoard', 'CharucoBoard', 'GridBoard'];
+    let currentBoardTypeIndex = 0;
+
+    // Handle calibration board type cycling
+    function cycleCalibrationType() {
+      // Move to next type (cycle back to 0 when reaching the end)
+      currentBoardTypeIndex = (currentBoardTypeIndex + 1) % calibrationBoardTypes.length;
+      
+      const currentType = calibrationBoardTypes[currentBoardTypeIndex];
+      
+      // Update display
+      const textElement = document.getElementById('boardTypeText');
+      
+      if (textElement) {
+        textElement.textContent = currentType;
+      }
+      
+      console.log('Calibration board type changed to:', currentType);
+      
+      // Add a subtle animation effect
+      const cardElement = document.querySelector('.calibration-board-selector');
+      if (cardElement) {
+        cardElement.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          cardElement.style.transform = '';
+        }, 150);
+      }
+      
+      // 这里后续可以添加更多逻辑来处理不同标定板类型的切换
+      // 比如更新UI、加载不同的配置等
     }
 
     // Toggle corner detection
@@ -3104,7 +3256,15 @@
         if (data.success) {
           cornerDetectionEnabled = true;
           document.getElementById('cornerDetectionBtn').textContent = '🛑 Stop Detection';
-          document.getElementById('cornerDetectionBtn').className = 'bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200';
+          document.getElementById('cornerDetectionBtn').className = 'robot-arm-button status-style-button status-button-red font-semibold rounded-lg text-base';
+          
+          // Update status bar
+          const cornerStatus = document.getElementById('calibrationCornerStatus');
+          if (cornerStatus) {
+            cornerStatus.textContent = 'Enabled';
+            cornerStatus.className = 'status-bar-value connected';
+          }
+          
           closeCornerDetectionModal();
         } else {
           console.error('Failed to enable corner detection:', data.message);
@@ -3128,7 +3288,14 @@
         if (data.success) {
           cornerDetectionEnabled = false;
           document.getElementById('cornerDetectionBtn').textContent = '🎯 Corner Detection';
-          document.getElementById('cornerDetectionBtn').className = 'bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200';
+          document.getElementById('cornerDetectionBtn').className = 'robot-arm-button status-style-button status-button-yellow font-semibold rounded-lg text-base';
+          
+          // Update status bar
+          const cornerStatus = document.getElementById('calibrationCornerStatus');
+          if (cornerStatus) {
+            cornerStatus.textContent = 'Disabled';
+            cornerStatus.className = 'status-bar-value disconnected';
+          }
         } else {
           console.error('Failed to disable corner detection:', data.message);
         }
@@ -3179,6 +3346,139 @@
         }
       } catch (error) {
         console.error('Clear images error:', error);
+      }
+    }
+
+    // Run auto collect images script
+    async function runAutoCollect() {
+      const autoCollectBtn = document.getElementById('autoCollectBtn');
+      
+      try {
+        // Disable button and show loading state
+        autoCollectBtn.disabled = true;
+        autoCollectBtn.textContent = '⏳ Starting...';
+        
+        const response = await fetch('/api/calibration/auto-collect', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({})
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Script started successfully, now monitor its progress
+          autoCollectBtn.textContent = '⏳ Collecting...';
+          
+          await showAlertModal(
+            '🚀 AutoCollect Started',
+            `<div class="text-blue-700">
+              <p class="mb-2">Auto collection script started in background!</p>
+              <div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <p class="text-sm text-blue-700"><strong>Process ID:</strong> ${data.process_id}</p>
+                <p class="text-sm text-blue-600 mt-1">The script is now running. The page will remain responsive.</p>
+                <p class="text-sm text-blue-600 mt-1">You will be notified when collection is complete.</p>
+              </div>
+            </div>`
+          );
+          
+          // Start polling for status
+          pollAutoCollectStatus();
+        } else {
+          throw new Error(data.message || 'Auto collect failed to start');
+        }
+        
+      } catch (error) {
+        console.error('Auto collect error:', error);
+        
+        const errorHtml = `
+          <div class="flex items-center mb-4">
+            <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+            <strong class="text-lg">Auto Collect Error</strong>
+          </div>
+          <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+            <strong class="text-red-800">Error:</strong> <span class="text-red-700">${error.message}</span>
+            <div class="text-sm mt-2 text-red-600">Please check the script path and permissions.</div>
+          </div>
+        `;
+        
+        showCalibrationModal('❌ Auto Collect Error', errorHtml, false);
+        
+        // Reset button
+        autoCollectBtn.disabled = false;
+        autoCollectBtn.textContent = '🤖 AutoCollect';
+      }
+    }
+
+    // Poll auto collect status
+    async function pollAutoCollectStatus() {
+      const autoCollectBtn = document.getElementById('autoCollectBtn');
+      
+      try {
+        const response = await fetch('/api/calibration/auto-collect/status');
+        const data = await response.json();
+        
+        if (data.running) {
+          // Still running, continue polling
+          setTimeout(pollAutoCollectStatus, 2000); // Poll every 2 seconds
+        } else {
+          // Process finished
+          autoCollectBtn.disabled = false;
+          autoCollectBtn.textContent = '🤖 AutoCollect';
+          
+          if (data.success) {
+            await showAlertModal(
+              '✅ AutoCollect Complete',
+              `<div class="text-green-700">
+                <p class="mb-2">Auto collection script completed successfully!</p>
+                <div class="bg-green-50 p-3 rounded-lg border border-green-200">
+                  <p class="text-sm text-green-700"><strong>Status:</strong> ${data.status}</p>
+                  ${data.output ? `<p class="text-sm text-green-700 mt-1"><strong>Output:</strong></p>
+                  <pre class="text-sm text-green-600 mt-1 whitespace-pre-wrap">${data.output}</pre>` : ''}
+                </div>
+              </div>`
+            );
+            
+            // Refresh thumbnails to show new images
+            updateCalibrationThumbnails();
+          } else {
+            const errorHtml = `
+              <div class="flex items-center mb-4">
+                <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                <strong class="text-lg">Auto Collect Failed</strong>
+              </div>
+              <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+                <strong class="text-red-800">Status:</strong> <span class="text-red-700">${data.status}</span>
+                ${data.stderr ? `<div class="text-sm mt-2 text-red-600"><strong>Error Output:</strong></div>
+                <pre class="text-sm text-red-500 mt-1 whitespace-pre-wrap">${data.stderr}</pre>` : ''}
+              </div>
+            `;
+            
+            showCalibrationModal('❌ Auto Collect Failed', errorHtml, false);
+          }
+        }
+        
+      } catch (error) {
+        console.error('Error polling auto collect status:', error);
+        
+        // Reset button and show error
+        autoCollectBtn.disabled = false;
+        autoCollectBtn.textContent = '🤖 AutoCollect';
+        
+        const errorHtml = `
+          <div class="flex items-center mb-4">
+            <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+            <strong class="text-lg">Status Check Error</strong>
+          </div>
+          <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+            <strong class="text-red-800">Error:</strong> <span class="text-red-700">${error.message}</span>
+            <div class="text-sm mt-2 text-red-600">Could not check script status. Please refresh the page.</div>
+          </div>
+        `;
+        
+        showCalibrationModal('❌ Status Check Error', errorHtml, false);
       }
     }
 

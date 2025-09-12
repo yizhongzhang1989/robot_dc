@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
@@ -252,12 +253,20 @@ class RobotArmWebServer(Node):
         self.latest_camera_image = None
         self.camera_image_lock = threading.Lock()
         
-        # Subscribe to camera image topic
+        # Subscribe to camera image topic with optimized QoS for real-time streaming
+        # CRITICAL: Use BEST_EFFORT to prevent blocking when processing is slow
+        camera_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops - prevents blocking
+            durability=DurabilityPolicy.VOLATILE,       # Don't store messages
+            history=HistoryPolicy.KEEP_LAST,           # Only keep latest frame
+            depth=1                                     # Only keep the most recent frame
+        )
+        
         self.camera_subscription = self.create_subscription(
             Image,
             '/robot_arm_camera/image_raw',
             self.camera_image_callback,
-            1
+            camera_qos  # Use optimized QoS instead of default RELIABLE
         )
         
         # CV Bridge for image conversion
@@ -274,6 +283,10 @@ class RobotArmWebServer(Node):
         self.latest_ft_data = None
         self.ft_data_lock = threading.Lock()
         self.ft_connection_manager = ConnectionManager()
+        
+        # Auto collect script process management
+        self.auto_collect_process = None
+        self.auto_collect_process_lock = threading.Lock()
         
         # Load URDF functionality
         self.load_urdf_data()
@@ -1670,6 +1683,115 @@ except Exception as e:
                     return JSONResponse(content={
                         'success': False,
                         'message': f'Server error: {str(e)}'
+                    }, status_code=500)
+            
+            @app.post("/api/calibration/auto-collect")
+            async def run_auto_collect_script(request: Request):
+                """Run the auto collect images script asynchronously"""
+                try:
+                    # Check if there's already a running process
+                    with self.auto_collect_process_lock:
+                        if self.auto_collect_process and self.auto_collect_process.poll() is None:
+                            return JSONResponse(content={
+                                'success': False, 
+                                'message': 'Auto collect script is already running',
+                                'process_id': self.auto_collect_process.pid
+                            }, status_code=409)  # Conflict
+                    
+                    # Get the scripts directory
+                    scripts_base_dir = get_scripts_directory()
+                    if not scripts_base_dir:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': 'Scripts directory not found'
+                        }, status_code=500)
+                    
+                    # Path to the auto collect script
+                    script_path = os.path.join(scripts_base_dir, 'duco_auto_collect_images.py')
+                    
+                    if not os.path.exists(script_path):
+                        return JSONResponse(content={
+                            'success': False,
+                            'message': f'Auto collect script not found at: {script_path}'
+                        }, status_code=404)
+                    
+                    self.get_logger().info(f"Starting auto collect script asynchronously: {script_path}")
+                    
+                    # Start the script asynchronously using Popen
+                    with self.auto_collect_process_lock:
+                        self.auto_collect_process = subprocess.Popen([
+                            sys.executable, script_path
+                        ], 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        cwd=scripts_base_dir
+                        )
+                    
+                    self.get_logger().info(f"Auto collect script started with PID: {self.auto_collect_process.pid}")
+                    
+                    # Return immediately with process ID
+                    return JSONResponse(content={
+                        'success': True,
+                        'message': 'Auto collect script started in background',
+                        'process_id': self.auto_collect_process.pid
+                    })
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error starting auto collect script: {str(e)}")
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': f'Server error: {str(e)}'
+                    }, status_code=500)
+            
+            @app.get("/api/calibration/auto-collect/status")
+            async def get_auto_collect_status():
+                """Get the status of auto collect script"""
+                try:
+                    with self.auto_collect_process_lock:
+                        if not self.auto_collect_process:
+                            return JSONResponse(content={
+                                'running': False,
+                                'process_id': None,
+                                'status': 'No process started'
+                            })
+                        
+                        # Check if process is still running
+                        poll_result = self.auto_collect_process.poll()
+                        
+                        if poll_result is None:
+                            # Process is still running
+                            return JSONResponse(content={
+                                'running': True,
+                                'process_id': self.auto_collect_process.pid,
+                                'status': 'Running'
+                            })
+                        else:
+                            # Process has finished
+                            stdout, stderr = self.auto_collect_process.communicate()
+                            
+                            success = poll_result == 0
+                            status = 'Completed successfully' if success else f'Failed with exit code {poll_result}'
+                            
+                            # Clean up the process reference
+                            self.auto_collect_process = None
+                            
+                            return JSONResponse(content={
+                                'running': False,
+                                'process_id': None,
+                                'status': status,
+                                'success': success,
+                                'exit_code': poll_result,
+                                'output': stdout,
+                                'stderr': stderr
+                            })
+                            
+                except Exception as e:
+                    self.get_logger().error(f"Error checking auto collect status: {str(e)}")
+                    return JSONResponse(content={
+                        'running': False,
+                        'process_id': None,
+                        'status': f'Error: {str(e)}'
                     }, status_code=500)
             
             # Static file serving for urdf-loaders library

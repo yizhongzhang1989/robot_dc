@@ -2,6 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from sensor_msgs.msg import Image, CompressedImage
 from cv_bridge import CvBridge
 import cv2
@@ -36,26 +37,35 @@ class ImageWebViewerNode(Node):
         self.resized_compressed_image = None
         self.image_lock = threading.Lock()
         
+        # Create QoS profile optimized for real-time video streaming
+        # CRITICAL: Use BEST_EFFORT to prevent blocking when web viewer is slow
+        video_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        
         # Create subscribers
         self.raw_subscription = self.create_subscription(
             Image,
             self.raw_topic,
             self.raw_image_callback,
-            10
+            video_qos
         )
         
         self.processed_subscription = self.create_subscription(
             Image,
             self.processed_topic,
             self.processed_image_callback,
-            10
+            video_qos
         )
         
         self.resized_compressed_subscription = self.create_subscription(
             CompressedImage,
             self.resized_compressed_topic,
             self.resized_compressed_image_callback,
-            10
+            video_qos
         )
         
         # Initialize Flask app and SocketIO
