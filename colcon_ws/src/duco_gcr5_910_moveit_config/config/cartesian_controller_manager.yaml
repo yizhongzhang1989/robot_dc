@@ -99,6 +99,7 @@ cartesian_compliance_controller:
   ros__parameters:
     end_effector_link: "link_6"
     robot_base_link: "base_link"
+    compliance_ref_link: "link_6"
     joints:
       - arm_1_joint_1
       - arm_1_joint_2
@@ -125,6 +126,7 @@ cartesian_force_controller:
   ros__parameters:
     end_effector_link: "link_6"
     robot_base_link: "base_link"
+    ft_sensor_ref_link: "link_6"
     joints:
       - arm_1_joint_1
       - arm_1_joint_2

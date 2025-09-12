@@ -281,3 +281,45 @@ source install/setup.bash
 ros2 launch duco_gcr5_910_moveit_config cartesian_controller.launch.py robot_ip:=192.168.20.128
 # Use command line to send target positions
 ```
+
+### 3. For Direct Carteisna Force Control
+```bash
+cd /home/robot/robot_dc/colcon_ws
+source install/setup.bash
+ros2 launch duco_gcr5_910_moveit_config cartesian_controller.launch.py robot_ip:=192.168.20.128
+```
+
+Switch to the force controller
+```bash
+ros2 control switch_controllers --deactivate cartesian_motion_controller --activate cartesian_force_controller
+```
+
+Publish target wrench (and pseudo sensor wrench for simulation)
+```bash
+ros2 topic pub /target_wrench geometry_msgs/msg/WrenchStamped \
+"{ 
+  header: { 
+    frame_id: 'base_link', 
+    stamp: { sec: 0, nanosec: 0 } 
+  }, 
+  wrench: { 
+    force: { x: 5.0, y: 0.0, z: -5.0 }, 
+    torque: { x: 0.0, y: 0.0, z: 0.0 } 
+  } 
+}" -r 10
+
+```
+
+```bash
+ros2 topic pub /ft_sensor_wrench geometry_msgs/msg/WrenchStamped \ 
+"{
+  header: { 
+    frame_id: 'base_link', 
+    stamp: { sec: 0, nanosec: 0 } 
+  }, 
+  wrench: { 
+    force: { x: 0.0, y: 0.0, z: -10.0 }, 
+    torque: { x: 0.0, y: 0.0, z: 0.0 } 
+  } 
+}" -r 10
+```
