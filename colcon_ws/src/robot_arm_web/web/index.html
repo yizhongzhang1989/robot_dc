@@ -987,6 +987,38 @@
       min-width: 120px;
     }
     
+    /* Calibrate page specific status bar adjustments */
+    #newPageContent .status-bar-title {
+      height: 60px;
+      min-height: 60px;
+      padding: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    #newPageContent .status-bar-item {
+      min-height: 60px;
+      height: 60px;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    
+    /* Save path specific styling */
+    #calibrationSavePath {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      color: #7c3aed !important;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    #calibrationSavePath:hover {
+      color: #5b21b6 !important;
+      transform: scale(1.02);
+    }
+    
     /* Tool status styles */
     .tool-status-card {
       transition: all 0.3s ease;
@@ -2706,6 +2738,10 @@
               <div id="calibrationRobotStatus" class="status-bar-value">Disconnected</div>
             </div>
             <div class="status-bar-item">
+              <div class="status-bar-label">Save Path</div>
+              <div id="calibrationSavePath" class="status-bar-value" title="Images and results save location">colcon_ws/temp/</div>
+            </div>
+            <div class="status-bar-item">
               <div class="status-bar-label">Image Count</div>
               <div id="calibrationImageCount" class="status-bar-value">0</div>
             </div>
@@ -2798,12 +2834,12 @@
       <div class="bg-white rounded-lg shadow-lg overflow-hidden">
         <div class="flex flex-col xl:flex-row gap-6 p-6">
           <!-- Main Camera View -->
-          <div class="flex-1">
-            <div class="camera-container bg-gray-900 rounded-lg overflow-hidden mb-4">
+          <div class="flex-1 flex flex-col">
+            <div class="camera-container bg-gray-900 rounded-lg overflow-hidden mb-4" style="height: 500px;">
               <img id="calibrationCameraFeed" 
                    src="/video_feed" 
                    alt="Camera Feed" 
-                   class="w-full h-auto object-contain min-h-64"
+                   class="w-full h-full object-contain"
                    style="max-height: 500px;">
             </div>
             
@@ -2830,9 +2866,9 @@
           <!-- Right Side Panels -->
           <div class="flex gap-6">
             <!-- Robot Status and TCP Position -->
-            <div class="w-48 flex flex-col">
+            <div class="w-48 flex flex-col" style="height: 500px;">
               <!-- Robot Joint Information -->
-              <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 flex-1 mb-4">
                 <h3 class="font-semibold text-blue-800 mb-3 flex items-center">
                   🤖 Joint Position
                 </h3>
@@ -2865,7 +2901,7 @@
               </div>
 
               <!-- TCP Position Information -->
-              <div class="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+              <div class="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 flex-1">
                 <h3 class="font-semibold text-green-800 mb-3 flex items-center">
                   📍 TCP Position
                 </h3>
@@ -2899,12 +2935,12 @@
             </div>
 
             <!-- Screenshot Thumbnails -->
-            <div class="w-80 self-stretch">
-              <div class="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-200 rounded-lg p-4 h-full flex flex-col max-h-96">
+            <div class="w-80" style="height: 500px;">
+              <div class="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-200 rounded-lg p-4 h-full flex flex-col">
                 <h3 class="font-semibold text-purple-800 mb-3 flex items-center">
                   🖼️ Screenshot Thumbnails
                 </h3>
-                <div id="calibrationThumbnailGrid" class="grid grid-cols-2 gap-2 auto-rows-min overflow-y-auto flex-1 max-h-80">
+                <div id="calibrationThumbnailGrid" class="grid grid-cols-2 gap-2 auto-rows-min overflow-y-auto flex-1">
                   <div class="text-center text-gray-500 col-span-2 py-8">
                     No screenshots yet
                   </div>
@@ -3356,7 +3392,7 @@
       try {
         // Disable button and show loading state
         autoCollectBtn.disabled = true;
-        autoCollectBtn.textContent = '⏳ Starting...';
+        autoCollectBtn.textContent = '⏳ Collecting...';
         
         const response = await fetch('/api/calibration/auto-collect', {
           method: 'POST',
@@ -3369,25 +3405,21 @@
         const data = await response.json();
         
         if (data.success) {
-          // Script started successfully, now monitor its progress
-          autoCollectBtn.textContent = '⏳ Collecting...';
-          
           await showAlertModal(
-            '🚀 AutoCollect Started',
-            `<div class="text-blue-700">
-              <p class="mb-2">Auto collection script started in background!</p>
-              <div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                <p class="text-sm text-blue-700"><strong>Process ID:</strong> ${data.process_id}</p>
-                <p class="text-sm text-blue-600 mt-1">The script is now running. The page will remain responsive.</p>
-                <p class="text-sm text-blue-600 mt-1">You will be notified when collection is complete.</p>
+            '✅ AutoCollect Complete',
+            `<div class="text-green-700">
+              <p class="mb-2">Auto collection script executed successfully!</p>
+              <div class="bg-green-50 p-3 rounded-lg border border-green-200">
+                <p class="text-sm text-green-700"><strong>Script Output:</strong></p>
+                <pre class="text-sm text-green-600 mt-1 whitespace-pre-wrap">${data.output || 'Script completed successfully.'}</pre>
               </div>
             </div>`
           );
           
-          // Start polling for status
-          pollAutoCollectStatus();
+          // Refresh thumbnails to show new images
+          updateCalibrationThumbnails();
         } else {
-          throw new Error(data.message || 'Auto collect failed to start');
+          throw new Error(data.message || 'Auto collect failed');
         }
         
       } catch (error) {
@@ -3405,80 +3437,10 @@
         `;
         
         showCalibrationModal('❌ Auto Collect Error', errorHtml, false);
-        
+      } finally {
         // Reset button
         autoCollectBtn.disabled = false;
         autoCollectBtn.textContent = '🤖 AutoCollect';
-      }
-    }
-
-    // Poll auto collect status
-    async function pollAutoCollectStatus() {
-      const autoCollectBtn = document.getElementById('autoCollectBtn');
-      
-      try {
-        const response = await fetch('/api/calibration/auto-collect/status');
-        const data = await response.json();
-        
-        if (data.running) {
-          // Still running, continue polling
-          setTimeout(pollAutoCollectStatus, 2000); // Poll every 2 seconds
-        } else {
-          // Process finished
-          autoCollectBtn.disabled = false;
-          autoCollectBtn.textContent = '🤖 AutoCollect';
-          
-          if (data.success) {
-            await showAlertModal(
-              '✅ AutoCollect Complete',
-              `<div class="text-green-700">
-                <p class="mb-2">Auto collection script completed successfully!</p>
-                <div class="bg-green-50 p-3 rounded-lg border border-green-200">
-                  <p class="text-sm text-green-700"><strong>Status:</strong> ${data.status}</p>
-                  ${data.output ? `<p class="text-sm text-green-700 mt-1"><strong>Output:</strong></p>
-                  <pre class="text-sm text-green-600 mt-1 whitespace-pre-wrap">${data.output}</pre>` : ''}
-                </div>
-              </div>`
-            );
-            
-            // Refresh thumbnails to show new images
-            updateCalibrationThumbnails();
-          } else {
-            const errorHtml = `
-              <div class="flex items-center mb-4">
-                <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
-                <strong class="text-lg">Auto Collect Failed</strong>
-              </div>
-              <div class="bg-red-50 p-4 rounded-lg border border-red-200">
-                <strong class="text-red-800">Status:</strong> <span class="text-red-700">${data.status}</span>
-                ${data.stderr ? `<div class="text-sm mt-2 text-red-600"><strong>Error Output:</strong></div>
-                <pre class="text-sm text-red-500 mt-1 whitespace-pre-wrap">${data.stderr}</pre>` : ''}
-              </div>
-            `;
-            
-            showCalibrationModal('❌ Auto Collect Failed', errorHtml, false);
-          }
-        }
-        
-      } catch (error) {
-        console.error('Error polling auto collect status:', error);
-        
-        // Reset button and show error
-        autoCollectBtn.disabled = false;
-        autoCollectBtn.textContent = '🤖 AutoCollect';
-        
-        const errorHtml = `
-          <div class="flex items-center mb-4">
-            <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
-            <strong class="text-lg">Status Check Error</strong>
-          </div>
-          <div class="bg-red-50 p-4 rounded-lg border border-red-200">
-            <strong class="text-red-800">Error:</strong> <span class="text-red-700">${error.message}</span>
-            <div class="text-sm mt-2 text-red-600">Could not check script status. Please refresh the page.</div>
-          </div>
-        `;
-        
-        showCalibrationModal('❌ Status Check Error', errorHtml, false);
       }
     }
 
