@@ -11,9 +11,7 @@ def generate_launch_description():
             emulate_tty=True,
             parameters=[{
                 'device_id': 50,
-                'use_ack_patch': True,
-                'baudrate': 115200,
-                'serial_port': '/dev/ttyLIFT_ROBOT'  # 使用固定的udev符号链接
+                'use_ack_patch': True
             }],
         ),
     ])

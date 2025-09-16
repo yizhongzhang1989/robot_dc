@@ -22,18 +22,15 @@ class LiftRobotNode(Node):
         # 参数配置
         self.declare_parameter('device_id', 1)
         self.declare_parameter('use_ack_patch', True)
-        self.declare_parameter('baudrate', 115200)
-        self.declare_parameter('serial_port', '/dev/ttyUSB0')
         
         # 读取参数
         self.device_id = self.get_parameter('device_id').value
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
-        self.baudrate = self.get_parameter('baudrate').value
-        self.serial_port = self.get_parameter('serial_port').value
         
+        # NOTE: Serial port and baudrate are now centrally managed by the modbus_driver node.
+        # This node no longer opens the serial device directly; parameters were removed to avoid confusion.
         self.get_logger().info(
-            f"初始化升降平台控制器 - 设备ID: {self.device_id}, "
-            f"波特率: {self.baudrate}, 串口: {self.serial_port}"
+            f"初始化升降平台控制器 - 设备ID: {self.device_id} (serial handled by modbus_driver)"
         )
         
         # 创建控制器
