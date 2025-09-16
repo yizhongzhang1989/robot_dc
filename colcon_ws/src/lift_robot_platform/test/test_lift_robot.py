@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-测试升降平台控制器
-发送各种命令测试功能
+Lift platform controller test.
+Sends various commands to validate functionality.
 """
 import json
 import rclpy
@@ -13,99 +13,85 @@ import time
 class LiftRobotTester(Node):
     def __init__(self):
         super().__init__('lift_robot_tester')
-        
-        # 创建发布者
+
+        # Create command publisher
         self.command_publisher = self.create_publisher(
             String,
             'lift_robot_platform/command',
             10
         )
-        
-        # 订阅状态
+
+        # Subscribe to status
         self.status_subscription = self.create_subscription(
             String,
             'lift_robot_platform/status',
             self.status_callback,
             10
         )
-        
-        self.get_logger().info("升降平台测试器启动")
+
+        self.get_logger().info("Lift platform tester started")
 
     def status_callback(self, msg):
-        """状态回调"""
+        """Status callback"""
         try:
             status = json.loads(msg.data)
-            self.get_logger().info(f"状态: {status}")
-        except:
+            self.get_logger().info(f"Status: {status}")
+        except Exception:
             pass
 
     def send_command(self, command, **kwargs):
-        """发送命令"""
+        """Send a command"""
         cmd_data = {'command': command}
         cmd_data.update(kwargs)
-        
         msg = String()
         msg.data = json.dumps(cmd_data)
-        
         self.command_publisher.publish(msg)
-        self.get_logger().info(f"发送命令: {cmd_data}")
+        self.get_logger().info(f"Send command: {cmd_data}")
 
     def run_test(self):
-        """运行测试序列"""
-        self.get_logger().info("开始测试序列...")
-        
-        # 等待节点启动
+        """Run test sequence"""
+        self.get_logger().info("Start test sequence ...")
+
+        # Wait node startup
         time.sleep(2)
-        
-        # 测试基本命令
-        self.get_logger().info("=== 测试基本命令 ===")
-        
+
+        # Basic commands
+        self.get_logger().info("=== BASIC COMMANDS ===")
         self.send_command('stop')
         time.sleep(1)
-        
         self.send_command('up')
         time.sleep(2)
-        
         self.send_command('stop')
         time.sleep(1)
-        
         self.send_command('down')
         time.sleep(2)
-        
         self.send_command('stop')
         time.sleep(1)
-        
-        # 测试定时命令
-        self.get_logger().info("=== 测试定时命令 ===")
-        
+
+        # Timed commands
+        self.get_logger().info("=== TIMED COMMANDS ===")
         self.send_command('timed_up', duration=3.0)
-        time.sleep(5)  # 等待自动停止
-        
+        time.sleep(5)  # wait for auto stop
         self.send_command('timed_down', duration=2.0)
-        time.sleep(4)  # 等待自动停止
-        
-        # 测试手动停止定时命令
-        self.get_logger().info("=== 测试手动停止定时命令 ===")
-        
+        time.sleep(4)  # wait for auto stop
+
+        # Manual stop of timed motion
+        self.get_logger().info("=== MANUAL STOP TIMED ===")
         self.send_command('timed_up', duration=10.0)
         time.sleep(2)
-        self.send_command('stop_timed')  # 提前停止
-        
-        self.get_logger().info("测试完成!")
+        self.send_command('stop_timed')  # early stop
+
+        self.get_logger().info("Test completed!")
 
 
 def main():
     rclpy.init()
-    
     try:
         tester = LiftRobotTester()
-        
-        # 运行测试
+        # Run test
         tester.run_test()
-        
-        # 继续监听状态
+        # Continue listening for status
         rclpy.spin(tester)
-        
     except KeyboardInterrupt:
         pass
     finally:

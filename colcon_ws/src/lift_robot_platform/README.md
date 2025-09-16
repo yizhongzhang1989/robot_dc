@@ -1,39 +1,39 @@
 # Lift Robot Platform Controller
 
-升降机器人平台控制器，使用标准Modbus继电器控制实现闪开效果。
+Lift platform controller using standard Modbus relay pulses (flash) to trigger motion.
 
-## 启动系统
+## Build & Launch
 
 ```bash
-# 编译
+# Build
 colcon build --packages-select lift_robot_platform
 
-# 启动
+# Launch
 source install/setup.bash
 ros2 launch robot_bringup lift_robot_bringup.py
 ```
 
-## 控制命令
+## Control Commands
 
-### 停止
+### Stop
 ```bash
 ros2 topic pub --once /lift_robot_platform/command std_msgs/String 'data: "{\"command\": \"stop\"}"'
 ```
 
-### 上升
+### Up
 ```bash
 ros2 topic pub --once /lift_robot_platform/command std_msgs/String 'data: "{\"command\": \"up\"}"'
 ```
 
-### 下降
+### Down
 ```bash
 ros2 topic pub --once /lift_robot_platform/command std_msgs/String 'data: "{\"command\": \"down\"}"'
 ```
 
-## 继电器配置
+## Relay Mapping
 
-- 0号继电器：停止 (stop)
-- 1号继电器：上升 (up) 
-- 2号继电器：下降 (down)
+- Relay 0: stop
+- Relay 1: up
+- Relay 2: down
 
-每个命令都会执行继电器闪开操作：开启继电器 → 延时100ms → 关闭继电器
+Each command sends a relay pulse: ON -> 100ms delay -> OFF.

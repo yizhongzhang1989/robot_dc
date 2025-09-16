@@ -16,7 +16,7 @@ class DrawWireSensorNode(Node):
         use_ack_patch = self.get_parameter('use_ack_patch').value
         self.read_interval = float(self.get_parameter('read_interval').value)
 
-        self.get_logger().info(f"启动拉线传感器节点: 设备ID={self.device_id}, 读取间隔={self.read_interval}s")
+        self.get_logger().info(f"Start draw-wire sensor node: device_id={self.device_id}, interval={self.read_interval}s")
 
         self.controller = DrawWireSensorController(self.device_id, self, use_ack_patch)
         self.controller.initialize()
@@ -41,9 +41,9 @@ class DrawWireSensorNode(Node):
             elif command == 'get_data':
                 self.publish_sensor_data(seq_id=seq)
             else:
-                self.get_logger().warn(f"[SEQ {seq}] 未知命令: {command}")
+                self.get_logger().warn(f"[SEQ {seq}] Unknown command: {command}")
         except Exception as e:
-            self.get_logger().error(f"命令处理错误: {e}")
+            self.get_logger().error(f"Command handling error: {e}")
 
     def periodic_read_callback(self):
         seq = self.next_seq()
@@ -65,10 +65,10 @@ class DrawWireSensorNode(Node):
         }
         m = String(); m.data = json.dumps(msg_obj)
         self.pub.publish(m)
-        self.get_logger().debug(f"[SEQ {seq_id}] 发布: reg0={reg0} reg1={reg1}")
+        self.get_logger().debug(f"[SEQ {seq_id}] Publish: reg0={reg0} reg1={reg1}")
 
     def destroy_node(self):
-        self.get_logger().info("关闭拉线传感器节点...")
+        self.get_logger().info("Shutting down draw-wire sensor node...")
         if hasattr(self, 'controller'):
             self.controller.cleanup()
         super().destroy_node()

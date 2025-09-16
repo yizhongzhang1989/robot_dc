@@ -6,20 +6,20 @@ from collections import deque
 
 class LiftRobotController(ModbusDevice):
     """
-    升降机器人控制器 - 使用标准继电器开关命令实现闪开效果
-    
-    继电器配置：
-    - 0号继电器：停止 (stop)
-    - 1号继电器：上升 (up) 
-    - 2号继电器：下降 (down)
-    
-    通信参数：
-    - 波特率: 115200
-    - 设备ID: 50
-    - 标准Modbus功能码05控制继电器
-    
-    闪开实现方式：
-    - 开启继电器 (0xFF00) -> 延时100ms -> 关闭继电器 (0x0000)
+    Lift platform controller - drives standard relay outputs via Modbus FC05 (write single coil)
+
+    Relay mapping:
+    - Relay 0: stop
+    - Relay 1: up
+    - Relay 2: down
+
+    Communication:
+    - Baudrate: 115200
+    - Device ID: 50 (overridden by parameter at runtime)
+    - Function code 0x05 to write single coil
+
+    Pulse (flash) behavior:
+    - Open relay (0xFF00) -> 100ms delay -> Close relay (0x0000)
     """
     
     def __init__(self, device_id, node, use_ack_patch):
@@ -34,150 +34,96 @@ class LiftRobotController(ModbusDevice):
         self.waiting_for_timed_ack = False
 
     def initialize(self):
-        """初始化升降平台，复位所有继电器"""
-        # 等待Modbus服务准备就绪，然后复位所有继电器
-        self.node.get_logger().info("等待Modbus服务准备就绪...")
-        
-        # 创建一个定时器来重试初始化，直到Modbus服务可用
+        """Initialize lift platform: reset all relays once Modbus service is ready."""
+        self.node.get_logger().info("Waiting for Modbus service ready ...")
+
         def retry_reset():
             if hasattr(self, 'cli') and self.cli.service_is_ready():
                 self.reset_all_relays()
-                self.node.get_logger().info("升降平台初始化完成，已复位所有继电器")
+                self.node.get_logger().info("Initialization done, all relays reset")
             else:
-                self.node.get_logger().warn("Modbus服务仍未准备就绪，1秒后重试...")
-                # 1秒后重试
+                self.node.get_logger().warn("Modbus service not ready, retry in 1s ...")
                 timer = threading.Timer(1.0, retry_reset)
                 timer.start()
-        
-        # 立即尝试一次，如果失败则启动重试机制
+
         if hasattr(self, 'cli') and self.cli.service_is_ready():
             self.reset_all_relays()
-            self.node.get_logger().info("升降平台初始化完成，已复位所有继电器")
+            self.node.get_logger().info("Initialization done, all relays reset")
         else:
             retry_reset()
 
     def reset_all_relays(self, seq_id=None):
-        """
-        复位所有继电器
-        发送485命令: 01 05 00 FF 00 00 FD FA
-        """
-        self.node.get_logger().info(f"[SEQ {seq_id}] 复位所有继电器")
-        
-        # 根据协议: 地址=0x00FF, 值=0x0000
-        reset_address = 0x00FF
+        """Reset all relays (example Modbus frame: 01 05 00 FF 00 00 FD FA)."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Reset all relays")
+        reset_address = 0x00FF  # per hardware mapping
         reset_value = 0x0000
-        
         self.node.get_logger().info(
-            f"[SEQ {seq_id}] 发送复位命令: 地址=0x{reset_address:04X}, 值=0x{reset_value:04X}"
+            f"[SEQ {seq_id}] Send reset: addr=0x{reset_address:04X}, value=0x{reset_value:04X}"
         )
-        
         self.send(5, reset_address, [reset_value], seq_id=seq_id)
 
     def stop(self, seq_id=None):
-        """
-        停止升降平台
-        开启0号继电器 -> 延时100ms -> 关闭0号继电器 (闪开效果)
-        """
-        self.node.get_logger().info(f"[SEQ {seq_id}] 发送停止命令 (0号继电器闪开)")
+        """Stop motion (pulse relay 0)."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Stop command (relay 0 pulse)")
         self.flash_relay(relay_address=0, duration_ms=100, seq_id=seq_id)
 
     def up(self, seq_id=None):
-        """
-        升降平台上升
-        开启1号继电器 -> 延时100ms -> 关闭1号继电器 (闪开效果)
-        """
-        self.node.get_logger().info(f"[SEQ {seq_id}] 发送上升命令 (1号继电器闪开)")
+        """Move up (pulse relay 1)."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Up command (relay 1 pulse)")
         self.flash_relay(relay_address=1, duration_ms=100, seq_id=seq_id)
 
     def down(self, seq_id=None):
-        """
-        升降平台下降
-        开启2号继电器 -> 延时100ms -> 关闭2号继电器 (闪开效果)
-        """
-        self.node.get_logger().info(f"[SEQ {seq_id}] 发送下降命令 (2号继电器闪开)")
+        """Move down (pulse relay 2)."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Down command (relay 2 pulse)")
         self.flash_relay(relay_address=2, duration_ms=100, seq_id=seq_id)
 
     def open_relay(self, relay_address, seq_id=None):
+        """Open relay.
+
+        Reference frames:
+        - Relay0 ON: 01 05 00 00 FF 00 8C 3A
+        - Relay1 ON: 01 05 00 01 FF 00 DD FA
+        - Relay2 ON: 01 05 00 02 FF 00 2D FA
         """
-        开启继电器
-        
-        标准Modbus协议:
-        - 0号继电器开启: 01 05 00 00 FF 00 8C 3A
-        - 1号继电器开启: 01 05 00 01 FF 00 DD FA  
-        - 2号继电器开启: 01 05 00 02 FF 00 2D FA
-        
-        Args:
-            relay_address: 继电器地址 (0, 1, 2)
-            seq_id: 序列ID
-        """
-        self.node.get_logger().info(f"[SEQ {seq_id}] 开启继电器{relay_address}")
-        
-        # 地址: 继电器寄存器地址 0x0000-0x000F
-        modbus_address = relay_address
-        
-        # 值: 0xFF00 = 继电器开启
+        self.node.get_logger().info(f"[SEQ {seq_id}] Open relay {relay_address}")
+        modbus_address = relay_address  # 0x0000 - 0x000F
         open_value = 0xFF00
-        
         self.node.get_logger().info(
-            f"[SEQ {seq_id}] 继电器开启: 地址=0x{modbus_address:04X}, 值=0x{open_value:04X}"
+            f"[SEQ {seq_id}] Relay ON: addr=0x{modbus_address:04X}, value=0x{open_value:04X}"
         )
-        
         self.send(5, modbus_address, [open_value], seq_id=seq_id)
 
     def close_relay(self, relay_address, seq_id=None):
+        """Close relay.
+
+        Reference frames:
+        - Relay0 OFF: 01 05 00 00 00 00 CD CA
+        - Relay1 OFF: 01 05 00 01 00 00 9C 0A
+        - Relay2 OFF: 01 05 00 02 00 00 6C 0A
         """
-        关闭继电器
-        
-        标准Modbus协议:
-        - 0号继电器关闭: 01 05 00 00 00 00 CD CA
-        - 1号继电器关闭: 01 05 00 01 00 00 9C 0A
-        - 2号继电器关闭: 01 05 00 02 00 00 6C 0A
-        
-        Args:
-            relay_address: 继电器地址 (0, 1, 2)
-            seq_id: 序列ID
-        """
-        self.node.get_logger().info(f"[SEQ {seq_id}] 关闭继电器{relay_address}")
-        
-        # 地址: 继电器寄存器地址 0x0000-0x000F
+        self.node.get_logger().info(f"[SEQ {seq_id}] Close relay {relay_address}")
         modbus_address = relay_address
-        
-        # 值: 0x0000 = 继电器关闭
         close_value = 0x0000
-        
         self.node.get_logger().info(
-            f"[SEQ {seq_id}] 继电器关闭: 地址=0x{modbus_address:04X}, 值=0x{close_value:04X}"
+            f"[SEQ {seq_id}] Relay OFF: addr=0x{modbus_address:04X}, value=0x{close_value:04X}"
         )
-        
         self.send(5, modbus_address, [close_value], seq_id=seq_id)
 
     def flash_relay(self, relay_address, duration_ms=100, seq_id=None):
-        """
-        继电器闪开: 开启 -> 延时 -> 关闭
-        
+        """Pulse relay: open -> delay -> close.
+
         Args:
-            relay_address: 继电器地址 (0=停止, 1=上升, 2=下降)
-            duration_ms: 延时时间(毫秒)
-            seq_id: 序列ID
+            relay_address: 0=stop,1=up,2=down
+            duration_ms: pulse width in ms
+            seq_id: sequence id
         """
         self.node.get_logger().info(
-            f"[SEQ {seq_id}] 继电器{relay_address}闪开: 延时{duration_ms}ms"
+            f"[SEQ {seq_id}] Relay {relay_address} pulse: {duration_ms}ms"
         )
-        
-        # 1. 开启继电器
         self.open_relay(relay_address, seq_id=seq_id)
-        
-        # 2. 延时后关闭继电器
-        def close_after_delay():
-            time.sleep(duration_ms / 1000.0)  # 转换为秒
-            self.close_relay(relay_address, seq_id=seq_id)
-        
-        # 启动延时关闭线程
-        flash_timer = threading.Timer(duration_ms / 1000.0, self.close_relay, 
-                                     args=[relay_address], kwargs={'seq_id': seq_id})
+        flash_timer = threading.Timer(duration_ms / 1000.0, self.close_relay,
+                                       args=[relay_address], kwargs={'seq_id': seq_id})
         flash_timer.start()
-        
-        # 存储定时器以便清理
         with self.timer_lock:
             timer_name = f'flash_relay_{relay_address}'
             if timer_name in self.active_timers:
@@ -185,66 +131,58 @@ class LiftRobotController(ModbusDevice):
             self.active_timers[timer_name] = flash_timer
 
     def timed_up(self, duration, seq_id=None):
-        """
-        定时上升
-        
+        """Timed up movement.
+
         Args:
-            duration: 上升时间(秒)
-            seq_id: 序列ID
+            duration: seconds to move up
+            seq_id: sequence id
         """
         with self.timer_lock:
-            # 取消之前的定时器
+            # Cancel previous timers
             self.cancel_all_timers()
-            
-            self.node.get_logger().info(f"[SEQ {seq_id}] 开始定时上升 {duration}秒")
-            
-            # 发送上升命令
+            self.node.get_logger().info(f"[SEQ {seq_id}] Timed up {duration}s")
+            # Up command
             self.up(seq_id=seq_id)
-            
-            # 设置定时器，时间到后自动停止
+            # Auto-stop timer
             timer = threading.Timer(duration, self.stop)
             timer.start()
             self.active_timers['timed_up'] = timer
 
     def timed_down(self, duration, seq_id=None):
-        """
-        定时下降
-        
+        """Timed down movement.
+
         Args:
-            duration: 下降时间(秒)
-            seq_id: 序列ID
+            duration: seconds to move down
+            seq_id: sequence id
         """
         with self.timer_lock:
-            # 取消之前的定时器
+            # Cancel previous timers
             self.cancel_all_timers()
-            
-            self.node.get_logger().info(f"[SEQ {seq_id}] 开始定时下降 {duration}秒")
-            
-            # 发送下降命令
+            self.node.get_logger().info(f"[SEQ {seq_id}] Timed down {duration}s")
+            # Down command
             self.down(seq_id=seq_id)
-            
-            # 设置定时器，时间到后自动停止
+            # Auto-stop timer
             timer = threading.Timer(duration, self.stop)
             timer.start()
             self.active_timers['timed_down'] = timer
 
     def stop_timed(self, seq_id=None):
-        """停止所有定时运动"""
+        """Stop all timed motions."""
         with self.timer_lock:
-            self.node.get_logger().info(f"[SEQ {seq_id}] 停止所有定时运动")
+            self.node.get_logger().info(f"[SEQ {seq_id}] Stop all timed motions")
             self.cancel_all_timers()
             self.stop(seq_id=seq_id)
 
     def cancel_all_timers(self):
-        """取消所有活动的定时器"""
+        """Cancel all active timers."""
         for timer_name, timer in self.active_timers.items():
             if timer.is_alive():
                 timer.cancel()
-                self.node.get_logger().info(f"已取消定时器: {timer_name}")
+                self.node.get_logger().info(f"Cancelled timer: {timer_name}")
         self.active_timers.clear()
 
     def cleanup(self):
-        """清理资源"""
+        """Cleanup resources."""
         with self.timer_lock:
             self.cancel_all_timers()
-            self.node.get_logger().info("所有定时器清理成功")
+            self.node.get_logger().info("All timers cleaned up")

@@ -21,9 +21,9 @@
       <div class="text-sm flex items-center">
         <span id="stateDot" class="dot disc"></span>
         <span id="stateText">Disconnected</span>
-        <span class="ml-4 text-slate-500">模式: <span id="mode">WebSocket</span></span>
-        <span class="ml-4 text-slate-500">频率: <span id="freq">-</span> Hz</span>
-        <span class="ml-4 text-slate-500">延迟: <span id="age">-</span> ms</span>
+  <span class="ml-4 text-slate-500">Mode: <span id="mode">WebSocket</span></span>
+  <span class="ml-4 text-slate-500">Frequency: <span id="freq">-</span> Hz</span>
+  <span class="ml-4 text-slate-500">Latency: <span id="age">-</span> ms</span>
       </div>
       <div class="flex gap-2 pt-1">
         <button data-cmd="up" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded">Up</button>
@@ -37,10 +37,10 @@
         <div>seq_id: <span id="seq" class="font-mono">-</span></div>
         <div>device_id: <span id="device" class="font-mono">-</span></div>
       </div>
-      <div class="text-sm text-slate-600">最近消息时间戳: <span id="ts">-</span></div>
+  <div class="text-sm text-slate-600">Last message timestamp: <span id="ts">-</span></div>
     </div>
     <div class="bg-white p-3 rounded shadow">
-      <h2 class="font-semibold mb-2">原始 JSON</h2>
+  <h2 class="font-semibold mb-2">Raw JSON</h2>
       <pre id="raw" class="bg-slate-50 p-2 rounded max-h-72 overflow-auto"></pre>
     </div>
   </div>
@@ -60,13 +60,13 @@ connect();
 document.querySelectorAll('button[data-cmd]').forEach(btn=>{
   btn.addEventListener('click', async ()=>{
     const command=btn.getAttribute('data-cmd');
-    $('cmdStatus').textContent='发送 '+command+' ...';
+  $('cmdStatus').textContent='Sending '+command+' ...';
     try {
       const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command})});
-      if(!r.ok){ $('cmdStatus').textContent='失败 '+command; return; }
-      $('cmdStatus').textContent='完成 '+command;
+  if(!r.ok){ $('cmdStatus').textContent='Failed '+command; return; }
+  $('cmdStatus').textContent='Done '+command;
       setTimeout(()=>$('cmdStatus').textContent='',1500);
-    } catch(e){ $('cmdStatus').textContent='错误'; }
+  } catch(e){ $('cmdStatus').textContent='Error'; }
   });
 });
 </script>
