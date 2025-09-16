@@ -7,7 +7,7 @@ def generate_launch_description():
             package='lift_robot_web',
             executable='server',
             name='lift_robot_web_server',
-            parameters=[{'port': 8090}, {'sensor_topic': '/cable_sensor/data'}],
+            parameters=[{'port': 8090}, {'sensor_topic': '/draw_wire_sensor/data'}],
             output='screen'
         )
     ])
