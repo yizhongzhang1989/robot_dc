@@ -1,5 +1,5 @@
 pyserial
-pymodbus
+pymodbus>=3.11.0
 fastapi
 uvicorn[standard]
 websockets>=10.0
