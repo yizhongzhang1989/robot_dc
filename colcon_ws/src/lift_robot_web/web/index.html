@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>lift_robot</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: system-ui, Arial, sans-serif; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+  .live { background:#10b981; }
+  .stale { background:#f59e0b; }
+  .disc { background:#ef4444; }
+  pre { font-size:12px; }
+</style>
+</head>
+<body class="bg-slate-100 p-4">
+  <div class="max-w-2xl mx-auto space-y-4">
+  <h1 class="text-xl font-bold">lift_robot</h1>
+    <div class="p-3 bg-white rounded shadow space-y-2">
+      <div class="text-sm flex items-center">
+        <span id="stateDot" class="dot disc"></span>
+        <span id="stateText">Disconnected</span>
+        <span class="ml-4 text-slate-500">模式: <span id="mode">WebSocket</span></span>
+        <span class="ml-4 text-slate-500">频率: <span id="freq">-</span> Hz</span>
+        <span class="ml-4 text-slate-500">延迟: <span id="age">-</span> ms</span>
+      </div>
+      <div class="flex gap-2 pt-1">
+        <button data-cmd="up" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded">Up</button>
+        <button data-cmd="down" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded">Down</button>
+        <button data-cmd="stop" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded">Stop</button>
+        <span id="cmdStatus" class="text-xs text-slate-500"></span>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-sm">
+        <div>register_0: <span id="reg0" class="font-mono">-</span></div>
+        <div>register_1: <span id="reg1" class="font-mono">-</span></div>
+        <div>seq_id: <span id="seq" class="font-mono">-</span></div>
+        <div>device_id: <span id="device" class="font-mono">-</span></div>
+      </div>
+      <div class="text-sm text-slate-600">最近消息时间戳: <span id="ts">-</span></div>
+    </div>
+    <div class="bg-white p-3 rounded shadow">
+      <h2 class="font-semibold mb-2">原始 JSON</h2>
+      <pre id="raw" class="bg-slate-50 p-2 rounded max-h-72 overflow-auto"></pre>
+    </div>
+  </div>
+<script>
+let ws=null, lastReceive=null; let intervals=[]; let usePolling=false; let pollTimer=null; let readInterval=1000;
+function $(id){return document.getElementById(id);} 
+function setState(type,text){ const d=$('stateDot'); d.className='dot '+type; $('stateText').textContent=text; }
+function connect(){ const proto=location.protocol==='https:'?'wss':'ws'; ws=new WebSocket(proto+'://'+location.host+'/ws'); ws.onopen=()=>{usePolling=false; $('mode').textContent='WebSocket'; setState('live','Live'); if(pollTimer){clearInterval(pollTimer);} }; ws.onmessage=e=>{ if(e.data==='ping') return; handle(e.data); }; ws.onclose=()=>{ setState('disc','Disconnected'); fallback(); setTimeout(connect,3000); }; ws.onerror=()=> setState('disc','Error'); }
+function fallback(){ if(usePolling) return; usePolling=true; $('mode').textContent='Polling'; pollTimer=setInterval(async()=>{ try{ const r=await fetch('/api/latest'); if(!r.ok) return; handle(JSON.stringify(await r.json())); }catch(e){} }, 1000); }
+function handle(raw){ lastReceive=Date.now(); $('raw').textContent=raw; try{ const data=JSON.parse(raw); update(data); setState('live','Live'); }catch(e){} }
+function update(d){ if(d.register_0!==undefined) $('reg0').textContent=d.register_0; if(d.register_1!==undefined) $('reg1').textContent=d.register_1; if(d.seq_id!==undefined) $('seq').textContent=d.seq_id; if(d.device_id!==undefined) $('device').textContent=d.device_id; if(d.timestamp){ $('ts').textContent=d.timestamp; } if(d.read_interval){ readInterval=d.read_interval*1000; } computeFreq(); }
+function computeFreq(){ intervals.push(Date.now()); if(intervals.length>25) intervals.shift(); if(intervals.length>1){ const diffs=[]; for(let i=1;i<intervals.length;i++) diffs.push(intervals[i]-intervals[i-1]); const avg=diffs.reduce((a,b)=>a+b,0)/diffs.length; $('freq').textContent=(1000/avg).toFixed(2); } }
+setInterval(()=>{ if(!lastReceive){ $('age').textContent='-'; return; } const age=Date.now()-lastReceive; $('age').textContent=age; const staleThreshold=Math.max(2500,2.5*readInterval); if(age>staleThreshold){ setState('stale','Stale'); } },500);
+connect();
+
+// Command buttons
+document.querySelectorAll('button[data-cmd]').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    const command=btn.getAttribute('data-cmd');
+    $('cmdStatus').textContent='发送 '+command+' ...';
+    try {
+      const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command})});
+      if(!r.ok){ $('cmdStatus').textContent='失败 '+command; return; }
+      $('cmdStatus').textContent='完成 '+command;
+      setTimeout(()=>$('cmdStatus').textContent='',1500);
+    } catch(e){ $('cmdStatus').textContent='错误'; }
+  });
+});
+</script>
+</body>
+</html>

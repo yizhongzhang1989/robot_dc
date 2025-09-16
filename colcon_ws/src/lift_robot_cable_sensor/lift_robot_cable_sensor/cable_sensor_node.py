@@ -111,7 +111,8 @@ class CableSensorNode(Node):
             'register_0': reg0,
             'register_1': reg1,
             'device_id': 51,
-            'seq_id': seq_id
+            'seq_id': seq_id,
+            'read_interval': self.read_interval
         }
         
         # 发布数据
