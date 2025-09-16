@@ -968,7 +968,7 @@ def main():
     # # push server into the rack
     # FTC_task_pushserver(robot,op)
 
-    FTC_task_LockRightHandle(robot,op)
+    # FTC_task_LockRightHandle(robot,op)
 
     
 
