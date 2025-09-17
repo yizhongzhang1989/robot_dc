@@ -133,7 +133,7 @@ class ROS2ImageSubscriber(Node):
 
 def ensure_auto_collect_dir():
     """ensure the auto collect directory exists"""
-    auto_collect_dir = "/home/a/Documents/robot_dc2/colcon_ws/temp/auto_collect_data"
+    auto_collect_dir = "/home/a/Documents/robot_dc2/colcon_ws/temp"
     if not os.path.exists(auto_collect_dir):
         os.makedirs(auto_collect_dir)
         print(f"Created directory: {auto_collect_dir}")
@@ -269,7 +269,7 @@ def collect_joint_angles_from_temp():
     Read all JSON files from temp folder and extract joint angle information,
     save to collect_point.json file
     """
-    temp_folder = "/home/a/Documents/robot_dc2/colcon_ws/temp"
+    temp_folder = "/home/a/Documents/robot_dc2/colcon_ws/temp/auto_collect_points"
     output_file = os.path.join(temp_folder, "collect_points.json")
     
     collected_points = []
