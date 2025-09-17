@@ -962,15 +962,13 @@ def main():
     #     res = switch_tool("stickP")
     #     print(f"switch stickP: {res}\n")
 
-    # move arm to task start point
-    Move2_task_startpoint(robot,op)
+    # # move arm to task start point
+    # Move2_task_startpoint(robot,op)
 
     # # push server into the rack
     # FTC_task_pushserver(robot,op)
 
     # FTC_task_LockRightHandle(robot,op)
-
-    
 
     # ======================close the robot arm================================
     # disable, power off, and close connection
