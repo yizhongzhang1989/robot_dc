@@ -4,9 +4,3 @@
 [submodule "scripts/ThirdParty/camera_calibration_toolkit"]
 	path = scripts/ThirdParty/camera_calibration_toolkit
 	url = https://github.com/yizhongzhang1989/camera_calibration_toolkit.git
-[submodule "scripts/ThirdParty/FlowFormerPlusPlusServer"]
-	path = scripts/ThirdParty/FlowFormerPlusPlusServer
-	url = git@github.com:yizhongzhang1989/FlowFormerPlusPlusServer.git
-[submodule "scripts/ThirdParty/ImageLabelingWeb"]
-	path = scripts/ThirdParty/ImageLabelingWeb
-	url = git@github.com:yizhongzhang1989/ImageLabelingWeb.git
