@@ -119,7 +119,7 @@ def Move2_taskunlockright_startpoint(robot,op):
     res = robot.tcp_move(offset, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    offset = [0/1000, -205/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]
+    offset = [5/1000, -205/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]
     res = robot.tcp_move(offset, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
@@ -264,7 +264,7 @@ def FTC_task_unlockleftknob(robot,op):
 
     ftEnabled = [False,False,True,False,True,True]
     ftSet = [0,0,-2,0,0,3]
-    maxForce_1 = [0,0,30,0,0,1]
+    maxForce_1 = [0,0,50,0,0,1]
     ifDKStopOnMaxForce_1 = True
     B = [12000,12000,4000,1500,7500,1500]
     M = [1200,1200,400,150,750,150]
@@ -434,7 +434,7 @@ def FTC_task_unlockrightknob(robot,op):
     ftEnabled = [True,True,True,False,False,False]
     ftSet = [0,0,0,0,0,0]
     ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
-    B = [15000,15000,15000,1500,1500,1500]
+    B = [12000,12000,15000,1500,1500,1500]
     M = [1500,1500,1500,150,150,150]
     res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=3, timeEndLimit=2, ifNeedInit=ifNeedInit, B=B, M=M)
     if res.status_code == 200:
@@ -480,10 +480,10 @@ def FTC_task_unlockrightknob(robot,op):
 
     ftEnabled = [False,False,True,False,True,True]
     ftSet = [0,0,-3,0,0,-3]
-    maxForce_1 = [0,0,30,0,0,1]
+    maxForce_1 = [0,0,50,0,0,1]
     ifDKStopOnMaxForce_1 = True
     B = [12000,12000,4000,1500,7500,1500]
-    M = [1200,1200,400,150,750,150]
+    M = [1500,1500,400,150,750,150]
     ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
     res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,150,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
     if res.status_code == 200:
