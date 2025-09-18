@@ -962,6 +962,63 @@
       color: #ef4444 !important; /* Red for disconnected */
     }
     
+    /* Calibration board selector styles */
+    .calibration-board-selector {
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    
+    .calibration-board-selector:hover {
+      background: rgba(59, 130, 246, 0.05);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .calibration-board-selector:active {
+      transform: translateY(0);
+      background: rgba(59, 130, 246, 0.1);
+    }
+    
+    .status-bar-value.clickable {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      min-width: 120px;
+    }
+    
+    /* Calibrate page specific status bar adjustments */
+    #newPageContent .status-bar-title {
+      height: 60px;
+      min-height: 60px;
+      padding: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    #newPageContent .status-bar-item {
+      min-height: 60px;
+      height: 60px;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    
+    /* Save path specific styling */
+    #calibrationSavePath {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      color: #7c3aed !important;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    #calibrationSavePath:hover {
+      color: #5b21b6 !important;
+      transform: scale(1.02);
+    }
+    
     /* Tool status styles */
     .tool-status-card {
       transition: all 0.3s ease;
@@ -1088,6 +1145,36 @@
       color: #7c3aed;
     }
 
+    .status-button-yellow {
+      color: #d97706;
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+    .status-button-yellow:hover {
+      border-color: rgba(245, 158, 11, 0.6);
+      background: linear-gradient(135deg, rgba(255, 251, 235, 0.9) 0%, rgba(254, 243, 199, 0.9) 100%);
+      color: #b45309;
+    }
+
+    .status-button-indigo {
+      color: #4f46e5;
+      border-color: rgba(79, 70, 229, 0.4);
+    }
+    .status-button-indigo:hover {
+      border-color: rgba(79, 70, 229, 0.6);
+      background: linear-gradient(135deg, rgba(238, 242, 255, 0.9) 0%, rgba(199, 210, 254, 0.9) 100%);
+      color: #3730a3;
+    }
+
+    .status-button-cyan {
+      color: #0891b2;
+      border-color: rgba(8, 145, 178, 0.4);
+    }
+    .status-button-cyan:hover {
+      border-color: rgba(8, 145, 178, 0.6);
+      background: linear-gradient(135deg, rgba(236, 254, 255, 0.9) 0%, rgba(165, 243, 252, 0.9) 100%);
+      color: #0e7490;
+    }
+
     /* Control buttons grid layout */
     .control-buttons-grid {
       display: grid;
@@ -1107,10 +1194,221 @@
       padding: 0.75rem 0.75rem;
       font-size: 1rem;
     }
+
+    /* Page Navigation Bar Styles */
+    .page-nav-bar {
+      background: rgba(45, 55, 72, 0.85);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      padding: 0.5rem 0;
+      box-shadow: 
+        0 2px 10px rgba(0, 0, 0, 0.3),
+        0 8px 32px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      width: 100%;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .page-nav-container {
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 0 1rem;
+      perspective: 1000px;
+    }
+
+    .page-nav-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 120px;
+      justify-content: center;
+      position: relative;
+      transform-style: preserve-3d;
+      box-shadow: 
+        0 2px 8px rgba(0, 0, 0, 0.15),
+        0 4px 16px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+    }
+
+    .page-nav-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+      border-radius: 20px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .page-nav-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-3px) rotateX(5deg) scale(1.02);
+      box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.25),
+        0 10px 40px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+    }
+
+    .page-nav-btn:hover::before {
+      opacity: 1;
+    }
+
+    .page-nav-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      color: #2d3748;
+      border-color: rgba(255, 255, 255, 0.8);
+      box-shadow: 
+        0 4px 20px rgba(0, 0, 0, 0.3),
+        0 8px 32px rgba(0, 0, 0, 0.2),
+        inset 0 2px 4px rgba(255, 255, 255, 0.8),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+      transform: translateY(-1px) rotateX(2deg);
+    }
+
+    .page-nav-btn.active::before {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.1) 100%);
+      opacity: 1;
+    }
+
+    .page-nav-btn.active:hover {
+      background: white;
+      transform: translateY(-4px) rotateX(8deg) scale(1.03);
+      box-shadow: 
+        0 8px 25px rgba(0, 0, 0, 0.35),
+        0 12px 40px rgba(0, 0, 0, 0.25),
+        inset 0 2px 4px rgba(255, 255, 255, 0.9),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .page-nav-btn:active {
+      transform: translateY(-1px) rotateX(2deg) scale(0.98);
+      transition: all 0.1s ease;
+    }
+
+    /* Content Container Styles */
+    body {
+      padding-top: 70px; /* Add padding to prevent content being hidden behind fixed navbar */
+    }
+    
+    .main-content-page {
+      display: block;
+    }
+
+    .new-page-content {
+      display: none;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      body {
+        padding-top: 100px; /* Increase padding for mobile due to potential wrap */
+      }
+      
+      .page-nav-bar {
+        padding: 0.75rem 0;
+        backdrop-filter: blur(15px) saturate(150%);
+        -webkit-backdrop-filter: blur(15px) saturate(150%);
+      }
+      
+      .page-nav-container {
+        flex-direction: row; /* Keep horizontal layout but allow wrap */
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+        perspective: 800px;
+      }
+      
+      .page-nav-btn {
+        min-width: 110px;
+        max-width: 140px;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.8rem;
+      }
+      
+      .page-nav-btn:hover {
+        transform: translateY(-2px) rotateX(3deg) scale(1.01);
+      }
+      
+      .page-nav-btn.active:hover {
+        transform: translateY(-3px) rotateX(5deg) scale(1.02);
+      }
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding-top: 120px;
+      }
+      
+      .page-nav-bar {
+        backdrop-filter: blur(12px) saturate(120%);
+        -webkit-backdrop-filter: blur(12px) saturate(120%);
+      }
+      
+      .page-nav-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        perspective: 600px;
+      }
+      
+      .page-nav-btn {
+        width: 90%;
+        max-width: 200px;
+        justify-content: center;
+      }
+      
+      /* 减少移动端的3D效果，避免性能问题 */
+      .page-nav-btn:hover {
+        transform: translateY(-1px) scale(1.01);
+      }
+      
+      .page-nav-btn.active:hover {
+        transform: translateY(-2px) scale(1.02);
+      }
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
-  <div class="container mx-auto p-6">
+  <!-- Page Navigation Bar -->
+  <div class="page-nav-bar">
+    <div class="page-nav-container">
+      <button id="pageNavBtn1" class="page-nav-btn active" onclick="switchToPage(1)">
+        🤖 Control
+      </button>
+      <button id="pageNavBtn2" class="page-nav-btn" onclick="switchToPage(2)">
+        📷 Calibrate
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Content Container -->
+  <div id="mainContent" class="main-content-page">
+    <div class="container mx-auto p-6">
     <!-- Header -->
     <div class="text-center mb-8">
       <h1 class="text-3xl font-bold text-gray-800 mb-2">🤖 Robot Arm Control</h1>
@@ -2413,12 +2711,1524 @@
       </div>
     </div>
   </div>
+  </div> <!-- End Main Content Container -->
+
+  <!-- New Page Content -->
+  <div id="newPageContent" class="new-page-content" style="display: none;">
+    <div class="container mx-auto p-6">
+      <!-- Header for new page -->
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">📷 Camera Calibration Tool</h1>
+        <p class="text-gray-600">Robot Arm IP Camera Calibration Tool</p>
+      </div>
+
+      <!-- Calibration Status Bar -->
+      <div class="status-bar mb-6">
+        <div class="status-bar-title">
+          Status
+        </div>
+        <div class="status-bar-content">
+          <div class="status-bar-grid">
+            <div class="status-bar-item">
+              <div class="status-bar-label">Camera Status</div>
+              <div id="calibrationCameraStatus" class="status-bar-value">Connecting...</div>
+            </div>
+            <div class="status-bar-item">
+              <div class="status-bar-label">Robot Status</div>
+              <div id="calibrationRobotStatus" class="status-bar-value">Disconnected</div>
+            </div>
+            <div class="status-bar-item">
+              <div class="status-bar-label">Save Path</div>
+              <div id="calibrationSavePath" class="status-bar-value" title="Images and results save location">colcon_ws/temp/</div>
+            </div>
+            <div class="status-bar-item">
+              <div class="status-bar-label">Image Count</div>
+              <div id="calibrationImageCount" class="status-bar-value">0</div>
+            </div>
+            <div class="status-bar-item">
+              <div class="status-bar-label">Corner Detection</div>
+              <div id="calibrationCornerStatus" class="status-bar-value">Disabled</div>
+            </div>
+            <div class="status-bar-item calibration-board-selector" onclick="cycleCalibrationType()">
+              <div class="status-bar-label">Calibration Board</div>
+              <div id="calibrationBoardType" class="status-bar-value clickable">
+                <span id="boardTypeText">ChessBoard</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Calibration Control Buttons -->
+      <div class="status-bar mb-6">
+        <div class="status-bar-title">
+          CTRL
+        </div>
+        <div class="status-bar-content">
+          <div class="control-buttons-grid">
+            <!-- 1. Refresh Feed Button -->
+            <button 
+              class="robot-arm-button status-style-button status-button-green font-semibold rounded-lg text-base"
+              onclick="refreshCalibrationFeed()"
+            >
+              🔄 Refresh Feed
+            </button>
+
+            <!-- 2. Corner Detection Button -->
+            <button 
+              id="cornerDetectionBtn"
+              class="robot-arm-button status-style-button status-button-yellow font-semibold rounded-lg text-base"
+              onclick="toggleCornerDetection()"
+            >
+              🎯 Corner Detection
+            </button>
+
+            <!-- 3. Take Screenshot Button -->
+            <button 
+              id="takeScreenshotBtn"
+              class="robot-arm-button status-style-button status-button-blue font-semibold rounded-lg text-base"
+              onclick="takeCalibrationScreenshot()"
+            >
+              📸 Take Screenshot
+            </button>
+
+            <!-- 4. AutoCollect Button -->
+            <button 
+              id="autoCollectBtn"
+              class="robot-arm-button status-style-button status-button-cyan font-semibold rounded-lg text-base"
+              onclick="runAutoCollect()"
+            >
+              🤖 AutoCollect
+            </button>
+
+            <!-- 5. Clear Images Button -->
+            <button 
+              class="robot-arm-button status-style-button status-button-red font-semibold rounded-lg text-base"
+              onclick="clearCalibrationImages()"
+            >
+              🗑️ Clear Images
+            </button>
+
+            <!-- 6. CalibIntrinsic Button -->
+            <button 
+              id="intrinsicCalibrateBtn"
+              class="robot-arm-button status-style-button status-button-purple font-semibold rounded-lg text-base"
+              onclick="runIntrinsicCalibration()"
+            >
+              🔧 CalibIntrinsic
+            </button>
+
+            <!-- 7. CalibExtrinsic Button -->
+            <button 
+              id="eyeInHandCalibrateBtn"
+              class="robot-arm-button status-style-button status-button-indigo font-semibold rounded-lg text-base"
+              onclick="runEyeInHandCalibration()"
+            >
+              🤖 CalibExtrinsic
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera Calibration Interface -->
+      <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+        <div class="flex flex-col xl:flex-row gap-6 p-6">
+          <!-- Main Camera View -->
+          <div class="flex-1 flex flex-col">
+            <div class="camera-container bg-gray-900 rounded-lg overflow-hidden mb-4" style="height: 500px;">
+              <img id="calibrationCameraFeed" 
+                   src="/video_feed" 
+                   alt="Camera Feed" 
+                   class="w-full h-full object-contain"
+                   style="max-height: 500px;">
+            </div>
+            
+            <!-- Calibration Progress -->
+            <div id="calibrationProgress" class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4" style="display: none;">
+              <div class="flex items-center mb-2">
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                <span class="font-medium text-blue-800">Intrinsic Calibration in Progress...</span>
+              </div>
+              <div id="calibrationProgressText" class="text-sm text-blue-600">
+                Initializing calibration process...
+              </div>
+            </div>
+
+            <!-- Calibration Results -->
+            <div id="calibrationResults" class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4" style="display: none;">
+              <h4 class="font-semibold text-green-800 mb-2">📊 Calibration Results</h4>
+              <div id="calibrationResultsContent" class="text-sm text-green-700">
+                <!-- Results will be populated here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Side Panels -->
+          <div class="flex gap-6">
+            <!-- Robot Status and TCP Position -->
+            <div class="w-48 flex flex-col" style="height: 500px;">
+              <!-- Robot Joint Information -->
+              <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 flex-1 mb-4">
+                <h3 class="font-semibold text-blue-800 mb-3 flex items-center">
+                  🤖 Joint Position
+                </h3>
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 1:</div>
+                    <div id="calibrationJoint1" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 2:</div>
+                    <div id="calibrationJoint2" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 3:</div>
+                    <div id="calibrationJoint3" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 4:</div>
+                    <div id="calibrationJoint4" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 5:</div>
+                    <div id="calibrationJoint5" class="font-mono text-right">0.00°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Joint 6:</div>
+                    <div id="calibrationJoint6" class="font-mono text-right">0.00°</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TCP Position Information -->
+              <div class="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 flex-1">
+                <h3 class="font-semibold text-green-800 mb-3 flex items-center">
+                  📍 TCP Position
+                </h3>
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">X:</div>
+                    <div id="calibrationTcpX" class="font-mono text-right">0.000 mm</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Y:</div>
+                    <div id="calibrationTcpY" class="font-mono text-right">0.000 mm</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Z:</div>
+                    <div id="calibrationTcpZ" class="font-mono text-right">0.000 mm</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Rx:</div>
+                    <div id="calibrationTcpRx" class="font-mono text-right">0.000°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Ry:</div>
+                    <div id="calibrationTcpRy" class="font-mono text-right">0.000°</div>
+                  </div>
+                  <div class="flex justify-between">
+                    <div class="font-medium text-gray-600">Rz:</div>
+                    <div id="calibrationTcpRz" class="font-mono text-right">0.000°</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Screenshot Thumbnails -->
+            <div class="w-80" style="height: 500px;">
+              <div class="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-200 rounded-lg p-4 h-full flex flex-col">
+                <h3 class="font-semibold text-purple-800 mb-3 flex items-center">
+                  🖼️ Screenshot Thumbnails
+                </h3>
+                <div id="calibrationThumbnailGrid" class="grid grid-cols-2 gap-2 auto-rows-min overflow-y-auto flex-1">
+                  <div class="text-center text-gray-500 col-span-2 py-8">
+                    No screenshots yet
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Corner Detection Settings Modal -->
+  <div id="cornerDetectionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+      <div class="bg-blue-500 text-white px-6 py-4 rounded-t-lg relative">
+        <h3 class="text-lg font-semibold">Corner Detection Settings</h3>
+        <button onclick="closeCornerDetectionModal()" class="absolute top-4 right-4 text-white hover:text-gray-200">
+          ✕
+        </button>
+      </div>
+      <div class="p-6">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Chessboard Width:
+          </label>
+          <input type="number" id="chessboardWidth" value="12" min="2" max="20" 
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Chessboard Height:
+          </label>
+          <input type="number" id="chessboardHeight" value="9" min="2" max="20" 
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="flex justify-end space-x-3">
+          <button onclick="closeCornerDetectionModal()" 
+                  class="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
+            Cancel
+          </button>
+          <button onclick="confirmCornerDetection()" 
+                  class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Hidden elements for JavaScript compatibility -->
   <div style="display: none;">
     <span id="connectionStatus"></span>
     <span id="topicName"></span>
   </div>
+
+  <script>
+    // Page Navigation Functions
+    function switchToPage(pageNumber) {
+      // Get page containers
+      const mainContent = document.getElementById('mainContent');
+      const newPageContent = document.getElementById('newPageContent');
+      
+      // Get navigation buttons
+      const btn1 = document.getElementById('pageNavBtn1');
+      const btn2 = document.getElementById('pageNavBtn2');
+      
+      if (pageNumber === 1) {
+        // Show main content, hide new page
+        mainContent.style.display = 'block';
+        newPageContent.style.display = 'none';
+        
+        // Update button states
+        btn1.classList.add('active');
+        btn2.classList.remove('active');
+        
+        // Update page title
+        document.title = 'Robot Arm Control Center';
+        
+        console.log('Switched to main page (Robot Arm Control)');
+      } else if (pageNumber === 2) {
+        // Show new page, hide main content
+        mainContent.style.display = 'none';
+        newPageContent.style.display = 'block';
+        
+        // Update button states
+        btn1.classList.remove('active');
+        btn2.classList.add('active');
+        
+        // Update page title
+        document.title = 'Camera Calibration Page';
+        
+        // Update calibration status when switching to page
+        updateCalibrationStatus();
+        updateCalibrationThumbnails();
+        
+        console.log('Switched to Camera Calibration Page');
+      }
+      
+      // Trigger window resize event to update any responsive components
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 100);
+    }
+
+    // Initialize page navigation on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      // Ensure main content is shown by default
+      switchToPage(1);
+      
+      console.log('Page navigation initialized');
+    });
+
+    // Keyboard shortcuts for page navigation
+    document.addEventListener('keydown', function(event) {
+      // Alt + 1: Switch to main page
+      if (event.altKey && event.key === '1') {
+        event.preventDefault();
+        switchToPage(1);
+      }
+      // Alt + 2: Switch to new page
+      else if (event.altKey && event.key === '2') {
+        event.preventDefault();
+        switchToPage(2);
+      }
+    });
+
+    // Camera Calibration Functions
+    let cornerDetectionEnabled = false;
+    let calibrationImageCount = 0;
+    
+    // Initialize camera calibration when page loads
+    function initializeCameraCalibration() {
+      // Update camera feed with existing camera stream
+      const calibrationFeed = document.getElementById('calibrationCameraFeed');
+      if (calibrationFeed) {
+        calibrationFeed.src = document.querySelector('#cameraImage')?.src || '/video_feed';
+        calibrationFeed.onerror = function() {
+          this.src = '/images/camera_placeholder.png';
+        };
+      }
+      
+      // Initialize status update for calibration page
+      updateCalibrationStatus();
+      
+      // Set up periodic updates for calibration page
+      setInterval(() => {
+        if (document.getElementById('newPageContent').style.display !== 'none') {
+          updateCalibrationStatus();
+          updateCalibrationThumbnails();
+        }
+      }, 1000);
+    }
+
+    // Update calibration status from existing robot state
+    function updateCalibrationStatus() {
+      // Update camera status
+      const cameraStatus = document.getElementById('calibrationCameraStatus');
+      if (cameraStatus) {
+        cameraStatus.textContent = cameraConnected ? 'Connected' : 'Disconnected';
+        cameraStatus.className = cameraConnected ? 'status-bar-value connected' : 'status-bar-value disconnected';
+      }
+      
+      // Update robot status
+      const robotStatus = document.getElementById('calibrationRobotStatus');
+      if (robotStatus) {
+        if (robotStateData && robotStateData.robotStatus !== undefined) {
+          // Use the same status mapping as main page
+          const robotStates = {
+            0: "Start", 
+            1: "Initialize", 
+            2: "Logout", 
+            3: "Login", 
+            4: "PowerOff", 
+            5: "Disable/PowerOn", 
+            6: "Enable"
+          };
+          const statusText = robotStates[robotStateData.robotStatus] || `Unknown (${robotStateData.robotStatus})`;
+          robotStatus.textContent = statusText;
+          // Status 6 (Enable) is normal, others are warning
+          robotStatus.className = robotStateData.robotStatus === 6 ? 'status-bar-value connected' : 'status-bar-value';
+        } else {
+          // Default status when no robot data available
+          robotStatus.textContent = '-';
+          robotStatus.className = 'status-bar-value';
+        }
+      }
+      
+      // Update joint angles
+      if (robotStateData && robotStateData.jointActualPosition) {
+        for (let i = 0; i < 6; i++) {
+          const jointElement = document.getElementById(`calibrationJoint${i + 1}`);
+          if (jointElement && robotStateData.jointActualPosition[i] !== undefined) {
+            const angleInDegrees = (robotStateData.jointActualPosition[i] * 180 / Math.PI).toFixed(2);
+            jointElement.textContent = `${angleInDegrees}°`;
+          }
+        }
+      }
+      
+      // Update TCP position
+      if (robotStateData && robotStateData.TCPActualPosition) {
+        const tcpElements = ['calibrationTcpX', 'calibrationTcpY', 'calibrationTcpZ', 
+                           'calibrationTcpRx', 'calibrationTcpRy', 'calibrationTcpRz'];
+        tcpElements.forEach((elementId, index) => {
+          const element = document.getElementById(elementId);
+          if (element && robotStateData.TCPActualPosition[index] !== undefined) {
+            let value, unit;
+            if (index < 3) {
+              // Position in mm
+              value = (robotStateData.TCPActualPosition[index] * 1000).toFixed(3);
+              unit = ' mm';
+            } else {
+              // Rotation in degrees
+              value = (robotStateData.TCPActualPosition[index] * 180 / Math.PI).toFixed(3);
+              unit = '°';
+            }
+            element.textContent = value + unit;
+          }
+        });
+      }
+      
+      // Update corner detection status
+      const cornerStatus = document.getElementById('calibrationCornerStatus');
+      if (cornerStatus) {
+        cornerStatus.textContent = cornerDetectionEnabled ? 'Enabled' : 'Disabled';
+        cornerStatus.className = cornerDetectionEnabled ? 'status-bar-value connected' : 'status-bar-value disconnected';
+      }
+
+      // Update other status elements
+      const imageCount = document.getElementById('calibrationImageCount');
+      if (imageCount) {
+        imageCount.className = 'status-bar-value';
+      }
+    }
+
+    // Take screenshot for calibration
+    async function takeCalibrationScreenshot() {
+      try {
+        const response = await fetch('/api/calibration/screenshot', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            joint_angles: robotStateData?.jointActualPosition || [],
+            tcp_pose: robotStateData?.TCPActualPosition || []
+          })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          updateCalibrationThumbnails();
+        } else {
+          console.error('Screenshot failed:', data.message);
+        }
+      } catch (error) {
+        console.error('Screenshot error:', error);
+      }
+    }
+
+    // Calibration board types
+    const calibrationBoardTypes = ['ChessBoard', 'CharucoBoard', 'GridBoard'];
+    let currentBoardTypeIndex = 0;
+
+    // Handle calibration board type cycling
+    function cycleCalibrationType() {
+      // Move to next type (cycle back to 0 when reaching the end)
+      currentBoardTypeIndex = (currentBoardTypeIndex + 1) % calibrationBoardTypes.length;
+      
+      const currentType = calibrationBoardTypes[currentBoardTypeIndex];
+      
+      // Update display
+      const textElement = document.getElementById('boardTypeText');
+      
+      if (textElement) {
+        textElement.textContent = currentType;
+      }
+      
+      console.log('Calibration board type changed to:', currentType);
+      
+      // Add a subtle animation effect
+      const cardElement = document.querySelector('.calibration-board-selector');
+      if (cardElement) {
+        cardElement.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          cardElement.style.transform = '';
+        }, 150);
+      }
+      
+      // 这里后续可以添加更多逻辑来处理不同标定板类型的切换
+      // 比如更新UI、加载不同的配置等
+    }
+
+    // Toggle corner detection
+    function toggleCornerDetection() {
+      if (!cornerDetectionEnabled) {
+        showCornerDetectionModal();
+      } else {
+        disableCornerDetection();
+      }
+    }
+
+    function showCornerDetectionModal() {
+      document.getElementById('cornerDetectionModal').classList.remove('hidden');
+    }
+
+    function closeCornerDetectionModal() {
+      document.getElementById('cornerDetectionModal').classList.add('hidden');
+    }
+
+    async function confirmCornerDetection() {
+      const width = parseInt(document.getElementById('chessboardWidth').value);
+      const height = parseInt(document.getElementById('chessboardHeight').value);
+      
+      if (isNaN(width) || isNaN(height) || width <= 1 || height <= 1) {
+        await showAlertModal(
+          '⚠️ Invalid Input',
+          `<div class="text-orange-600">
+            <p class="mb-2">Please enter valid chessboard dimensions.</p>
+            <div class="bg-orange-50 p-3 rounded-lg border border-orange-200">
+              <p class="text-sm text-orange-700"><strong>Requirements:</strong></p>
+              <ul class="text-sm text-orange-600 mt-1 list-disc list-inside">
+                <li>Width must be greater than 1</li>
+                <li>Height must be greater than 1</li>
+                <li>Both values must be numbers</li>
+              </ul>
+            </div>
+          </div>`
+        );
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/calibration/corner-detection', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            enable: true,
+            chessboard_width: width - 1,  // Convert grid size to corner size
+            chessboard_height: height - 1,
+            grid_width: width,
+            grid_height: height
+          })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          cornerDetectionEnabled = true;
+          document.getElementById('cornerDetectionBtn').textContent = '🛑 Stop Detection';
+          document.getElementById('cornerDetectionBtn').className = 'robot-arm-button status-style-button status-button-red font-semibold rounded-lg text-base';
+          
+          // Update status bar
+          const cornerStatus = document.getElementById('calibrationCornerStatus');
+          if (cornerStatus) {
+            cornerStatus.textContent = 'Enabled';
+            cornerStatus.className = 'status-bar-value connected';
+          }
+          
+          closeCornerDetectionModal();
+        } else {
+          console.error('Failed to enable corner detection:', data.message);
+        }
+      } catch (error) {
+        console.error('Corner detection error:', error);
+      }
+    }
+
+    async function disableCornerDetection() {
+      try {
+        const response = await fetch('/api/calibration/corner-detection', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ enable: false })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          cornerDetectionEnabled = false;
+          document.getElementById('cornerDetectionBtn').textContent = '🎯 Corner Detection';
+          document.getElementById('cornerDetectionBtn').className = 'robot-arm-button status-style-button status-button-yellow font-semibold rounded-lg text-base';
+          
+          // Update status bar
+          const cornerStatus = document.getElementById('calibrationCornerStatus');
+          if (cornerStatus) {
+            cornerStatus.textContent = 'Disabled';
+            cornerStatus.className = 'status-bar-value disconnected';
+          }
+        } else {
+          console.error('Failed to disable corner detection:', data.message);
+        }
+      } catch (error) {
+        console.error('Corner detection error:', error);
+      }
+    }
+
+    // Refresh calibration camera feed
+    function refreshCalibrationFeed() {
+      const calibrationFeed = document.getElementById('calibrationCameraFeed');
+      if (calibrationFeed) {
+        // Force refresh the video feed
+        calibrationFeed.src = '/video_feed?t=' + Date.now();
+      }
+    }
+
+    // Clear calibration images
+    async function clearCalibrationImages() {
+      if (!(await showConfirmationModal(
+        '🗑️ Clear Calibration Images',
+        `<div class="text-gray-700">
+          <p class="mb-2">Are you sure you want to clear all calibration images?</p>
+          <div class="bg-red-50 p-3 rounded-lg border border-red-200">
+            <p class="text-sm text-red-700"><strong>⚠️ Warning:</strong></p>
+            <p class="text-sm text-red-600 mt-1">This action cannot be undone. All captured calibration images will be permanently deleted.</p>
+          </div>
+          <p class="text-sm text-gray-600 mt-2">Current image count: <strong>${calibrationImageCount}</strong></p>
+        </div>`
+      ))) {
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/calibration/clear', {
+          method: 'POST'
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          calibrationImageCount = 0;
+          document.getElementById('calibrationImageCount').textContent = '0';
+          updateCalibrationThumbnails();
+          // Hide results when clearing images
+          document.getElementById('calibrationResults').style.display = 'none';
+        } else {
+          console.error('Clear failed:', data.message);
+        }
+      } catch (error) {
+        console.error('Clear images error:', error);
+      }
+    }
+
+    // Run auto collect images script
+    async function runAutoCollect() {
+      const autoCollectBtn = document.getElementById('autoCollectBtn');
+      
+      try {
+        // Disable button and show loading state
+        autoCollectBtn.disabled = true;
+        autoCollectBtn.textContent = '⏳ Collecting...';
+        
+        const response = await fetch('/api/calibration/auto-collect', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({})
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          await showAlertModal(
+            '✅ AutoCollect Complete',
+            `<div class="text-green-700">
+              <p class="mb-2">Auto collection script executed successfully!</p>
+              <div class="bg-green-50 p-3 rounded-lg border border-green-200">
+                <p class="text-sm text-green-700"><strong>Script Output:</strong></p>
+                <pre class="text-sm text-green-600 mt-1 whitespace-pre-wrap">${data.output || 'Script completed successfully.'}</pre>
+              </div>
+            </div>`
+          );
+          
+          // Refresh thumbnails to show new images
+          updateCalibrationThumbnails();
+        } else {
+          throw new Error(data.message || 'Auto collect failed');
+        }
+        
+      } catch (error) {
+        console.error('Auto collect error:', error);
+        
+        const errorHtml = `
+          <div class="flex items-center mb-4">
+            <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+            <strong class="text-lg">Auto Collect Error</strong>
+          </div>
+          <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+            <strong class="text-red-800">Error:</strong> <span class="text-red-700">${error.message}</span>
+            <div class="text-sm mt-2 text-red-600">Please check the script path and permissions.</div>
+          </div>
+        `;
+        
+        showCalibrationModal('❌ Auto Collect Error', errorHtml, false);
+      } finally {
+        // Reset button
+        autoCollectBtn.disabled = false;
+        autoCollectBtn.textContent = '🤖 AutoCollect';
+      }
+    }
+
+    // Run intrinsic calibration
+    async function runIntrinsicCalibration() {
+      // Check if there are enough images
+      if (calibrationImageCount < 10) {
+        await showConfirmationModal(
+          '⚠️ Insufficient Images',
+          `<div class="text-orange-600">
+            <p class="mb-2">You currently have <strong>${calibrationImageCount}</strong> calibration images.</p>
+            <p class="mb-2">For best results, please capture at least <strong>10</strong> calibration images before running calibration.</p>
+            <p class="text-sm">Would you like to continue anyway?</p>
+          </div>`
+        ).then(confirmed => {
+          if (!confirmed) return;
+        });
+        
+        if (!(await showConfirmationModal(
+          '⚠️ Insufficient Images',
+          `<div class="text-orange-600">
+            <p class="mb-2">You currently have <strong>${calibrationImageCount}</strong> calibration images.</p>
+            <p class="mb-2">For best results, please capture at least <strong>10</strong> calibration images before running calibration.</p>
+            <p class="text-sm">Would you like to continue anyway?</p>
+          </div>`
+        ))) {
+          return;
+        }
+      } else {
+        // Confirm calibration with sufficient images
+        if (!(await showConfirmationModal(
+          '🔧 Start Intrinsic Calibration',
+          `<div class="text-gray-700">
+            <p class="mb-2">Start intrinsic calibration with <strong>${calibrationImageCount}</strong> images?</p>
+            <p class="text-sm text-gray-600">This process may take a few minutes to complete.</p>
+            <div class="mt-3 p-3 bg-blue-50 rounded-lg">
+              <p class="text-sm text-blue-700"><strong>Parameters:</strong></p>
+              <ul class="text-sm text-blue-600 mt-1">
+                <li>• Chessboard: 11×8 squares</li>
+                <li>• Square size: 20mm</li>
+              </ul>
+            </div>
+          </div>`
+        ))) {
+          return;
+        }
+      }
+
+      // Show progress in modal
+      const calibrateBtn = document.getElementById('intrinsicCalibrateBtn');
+      
+      showProgressModal('🔧 Intrinsic Calibration', 'Initializing calibration process...');
+      calibrateBtn.disabled = true;
+      calibrateBtn.textContent = '⏳ Calibrating...';
+      
+      try {
+        // Update progress text
+        updateProgressModal('Initializing calibration toolkit...', 10);
+        
+        updateProgressModal('Analyzing chessboard patterns...', 50);
+        
+        const response = await fetch('/api/calibration/intrinsic', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chessboard_width: 11,  // Default chessboard parameters
+            chessboard_height: 8,
+            square_size: 0.02  // 20mm squares
+          })
+        });
+        
+        updateProgressModal('Processing calibration data...', 70);
+        
+        const data = await response.json();
+        
+        updateProgressModal('Finalizing results...', 100);
+        
+        // Hide progress modal
+        closeProgressModal();
+        
+        if (data.success) {
+          // Show results in modal
+          let resultsHtml = `
+            <div class="mb-4">
+              <div class="flex items-center mb-3">
+                <div class="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                <strong class="text-lg">Calibration completed successfully!</strong>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div class="bg-gray-50 p-3 rounded-lg">
+                <strong class="text-gray-800">RMS Error:</strong> 
+                <span class="font-mono text-blue-600">${data.rms_error ? data.rms_error.toFixed(4) : 'N/A'} pixels</span>
+              </div>
+          `;
+          
+          if (data.camera_matrix) {
+            resultsHtml += `
+              <div class="bg-gray-50 p-3 rounded-lg">
+                <strong class="text-gray-800">Camera Matrix:</strong><br>
+                <code class="text-xs bg-white p-2 rounded border block mt-1 font-mono">
+                  [${data.camera_matrix[0][0].toFixed(2)}, ${data.camera_matrix[0][1].toFixed(2)}, ${data.camera_matrix[0][2].toFixed(2)}]<br>
+                  [${data.camera_matrix[1][0].toFixed(2)}, ${data.camera_matrix[1][1].toFixed(2)}, ${data.camera_matrix[1][2].toFixed(2)}]<br>
+                  [${data.camera_matrix[2][0].toFixed(2)}, ${data.camera_matrix[2][1].toFixed(2)}, ${data.camera_matrix[2][2].toFixed(2)}]
+                </code>
+              </div>
+            `;
+          }
+          
+          if (data.distortion_coefficients) {
+            resultsHtml += `
+              <div class="bg-gray-50 p-3 rounded-lg">
+                <strong class="text-gray-800">Distortion Coefficients:</strong><br>
+                <code class="text-xs bg-white p-2 rounded border block mt-1 font-mono">
+                  [${data.distortion_coefficients.map(d => d.toFixed(6)).join(', ')}]
+                </code>
+              </div>
+            `;
+          }
+          
+          if (data.report_html) {
+            resultsHtml += `
+              <div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <strong class="text-blue-800">📄 Reports saved to temp folder:</strong><br>
+                <div class="text-sm mt-1 space-y-1">
+                  <div>• HTML Report: <code class="bg-white px-1 rounded">${data.report_html}</code></div>
+                  <div>• JSON Data: <code class="bg-white px-1 rounded">${data.report_json || 'calibration_data.json'}</code></div>
+                </div>
+              </div>
+            `;
+          }
+          
+          resultsHtml += `</div>`;
+          
+          showCalibrationModal('🔧 Intrinsic Calibration Results', resultsHtml, true);
+          
+        } else {
+          // Show error in modal
+          const errorHtml = `
+            <div class="mb-4">
+              <div class="flex items-center mb-3">
+                <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                <strong class="text-lg">Calibration Failed</strong>
+              </div>
+            </div>
+            <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+              <strong class="text-red-800">Error:</strong> <span class="text-red-700">${data.message || 'Unknown error occurred'}</span>
+              <div class="mt-3 text-sm text-red-600">
+                <strong>Please check:</strong>
+                <ul class="list-disc list-inside mt-2 space-y-1">
+                  <li>You have enough calibration images (at least 10)</li>
+                  <li>Images contain clear chessboard patterns</li>
+                  <li>Chessboard parameters match your calibration target</li>
+                </ul>
+              </div>
+            </div>
+          `;
+          
+          showCalibrationModal('❌ Intrinsic Calibration Failed', errorHtml, false);
+        }
+        
+      } catch (error) {
+        console.error('Calibration error:', error);
+        
+        // Hide progress modal and show error in modal
+        closeProgressModal();
+        
+        const errorHtml = `
+          <div class="mb-4">
+            <div class="flex items-center mb-3">
+              <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+              <strong class="text-lg">Network Error</strong>
+            </div>
+          </div>
+          <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+            <strong class="text-red-800">Error:</strong> <span class="text-red-700">${error.message}</span>
+            <div class="text-sm mt-2 text-red-600">Please check your connection and try again.</div>
+          </div>
+        `;
+        
+        showCalibrationModal('❌ Network Error', errorHtml, false);
+      } finally {
+        // Reset button
+        calibrateBtn.disabled = false;
+        calibrateBtn.textContent = '🔧 Intrinsic Calibrate';
+      }
+    }
+
+    // Run eye-in-hand calibration
+    async function runEyeInHandCalibration() {
+      // Check if there are enough images
+      if (calibrationImageCount < 5) {
+        if (!(await showConfirmationModal(
+          '⚠️ Insufficient Images',
+          `<div class="text-orange-600">
+            <p class="mb-2">You currently have <strong>${calibrationImageCount}</strong> calibration images.</p>
+            <p class="mb-2">For best results, please capture at least <strong>5</strong> calibration images before running eye-in-hand calibration.</p>
+            <p class="text-sm">Would you like to continue anyway?</p>
+          </div>`
+        ))) {
+          return;
+        }
+      } else {
+        // Confirm calibration with sufficient images
+        if (!(await showConfirmationModal(
+          '🤖 Start Eye-in-Hand Calibration',
+          `<div class="text-gray-700">
+            <p class="mb-2">Start eye-in-hand calibration with <strong>${calibrationImageCount}</strong> images?</p>
+            <p class="text-sm text-gray-600">This process may take a few minutes to complete.</p>
+            <div class="mt-3 p-3 bg-indigo-50 rounded-lg">
+              <p class="text-sm text-indigo-700"><strong>Parameters:</strong></p>
+              <ul class="text-sm text-indigo-600 mt-1">
+                <li>• Chessboard: 11×8 squares</li>
+                <li>• Square size: 20mm</li>
+                <li>• Camera-to-end-effector transformation</li>
+              </ul>
+            </div>
+          </div>`
+        ))) {
+          return;
+        }
+      }
+
+      // Show progress in modal
+      const calibrateBtn = document.getElementById('eyeInHandCalibrateBtn');
+      
+      showProgressModal('🤖 Eye-in-Hand Calibration', 'Initializing eye-in-hand calibration...');
+      calibrateBtn.disabled = true;
+      calibrateBtn.textContent = '⏳ Calibrating...';
+      
+      try {
+        // Update progress text
+        updateProgressModal('Preparing robot pose data...', 15);
+        
+        updateProgressModal('Analyzing robot poses and images...', 50);
+        
+        const response = await fetch('/api/calibration/eye-in-hand', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chessboard_width: 11,  // Default chessboard parameters
+            chessboard_height: 8,
+            square_size: 0.02  // 20mm squares
+          })
+        });
+        
+        updateProgressModal('Computing hand-eye transformation...', 70);
+        
+        const data = await response.json();
+        
+        updateProgressModal('Finalizing results...', 100);
+        
+        // Hide progress modal
+        closeProgressModal();
+        
+        if (data.success) {
+          // Show results in modal
+          let resultsHtml = `
+            <div class="mb-4">
+              <div class="flex items-center mb-3">
+                <div class="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                <strong class="text-lg">Eye-in-hand calibration completed successfully!</strong>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div class="bg-gray-50 p-3 rounded-lg">
+                <strong class="text-gray-800">RMS Error:</strong> 
+                <span class="font-mono text-blue-600">${data.rms_error ? data.rms_error.toFixed(4) : 'N/A'} pixels</span>
+              </div>
+              <div class="bg-gray-50 p-3 rounded-lg">
+                <strong class="text-gray-800">Images Used:</strong> 
+                <span class="font-mono text-blue-600">${data.image_count || 'N/A'}</span>
+              </div>
+          `;
+          
+          if (data.cam2end_matrix) {
+            const matrix = data.cam2end_matrix;
+            resultsHtml += `
+              <div class="bg-gray-50 p-3 rounded-lg">
+                <strong class="text-gray-800">Camera to End-Effector Transform:</strong><br>
+                <code class="text-xs bg-white p-2 rounded border block mt-1 font-mono">
+                  [${matrix[0].map(v => v.toFixed(3)).join(', ')}]<br>
+                  [${matrix[1].map(v => v.toFixed(3)).join(', ')}]<br>
+                  [${matrix[2].map(v => v.toFixed(3)).join(', ')}]<br>
+                  [${matrix[3].map(v => v.toFixed(3)).join(', ')}]
+                </code>
+              </div>
+            `;
+          }
+          
+          if (data.intrinsic_rms_error) {
+            resultsHtml += `
+              <div class="bg-gray-50 p-3 rounded-lg">
+                <strong class="text-gray-800">Intrinsic RMS Error:</strong> 
+                <span class="font-mono text-blue-600">${data.intrinsic_rms_error.toFixed(4)} pixels</span>
+              </div>
+            `;
+          }
+          
+          if (data.report_html) {
+            resultsHtml += `
+              <div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <strong class="text-blue-800">📄 Reports saved to temp folder:</strong><br>
+                <div class="text-sm mt-1 space-y-1">
+                  <div>• HTML Report: <code class="bg-white px-1 rounded">${data.report_html}</code></div>
+                  <div>• JSON Data: <code class="bg-white px-1 rounded">${data.report_json || 'eye_in_hand_data.json'}</code></div>
+                </div>
+              </div>
+            `;
+          }
+          
+          resultsHtml += `</div>`;
+          
+          showCalibrationModal('🤖 Eye-in-Hand Calibration Results', resultsHtml, true);
+          
+        } else {
+          // Show error in modal
+          const errorHtml = `
+            <div class="mb-4">
+              <div class="flex items-center mb-3">
+                <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                <strong class="text-lg">Eye-in-Hand Calibration Failed</strong>
+              </div>
+            </div>
+            <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+              <strong class="text-red-800">Error:</strong> <span class="text-red-700">${data.message || 'Unknown error occurred'}</span>
+              <div class="mt-3 text-sm text-red-600">
+                <strong>Please check:</strong>
+                <ul class="list-disc list-inside mt-2 space-y-1">
+                  <li>You have enough calibration images (at least 5)</li>
+                  <li>Images contain clear chessboard patterns</li>
+                  <li>Robot poses are recorded correctly for each image</li>
+                  <li>Camera is mounted on the robot end-effector</li>
+                </ul>
+              </div>
+            </div>
+          `;
+          
+          showCalibrationModal('❌ Eye-in-Hand Calibration Failed', errorHtml, false);
+        }
+        
+      } catch (error) {
+        console.error('Eye-in-hand calibration error:', error);
+        
+        // Hide progress modal and show error in modal
+        closeProgressModal();
+        
+        const errorHtml = `
+          <div class="mb-4">
+            <div class="flex items-center mb-3">
+              <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+              <strong class="text-lg">Network Error</strong>
+            </div>
+          </div>
+          <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+            <strong class="text-red-800">Error:</strong> <span class="text-red-700">${error.message}</span>
+            <div class="text-sm mt-2 text-red-600">Please check your connection and try again.</div>
+          </div>
+        `;
+        
+        showCalibrationModal('❌ Network Error', errorHtml, false);
+      } finally {
+        // Reset button
+        calibrateBtn.disabled = false;
+        calibrateBtn.textContent = '🤖 Eye-in-Hand Calibrate';
+      }
+    }
+
+    // Update calibration thumbnails
+    async function updateCalibrationThumbnails() {
+      try {
+        const response = await fetch('/api/calibration/thumbnails');
+        const data = await response.json();
+        
+        const thumbnailGrid = document.getElementById('calibrationThumbnailGrid');
+        if (!thumbnailGrid) return;
+        
+        if (data.thumbnails && data.thumbnails.length > 0) {
+          // Sort thumbnails by numeric filename
+          const sortedThumbnails = data.thumbnails.sort((a, b) => {
+            const numA = parseInt(a.filename.replace('.jpg', ''), 10);
+            const numB = parseInt(b.filename.replace('.jpg', ''), 10);
+            return numA - numB;
+          });
+          
+          thumbnailGrid.innerHTML = '';
+          sortedThumbnails.forEach((thumbnail, index) => {
+            const thumbnailDiv = document.createElement('div');
+            thumbnailDiv.className = 'relative cursor-pointer hover:scale-105 transition-transform duration-200 h-20';
+            thumbnailDiv.onclick = () => openCalibrationImageModal(thumbnail.filename);
+            
+            // Extract sequence number from filename
+            let sequenceNumber = '0';
+            const nameWithoutExt = thumbnail.filename.replace('.jpg', '');
+            if (/^\d+$/.test(nameWithoutExt)) {
+              sequenceNumber = nameWithoutExt;
+            }
+            
+            thumbnailDiv.innerHTML = `
+              <div class="relative">
+                <img src="/api/calibration/thumbnail/${thumbnail.filename}" 
+                     alt="${thumbnail.filename}" 
+                     class="w-full h-20 object-cover rounded-lg">
+                <div class="absolute bottom-1 left-1 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                  ${sequenceNumber}
+                </div>
+              </div>
+            `;
+            
+            thumbnailGrid.appendChild(thumbnailDiv);
+          });
+          
+          calibrationImageCount = data.thumbnails.length;
+          document.getElementById('calibrationImageCount').textContent = calibrationImageCount;
+        } else {
+          thumbnailGrid.innerHTML = '<div class="text-center text-gray-500 col-span-2 py-8">No screenshots</div>';
+        }
+      } catch (error) {
+        console.error('Failed to fetch calibration thumbnails:', error);
+      }
+    }
+
+    // Open calibration image modal
+    function openCalibrationImageModal(filename) {
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50';
+      modal.style.cursor = 'pointer';
+      
+      const img = document.createElement('img');
+      img.src = `/api/calibration/image/${filename}`;
+      img.className = 'max-w-90vw max-h-90vh object-contain rounded-lg';
+      
+      modal.appendChild(img);
+      modal.onclick = () => document.body.removeChild(modal);
+      document.body.appendChild(modal);
+    }
+
+    // Progress Modal Functions
+    function showProgressModal(title, initialMessage) {
+      const modal = document.getElementById('progressModal');
+      const modalTitle = document.getElementById('progressModalTitle');
+      const modalContent = document.getElementById('progressModalContent');
+      const progressBar = document.getElementById('progressBar');
+      
+      modalTitle.textContent = title;
+      modalContent.textContent = initialMessage;
+      progressBar.style.width = '0%';
+      
+      modal.classList.remove('hidden');
+    }
+
+    function updateProgressModal(message, progress = null) {
+      const modalContent = document.getElementById('progressModalContent');
+      const progressBar = document.getElementById('progressBar');
+      
+      modalContent.textContent = message;
+      
+      if (progress !== null) {
+        progressBar.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+      }
+    }
+
+    function closeProgressModal() {
+      const modal = document.getElementById('progressModal');
+      modal.classList.add('hidden');
+    }
+
+    // Alert Modal Functions
+    let alertResolve = null;
+    
+    function showAlertModal(title, message) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('alertModal');
+        const modalTitle = document.getElementById('alertModalTitle');
+        const modalContent = document.getElementById('alertModalContent');
+        
+        modalTitle.textContent = title;
+        modalContent.innerHTML = message;
+        
+        modal.classList.remove('hidden');
+        
+        // Store the resolve function to call when user closes the alert
+        alertResolve = resolve;
+      });
+    }
+
+    function closeAlertModal() {
+      const modal = document.getElementById('alertModal');
+      modal.classList.add('hidden');
+      
+      if (alertResolve) {
+        alertResolve();
+        alertResolve = null;
+      }
+    }
+
+    // Confirmation Modal Functions
+    let confirmationResolve = null;
+    
+    function showConfirmationModal(title, message) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('confirmationModal');
+        const modalTitle = document.getElementById('confirmationModalTitle');
+        const modalContent = document.getElementById('confirmationModalContent');
+        
+        modalTitle.textContent = title;
+        modalContent.innerHTML = message;
+        
+        modal.classList.remove('hidden');
+        
+        // Store the resolve function to call when user makes a choice
+        confirmationResolve = resolve;
+      });
+    }
+
+    function closeConfirmationModal(confirmed) {
+      const modal = document.getElementById('confirmationModal');
+      modal.classList.add('hidden');
+      
+      if (confirmationResolve) {
+        confirmationResolve(confirmed);
+        confirmationResolve = null;
+      }
+    }
+
+    // Calibration Modal Functions
+    function showCalibrationModal(title, content, isSuccess = true) {
+      const modal = document.getElementById('calibrationModal');
+      const modalTitle = document.getElementById('calibrationModalTitle');
+      const modalContent = document.getElementById('calibrationModalContent');
+      
+      modalTitle.textContent = title;
+      modalContent.innerHTML = content;
+      
+      // Set the success/error styling
+      modalContent.className = isSuccess ? 'text-sm text-green-700' : 'text-sm text-red-700';
+      
+      modal.classList.remove('hidden');
+      
+      // Store content for copy function
+      window.currentCalibrationResults = content;
+    }
+
+    function closeCalibrationModal() {
+      const modal = document.getElementById('calibrationModal');
+      modal.classList.add('hidden');
+    }
+
+    function copyCalibrationResults() {
+      if (window.currentCalibrationResults) {
+        // Create a temporary element to extract text content
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = window.currentCalibrationResults;
+        const textContent = tempDiv.textContent || tempDiv.innerText || '';
+        
+        navigator.clipboard.writeText(textContent).then(() => {
+          // Show a brief success message
+          const button = event.target;
+          const originalText = button.textContent;
+          button.textContent = '✅ Copied!';
+          button.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+          button.classList.add('bg-green-500');
+          
+          setTimeout(() => {
+            button.textContent = originalText;
+            button.classList.remove('bg-green-500');
+            button.classList.add('bg-blue-500', 'hover:bg-blue-600');
+          }, 1500);
+        }).catch(err => {
+          console.error('Failed to copy: ', err);
+          showAlertModal(
+            '❌ Copy Failed',
+            `<div class="text-red-600">
+              <p class="mb-2">Failed to copy results to clipboard.</p>
+              <div class="bg-red-50 p-3 rounded-lg border border-red-200">
+                <p class="text-sm text-red-700">This may be due to browser security settings or lack of clipboard permission.</p>
+                <p class="text-sm text-red-600 mt-2">You can manually select and copy the text from the results dialog.</p>
+              </div>
+            </div>`
+          );
+        });
+      }
+    }
+
+    // Initialize camera calibration when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      initializeCameraCalibration();
+      
+      // Add ESC key listener for closing modals
+      document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+          // Check which modal is open and close it (except progress modal)
+          const alertModal = document.getElementById('alertModal');
+          const confirmModal = document.getElementById('confirmationModal');
+          const calibrationModal = document.getElementById('calibrationModal');
+          const progressModal = document.getElementById('progressModal');
+          
+          // Don't close progress modal with ESC as it might interrupt ongoing process
+          if (!progressModal.classList.contains('hidden')) {
+            return;
+          }
+          
+          if (!alertModal.classList.contains('hidden')) {
+            closeAlertModal();
+          } else if (!confirmModal.classList.contains('hidden')) {
+            closeConfirmationModal(false);
+          } else if (!calibrationModal.classList.contains('hidden')) {
+            closeCalibrationModal();
+          }
+        }
+      });
+    });
+
+    // Close modal when clicking outside or pressing Escape
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeCornerDetectionModal();
+      }
+    });
+
+    document.getElementById('cornerDetectionModal')?.addEventListener('click', function(event) {
+      if (event.target === this) {
+        closeCornerDetectionModal();
+      }
+    });
+  </script>
+
+      <!-- Progress Modal -->
+      <div id="progressModal" class="fixed inset-0 z-50 hidden">
+        <!-- Modal backdrop (non-clickable to prevent dismissal during process) -->
+        <div class="fixed inset-0 bg-black bg-opacity-50"></div>
+        
+        <!-- Modal content -->
+        <div class="fixed inset-0 flex items-center justify-center p-4">
+          <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <!-- Modal header -->
+            <div class="flex items-center p-6 border-b border-gray-200">
+              <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"></div>
+              <h3 id="progressModalTitle" class="text-lg font-semibold text-gray-800">
+                Processing...
+              </h3>
+            </div>
+            
+            <!-- Modal body -->
+            <div class="p-6">
+              <div id="progressModalContent" class="text-gray-700">
+                <!-- Progress message will be populated here -->
+              </div>
+              
+              <!-- Progress bar -->
+              <div class="mt-4">
+                <div class="bg-gray-200 rounded-full h-2">
+                  <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alert Modal -->
+      <div id="alertModal" class="fixed inset-0 z-50 hidden">
+        <!-- Modal backdrop -->
+        <div class="fixed inset-0 bg-black bg-opacity-50" onclick="closeAlertModal()"></div>
+        
+        <!-- Modal content -->
+        <div class="fixed inset-0 flex items-center justify-center p-4">
+          <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <!-- Modal header -->
+            <div class="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 id="alertModalTitle" class="text-lg font-semibold text-gray-800">
+                ℹ️ Information
+              </h3>
+              <button onclick="closeAlertModal()" 
+                      class="text-gray-400 hover:text-gray-600 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+            
+            <!-- Modal body -->
+            <div class="p-6">
+              <div id="alertModalContent" class="text-gray-700">
+                <!-- Alert message will be populated here -->
+              </div>
+            </div>
+            
+            <!-- Modal footer -->
+            <div class="flex justify-end p-6 border-t border-gray-200">
+              <button onclick="closeAlertModal()" 
+                      class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Confirmation Modal -->
+      <div id="confirmationModal" class="fixed inset-0 z-50 hidden">
+        <!-- Modal backdrop -->
+        <div class="fixed inset-0 bg-black bg-opacity-50" onclick="closeConfirmationModal(false)"></div>
+        
+        <!-- Modal content -->
+        <div class="fixed inset-0 flex items-center justify-center p-4">
+          <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <!-- Modal header -->
+            <div class="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 id="confirmationModalTitle" class="text-lg font-semibold text-gray-800">
+                🤔 Confirm Action
+              </h3>
+              <button onclick="closeConfirmationModal(false)" 
+                      class="text-gray-400 hover:text-gray-600 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+            
+            <!-- Modal body -->
+            <div class="p-6">
+              <div id="confirmationModalContent" class="text-gray-700 mb-4">
+                <!-- Confirmation message will be populated here -->
+              </div>
+            </div>
+            
+            <!-- Modal footer -->
+            <div class="flex justify-end p-6 border-t border-gray-200 space-x-3">
+              <button onclick="closeConfirmationModal(false)" 
+                      class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                Cancel
+              </button>
+              <button onclick="closeConfirmationModal(true)" 
+                      class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Calibration Results Modal -->
+      <div id="calibrationModal" class="fixed inset-0 z-50 hidden">
+        <!-- Modal backdrop -->
+        <div class="fixed inset-0 bg-black bg-opacity-50" onclick="closeCalibrationModal()"></div>
+        
+        <!-- Modal content -->
+        <div class="fixed inset-0 flex items-center justify-center p-4">
+          <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <!-- Modal header -->
+            <div class="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 id="calibrationModalTitle" class="text-xl font-semibold text-gray-800">
+                📊 Calibration Results
+              </h3>
+              <button onclick="closeCalibrationModal()" 
+                      class="text-gray-400 hover:text-gray-600 transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+            
+            <!-- Modal body -->
+            <div class="p-6 overflow-y-auto max-h-[70vh]">
+              <div id="calibrationModalContent" class="text-sm">
+                <!-- Results will be populated here -->
+              </div>
+            </div>
+            
+            <!-- Modal footer -->
+            <div class="flex justify-end p-6 border-t border-gray-200 space-x-3">
+              <button onclick="copyCalibrationResults()" 
+                      class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                📋 Copy Results
+              </button>
+              <button onclick="closeCalibrationModal()" 
+                      class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <script src="/js/robot_arm_control.js?v=6&ts=1755534000"></script>
 </body>

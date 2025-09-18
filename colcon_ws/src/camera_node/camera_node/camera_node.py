@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from std_srvs.srv import Trigger
 from sensor_msgs.msg import Image
 import subprocess
@@ -470,10 +471,19 @@ class CameraNode(Node):
         
         # Create ROS2 Image Publisher for camera (only if enabled)
         if self.publish_ros_image:
+            # Create QoS profile optimized for real-time video streaming
+            # CRITICAL: Use BEST_EFFORT to prevent blocking subscribers when they are slow
+            camera_publisher_qos = QoSProfile(
+                reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops - prevents blocking
+                durability=DurabilityPolicy.VOLATILE,       # Don't store messages
+                history=HistoryPolicy.KEEP_LAST,           # Only keep latest frame
+                depth=1                                     # Only keep the most recent frame
+            )
+            
             self.camera_image_publisher = self.create_publisher(
                 Image,
                 self.ros_topic_name,
-                1
+                camera_publisher_qos  # Use optimized QoS instead of default RELIABLE
             )
             
             # CV Bridge for converting between OpenCV and ROS image formats
@@ -1039,10 +1049,18 @@ class CameraNode(Node):
                     
                     # Create image publisher if not exists
                     if not self.camera_image_publisher:
+                        # Create QoS profile optimized for real-time video streaming
+                        camera_publisher_qos = QoSProfile(
+                            reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops
+                            durability=DurabilityPolicy.VOLATILE,       # Don't store messages
+                            history=HistoryPolicy.KEEP_LAST,           # Only keep latest frame
+                            depth=1                                     # Only keep the most recent frame
+                        )
+                        
                         self.camera_image_publisher = self.create_publisher(
                             Image,
                             self.ros_topic_name,
-                            1
+                            camera_publisher_qos  # Use optimized QoS
                         )
                     
                     # Create CV bridge if not exists
