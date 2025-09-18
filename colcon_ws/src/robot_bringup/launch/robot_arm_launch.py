@@ -143,7 +143,8 @@ def generate_launch_description():
                 parameters=[
                     {'input_topic': '/robot_arm_camera/image_raw'},
                     {'output_resized_topic': '/robot_arm_camera/image_resized_raw'},
-                    {'resize_width': 640}
+                    {'resize_width': 640},
+                    {'resize_height': 480}
                 ],
                 output='screen',
                 emulate_tty=True,
