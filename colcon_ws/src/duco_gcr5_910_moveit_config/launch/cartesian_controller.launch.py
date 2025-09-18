@@ -101,34 +101,6 @@ def generate_demo_launch(moveit_config, launch_package_path=None, declared_argum
         )
     )
 
-    # (heecheol) Moveit related lines are deleted
-    # ld.add_action(
-    #     IncludeLaunchDescription(
-    #         PythonLaunchDescriptionSource(
-    #             str(launch_package_path / "launch/move_group.launch.py")
-    #         ),
-    #     )
-    # )
-
-    # # Run Rviz and load the default config to see the state of the move_group node
-    # ld.add_action(
-    #     IncludeLaunchDescription(
-    #         PythonLaunchDescriptionSource(
-    #             str(launch_package_path / "launch/moveit_rviz.launch.py")
-    #         ),
-    #         condition=IfCondition(LaunchConfiguration("use_rviz")),
-    #     )
-    # )
-
-    # # If database loading was enabled, start mongodb as well
-    # ld.add_action(
-    #     IncludeLaunchDescription(
-    #         PythonLaunchDescriptionSource(
-    #             str(launch_package_path / "launch/warehouse_db.launch.py")
-    #         ),
-    #         condition=IfCondition(LaunchConfiguration("db")),
-    #     )
-    # )
 
     ld.add_action(
     	DeclareLaunchArgument(
@@ -206,14 +178,14 @@ def generate_demo_launch(moveit_config, launch_package_path=None, declared_argum
             output="screen",
         )
 
-    active_list = ["cartesian_motion_controller"]
+    active_list = ["cartesian_compliance_controller"]
 
     active_spawners = [controller_spawner(c) for c in active_list]
 
     inactive_list = [
-        "cartesian_compliance_controller",
+        "cartesian_motion_controller",
         "cartesian_force_controller",
-        "motion_control_handle",
+        #"motion_control_handle",
     ]
 
     inactive_spawners = [controller_spawner(c, "--inactive") for c in inactive_list]
