@@ -21,15 +21,17 @@ class ImageProcessNode(Node):
         
         # Parameters
         self.declare_parameter('input_topic', '/camera/image_raw')
-        self.declare_parameter('output_topic', '/camera/image_undistorted')
-        self.declare_parameter('output_compressed_topic', '/camera/image_undistorted/compressed')
-        self.declare_parameter('output_resized_compressed_topic', '/camera/image_undistorted_resize_jpeg')
+        self.declare_parameter('output_resized_topic', '')  # Empty string means disabled
+        self.declare_parameter('output_topic', '')  # Empty string means disabled
+        self.declare_parameter('output_compressed_topic', '')  # Empty string means disabled
+        self.declare_parameter('output_resized_compressed_topic', '')  # Empty string means disabled
         self.declare_parameter('resize_width', 640)
-        self.declare_parameter('resize_height', 480)
+        self.declare_parameter('resize_height', 0)  # 0 means keep aspect ratio
         self.declare_parameter('calibration_file', os.path.join(get_temp_directory(), 'calibration_result.json'))
         self.declare_parameter('jpeg_quality', 85)
         
         self.input_topic = self.get_parameter('input_topic').value
+        self.output_resized_topic = self.get_parameter('output_resized_topic').value
         self.output_topic = self.get_parameter('output_topic').value
         self.output_compressed_topic = self.get_parameter('output_compressed_topic').value
         self.output_resized_compressed_topic = self.get_parameter('output_resized_compressed_topic').value
@@ -37,6 +39,13 @@ class ImageProcessNode(Node):
         self.resize_height = self.get_parameter('resize_height').value
         self.calibration_file = self.get_parameter('calibration_file').value
         self.jpeg_quality = self.get_parameter('jpeg_quality').value
+        
+        # Enable flags based on whether topic names are provided
+        self.enable_resized_output = bool(self.output_resized_topic.strip())
+        self.enable_uncompressed_output = bool(self.output_topic.strip())
+        self.enable_compressed_output = bool(self.output_compressed_topic.strip())
+        self.enable_resized_compressed_output = bool(self.output_resized_compressed_topic.strip())
+        self.enable_camera_info_output = self.enable_uncompressed_output  # Camera info pairs with uncompressed
         
         # Load camera calibration parameters
         self.camera_matrix = None
@@ -61,44 +70,85 @@ class ImageProcessNode(Node):
             video_qos
         )
         
-        # Publisher for uncompressed images (for web viewer)
-        self.image_publisher = self.create_publisher(
-            Image,
-            self.output_topic,
-            video_qos
-        )
+        # Create publishers only for enabled outputs
+        self.resized_image_publisher = None
+        self.image_publisher = None
+        self.compressed_image_publisher = None
+        self.resized_compressed_image_publisher = None
+        self.camera_info_publisher = None
         
-        # Publisher for compressed images
-        self.compressed_image_publisher = self.create_publisher(
-            CompressedImage,
-            self.output_compressed_topic,
-            video_qos
-        )
+        if self.enable_resized_output:
+            # Publisher for resized uncompressed images (original, not undistorted)
+            self.resized_image_publisher = self.create_publisher(
+                Image,
+                self.output_resized_topic,
+                video_qos
+            )
         
-        # Publisher for resized compressed images
-        self.resized_compressed_image_publisher = self.create_publisher(
-            CompressedImage,
-            self.output_resized_compressed_topic,
-            video_qos
-        )
+        if self.enable_uncompressed_output:
+            # Publisher for uncompressed images (for web viewer)
+            self.image_publisher = self.create_publisher(
+                Image,
+                self.output_topic,
+                video_qos
+            )
         
-        # Publisher for original camera info (intrinsic parameters)
-        # Camera info can use default QoS as it's not high-frequency
-        self.camera_info_publisher = self.create_publisher(
-            CameraInfo,
-            self.input_topic.replace('/image_', '/camera_info_'),
-            10
-        )
+        if self.enable_compressed_output:
+            # Publisher for compressed images
+            self.compressed_image_publisher = self.create_publisher(
+                CompressedImage,
+                self.output_compressed_topic,
+                video_qos
+            )
+        
+        if self.enable_resized_compressed_output:
+            # Publisher for resized compressed images
+            self.resized_compressed_image_publisher = self.create_publisher(
+                CompressedImage,
+                self.output_resized_compressed_topic,
+                video_qos
+            )
+        
+        if self.enable_camera_info_output:
+            # Publisher for original camera info (intrinsic parameters)
+            # Camera info can use default QoS as it's not high-frequency
+            self.camera_info_publisher = self.create_publisher(
+                CameraInfo,
+                self.input_topic.replace('/image_', '/camera_info_'),
+                10
+            )
         
         self.get_logger().info('Image process node started')
         self.get_logger().info(f'Subscribing to: {self.input_topic}')
-        self.get_logger().info(f'Publishing uncompressed to: {self.output_topic}')
-        self.get_logger().info(f'Publishing compressed to: {self.output_compressed_topic}')
-        self.get_logger().info(f'Publishing resized compressed to: {self.output_resized_compressed_topic}')
-        self.get_logger().info(f'Publishing original camera info to: {self.input_topic.replace("/image_", "/camera_info_")}')
-        self.get_logger().info(f'Resize dimensions: {self.resize_width}x{self.resize_height}')
+        
+        # Log only enabled outputs
+        if self.enable_resized_output:
+            self.get_logger().info(f'Publishing resized uncompressed to: {self.output_resized_topic}')
+            if self.resize_height == 0:
+                self.get_logger().info(f'Resize dimensions: {self.resize_width}x? (keep aspect ratio)')
+            else:
+                self.get_logger().info(f'Resize dimensions: {self.resize_width}x{self.resize_height}')
+        if self.enable_uncompressed_output:
+            self.get_logger().info(f'Publishing uncompressed to: {self.output_topic}')
+        if self.enable_compressed_output:
+            self.get_logger().info(f'Publishing compressed to: {self.output_compressed_topic}')
+        if self.enable_resized_compressed_output:
+            self.get_logger().info(f'Publishing resized compressed to: {self.output_resized_compressed_topic}')
+            if not self.enable_resized_output:  # Only log resize dimensions if not already logged
+                if self.resize_height == 0:
+                    self.get_logger().info(f'Resize dimensions: {self.resize_width}x? (keep aspect ratio)')
+                else:
+                    self.get_logger().info(f'Resize dimensions: {self.resize_width}x{self.resize_height}')
+        if self.enable_camera_info_output:
+            self.get_logger().info(f'Publishing original camera info to: {self.input_topic.replace("/image_", "/camera_info_")}')
+        
+        # Log configuration
+        if not any([self.enable_resized_output, self.enable_uncompressed_output, self.enable_compressed_output, self.enable_resized_compressed_output]):
+            self.get_logger().warn('No output topics enabled! All topic parameters are empty.')
+        
         self.get_logger().info(f'Using calibration file: {self.calibration_file}')
-        self.get_logger().info(f'JPEG quality: {self.jpeg_quality}')
+        if self.enable_compressed_output or self.enable_resized_compressed_output:
+            self.get_logger().info(f'JPEG quality: {self.jpeg_quality}')
         
         # Variables for undistortion maps (computed once for efficiency)
         self.map1 = None
@@ -162,47 +212,59 @@ class ImageProcessNode(Node):
             # Convert ROS Image message to OpenCV image
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             
-            # Check if calibration parameters are available
-            if self.camera_matrix is None or self.dist_coeffs is None:
-                self.get_logger().warn('No calibration parameters available, passing through original image')
-                undistorted_image = cv_image
-            else:
-                # Get image dimensions
-                height, width = cv_image.shape[:2]
-                current_size = (width, height)
+            # Process resized original image FIRST (highest priority, simplest operation)
+            if self.enable_resized_output and self.resized_image_publisher:
+                self.publish_resized_image(cv_image, msg.header)  # Use original image, not undistorted
+            
+            # Only do undistortion processing if we need undistorted outputs
+            if (self.enable_uncompressed_output or self.enable_compressed_output or 
+                self.enable_resized_compressed_output):
                 
-                # Compute undistortion maps if not done yet or image size changed
-                if (self.map1 is None or self.map2 is None or 
-                    self.image_size != current_size):
-                    self.image_size = current_size
-                    self.map1, self.map2 = self.compute_undistortion_maps(current_size)
+                # Check if calibration parameters are available
+                if self.camera_matrix is None or self.dist_coeffs is None:
+                    self.get_logger().warn('No calibration parameters available, passing through original image')
+                    undistorted_image = cv_image
+                else:
+                    # Get image dimensions
+                    height, width = cv_image.shape[:2]
+                    current_size = (width, height)
                     
-                    if self.map1 is None or self.map2 is None:
-                        self.get_logger().error('Failed to compute undistortion maps')
-                        return
+                    # Compute undistortion maps if not done yet or image size changed
+                    if (self.map1 is None or self.map2 is None or 
+                        self.image_size != current_size):
+                        self.image_size = current_size
+                        self.map1, self.map2 = self.compute_undistortion_maps(current_size)
                         
-                    self.get_logger().info(f'Computed undistortion maps for image size: {current_size}')
+                        if self.map1 is None or self.map2 is None:
+                            self.get_logger().error('Failed to compute undistortion maps')
+                            return
+                            
+                        self.get_logger().info(f'Computed undistortion maps for image size: {current_size}')
+                    
+                    # Apply undistortion using pre-computed maps
+                    undistorted_image = cv2.remap(cv_image, self.map1, self.map2, cv2.INTER_LINEAR)
                 
-                # Apply undistortion using pre-computed maps
-                undistorted_image = cv2.remap(cv_image, self.map1, self.map2, cv2.INTER_LINEAR)
-            
-            # Convert back to ROS Image message (for web viewer)
-            undistorted_msg = self.bridge.cv2_to_imgmsg(undistorted_image, encoding='bgr8')
-            
-            # Copy header information
-            undistorted_msg.header = msg.header
-            
-            # Publish uncompressed undistorted image (for web viewer)
-            self.image_publisher.publish(undistorted_msg)
-            
-            # Create and publish compressed image
-            self.publish_compressed_image(undistorted_image, msg.header)
-            
-            # Create and publish resized compressed image
-            self.publish_resized_compressed_image(undistorted_image, msg.header)
-            
-            # Publish original camera info
-            self.publish_original_camera_info(msg.header)
+                # Convert back to ROS Image message (for web viewer)
+                undistorted_msg = self.bridge.cv2_to_imgmsg(undistorted_image, encoding='bgr8')
+                
+                # Copy header information
+                undistorted_msg.header = msg.header
+                
+                # Publish uncompressed undistorted image (for web viewer) - only if enabled
+                if self.enable_uncompressed_output and self.image_publisher:
+                    self.image_publisher.publish(undistorted_msg)
+                
+                # Create and publish compressed image - only if enabled
+                if self.enable_compressed_output and self.compressed_image_publisher:
+                    self.publish_compressed_image(undistorted_image, msg.header)
+                
+                # Create and publish resized compressed image - only if enabled
+                if self.enable_resized_compressed_output and self.resized_compressed_image_publisher:
+                    self.publish_resized_compressed_image(undistorted_image, msg.header)
+                
+                # Publish original camera info - only if enabled
+                if self.enable_camera_info_output and self.camera_info_publisher:
+                    self.publish_original_camera_info(msg.header)
             
         except Exception as e:
             self.get_logger().error(f'Error processing image: {str(e)}')
@@ -230,11 +292,49 @@ class ImageProcessNode(Node):
         except Exception as e:
             self.get_logger().error(f'Error creating compressed image: {str(e)}')
             
+    def publish_resized_image(self, cv_image, header):
+        """Publish resized uncompressed image"""
+        try:
+            # Calculate target size
+            if self.resize_height == 0:
+                # Keep aspect ratio - calculate height based on width
+                original_height, original_width = cv_image.shape[:2]
+                aspect_ratio = original_height / original_width
+                target_height = int(self.resize_width * aspect_ratio)
+                target_size = (self.resize_width, target_height)
+            else:
+                # Use specified dimensions
+                target_size = (self.resize_width, self.resize_height)
+            
+            # Resize image
+            resized_image = cv2.resize(cv_image, target_size)
+            
+            # Convert to ROS Image message
+            resized_msg = self.bridge.cv2_to_imgmsg(resized_image, encoding='bgr8')
+            resized_msg.header = header
+            
+            # Publish resized uncompressed image
+            self.resized_image_publisher.publish(resized_msg)
+            
+        except Exception as e:
+            self.get_logger().error(f'Error creating resized image: {str(e)}')
+            
     def publish_resized_compressed_image(self, cv_image, header):
         """Publish resized and compressed JPEG image"""
         try:
+            # Calculate target size
+            if self.resize_height == 0:
+                # Keep aspect ratio - calculate height based on width
+                original_height, original_width = cv_image.shape[:2]
+                aspect_ratio = original_height / original_width
+                target_height = int(self.resize_width * aspect_ratio)
+                target_size = (self.resize_width, target_height)
+            else:
+                # Use specified dimensions
+                target_size = (self.resize_width, self.resize_height)
+            
             # Resize image
-            resized_image = cv2.resize(cv_image, (self.resize_width, self.resize_height))
+            resized_image = cv2.resize(cv_image, target_size)
             
             # Encode image as JPEG
             encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
