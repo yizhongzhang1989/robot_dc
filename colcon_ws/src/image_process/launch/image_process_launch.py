@@ -52,11 +52,7 @@ def generate_launch_description():
         description='Path to camera calibration file'
     )
     
-    web_port_arg = DeclareLaunchArgument(
-        'web_port',
-        default_value='8085',
-        description='Port for web interface'
-    )
+
     
     # Create the image process node
     image_process_node = Node(
@@ -76,20 +72,7 @@ def generate_launch_description():
         emulate_tty=True
     )
     
-    # Create the web viewer node
-    web_viewer_node = Node(
-        package='image_process',
-        executable='image_web_viewer_node',
-        name='image_web_viewer_node',
-        output='screen',
-        parameters=[{
-            'raw_topic': LaunchConfiguration('input_topic'),
-            'processed_topic': LaunchConfiguration('output_topic'),
-            'resized_compressed_topic': LaunchConfiguration('output_resized_compressed_topic'),
-            'web_port': LaunchConfiguration('web_port'),
-        }],
-        emulate_tty=True
-    )
+
     
     return LaunchDescription([
         input_topic_arg,
@@ -99,7 +82,5 @@ def generate_launch_description():
         resize_width_arg,
         resize_height_arg,
         calibration_file_arg,
-        web_port_arg,
-        image_process_node,
-        web_viewer_node
+        image_process_node
     ])
