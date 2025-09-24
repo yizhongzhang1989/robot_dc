@@ -124,7 +124,13 @@ def get_temp_directory() -> str:
             "Make sure you're running from within a ROS workspace or set the ROS_WORKSPACE environment variable."
         )
     
-    temp_dir = os.path.join(workspace_root, 'temp')
+    # temp directory is now in the project root directory (parent of colcon_ws)
+    if os.path.basename(workspace_root) == 'colcon_ws':
+        project_root = os.path.dirname(workspace_root)
+    else:
+        project_root = workspace_root
+    
+    temp_dir = os.path.join(project_root, 'temp')
     os.makedirs(temp_dir, exist_ok=True)
     return temp_dir
 

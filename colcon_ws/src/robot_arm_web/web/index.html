@@ -457,32 +457,44 @@
     @media (max-width: 1400px) {
       .visualization-item {
         width: 100%;
-        max-width: 650px;
+        max-width: 720px; /* Updated to match new viewer max-width */
       }
     }
     
     .viewer-3d {
       width: 100%;
-      height: 500px;
+      height: 0;
+      padding-bottom: 56.25%; /* 16:9 aspect ratio (9/16 * 100%) */
       border: 1px solid #e5e7eb;
       border-radius: 8px;
       background: #000;
       position: relative;
-      max-width: 650px;
-      min-width: 300px;
+      max-width: 720px; /* Optimized for 1080p width */
+      min-width: 320px;
     }
     
     .camera-viewer {
       width: 100%;
-      height: 500px;
+      height: 0;
+      padding-bottom: 56.25%; /* 16:9 aspect ratio (9/16 * 100%) */
       border: 1px solid #e5e7eb;
       border-radius: 8px;
       background: #000;
       position: relative;
-      max-width: 650px;
-      min-width: 300px;
+      max-width: 720px; /* Optimized for 1080p width */
+      min-width: 320px;
       display: flex;
       flex-direction: column;
+    }
+    
+    /* Canvas and content positioning for responsive containers */
+    #robot3dCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 8px;
     }
     
     /* Responsive sizing for visualization elements */
@@ -495,12 +507,16 @@
     
     @media (max-width: 768px) {
       .viewer-3d, .camera-viewer {
-        height: 400px;
         max-width: 95vw;
+        padding-bottom: 56.25%; /* Maintain 16:9 ratio on mobile */
       }
     }
     
     .camera-header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
       background: rgba(0, 0, 0, 0.7);
       color: white;
       padding: 8px 12px;
@@ -510,6 +526,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      z-index: 10;
     }
     
     .camera-status {
@@ -531,13 +548,16 @@
     }
     
     .camera-image-container {
-      flex: 1;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
       background: #1a1a1a;
-      border-radius: 0 0 8px 8px;
-      position: relative;
+      border-radius: 8px;
       overflow: hidden;
     }
     
@@ -545,7 +565,7 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      border-radius: 0 0 8px 8px;
+      border-radius: 8px;
     }
     
     .camera-placeholder {
@@ -557,7 +577,7 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      z-index: 10;
+      z-index: 5;
     }
     
     .viewer-controls {
@@ -1574,14 +1594,12 @@
             </div>
             <canvas id="robot3dCanvas"></canvas>
           </div>
+          <h3 class="text-sm font-medium text-gray-700 mt-3 text-center">3D Model</h3>
         </div>
         
         <!-- Camera Feed -->
         <div class="visualization-item">
           <div class="camera-viewer" id="cameraViewer">
-            <div class="camera-header">
-              <span>📷</span>
-            </div>
             <div class="camera-image-container" id="cameraImageContainer">
               <div class="camera-placeholder" id="cameraPlaceholder" style="display: block;">
                 <div>RTSP Camera Stream</div>
@@ -1591,6 +1609,7 @@
               <img class="camera-image" id="cameraImage" src="/video_feed" style="display: none;" alt="Camera Feed" />
             </div>
           </div>
+          <h3 class="text-sm font-medium text-gray-700 mt-3 text-center">Camera Feed</h3>
         </div>
       </div>
     </div>
@@ -2739,7 +2758,7 @@
             </div>
             <div class="status-bar-item">
               <div class="status-bar-label">Save Path</div>
-              <div id="calibrationSavePath" class="status-bar-value" title="Images and results save location">colcon_ws/temp/</div>
+              <div id="calibrationSavePath" class="status-bar-value" title="Images and results save location">temp/</div>
             </div>
             <div class="status-bar-item">
               <div class="status-bar-label">Image Count</div>

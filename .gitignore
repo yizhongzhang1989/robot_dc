@@ -136,6 +136,5 @@ Thumbs.db
 *.bak
 *.backup
 
-# Image storage directory (now in colcon_ws)
+# Image storage directory (now in root directory)
 temp/
-colcon_ws/temp/
