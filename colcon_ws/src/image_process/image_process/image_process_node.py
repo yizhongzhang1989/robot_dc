@@ -27,7 +27,7 @@ class ImageProcessNode(Node):
         self.declare_parameter('output_resized_compressed_topic', '')  # Empty string means disabled
         self.declare_parameter('resize_width', 640)
         self.declare_parameter('resize_height', 0)  # 0 means keep aspect ratio
-        self.declare_parameter('calibration_file', os.path.join(get_temp_directory(), 'calibration_result.json'))
+        self.declare_parameter('calibration_file', os.path.join(get_temp_directory(), 'camera_parameters', 'calibration_result.json'))
         self.declare_parameter('jpeg_quality', 85)
         
         self.input_topic = self.get_parameter('input_topic').value

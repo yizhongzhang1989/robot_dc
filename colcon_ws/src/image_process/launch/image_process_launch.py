@@ -48,7 +48,7 @@ def generate_launch_description():
     
     calibration_file_arg = DeclareLaunchArgument(
         'calibration_file',
-        default_value=os.path.join(get_temp_directory(), 'calibration_result.json'),
+        default_value=os.path.join(get_temp_directory(), 'camera_parameters', 'calibration_result.json'),
         description='Path to camera calibration file'
     )
     
