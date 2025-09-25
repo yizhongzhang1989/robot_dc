@@ -113,6 +113,28 @@ def Move2_task_startpoint(robot,op):
     print("Robot arm move to default starting point of all tasks.")
     return res
 
+def Moveback2_tool_getting_position(robot,op):
+
+    # move to safty middle points
+    pose = [43.07, 6.51, -124.52, 39.71, -87.72, -100.47]
+    pose_rad = ConvertDeg2Rad(pose)
+    res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
+    time.sleep(0.5)
+
+    # move to safty middle points 
+    pose = [65.91, -23.59, -118.22, 44.30, -92.78, -111.48]
+    pose_rad = ConvertDeg2Rad(pose)
+    res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
+    time.sleep(0.5)
+
+    # move to tool getting position
+    pose = [65.91, -25.975, 75, 46.301, -92.779, -111.484]
+    pose_rad = ConvertDeg2Rad(pose)
+    res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
+    time.sleep(0.5)
+
+    return res
+
 def Move2_taskunlockleft_startpoint(robot,op):
 
     # load target pose from JSON file
@@ -140,7 +162,7 @@ def Move2_taskunlockright_startpoint(robot,op):
     res = robot.tcp_move(offset, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    offset = [5/1000, -205/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]
+    offset = [0/1000, -205/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]
     res = robot.tcp_move(offset, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
@@ -284,7 +306,7 @@ def FTC_task_unlockleftknob(robot,op):
     time.sleep(0.5)
 
     ftEnabled = [False,False,True,False,True,True]
-    ftSet = [0,0,-2,0,0,3]
+    ftSet = [0,0,0,0,0,0]
     maxForce_1 = [0,0,50,0,0,1]
     ifDKStopOnMaxForce_1 = True
     B = [12000,12000,4000,1500,7500,1500]
@@ -307,6 +329,18 @@ def FTC_task_unlockleftknob(robot,op):
     if res.status_code == 200:
         print(f"Response:{res.text}, FTC Program is enabled! Arm is unlocking the left knob.")
     time.sleep(0.5)
+
+    # gradually increase the force
+    target_force = [0,0,-2,0,0,3]
+    current_force = ftSet[:]  # create a copy
+    ftSetRT = [0, 0, -2, 0, 0, 0]
+    while current_force[5] < target_force[5]:
+        current_force[5] = current_force[5] + 0.5
+        if current_force[5] > target_force[5]:
+            current_force[5] = target_force[5]
+        ftSetRT[5] = current_force[5]
+        FTC_setFTValueRT(ftSetRT)
+        time.sleep(0.5)
 
     # ensure the program finish
     flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
@@ -500,7 +534,7 @@ def FTC_task_unlockrightknob(robot,op):
     time.sleep(0.5)
 
     ftEnabled = [False,False,True,False,True,True]
-    ftSet = [0,0,-3,0,0,-3]
+    ftSet = [0,0,-2,0,0,0]
     maxForce_1 = [0,0,50,0,0,1]
     ifDKStopOnMaxForce_1 = True
     B = [12000,12000,4000,1500,7500,1500]
@@ -523,6 +557,18 @@ def FTC_task_unlockrightknob(robot,op):
     if res.status_code == 200:
         print(f"Response:{res.text}, FTC Program is enabled! Arm is unlocking the right knob.")
     time.sleep(0.5)
+
+    # gradually increase the force
+    target_force = [0,0,-2,0,0,-3]
+    current_force = ftSet[:]  # create a copy
+    ftSetRT = [0, 0, -2, 0, 0, 0]
+    while current_force[5] > target_force[5]:
+        current_force[5] = current_force[5] - 0.5
+        if current_force[5] < target_force[5]:
+            current_force[5] = target_force[5]
+        ftSetRT[5] = current_force[5]
+        FTC_setFTValueRT(ftSetRT)
+        time.sleep(0.5)
 
     # ensure the program finish
     flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
@@ -555,7 +601,7 @@ def FTC_task_unlockrightknob(robot,op):
     B = [15000,15000,15000,1500,7500,1500]
     M = [1000,1000,1000,150,750,150]
     ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
-    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,135,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
+    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,60,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
     if res.status_code == 200:
         print(f"Response:{res.text}, set FTC parameters successfully!")
     time.sleep(0.5)
@@ -711,13 +757,15 @@ def main():
     # 2. move to task start point
     Move2_task_startpoint(robot,op)
     
-    # # 3. task unlock server (finished)
-    # FTC_task_unlockleftknob(robot,op)
+    # 3. task unlock server (finished)
+    FTC_task_unlockleftknob(robot,op)
 
-    # FTC_task_unlockrightknob(robot,op)
+    FTC_task_unlockrightknob(robot,op)
 
     # task_unlock2handle(robot,op)
 
+    # 4. move back to tool getting position 
+    Moveback2_tool_getting_position(robot,op)
 
     # ======================close the robot arm================================
     # disable, power off, and close connection
