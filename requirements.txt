@@ -5,3 +5,7 @@ uvicorn[standard]
 websockets>=10.0
 flask
 nlopt
+thrift>=0.13.0
+numpy<2.0.0
+opencv-python
+rclpy

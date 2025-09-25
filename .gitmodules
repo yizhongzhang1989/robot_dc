@@ -6,4 +6,4 @@
 	url = https://github.com/yizhongzhang1989/camera_calibration_toolkit.git
 [submodule "scripts/ThirdParty/robot_vision"]
 	path = scripts/ThirdParty/robot_vision
-	url = git@github.com:yizhongzhang1989/robot_vision.git
+	url = https://github.com/yizhongzhang1989/robot_vision.git
