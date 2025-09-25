@@ -591,6 +591,27 @@ def main():
         # Calculate target joint angles using inverse kinematics
         target_joints_positions_rad = calculate_target_joint_angles(robot)
         
+        # Save target joint angles to JSON file
+        if target_joints_positions_rad is not None:
+            # Create output directory if it doesn't exist
+            output_dir = os.path.join(project_root, "temp/find_target_result")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Prepare data to save (convert radians to degrees for readability)
+            target_joint_data = {
+                "target_joint_angles_rad": [float(angle) for angle in target_joints_positions_rad],
+                "target_joint_angles_deg": [float(np.degrees(angle)) for angle in target_joints_positions_rad],
+                "timestamp": os.path.basename(__file__),
+                "description": "Target joint angles calculated by inverse kinematics"
+            }
+            
+            # Save to JSON file
+            output_file = os.path.join(output_dir, "target_joint_angles.json")
+            with open(output_file, 'w') as f:
+                json.dump(target_joint_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"✅ Target joint angles saved to: {output_file}")
+        
         # if target_joints_positions_rad is not None:
         #     print("Moving to Target joint angles!")
         #     res = robot.movej2(target_joints_positions_rad, 0.5, 1.0, 0.0, True, op)
