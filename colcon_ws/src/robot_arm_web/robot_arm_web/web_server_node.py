@@ -815,10 +815,10 @@ class RobotArmWebServer(Node):
                     
                     # Tool states (first 4 bits)
                     tool_states = {
-                        'gripper': bool_register_output[0] or bool_register_output[0] == 1,
-                        'frame': bool_register_output[1] or bool_register_output[1] == 1,
-                        'stickP': bool_register_output[2] or bool_register_output[2] == 1,
-                        'stickR': bool_register_output[3] or bool_register_output[3] == 1,
+                        'gripper': bool(bool_register_output[0]) if bool_register_output[0] is not None else False,
+                        'frame': bool(bool_register_output[1]) if bool_register_output[1] is not None else False,
+                        'stickP': bool(bool_register_output[2]) if bool_register_output[2] is not None else False,
+                        'stickR': bool(bool_register_output[3]) if bool_register_output[3] is not None else False,
                     }
                     
                     # Program status (bit 4, inverted logic)
