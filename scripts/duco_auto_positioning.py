@@ -570,7 +570,31 @@ def main():
             print(f"❌ Error during target pose estimation: {e}")
     else:
         print("❌ Target pose estimation skipped - required modules not available")
-    
+
+    # =============================move back to tool getting position===============================
+    print("\nMoving back to tool getting position...")
+
+    # move to a safe middle position
+    middle_pose = [65.13, -24.23, -104.84, -43.0, -99.23, -111.14]
+    print("Move to middle pose")
+    ConvertPose2Rad(middle_pose)
+    res = robot.movej2(middle_pose, 2.0, 1.0, 0.0, True, op)
+    time.sleep(1.0)
+
+    # move to a safe middle position
+    middle_pose = [65.13, -24.23, -104.84, 46.77, -99.23, -111.14]
+    print("Move to middle pose")
+    ConvertPose2Rad(middle_pose)
+    res = robot.movej2(middle_pose, 2.0, 1.0, 0.0, True, op)
+    time.sleep(1.0)
+
+    # move 2 position near the getting tool position
+    print("Move to initial pose")
+    initial_pose = [65.912,-25.975,75,46.301,-92.779,-111.484]
+    ConvertPose2Rad(initial_pose)
+    res = robot.movej2(initial_pose, 2.0, 1.0, 0.0, True, op)
+    time.sleep(1.0)
+
     # ====================================================================
     # disconnect the camera and robot arm
     camera.disconnect()
