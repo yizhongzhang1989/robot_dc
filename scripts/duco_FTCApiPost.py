@@ -9,8 +9,7 @@ def FTC_ApiCommand(url,params,headers,timeout):
         response = requests.post(url, data=params, headers=headers,timeout=timeout)
 
         # print("Status Code:", response.status_code)
-        print("Response Body:", response.text)
-
+        # print("Response Body:", response.text)
         return response
     except requests.Timeout:
         print("Request Timeout")
@@ -18,7 +17,7 @@ def FTC_ApiCommand(url,params,headers,timeout):
         print("Can not connect")
     except requests.RequestException as e:
         print("An error occurred:", e)
-        return
+        return None
 
 #============================FTC Process=================================
 
@@ -27,32 +26,32 @@ def FTC_start():
     url_start = "http://192.168.1.20:8080/start"
     params_start = {"CmdName": "start"}
     headers = {'Content-Type': 'application/json'}
-    FTC_ApiCommand(url_start, params_start, headers, 5)
-    return
+    response = FTC_ApiCommand(url_start, params_start, headers, 5)
+    return response
 
 # stop FTC
 def FTC_stop():
     url_stop = "http://192.168.1.20:8080/stop"
     params_stop = {"CmdName": "stop"}
     headers = {'Content-Type': 'application/json'}
-    FTC_ApiCommand(url_stop, params_stop, headers, 5)
-    return
+    response = FTC_ApiCommand(url_stop, params_stop, headers, 5)
+    return response
 
 # set FTC index
 def FTC_SetIndex(index):
     url_setFTSetIndex = "http://192.168.1.20:8080/setFTSetIndex"
     params_setFTSetIndex = {"CmdName": "setFTSeTIndex", "CmdData": [index]}
     headers = {'Content-Type': 'application/json'}
-    FTC_ApiCommand(url_setFTSetIndex, json.dumps(params_setFTSetIndex), headers,5)
-    return
+    response = FTC_ApiCommand(url_setFTSetIndex, json.dumps(params_setFTSetIndex), headers,5)
+    return response
 
 # set FTC DK assembly flag
 def FTC_SetDKAssemFlag(flag):
     url_setDKAssemFlag = "http://192.168.1.20:8080/setDKAssemFlag"
     params_setDKAssemFlag = {"CmdName": "setDKAssemFlag", "CmdData": [flag]}
     headers = {'Content-Type': 'application/json'}
-    FTC_ApiCommand(url_setDKAssemFlag, json.dumps(params_setDKAssemFlag), headers,5)
-    return
+    response = FTC_ApiCommand(url_setDKAssemFlag, json.dumps(params_setDKAssemFlag), headers,5)
+    return response
 
 # set FTC force value of current program
 def FTC_setFTValue(force):
@@ -60,8 +59,8 @@ def FTC_setFTValue(force):
     url_setFTValue = "http://192.168.1.20:8080/setFTValue"
     params_setFTValue = {"CmdName": "setFTValue","FTSetName": "default","CmdData": force}
     headers = {'Content-Type': 'application/json'}
-    FTC_ApiCommand(url_setFTValue, json.dumps(params_setFTValue), headers, 5)
-    return
+    response = FTC_ApiCommand(url_setFTValue, json.dumps(params_setFTValue), headers, 5)
+    return response
 
 # set FTC force value of current program in real-time
 def FTC_setFTValueRT(force):
@@ -69,11 +68,11 @@ def FTC_setFTValueRT(force):
     url_setFTValueRT = "http://192.168.1.20:8080/setFTValueRT"
     params_setFTValueRT = {"CmdName": "setFTValueRT", "CmdData": force}
     headers = {'Content-Type': 'application/json'}
-    FTC_ApiCommand(url_setFTValueRT, json.dumps(params_setFTValueRT), headers, 5)
-    return
+    response = FTC_ApiCommand(url_setFTValueRT, json.dumps(params_setFTValueRT), headers, 5)
+    return response
 
 # set All FTC parameters of current programs
-def FTC_setFTValueAll(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ftSet,dead_zone,disEndLimit,timeEndLimit,ftEndLimit,disAng6D_EndLimit,ftcEndType,quickSetIndex,B,M,vel_limit,cor_pos_limit,maxForce_1,ifDKStopOnMaxForce_1,ifRobotStopOnMaxForce_1,maxForce_2,ifDKStopOnMaxForce_2,ifRobotStopOnMaxForce_2,ifDKStopOnTimeDisMon,ifRobotStopOnTimeDisMon,ifNeedInit,withGroup,ftcSetGroup,ignoreSensor):
+def FTC_setFTValueAll(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ftSet,dead_zone,disEndLimit,angleEndLimit,timeEndLimit,ftEndLimit,disAng6D_EndLimit,ftcEndType,quickSetIndex,B,M,vel_limit,cor_pos_limit,maxForce_1,ifDKStopOnMaxForce_1,ifRobotStopOnMaxForce_1,maxForce_2,ifDKStopOnMaxForce_2,ifRobotStopOnMaxForce_2,ifDKStopOnTimeDisMon,ifRobotStopOnTimeDisMon,ifNeedInit,withGroup,ftcSetGroup,ignoreSensor):
     url_setFTValueAll = "http://192.168.1.20:8080/setFTValueAll"
     params_setFTValueAll = {"CmdName": "setFTSetAll",
                             "FTSetName": "default",
@@ -85,6 +84,7 @@ def FTC_setFTValueAll(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ft
                                           "ftSet": ftSet,
                                           "dead_zone": dead_zone,
                                           "disEndLimit": disEndLimit,
+                                          "angleEndLimit":angleEndLimit,
                                           "timeEndLimit": timeEndLimit,
                                           "ftEndLimit": ftEndLimit,
                                           "disAng6D_EndLimit": disAng6D_EndLimit,
@@ -110,11 +110,11 @@ def FTC_setFTValueAll(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ft
                                           },
                             }
     headers = {'Content-Type': 'application/json'}
-    FTC_ApiCommand(url_setFTValueAll, json.dumps(params_setFTValueAll), headers, 5)
-    return
+    response = FTC_ApiCommand(url_setFTValueAll, json.dumps(params_setFTValueAll), headers, 5)
+    return response
 
 # set All FTC parameters of current programs in real-time
-def FTC_setFTsetAllRT(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ftSet,dead_zone,disEndLimit,timeEndLimit,ftEndLimit,disAng6D_EndLimit,ftcEndType,quickSetIndex,B,M,vel_limit,cor_pos_limit,maxForce_1,ifDKStopOnMaxForce_1,ifRobotStopOnMaxForce_1,maxForce_2,ifDKStopOnMaxForce_2,ifRobotStopOnMaxForce_2,ifDKStopOnTimeDisMon,ifRobotStopOnTimeDisMon,ifNeedInit,withGroup,ftcSetGroup,ignoreSensor):
+def FTC_setFTsetAllRT(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ftSet,dead_zone,disEndLimit,angleEndLimit,timeEndLimit,ftEndLimit,disAng6D_EndLimit,ftcEndType,quickSetIndex,B,M,vel_limit,cor_pos_limit,maxForce_1,ifDKStopOnMaxForce_1,ifRobotStopOnMaxForce_1,maxForce_2,ifDKStopOnMaxForce_2,ifRobotStopOnMaxForce_2,ifDKStopOnTimeDisMon,ifRobotStopOnTimeDisMon,ifNeedInit,withGroup,ftcSetGroup,ignoreSensor):
     url_setFTSetAllRT = "http://192.168.1.20:8080/setFTValueAllRT"
     params_setFTSetAllRT = {"CmdName": "setFTSetAllRT",
                             "ftSetJson": {"isProgram": isProgram,
@@ -125,6 +125,7 @@ def FTC_setFTsetAllRT(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ft
                                           "ftSet": ftSet,
                                           "dead_zone": dead_zone,
                                           "disEndLimit": disEndLimit,
+                                          "angleEndLimit":angleEndLimit,
                                           "timeEndLimit": timeEndLimit,
                                           "ftEndLimit": ftEndLimit,
                                           "disAng6D_EndLimit": disAng6D_EndLimit,
@@ -150,8 +151,8 @@ def FTC_setFTsetAllRT(isProgram,ftcProgram,onlyMonitor,graCalcIndex,ftEnabled,ft
                                           },
                             }
     headers = {'Content-Type': 'application/json'}
-    FTC_ApiCommand(url_setFTSetAllRT, json.dumps(params_setFTSetAllRT), headers, 5)
-    return
+    response = FTC_ApiCommand(url_setFTSetAllRT, json.dumps(params_setFTSetAllRT), headers, 5)
+    return response
 
 # get FTC cycle force values
 def FTC_getCycleFTValue():
@@ -186,29 +187,26 @@ def FTC_getFTValueAll():
 
 # get FTC process flags
 def FTC_getFTFlag():
+    # default Flag_ok = True, when stop, Flag_ok will be False
     url_getFTValue = "http://192.168.1.20:8080/getFTFlag"
     params_getFTValue = {"CmdName": " getFTFlag"}
     headers = {'Content-Type': 'application/json'}
     try:
         response = FTC_ApiCommand(url_getFTValue, json.dumps(params_getFTValue), headers, 5)
-
-        # 防止 response 为空或非 JSON
         try:
             data = response.json()
         except json.JSONDecodeError as e:
-            print("response.json() 解码失败:", e)
+            print("response.json() decode failed:", e)
             return False, False, False, False
-
-        # 处理 message 字段
+        
         message_str = data.get("message", "")
         if not message_str:
-            print("message 字段为空")
+            print("message field is empty")
             return False, False, False, False
-
         try:
             message_dict = json.loads(message_str)
         except json.JSONDecodeError as e:
-            print("message_str 不是合法 JSON:", message_str)
+            print("message_str is not valid JSON:", e)
             return False, False, False, False
 
         flag1 = message_dict.get("DK_ASSEM_OK_Flag_FromAPI", False)
@@ -218,7 +216,7 @@ def FTC_getFTFlag():
         return flag1, flag2, flag3, flag4
 
     except Exception as e:
-        print("FTC_getFTFlag 调用异常:", e)
+        print("FTC_getFTFlag call exception:", e)
         return False, False, False, False
 
 # set FTC Max Force 1 value

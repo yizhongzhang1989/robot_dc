@@ -359,7 +359,7 @@ def load_collect_points():
     """
     Load joint angles from collect_points.json file
     """
-    temp_folder = "/home/a/Documents/robot_dc2/temp"
+    temp_folder = "/home/a/Documents/robot_dc2/temp/auto_collect_points"
     json_file = os.path.join(temp_folder, "collect_points.json")
     
     if not os.path.exists(json_file):

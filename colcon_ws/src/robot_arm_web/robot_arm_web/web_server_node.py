@@ -1491,7 +1491,7 @@ except Exception as e:
                     pose_count = 0
                     for img_file in image_files:
                         img_basename = os.path.basename(img_file).replace('.jpg', '')
-                        json_file = os.path.join(temp_dir, f'{img_basename}.json')
+                        json_file = os.path.join(calibration_data_dir, f'{img_basename}.json')
                         if os.path.exists(json_file):
                             pose_count += 1
                     

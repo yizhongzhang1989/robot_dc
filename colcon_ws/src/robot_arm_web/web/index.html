@@ -3424,21 +3424,32 @@
         const data = await response.json();
         
         if (data.success) {
-          await showAlertModal(
-            '✅ AutoCollect Complete',
-            `<div class="text-green-700">
-              <p class="mb-2">Auto collection script executed successfully!</p>
-              <div class="bg-green-50 p-3 rounded-lg border border-green-200">
-                <p class="text-sm text-green-700"><strong>Script Output:</strong></p>
-                <pre class="text-sm text-green-600 mt-1 whitespace-pre-wrap">${data.output || 'Script completed successfully.'}</pre>
-              </div>
-            </div>`
-          );
+          // Script started successfully, now poll for status
+          const processId = data.process_id;
+          console.log(`Auto collect script started with PID: ${processId}`);
           
-          // Refresh thumbnails to show new images
-          updateCalibrationThumbnails();
+          // Poll status until completion
+          const pollResult = await pollAutoCollectStatus();
+          
+          if (pollResult.success) {
+            await showAlertModal(
+              '✅ AutoCollect Complete',
+              `<div class="text-green-700">
+                <p class="mb-2">Auto collection script executed successfully!</p>
+                <div class="bg-green-50 p-3 rounded-lg border border-green-200">
+                  <p class="text-sm text-green-700"><strong>Script Output:</strong></p>
+                  <pre class="text-sm text-green-600 mt-1 whitespace-pre-wrap">${pollResult.output || 'Script completed successfully.'}</pre>
+                </div>
+              </div>`
+            );
+            
+            // Refresh thumbnails to show new images
+            updateCalibrationThumbnails();
+          } else {
+            throw new Error(pollResult.error || 'Auto collect script failed');
+          }
         } else {
-          throw new Error(data.message || 'Auto collect failed');
+          throw new Error(data.message || 'Failed to start auto collect script');
         }
         
       } catch (error) {
@@ -3461,6 +3472,53 @@
         autoCollectBtn.disabled = false;
         autoCollectBtn.textContent = '🤖 AutoCollect';
       }
+    }
+
+    // Poll auto collect status until completion
+    async function pollAutoCollectStatus() {
+      const maxAttempts = 300; // 5 minutes max (300 * 1000ms = 5 min)
+      let attempts = 0;
+      
+      while (attempts < maxAttempts) {
+        try {
+          const response = await fetch('/api/calibration/auto-collect/status');
+          const data = await response.json();
+          
+          if (!data.running) {
+            // Process completed
+            if (data.success) {
+              return {
+                success: true,
+                output: data.output,
+                stderr: data.stderr
+              };
+            } else {
+              return {
+                success: false,
+                error: data.stderr || data.status || 'Auto collect script failed',
+                output: data.output
+              };
+            }
+          }
+          
+          // Process still running, wait and check again
+          attempts++;
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          
+        } catch (error) {
+          console.error('Error polling auto collect status:', error);
+          return {
+            success: false,
+            error: `Polling error: ${error.message}`
+          };
+        }
+      }
+      
+      // Timeout reached
+      return {
+        success: false,
+        error: 'Auto collect script timed out after 5 minutes'
+      };
     }
 
     // Run intrinsic calibration
@@ -3646,7 +3704,7 @@
       } finally {
         // Reset button
         calibrateBtn.disabled = false;
-        calibrateBtn.textContent = '🔧 Intrinsic Calibrate';
+        calibrateBtn.textContent = '🔧 CalibIntrinsic';
       }
     }
 
@@ -3828,7 +3886,7 @@
       } finally {
         // Reset button
         calibrateBtn.disabled = false;
-        calibrateBtn.textContent = '🤖 Eye-in-Hand Calibrate';
+        calibrateBtn.textContent = '🤖 CalibExtrinsic';
       }
     }
 
