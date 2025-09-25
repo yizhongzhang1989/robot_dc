@@ -384,7 +384,7 @@ def main():
             "temp/positioning_data/5.json",
             "--intrinsic-file", "temp/camera_parameters/calibration_result.json",
             "--extrinsic-file", "temp/camera_parameters/eye_in_hand_result.json",
-            "--output", "./temp/3d_coordinate_estimation_result"
+            "--output", os.path.join(os.path.dirname(script_dir), "temp/3d_coordinate_estimation_result")
         ]
         
         # Change to project root directory and run the estimation
@@ -396,7 +396,7 @@ def main():
         print("📁 Results saved to: temp/3d_coordinate_estimation_result/")
         
         # Load and display the results
-        results_file = os.path.join(project_root_dir, "temp/3d_coordinate_estimation_result/3d_coordinate_estimation_result.json")
+        results_file = os.path.join(project_root_dir, "temp/3d_coordinate_estimation_result/3d_coordinates_estimation_result.json")
         if os.path.exists(results_file):
             with open(results_file, 'r') as f:
                 estimation_results = json.load(f)
@@ -426,7 +426,7 @@ def main():
             
             # Check if 3D positioning results file exists
             project_root_dir = os.path.dirname(script_dir)
-            positioning_results_file = os.path.join(project_root_dir, "temp/3d_coordinate_estimation_result/3d_coordinate_estimation_result.json")
+            positioning_results_file = os.path.join(project_root_dir, "temp/3d_coordinate_estimation_result/3d_coordinates_estimation_result.json")
             
             if not os.path.exists(positioning_results_file):
                 print("❌ Missing required 3D positioning results file:")
@@ -434,15 +434,15 @@ def main():
                 print("Please ensure 3D coordinate estimation completed successfully.")
             else:
                 # Load 3D positioning results
-                print("� Loading 3D positioning results...")
+                print("📊 Loading 3D positioning results...")
                 positioning_data = builder.load_3d_positioning_results()
                 
-                print(f"✅ Loaded 3D positioning results with {len(builder.keypoints_3d)} keypoints")
+                print(f"✅ Loaded 3D positioning results with {len(positioning_data['keypoints_3d'])} keypoints")
                 
                 # Build cabinet coordinate system
                 print("🏗️ Building cabinet coordinate system...")
                 # Use point2 (ID=2) and point8 (ID=8) as in the original script
-                available_ids = [kp['id'] for kp in builder.keypoints_3d]
+                available_ids = [kp['id'] for kp in positioning_data['keypoints_3d']]
                 
                 point2_id = 2
                 point8_id = 8
@@ -544,8 +544,18 @@ def main():
                         print(f"💾 Target joint angles saved to: {output_file}")
                     except Exception as save_error:
                         print(f"⚠️  Failed to save target joint angles: {save_error}")
+                                        
+                    # Step 4: Visualize coordinate systems and save result
+                    print("📊 Generating visualization...")
+                    try:
+                        visualize_coordinate_systems(robot, target_joint_angles)
+                        print("✅ Visualization saved to: temp/find_target_result/find_target_results.jpg")
+                        # Wait for visualization processing to complete
+                        time.sleep(5.0)  # Give time for file I/O and processing to complete
+                    except Exception as viz_error:
+                        print(f"⚠️  Visualization failed: {viz_error}")
                     
-                    # # Step 4:  Move robot to target position
+                    # # Step 5:  Move robot to target position
                     # # Uncomment the following lines if you want the robot to actually move
                     # print("🤖 Moving robot to target position...")
                     # res = robot.movej2(target_joint_angles, 1.0, 1.0, 0.0, True, op)
@@ -554,15 +564,7 @@ def main():
                     #     time.sleep(1.0)  # Wait for movement to complete
                     # else:
                     #     print("❌ Failed to move robot to target position")
-                    
-                    # Step 5: Visualize coordinate systems and save result
-                    print("📊 Generating visualization...")
-                    try:
-                        visualize_coordinate_systems(robot, target_joint_angles)
-                        print("✅ Visualization saved to: temp/find_target_result/find_target_results.jpg")
-                    except Exception as viz_error:
-                        print(f"⚠️  Visualization failed: {viz_error}")
-                        
+
                 else:
                     print("❌ Failed to calculate target joint angles - inverse kinematics solution not found")
                     

@@ -61,7 +61,7 @@ class CabinetFrameBuilder:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Path to 3D positioning results
-        self.positioning_results_file = project_root / "temp" / "3d_coordinate_estimation_result" / "3d_coordinate_estimation_result.json"
+        self.positioning_results_file = project_root / "temp" / "3d_coordinate_estimation_result" / "3d_coordinates_estimation_result.json"
         
         # No tracker needed for current functionality
         
