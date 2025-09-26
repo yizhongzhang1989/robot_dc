@@ -132,14 +132,14 @@ def generate_launch_description():
         ]
     )
 
-    # Image process temp node - launch after camera node is ready
+    # Image process node - launch after camera node is ready
     image_process_node = TimerAction(
         period=3.0,
         actions=[
             Node(
-                package='image_process_temp',
-                executable='image_process_temp_node',
-                name='image_process_temp_node',
+                package='image_process',
+                executable='image_process_node',
+                name='image_process_node',
                 parameters=[
                     {'input_topic': '/robot_arm_camera/image_raw'},
                     {'output_resized_topic': '/robot_arm_camera/image_resized_raw'},
