@@ -254,9 +254,9 @@ class RobotArmWebServer(Node):
         self.camera_image_lock = threading.Lock()
         
         # Subscribe to camera image topic with optimized QoS for real-time streaming
-        # CRITICAL: Use BEST_EFFORT to prevent blocking when processing is slow
+        # Using RELIABLE delivery ensures frames arrive when network conditions allow
         camera_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops - prevents blocking
+            reliability=ReliabilityPolicy.RELIABLE,      # Deliver frames reliably to the web server
             durability=DurabilityPolicy.VOLATILE,       # Don't store messages
             history=HistoryPolicy.KEEP_LAST,           # Only keep latest frame
             depth=1                                     # Only keep the most recent frame
@@ -819,11 +819,13 @@ class RobotArmWebServer(Node):
                     
                     bool_register_output = state['boolRegisterOutput']
                     
-                    # Tool states (first 4 bits) - convert to consistent boolean values
-                    gripper_state = bool(bool_register_output[0])
-                    frame_state = bool(bool_register_output[1])
-                    stickP_state = bool(bool_register_output[2])
-                    stickR_state = bool(bool_register_output[3])
+                    # Tool states (first 4 bits)
+                    tool_states = {
+                        'gripper': bool(bool_register_output[0]) if bool_register_output[0] is not None else False,
+                        'frame': bool(bool_register_output[1]) if bool_register_output[1] is not None else False,
+                        'stickP': bool(bool_register_output[2]) if bool_register_output[2] is not None else False,
+                        'stickR': bool(bool_register_output[3]) if bool_register_output[3] is not None else False,
+                    }
                     
                     # Program status (bit 4, inverted logic)
                     is_program_completed = not bool(bool_register_output[4])
@@ -976,7 +978,8 @@ class RobotArmWebServer(Node):
                     
                     # Get calibration directory using common utilities
                     try:
-                        calibration_dir = get_temp_directory()
+                        temp_dir = get_temp_directory()
+                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
                     except RuntimeError as e:
                         return JSONResponse(content={
                             'success': False, 
@@ -1140,19 +1143,27 @@ class RobotArmWebServer(Node):
                 try:
                     # Get calibration directory using common utilities
                     try:
-                        calibration_dir = get_temp_directory()
+                        temp_dir = get_temp_directory()
+                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
                     except RuntimeError:
                         return JSONResponse(content={'success': True, 'message': 'No images to clear'})
                     
                     if os.path.exists(calibration_dir):
                         
-                        # Remove all jpg and json files
-                        for pattern in ['*.jpg', '*.json']:
-                            files = glob.glob(os.path.join(calibration_dir, pattern))
-                            for file_path in files:
+                        # Remove all jpg files
+                        jpg_files = glob.glob(os.path.join(calibration_dir, '*.jpg'))
+                        for file_path in jpg_files:
+                            os.remove(file_path)
+                        
+                        # Remove pose json files (but preserve chessboard_config.json)
+                        json_files = glob.glob(os.path.join(calibration_dir, '*.json'))
+                        for file_path in json_files:
+                            filename = os.path.basename(file_path)
+                            # Skip chessboard_config.json, only delete pose files (numbered files like 1.json, 2.json, etc.)
+                            if filename != 'chessboard_config.json':
                                 os.remove(file_path)
                         
-                        self.get_logger().info("Calibration images cleared")
+                        self.get_logger().info("Calibration images and poses cleared (keeping chessboard config)")
                         return JSONResponse(content={'success': True, 'message': 'Images cleared successfully'})
                     else:
                         return JSONResponse(content={'success': True, 'message': 'No images to clear'})
@@ -1167,7 +1178,8 @@ class RobotArmWebServer(Node):
                 try:
                     # Get calibration directory using common utilities
                     try:
-                        calibration_dir = get_temp_directory()
+                        temp_dir = get_temp_directory()
+                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
                     except RuntimeError:
                         return JSONResponse(content={'thumbnails': []})
                     
@@ -1194,7 +1206,8 @@ class RobotArmWebServer(Node):
                 try:
                     # Get calibration directory using common utilities
                     try:
-                        calibration_dir = get_temp_directory()
+                        temp_dir = get_temp_directory()
+                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
                     except RuntimeError:
                         return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
                     
@@ -1228,7 +1241,8 @@ class RobotArmWebServer(Node):
                 """Get a full calibration image"""
                 try:
                     # Get the temporary directory
-                    calibration_dir = get_temp_directory()
+                    temp_dir = get_temp_directory()
+                    calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
                     file_path = os.path.join(calibration_dir, filename)
                     
                     if os.path.exists(file_path) and os.path.isfile(file_path):
@@ -1253,16 +1267,17 @@ class RobotArmWebServer(Node):
                     temp_dir = get_temp_directory()
                     scripts_base_dir = get_scripts_directory()
                     scripts_dir = os.path.join(scripts_base_dir, 'ThirdParty', 'camera_calibration_toolkit') if scripts_base_dir else None
+                    calibration_data_dir = os.path.join(temp_dir, 'camera_calibration_data')
                     
-                    if not os.path.exists(temp_dir):
-                        return JSONResponse(content={'success': False, 'message': 'No calibration images found in temp directory'}, status_code=400)
+                    if not os.path.exists(calibration_data_dir):
+                        return JSONResponse(content={'success': False, 'message': 'No calibration images found in camera_calibration_data directory'}, status_code=400)
                     
                     if not scripts_dir or not os.path.exists(scripts_dir):
                         return JSONResponse(content={'success': False, 'message': 'Camera calibration toolkit not found'}, status_code=500)
                     
                     # Check for image files
                     import glob
-                    image_files = glob.glob(os.path.join(temp_dir, '*.jpg'))
+                    image_files = glob.glob(os.path.join(calibration_data_dir, '*.jpg'))
                     if len(image_files) < 10:
                         return JSONResponse(content={
                             'success': False, 
@@ -1309,7 +1324,8 @@ try:
     
     # Set up paths
     temp_dir = '{temp_dir}'
-    image_paths = sorted(glob.glob(os.path.join(temp_dir, '*.jpg')))
+    calibration_data_dir = os.path.join(temp_dir, 'camera_calibration_data')
+    image_paths = sorted(glob.glob(os.path.join(calibration_data_dir, '*.jpg')))
     config_path = os.path.join(temp_dir, 'chessboard_config.json')
     
     print(f"Found {{len(image_paths)}} images for calibration")
@@ -1348,7 +1364,11 @@ try:
         'report_json': report_result.get('json_data', '') if report_result else ''
     }}
     
-    output_path = os.path.join(temp_dir, 'calibration_result.json')
+    # Ensure camera_parameters directory exists
+    camera_params_dir = os.path.join(temp_dir, 'camera_parameters')
+    os.makedirs(camera_params_dir, exist_ok=True)
+    
+    output_path = os.path.join(camera_params_dir, 'calibration_result.json')
     with open(output_path, 'w') as f:
         json.dump(output_data, f, indent=2)
     
@@ -1367,7 +1387,11 @@ except Exception as e:
         'error_type': type(e).__name__
     }}
     
-    output_path = os.path.join('{temp_dir}', 'calibration_result.json')
+    # Ensure camera_parameters directory exists
+    camera_params_dir = os.path.join('{temp_dir}', 'camera_parameters')
+    os.makedirs(camera_params_dir, exist_ok=True)
+    
+    output_path = os.path.join(camera_params_dir, 'calibration_result.json')
     with open(output_path, 'w') as f:
         json.dump(error_data, f, indent=2)
 '''
@@ -1378,7 +1402,9 @@ except Exception as e:
                         f.write(calibration_script)
                     
                     # Run the calibration script
-                    result_file = os.path.join(temp_dir, 'calibration_result.json')
+                    camera_params_dir = os.path.join(temp_dir, 'camera_parameters')
+                    os.makedirs(camera_params_dir, exist_ok=True)
+                    result_file = os.path.join(camera_params_dir, 'calibration_result.json')
                     
                     # Remove any existing result file
                     if os.path.exists(result_file):
@@ -1446,14 +1472,19 @@ except Exception as e:
                     scripts_dir = os.path.join(scripts_base_dir, 'ThirdParty', 'camera_calibration_toolkit') if scripts_base_dir else None
                     
                     if not os.path.exists(temp_dir):
-                        return JSONResponse(content={'success': False, 'message': 'No calibration images found in temp directory'}, status_code=400)
+                        return JSONResponse(content={'success': False, 'message': 'Temp directory not found'}, status_code=400)
+                    
+                    calibration_data_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    
+                    if not os.path.exists(calibration_data_dir):
+                        return JSONResponse(content={'success': False, 'message': 'No calibration images found in camera_calibration_data directory'}, status_code=400)
                     
                     if not scripts_dir or not os.path.exists(scripts_dir):
                         return JSONResponse(content={'success': False, 'message': 'Camera calibration toolkit not found'}, status_code=500)
                     
                     # Check for image files and corresponding JSON files
                     import glob
-                    image_files = glob.glob(os.path.join(temp_dir, '*.jpg'))
+                    image_files = glob.glob(os.path.join(calibration_data_dir, '*.jpg'))
                     
                     if len(image_files) < 5:
                         return JSONResponse(content={
@@ -1465,7 +1496,7 @@ except Exception as e:
                     pose_count = 0
                     for img_file in image_files:
                         img_basename = os.path.basename(img_file).replace('.jpg', '')
-                        json_file = os.path.join(temp_dir, f'{img_basename}.json')
+                        json_file = os.path.join(calibration_data_dir, f'{img_basename}.json')
                         if os.path.exists(json_file):
                             pose_count += 1
                     
@@ -1513,6 +1544,7 @@ try:
     
     # Set up paths
     temp_dir = '{temp_dir}'
+    calibration_data_dir = os.path.join(temp_dir, 'camera_calibration_data')
     config_path = os.path.join(temp_dir, 'chessboard_config.json')
     
     # Load pattern configuration
@@ -1521,7 +1553,7 @@ try:
     pattern = load_pattern_from_json(config_data)
     
     # Load images and poses
-    image_files = sorted(glob.glob(os.path.join(temp_dir, '*.jpg')))
+    image_files = sorted(glob.glob(os.path.join(calibration_data_dir, '*.jpg')))
     images = []
     end2base_matrices = []
     
@@ -1531,7 +1563,7 @@ try:
         if img is not None:
             # Load corresponding pose
             img_basename = os.path.basename(img_file).replace('.jpg', '')
-            json_file = os.path.join(temp_dir, f'{{img_basename}}.json')
+            json_file = os.path.join(calibration_data_dir, f'{{img_basename}}.json')
             
             if os.path.exists(json_file):
                 with open(json_file, 'r') as f:
@@ -1595,7 +1627,11 @@ try:
         'report_json': report_result.get('json_data', '') if report_result else ''
     }}
     
-    output_path = os.path.join(temp_dir, 'eye_in_hand_result.json')
+    # Ensure camera_parameters directory exists
+    camera_params_dir = os.path.join(temp_dir, 'camera_parameters')
+    os.makedirs(camera_params_dir, exist_ok=True)
+    
+    output_path = os.path.join(camera_params_dir, 'eye_in_hand_result.json')
     with open(output_path, 'w') as f:
         json.dump(output_data, f, indent=2)
     
@@ -1615,7 +1651,11 @@ except Exception as e:
         'error_type': type(e).__name__
     }}
     
-    output_path = os.path.join('{temp_dir}', 'eye_in_hand_result.json')
+    # Ensure camera_parameters directory exists
+    camera_params_dir = os.path.join('{temp_dir}', 'camera_parameters')
+    os.makedirs(camera_params_dir, exist_ok=True)
+    
+    output_path = os.path.join(camera_params_dir, 'eye_in_hand_result.json')
     with open(output_path, 'w') as f:
         json.dump(error_data, f, indent=2)
 '''
@@ -1626,7 +1666,9 @@ except Exception as e:
                         f.write(calibration_script)
                     
                     # Run the calibration script
-                    result_file = os.path.join(temp_dir, 'eye_in_hand_result.json')
+                    camera_params_dir = os.path.join(temp_dir, 'camera_parameters')
+                    os.makedirs(camera_params_dir, exist_ok=True)
+                    result_file = os.path.join(camera_params_dir, 'eye_in_hand_result.json')
                     
                     # Remove any existing result file
                     if os.path.exists(result_file):

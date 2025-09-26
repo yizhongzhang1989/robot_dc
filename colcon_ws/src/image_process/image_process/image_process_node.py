@@ -27,7 +27,7 @@ class ImageProcessNode(Node):
         self.declare_parameter('output_resized_compressed_topic', '')  # Empty string means disabled
         self.declare_parameter('resize_width', 640)
         self.declare_parameter('resize_height', 0)  # 0 means keep aspect ratio
-        self.declare_parameter('calibration_file', os.path.join(get_temp_directory(), 'calibration_result.json'))
+        self.declare_parameter('calibration_file', os.path.join(get_temp_directory(), 'camera_parameters', 'calibration_result.json'))
         self.declare_parameter('jpeg_quality', 85)
         
         self.input_topic = self.get_parameter('input_topic').value
@@ -53,10 +53,10 @@ class ImageProcessNode(Node):
         self.load_calibration_parameters()
         
         # Create QoS profile optimized for real-time video streaming
-        # CRITICAL: Use BEST_EFFORT to prevent blocking when subscribers are slow
-        # This ensures image processing pipeline doesn't block the entire camera system
+        # Use RELIABLE delivery to make sure downstream consumers receive frames when possible
+        # This helps ensure the image processing pipeline keeps data consistent across nodes
         video_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1

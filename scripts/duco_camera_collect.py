@@ -155,10 +155,10 @@ class CameraCalibrationNode(Node):
         self.robot_thread = threading.Thread(target=self._monitor_robot, daemon=True)
         self.robot_thread.start()
         
-        # Create QoS profile optimized for real-time video streaming
-        # CRITICAL: Use BEST_EFFORT to prevent blocking when this script is slow
+    # Create QoS profile optimized for real-time video streaming
+    # Using RELIABLE delivery helps downstream consumers keep synchronized frames
         video_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1

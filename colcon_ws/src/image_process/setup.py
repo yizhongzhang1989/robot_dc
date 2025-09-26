@@ -24,7 +24,6 @@ setup(
     entry_points={
         'console_scripts': [
             'image_process_node = image_process.image_process_node:main',
-            'image_web_viewer_node = image_process.image_web_viewer_node:main',
         ],
     },
 )

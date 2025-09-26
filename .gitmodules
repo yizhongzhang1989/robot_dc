@@ -4,3 +4,6 @@
 [submodule "scripts/ThirdParty/camera_calibration_toolkit"]
 	path = scripts/ThirdParty/camera_calibration_toolkit
 	url = https://github.com/yizhongzhang1989/camera_calibration_toolkit.git
+[submodule "scripts/ThirdParty/robot_vision"]
+	path = scripts/ThirdParty/robot_vision
+	url = https://github.com/yizhongzhang1989/robot_vision.git

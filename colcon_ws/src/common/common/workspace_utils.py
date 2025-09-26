@@ -85,7 +85,6 @@ def get_workspace_root() -> Optional[str]:
     # Method 5: Fallback to common development paths
     fallback_paths = [
         '/home/a/Documents/robot_dc',
-        '/home/a/Documents/robot_dc2',  # Legacy path
         os.path.expanduser('~/robot_dc'),
         os.path.expanduser('~/Documents/robot_dc'),
     ]
@@ -124,7 +123,13 @@ def get_temp_directory() -> str:
             "Make sure you're running from within a ROS workspace or set the ROS_WORKSPACE environment variable."
         )
     
-    temp_dir = os.path.join(workspace_root, 'temp')
+    # temp directory is now in the project root directory (parent of colcon_ws)
+    if os.path.basename(workspace_root) == 'colcon_ws':
+        project_root = os.path.dirname(workspace_root)
+    else:
+        project_root = workspace_root
+    
+    temp_dir = os.path.join(project_root, 'temp')
     os.makedirs(temp_dir, exist_ok=True)
     return temp_dir
 

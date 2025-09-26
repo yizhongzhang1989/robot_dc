@@ -18,17 +18,45 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
-# get current file path
+# Add common package to path for workspace utilities
 current_file_path = os.path.dirname(os.path.abspath(__file__))
 repo_root_path = os.path.abspath(os.path.join(current_file_path, '..'))
-duco_script_path = os.path.join(repo_root_path, 'colcon_ws/src/duco_robot_arm/duco_robot_arm')
+common_path = os.path.join(repo_root_path, 'colcon_ws/src/common')
+sys.path.insert(0, common_path)
+
+# Import workspace utilities
+from common import get_workspace_root, get_temp_directory
+
+# Setup paths using workspace utilities
+try:
+    workspace_root = get_workspace_root()
+    if workspace_root is None:
+        # Fallback to manual path detection
+        workspace_root = repo_root_path
+        print("Warning: Using fallback workspace root path")
+    else:
+        print(f"Workspace root detected: {workspace_root}")
+except Exception as e:
+    print(f"Error getting workspace root: {e}")
+    workspace_root = repo_root_path
+
+# Setup duco robot arm paths
+if workspace_root.endswith('colcon_ws'):
+    # If workspace_root is the colcon_ws directory
+    duco_script_path = os.path.join(workspace_root, 'src/duco_robot_arm/duco_robot_arm')
+else:
+    # If workspace_root is the project root directory
+    duco_script_path = os.path.join(workspace_root, 'colcon_ws/src/duco_robot_arm/duco_robot_arm')
+
 gen_py_path = os.path.join(duco_script_path, 'gen_py')
-lib_path = os.path.join(current_file_path, 'lib')
+lib_path = os.path.join(duco_script_path, 'lib')  # Fixed: Use correct lib path
+
 # Add the required paths for thrift and generated code
 sys.path.append(duco_script_path)
 sys.path.append(gen_py_path)
 sys.path.append(lib_path)
 
+# Import DucoCobot class from the module file
 from DucoCobot import DucoCobot  
 from gen_py.robot.ttypes import Op  
 from thrift import Thrift  
@@ -58,7 +86,7 @@ class ROS2ImageSubscriber(Node):
             print(f"Subscribing to topic: {self.topic_name}")
             
             qos_profile = QoSProfile(
-                reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops - no blocking!
+                reliability=ReliabilityPolicy.RELIABLE,      # Ensure frames delivered when possible
                 durability=DurabilityPolicy.VOLATILE,       # Don't store messages
                 history=HistoryPolicy.KEEP_LAST,           # Only keep latest messages
                 depth=1                                     # Only keep the most recent frame
@@ -133,7 +161,14 @@ class ROS2ImageSubscriber(Node):
 
 def ensure_auto_collect_dir():
     """ensure the auto collect directory exists"""
-    auto_collect_dir = "/home/a/Documents/robot_dc2/colcon_ws/temp"
+    try:
+        temp_dir = get_temp_directory()
+        auto_collect_dir = os.path.join(temp_dir, "camera_calibration_data")
+    except Exception as e:
+        print(f"Warning: Could not get temp directory from common package: {e}")
+        # Fallback to hardcoded path
+        auto_collect_dir = "/home/a/Documents/robot_dc/temp/camera_calibration_data"
+    
     if not os.path.exists(auto_collect_dir):
         os.makedirs(auto_collect_dir)
         print(f"Created directory: {auto_collect_dir}")
@@ -269,7 +304,14 @@ def collect_joint_angles_from_temp():
     Read all JSON files from temp folder and extract joint angle information,
     save to collect_point.json file
     """
-    temp_folder = "/home/a/Documents/robot_dc2/colcon_ws/temp/auto_collect_points"
+    try:
+        temp_dir = get_temp_directory()
+        temp_folder = os.path.join(temp_dir, "auto_collect_points")
+    except Exception as e:
+        print(f"Warning: Could not get temp directory from common package: {e}")
+        # Fallback to hardcoded path
+        temp_folder = "/home/a/Documents/robot_dc/temp/auto_collect_points"
+    
     output_file = os.path.join(temp_folder, "collect_points.json")
     
     collected_points = []
@@ -359,7 +401,14 @@ def load_collect_points():
     """
     Load joint angles from collect_points.json file
     """
-    temp_folder = "/home/a/Documents/robot_dc2/colcon_ws/temp"
+    try:
+        temp_dir = get_temp_directory()
+        temp_folder = os.path.join(temp_dir, "auto_collect_points")
+    except Exception as e:
+        print(f"Warning: Could not get temp directory from common package: {e}")
+        # Fallback to hardcoded path
+        temp_folder = "/home/a/Documents/robot_dc/temp/auto_collect_points"
+    
     json_file = os.path.join(temp_folder, "collect_points.json")
     
     if not os.path.exists(json_file):

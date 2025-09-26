@@ -29,6 +29,12 @@ The UDP receiving (for visualization) and the visualization functionalities are 
 Additionally, a separate thread (udp_logger) opens UDP port 5577 and prints any received messages  
 along with the sender's IP address and source port.  
 """  
+import os
+
+# Force Qt to use the XCB platform plugin to avoid missing Wayland plugin errors.
+# This must be set before importing cv2, which bundles its own Qt runtime.
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
 import cv2
 import socket  
 import json  

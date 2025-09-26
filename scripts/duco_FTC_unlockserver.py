@@ -4,15 +4,14 @@ import requests
 import math
 import time
 import numpy as np
+import json
 
-current_file_path = os.path.dirname(os.path.abspath(__file__))
-repo_root_path = os.path.abspath(os.path.join(current_file_path, '..'))
-duco_script_path = os.path.join(repo_root_path, 'colcon_ws/src/duco_robot_arm/duco_robot_arm')
-gen_py_path = os.path.join(duco_script_path, 'gen_py')
-lib_path = os.path.join(current_file_path, 'lib')
-sys.path.append(duco_script_path)
-sys.path.append(gen_py_path)
-sys.path.append(lib_path)
+# Add the duco_robot_arm directory and its lib subdirectory to the Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+duco_robot_arm_dir = os.path.join(project_root, 'colcon_ws', 'src', 'duco_robot_arm', 'duco_robot_arm')
+sys.path.insert(0, duco_robot_arm_dir)
+sys.path.insert(0, os.path.join(duco_robot_arm_dir, 'lib'))
 
 from DucoCobot import DucoCobot  
 from gen_py.robot.ttypes import Op  
@@ -24,7 +23,7 @@ from duco_FTCexe_control import *
 ip = '192.168.1.10'     # robot_arm
 port = 7003  
 # make sure the web is running
-base_url = "http://localhost:8080"
+robot_arm_web_url = "http://localhost:8080"
 
 # ============================mathmatical functions========================================
 def ConvertDeg2Rad(pose):
@@ -41,13 +40,34 @@ def ConvertRad2Deg(pose_rad):
         result.append(math.degrees(val))
     return result
 
+def load_target_pose():
+    """Load target joint angles from JSON file"""
+    try:
+        json_path = os.path.join(project_root, 'temp', 'find_target_result', 'target_joint_angles.json')
+        with open(json_path, 'r') as f:
+            data = json.load(f)
+        return data['target_joint_angles_deg']
+    except Exception as e:
+        print(f"Warning: Failed to load target pose from JSON: {e}")
+        print("Using default estimated target pose")
+        return [0, 0, 0, 0, 0, 0]
+
 # ===========================execution functions for exchange tools========================
 def get_tool_status():
 
     try:
-        response = requests.get(f"{base_url}/api/tool_control/status", timeout=5)
+        response = requests.get(f"{robot_arm_web_url}/api/tool_control/status", timeout=5)
         if response.status_code == 200:
-            res = [response.json()['program'],response.json()['gripper'],response.json()['frame'],response.json()['stickP'],response.json()['stickR']]
+            data = response.json()
+            tool_states = data.get('tool_states', {})
+            program_completed = data.get('program_completed', False)
+            res = [
+                program_completed,
+                tool_states.get('gripper', False),
+                tool_states.get('frame', False),
+                tool_states.get('stickP', False),
+                tool_states.get('stickR', False)
+            ]
             return res
         else:
             return None
@@ -58,7 +78,7 @@ def switch_tool(tool_type):
 
     try:
         payload = {"tool_type": tool_type}
-        response = requests.post(f"{base_url}/api/tool_control/execute", json=payload, timeout=300)
+        response = requests.post(f"{robot_arm_web_url}/api/tool_control/execute", json=payload, timeout=300)
         return True
     except Exception:
         return False
@@ -66,7 +86,7 @@ def switch_tool(tool_type):
 # ===========================execution functions for robot arm moving=======================
 def Move2_task_startpoint(robot,op):
 
-
+    # start from the tool getting position
     # move to safty middle points 
     pose = [65.91, -23.59, -118.22, 44.30, -92.78, -111.48]
     pose_rad = ConvertDeg2Rad(pose)
@@ -79,12 +99,13 @@ def Move2_task_startpoint(robot,op):
     res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
     time.sleep(0.5)
 
-    # estimated target pose
-    pose = [64.92, -43.72, -97.76, -39.30, -26.61, -89.56]
-    pose_rad = ConvertDeg2Rad(pose)
+    # load target pose from JSON file
+    target_joint_angles_deg = load_target_pose()
+    pose_rad = ConvertDeg2Rad(target_joint_angles_deg)
     res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
     time.sleep(0.5)
 
+    # Align the tool's axis with the knob
     offset = [-70/1000, 0/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]
     res = robot.tcp_move(offset, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
@@ -92,10 +113,32 @@ def Move2_task_startpoint(robot,op):
     print("Robot arm move to default starting point of all tasks.")
     return res
 
+def Moveback2_tool_getting_position(robot,op):
+
+    # move to safty middle points
+    pose = [43.07, 6.51, -124.52, 39.71, -87.72, -100.47]
+    pose_rad = ConvertDeg2Rad(pose)
+    res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
+    time.sleep(0.5)
+
+    # move to safty middle points 
+    pose = [65.91, -23.59, -118.22, 44.30, -92.78, -111.48]
+    pose_rad = ConvertDeg2Rad(pose)
+    res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
+    time.sleep(0.5)
+
+    # move to tool getting position
+    pose = [65.91, -25.975, 75, 46.301, -92.779, -111.484]
+    pose_rad = ConvertDeg2Rad(pose)
+    res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
+    time.sleep(0.5)
+
+    return res
+
 def Move2_taskunlockleft_startpoint(robot,op):
 
-    # estimated target pose
-    pose = [64.92, -43.72, -97.76, -39.30, -26.61, -89.56]
+    # load target pose from JSON file
+    pose = load_target_pose()
     pose_rad = ConvertDeg2Rad(pose)
     res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
     time.sleep(0.5)
@@ -109,8 +152,8 @@ def Move2_taskunlockleft_startpoint(robot,op):
 
 def Move2_taskunlockright_startpoint(robot,op):
 
-    # estimated target pose
-    pose = [64.92, -43.72, -97.76, -39.30, -26.61, -89.56]
+    # load target pose from JSON file
+    pose = load_target_pose()
     pose_rad = ConvertDeg2Rad(pose)
     res = robot.movej2(pose_rad, 2.0, 1.0, 0.0, True, op)
     time.sleep(0.5)
@@ -119,7 +162,7 @@ def Move2_taskunlockright_startpoint(robot,op):
     res = robot.tcp_move(offset, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
-    offset = [5/1000, -205/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]
+    offset = [0/1000, -205/1000, 0/1000, np.radians(0), np.radians(0), np.radians(0)]
     res = robot.tcp_move(offset, 0.2, 0.2, 0.0, '', True, op)
     time.sleep(0.5)
 
@@ -129,7 +172,7 @@ def Move2_taskunlockright_startpoint(robot,op):
 # ===========================execution functions for FTC tasks===============================
 '''general function of FTC tasks'''
 def FTC_setparams(ftEnabled, ftSet, isProgram=False, ftcProgram=None, onlyMonitor=False, graCalcIndex=3, 
-                  dead_zone=[1,1,1,0.1,0.1,0.1], disEndLimit=5000, angleEndLimit=30,timeEndLimit=60, ftEndLimit=[0,0,0,0,0,0], 
+                  dead_zone=[1,1,1,0.1,0.1,0.1], disEndLimit=5000, angleEndLimit=30, timeEndLimit=60, ftEndLimit=[0,0,0,0,0,0], 
                   disAng6D_EndLimit=[0,0,0,0,0,0], ftcEndType=6, quickSetIndex=[0,0,0,0,0,0], 
                   B=[2000,2000,2000,1500,1500,1500], M=[200,200,200,150,150,150], vel_limit=[500,500,500,500,500,500], cor_pos_limit=[1,1,1,0.5,0.5,0.5], 
                   maxForce_1=[0,0,0,0,0,0], ifDKStopOnMaxForce_1=False, ifRobotStopOnMaxForce_1=False, 
@@ -263,7 +306,7 @@ def FTC_task_unlockleftknob(robot,op):
     time.sleep(0.5)
 
     ftEnabled = [False,False,True,False,True,True]
-    ftSet = [0,0,-2,0,0,3]
+    ftSet = [0,0,0,0,0,0]
     maxForce_1 = [0,0,50,0,0,1]
     ifDKStopOnMaxForce_1 = True
     B = [12000,12000,4000,1500,7500,1500]
@@ -286,6 +329,18 @@ def FTC_task_unlockleftknob(robot,op):
     if res.status_code == 200:
         print(f"Response:{res.text}, FTC Program is enabled! Arm is unlocking the left knob.")
     time.sleep(0.5)
+
+    # gradually increase the force
+    target_force = [0,0,-2,0,0,3]
+    current_force = ftSet[:]  # create a copy
+    ftSetRT = [0, 0, -2, 0, 0, 0]
+    while current_force[5] < target_force[5]:
+        current_force[5] = current_force[5] + 0.5
+        if current_force[5] > target_force[5]:
+            current_force[5] = target_force[5]
+        ftSetRT[5] = current_force[5]
+        FTC_setFTValueRT(ftSetRT)
+        time.sleep(0.5)
 
     # ensure the program finish
     flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
@@ -479,7 +534,7 @@ def FTC_task_unlockrightknob(robot,op):
     time.sleep(0.5)
 
     ftEnabled = [False,False,True,False,True,True]
-    ftSet = [0,0,-3,0,0,-3]
+    ftSet = [0,0,-2,0,0,0]
     maxForce_1 = [0,0,50,0,0,1]
     ifDKStopOnMaxForce_1 = True
     B = [12000,12000,4000,1500,7500,1500]
@@ -502,6 +557,18 @@ def FTC_task_unlockrightknob(robot,op):
     if res.status_code == 200:
         print(f"Response:{res.text}, FTC Program is enabled! Arm is unlocking the right knob.")
     time.sleep(0.5)
+
+    # gradually increase the force
+    target_force = [0,0,-2,0,0,-3]
+    current_force = ftSet[:]  # create a copy
+    ftSetRT = [0, 0, -2, 0, 0, 0]
+    while current_force[5] > target_force[5]:
+        current_force[5] = current_force[5] - 0.5
+        if current_force[5] < target_force[5]:
+            current_force[5] = target_force[5]
+        ftSetRT[5] = current_force[5]
+        FTC_setFTValueRT(ftSetRT)
+        time.sleep(0.5)
 
     # ensure the program finish
     flag_ok, flag_maxf1, flag_maxf2, flag_timedis = FTC_getFTFlag()
@@ -534,7 +601,7 @@ def FTC_task_unlockrightknob(robot,op):
     B = [15000,15000,15000,1500,7500,1500]
     M = [1000,1000,1000,150,750,150]
     ifNeedInit = False  # must use False, cause at this time, FTC has experienced force.
-    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,135,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
+    res = FTC_setparams(ftEnabled=ftEnabled, ftSet=ftSet, ftcEndType=7, disAng6D_EndLimit=[0,0,0,0,60,0], maxForce_1=maxForce_1, ifDKStopOnMaxForce_1=ifDKStopOnMaxForce_1, B=B, M=M, ifNeedInit=ifNeedInit)
     if res.status_code == 200:
         print(f"Response:{res.text}, set FTC parameters successfully!")
     time.sleep(0.5)
@@ -681,9 +748,11 @@ def main():
     status = get_tool_status()
     print(f"current tools status: {status}")
     # if stickP is not picked up, retrieve it, then execute FTC tasks.
-    if status[4]:
+    if status is not None and status[4]:
         res = switch_tool("stickR")
         print(f"switch stickR: {res}\n")
+    elif status is None:
+        print("Warning: Failed to get tool status, skipping tool switching...")
 
     # 2. move to task start point
     Move2_task_startpoint(robot,op)
@@ -695,6 +764,8 @@ def main():
 
     # task_unlock2handle(robot,op)
 
+    # 4. move back to tool getting position 
+    Moveback2_tool_getting_position(robot,op)
 
     # ======================close the robot arm================================
     # disable, power off, and close connection
