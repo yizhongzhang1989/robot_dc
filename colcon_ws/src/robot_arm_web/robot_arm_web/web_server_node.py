@@ -438,6 +438,12 @@ class RobotArmWebServer(Node):
         """Start UDP receiver for FT sensor data in a separate thread"""
         def udp_receiver():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            # Allow multiple sockets to bind to the same port
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except AttributeError:
+                pass  # SO_REUSEPORT not available on this system
             try:
                 sock.bind(('0.0.0.0', 5566))  # Port 5566 for FT sensor data
                 self.get_logger().info('FT Sensor UDP receiver started on port 5566')
@@ -822,22 +828,14 @@ class RobotArmWebServer(Node):
                     }
                     
                     # Program status (bit 4, inverted logic)
-                    is_program_completed = not bool_register_output[4] or bool_register_output[4] == 0
-                    
-                    # Current state array
-                    current_state = [
-                        1 if tool_states['gripper'] else 0,
-                        1 if tool_states['frame'] else 0,
-                        1 if tool_states['stickP'] else 0,
-                        1 if tool_states['stickR'] else 0
-                    ]
+                    is_program_completed = not bool(bool_register_output[4])
                     
                     return JSONResponse(content={
-                        'tool_states': tool_states,
-                        'program_completed': is_program_completed,
-                        'controls_enabled': is_program_completed,
-                        'current_state': current_state,
-                        'available_operations': ['gripper', 'frame', 'stickP', 'stickR', 'homing']
+                        'program': is_program_completed,
+                        'gripper': gripper_state,
+                        'frame': frame_state,
+                        'stickP': stickP_state,
+                        'stickR': stickR_state,
                     })
                     
                 except Exception as e:
@@ -2012,35 +2010,19 @@ except Exception as e:
     async def execute_tool_control_operation(self, tool_type, bool_register_output, wait_completion=False, timeout=100000):
         """Execute tool control operation and optionally wait for completion"""
         try:
-            # Define target states based on tool type
-            target_states = {
-                'gripper': [0, 1, 1, 1],      # A: gripper
-                'frame': [1, 0, 1, 1],   # B: frame  
-                'stickP': [0, 1, 0, 1],   # C: gripper + stickP
-                'stickR': [0, 1, 1, 0],   # D: gripper + stickR
-                'homing': [1, 1, 1, 1]    # Reset to default state
-            }
-            
-            # Define valid states
-            valid_states = {
-                '1,1,1,1',  # 1111 - All tools are at home position
-                '0,1,1,1',  # 0111 - Get Gripper
-                '1,0,1,1',  # 1011 - Get Frame
-                '0,1,0,1',  # 0101 - Get StickP(must operate after get gripper)
-                '0,1,1,0'   # 0110 - Get StickR(must operate after get gripper)
-            }
-            
             # Get current state
-            gripper_state = 1 if bool_register_output[0] or bool_register_output[0] == 1 else 0
-            frame_state = 1 if bool_register_output[1] or bool_register_output[1] == 1 else 0
-            stick_p_state = 1 if bool_register_output[2] or bool_register_output[2] == 1 else 0
-            stick_r_state = 1 if bool_register_output[3] or bool_register_output[3] == 1 else 0
+            gripper_state = 1 if bool(bool_register_output[0]) else 0
+            frame_state = 1 if bool(bool_register_output[1]) else 0
+            stick_p_state = 1 if bool(bool_register_output[2]) else 0
+            stick_r_state = 1 if bool(bool_register_output[3]) else 0
             
             current_state = [gripper_state, frame_state, stick_p_state, stick_r_state]
-            target_state = target_states.get(tool_type, [1, 1, 1, 1])
             
-            # Find shortest path using BFS
-            path = self.find_shortest_path(current_state, target_state, valid_states)
+            # Calculate target state dynamically based on current state and tool type (like JavaScript version)
+            target_state = self.calculate_target_state(current_state, tool_type)
+            
+            # Find shortest path using enhanced BFS with constraint checking
+            path = self.find_shortest_path_enhanced(current_state, target_state)
             
             if not path:
                 return {
@@ -2078,8 +2060,79 @@ except Exception as e:
                 'error': str(e)
             }
     
-    def find_shortest_path(self, current_state, target_state, valid_states):
-        """Find shortest path using BFS algorithm (similar to duco_test_tool.py)"""
+    def calculate_target_state(self, current_state, button):
+        """Calculate target state dynamically based on current state and button (like JavaScript version)"""
+        target_state = current_state.copy()
+        
+        if button == 'gripper':  # A: gripper取反
+            target_state[0] = 1 - target_state[0]
+            
+            # 如果要取gripper，需要确保stickP和stickR都已放回
+            if target_state[0] == 0:  # 要取出gripper
+                target_state[2] = 1  # 强制放回stickP
+                target_state[3] = 1  # 强制放回stickR
+        elif button == 'frame':  # B: frame取反
+            # 如果gripper正在使用，不能操作frame
+            if current_state[0] == 0:
+                # gripper已被取出时可以正常操作frame
+                target_state[1] = 1 - target_state[1]
+            else:
+                # gripper在位时可以正常操作frame
+                target_state[1] = 1 - target_state[1]
+        elif button == 'stickP':  # C: gripper置0，stickP取反
+            target_state[0] = 0  # gripper强制取出
+            
+            # 如果stickR已经取出，需要先放回stickR（互斥约束）
+            if current_state[3] == 0:
+                target_state[3] = 1  # 放回stickR
+            
+            target_state[2] = 1 - current_state[2]  # stickP取反
+        elif button == 'stickR':  # D: gripper置0，stickR取反
+            target_state[0] = 0  # gripper强制取出
+            
+            # 如果stickP已经取出，需要先放回stickP（互斥约束）
+            if current_state[2] == 0:
+                target_state[2] = 1  # 放回stickP
+            
+            target_state[3] = 1 - current_state[3]  # stickR取反
+        elif button == 'homing':
+            target_state = [1, 1, 1, 1]  # 归位到默认状态
+        
+        return target_state
+    
+    def is_action_allowed(self, current_state, action_name):
+        """Check if action is allowed in current state (like JavaScript version)"""
+        # 关键约束：gripper正在使用时，不能操作frame（取出或放回）
+        if (action_name in ['zero2frame', 'frame2zero']) and current_state[0] == 0:
+            return False  # gripper已取出时不能操作frame
+        
+        # stickP和stickR只有在gripper被取出时才能夹取
+        if action_name == 'zero2stickP' and current_state[0] == 1:
+            return False  # gripper在位时不能取stickP
+        
+        if action_name == 'zero2stickR' and current_state[0] == 1:
+            return False  # gripper在位时不能取stickR
+        
+        # 不能同时取stickP和stickR
+        if action_name == 'zero2stickP' and current_state[3] == 0:
+            return False  # stickR已取出时不能取stickP
+        
+        if action_name == 'zero2stickR' and current_state[2] == 0:
+            return False  # stickP已取出时不能取stickR
+        
+        return True
+    
+    def find_shortest_path_enhanced(self, current_state, target_state):
+        """Find shortest path using BFS algorithm with enhanced constraint checking (like JavaScript version)"""
+        # Define valid states
+        valid_states = {
+            '1,1,1,1',  # 1111 - All tools are at home position
+            '0,1,1,1',  # 0111 - Get Gripper
+            '1,0,1,1',  # 1011 - Get Frame
+            '0,1,0,1',  # 0101 - Get StickP(must operate after get gripper)
+            '0,1,1,0'   # 0110 - Get StickR(must operate after get gripper)
+        }
+        
         # Convert states to string for comparison
         current_state_str = ','.join(map(str, current_state))
         target_state_str = ','.join(map(str, target_state))
@@ -2140,14 +2193,16 @@ except Exception as e:
                     
                     # Check if new state is valid and not visited
                     if new_state_str in valid_states and new_state_str not in visited:
-                        new_path = path + [action['name']]
-                        
-                        # If reached target state
-                        if new_state_str == target_state_str:
-                            return new_path
-                        
-                        queue.append([new_state, new_path])
-                        visited.add(new_state_str)
+                        # Enhanced constraint checking: ensure action follows business logic
+                        if self.is_action_allowed(current_state, action['name']):
+                            new_path = path + [action['name']]
+                            
+                            # If reached target state
+                            if new_state_str == target_state_str:
+                                return new_path
+                            
+                            queue.append([new_state, new_path])
+                            visited.add(new_state_str)
         
         # No path found
         return ['No valid path found']
