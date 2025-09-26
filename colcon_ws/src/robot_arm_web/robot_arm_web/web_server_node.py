@@ -1152,13 +1152,20 @@ class RobotArmWebServer(Node):
                     
                     if os.path.exists(calibration_dir):
                         
-                        # Remove all jpg and json files
-                        for pattern in ['*.jpg', '*.json']:
-                            files = glob.glob(os.path.join(calibration_dir, pattern))
-                            for file_path in files:
+                        # Remove all jpg files
+                        jpg_files = glob.glob(os.path.join(calibration_dir, '*.jpg'))
+                        for file_path in jpg_files:
+                            os.remove(file_path)
+                        
+                        # Remove pose json files (but preserve chessboard_config.json)
+                        json_files = glob.glob(os.path.join(calibration_dir, '*.json'))
+                        for file_path in json_files:
+                            filename = os.path.basename(file_path)
+                            # Skip chessboard_config.json, only delete pose files (numbered files like 1.json, 2.json, etc.)
+                            if filename != 'chessboard_config.json':
                                 os.remove(file_path)
                         
-                        self.get_logger().info("Calibration images cleared")
+                        self.get_logger().info("Calibration images and poses cleared (keeping chessboard config)")
                         return JSONResponse(content={'success': True, 'message': 'Images cleared successfully'})
                     else:
                         return JSONResponse(content={'success': True, 'message': 'No images to clear'})

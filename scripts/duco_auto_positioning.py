@@ -234,7 +234,7 @@ def main():
     # ====================================================================
     # # ==================================capture positioning data==============================           
     # start from near zero position
-    print("Move to initial pose")
+    print("Move to the initial pose near the tool getting position")
     initial_pose = [65.912,-25.975,75,46.301,-92.779,-111.484]
     ConvertPose2Rad(initial_pose)
     res = robot.movej2(initial_pose, 2.0, 1.0, 0.0, True, op)
@@ -242,27 +242,27 @@ def main():
 
     # move to a safe middle position
     middle_pose = [65.13, -24.23, -104.84, 46.77, -99.23, -111.14]
-    print("Move to middle pose")
+    print("Move to the middle pose 1")
     ConvertPose2Rad(middle_pose)
     res = robot.movej2(middle_pose, 2.0, 1.0, 0.0, True, op)
     time.sleep(1.0)
 
     # move to a safe middle position
     middle_pose = [65.13, -24.23, -104.84, -43.0, -99.23, -111.14]
-    print("Move to middle pose")
+    print("Move to the middle pose 2")
     ConvertPose2Rad(middle_pose)
     res = robot.movej2(middle_pose, 2.0, 1.0, 0.0, True, op)
     time.sleep(1.0)
 
     # move to a safe middle position
-    print("Move to capture pose, start to capture images")
+    print("Move to the middle pose 2")
     capture_pose = [65.25, -38.05, -105.18, -42.96, -26.7, -86.01]   # deg
     ConvertPose2Rad(capture_pose)
     res = robot.movej2(capture_pose, 2.0, 1.0, 0.0, True, op)
     time.sleep(1.0)
 
     # move to capture position
-    print("Move to capture pose, start to capture images")
+    print("Move to the capture pose")
     capture_pose = [33.22, -45.74, -100.69, -36.78, -58.63, -89.82]   # deg
     ConvertPose2Rad(capture_pose)
     res = robot.movej2(capture_pose, 2.0, 1.0, 0.0, True, op)

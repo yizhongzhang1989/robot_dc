@@ -3432,13 +3432,26 @@
           const pollResult = await pollAutoCollectStatus();
           
           if (pollResult.success) {
+            // Parse output to extract summary information
+            const output = pollResult.output || 'Script completed successfully.';
+            const imageCount = extractImageCount(output);
+            const poseCount = extractPoseCount(output);
+            
             await showAlertModal(
               '✅ AutoCollect Complete',
               `<div class="text-green-700">
                 <p class="mb-2">Auto collection script executed successfully!</p>
                 <div class="bg-green-50 p-3 rounded-lg border border-green-200">
-                  <p class="text-sm text-green-700"><strong>Script Output:</strong></p>
-                  <pre class="text-sm text-green-600 mt-1 whitespace-pre-wrap">${pollResult.output || 'Script completed successfully.'}</pre>
+                  <div class="grid grid-cols-2 gap-4 text-center">
+                    <div class="bg-white p-3 rounded-lg border border-green-300">
+                      <div class="text-2xl font-bold text-green-800">${imageCount}</div>
+                      <div class="text-sm text-green-600">Images Captured</div>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border border-green-300">
+                      <div class="text-2xl font-bold text-green-800">${poseCount}</div>
+                      <div class="text-sm text-green-600">Poses Recorded</div>
+                    </div>
+                  </div>
                 </div>
               </div>`
             );
@@ -3471,6 +3484,90 @@
         // Reset button
         autoCollectBtn.disabled = false;
         autoCollectBtn.textContent = '🤖 AutoCollect';
+      }
+    }
+
+    // Helper function to extract image count from autocollect output
+    function extractImageCount(output) {
+      try {
+        // Look for specific autocollect output patterns
+        const patterns = [
+          // Look for successful capture messages like "✓ Image 15.jpg and pose 15.json captured successfully"
+          /✓ Image \d+\.jpg and pose \d+\.json captured successfully/g,
+          // Look for completion messages like "Completed traversing all 24 points!"
+          /Completed traversing all (\d+) points!/i,
+          // Look for starting messages like "Starting to traverse 24 points..."
+          /Starting to traverse (\d+) points/i,
+          // Look for other completion patterns
+          /successfully captured (\d+) images/i,
+          /total of (\d+) images captured/i,
+          /captured (\d+) images successfully/i
+        ];
+        
+        // First try to count individual success messages
+        const successMatches = output.match(/✓ Image \d+\.jpg and pose \d+\.json captured successfully/g);
+        if (successMatches && successMatches.length > 0) {
+          return successMatches.length;
+        }
+        
+        // Then try other patterns that give explicit counts
+        for (const pattern of patterns) {
+          if (pattern.global) continue; // Skip global patterns, already handled above
+          
+          const match = output.match(pattern);
+          if (match && match[1]) {
+            const count = parseInt(match[1]);
+            if (!isNaN(count) && count > 0) {
+              return count;
+            }
+          }
+        }
+        
+        return 0; // Return 0 if no valid patterns found
+        
+      } catch (error) {
+        console.error('Error extracting image count:', error);
+        return 0;
+      }
+    }
+
+    // Helper function to extract pose count from autocollect output
+    function extractPoseCount(output) {
+      try {
+        // Look for specific autocollect output patterns
+        const patterns = [
+          // Look for completion messages like "Completed traversing all 24 points!"
+          /Completed traversing all (\d+) points!/i,
+          // Look for starting messages like "Starting to traverse 24 points..."
+          /Starting to traverse (\d+) points/i,
+          // Look for other completion patterns
+          /successfully captured (\d+) poses/i,
+          /total of (\d+) poses captured/i,
+          /captured (\d+) poses successfully/i
+        ];
+        
+        // First try to count individual success messages (same as images since each capture has both image and pose)
+        const successMatches = output.match(/✓ Image \d+\.jpg and pose \d+\.json captured successfully/g);
+        if (successMatches && successMatches.length > 0) {
+          return successMatches.length;
+        }
+        
+        // Then try other patterns that give explicit counts
+        for (const pattern of patterns) {
+          const match = output.match(pattern);
+          if (match && match[1]) {
+            const count = parseInt(match[1]);
+            if (!isNaN(count) && count > 0) {
+              return count;
+            }
+          }
+        }
+        
+        return 0; // Return 0 if no valid patterns found
+        
+      } catch (error) {
+        console.error('Error extracting pose count:', error);
+        return 0;
       }
     }
 

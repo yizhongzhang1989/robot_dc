@@ -25,6 +25,20 @@ import numpy as np
 from typing import Dict, List, Optional
 import traceback
 
+# Add common package to path for workspace utilities
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+common_path = os.path.join(project_root, 'colcon_ws/src/common')
+sys.path.insert(0, common_path)
+
+# Import workspace utilities
+try:
+    from common import get_workspace_root, get_temp_directory
+    COMMON_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import common package: {e}")
+    COMMON_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -45,13 +59,28 @@ class KeypointTracker:
         self.session = requests.Session()
         self.session.timeout = 30  # 30 second timeout
         
-        # Data paths
-        self.positioning_data_path = "/home/a/Documents/robot_dc2/temp/positioning_data"
+        # Setup data paths using workspace utilities if available
+        if COMMON_AVAILABLE:
+            try:
+                temp_dir = get_temp_directory()
+                self.positioning_data_path = os.path.join(temp_dir, "positioning_data")
+                self.visualization_dir = os.path.join(temp_dir, "keypoints_track_results")
+                logger.info(f"Using workspace utilities - temp directory: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Could not use workspace utilities: {e}")
+                # Fallback to hardcoded paths
+                self.positioning_data_path = "/home/a/Documents/robot_dc/temp/positioning_data"
+                self.visualization_dir = "/home/a/Documents/robot_dc/temp/keypoints_track_results"
+        else:
+            # Fallback to hardcoded paths
+            self.positioning_data_path = "/home/a/Documents/robot_dc/temp/positioning_data"
+            self.visualization_dir = "/home/a/Documents/robot_dc/temp/keypoints_track_results"
+        
+        # Setup file paths
         self.ref_img_path = os.path.join(self.positioning_data_path, "ref_img.jpg")
         self.ref_keypoints_path = os.path.join(self.positioning_data_path, "ref_keypoints.json")
         
-        # Visualization results path
-        self.visualization_dir = "/home/a/Documents/robot_dc2/temp/keypoints_track_results"
+        # Create visualization directory
         if not os.path.exists(self.visualization_dir):
             os.makedirs(self.visualization_dir)
             logger.info(f"Created visualization directory: {self.visualization_dir}")

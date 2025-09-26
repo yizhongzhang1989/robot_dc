@@ -85,7 +85,6 @@ def get_workspace_root() -> Optional[str]:
     # Method 5: Fallback to common development paths
     fallback_paths = [
         '/home/a/Documents/robot_dc',
-        '/home/a/Documents/robot_dc2',  # Legacy path
         os.path.expanduser('~/robot_dc'),
         os.path.expanduser('~/Documents/robot_dc'),
     ]

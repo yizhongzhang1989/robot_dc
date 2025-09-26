@@ -37,6 +37,18 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.append(project_root)
 
+# Add common package to path for workspace utilities
+common_path = os.path.join(project_root, 'colcon_ws/src/common')
+sys.path.insert(0, common_path)
+
+# Import workspace utilities
+try:
+    from common import get_workspace_root, get_temp_directory
+    COMMON_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import common package: {e}")
+    COMMON_AVAILABLE = False
+
 # No additional imports needed for current functionality
 
 # Configure logging
@@ -55,15 +67,28 @@ class CabinetFrameBuilder:
             data_dir: Base directory containing input and output data
         """
         self.data_dir = Path(data_dir)
-        # Use project root directory for temp folder
-        project_root = Path(current_dir).parent  # Go up from scripts to robot_dc2
-        self.output_dir = project_root / "temp" / "build_cabinet_frame_result"  # Specific output directory
+        
+        # Use workspace utilities if available, otherwise fallback
+        if COMMON_AVAILABLE:
+            try:
+                temp_dir = get_temp_directory()
+                self.output_dir = Path(temp_dir) / "build_cabinet_frame_result"
+                self.positioning_results_file = Path(temp_dir) / "3d_coordinate_estimation_result" / "3d_coordinates_estimation_result.json"
+                logger.info(f"Using workspace utilities - temp directory: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Could not use workspace utilities: {e}")
+                # Fallback to manual path detection
+                project_root = Path(current_dir).parent  # Go up from scripts to robot_dc
+                self.output_dir = project_root / "temp" / "build_cabinet_frame_result"
+                self.positioning_results_file = project_root / "temp" / "3d_coordinate_estimation_result" / "3d_coordinates_estimation_result.json"
+        else:
+            # Fallback to manual path detection
+            project_root = Path(current_dir).parent  # Go up from scripts to robot_dc
+            self.output_dir = project_root / "temp" / "build_cabinet_frame_result"
+            self.positioning_results_file = project_root / "temp" / "3d_coordinate_estimation_result" / "3d_coordinates_estimation_result.json"
+        
+        # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Path to 3D positioning results
-        self.positioning_results_file = project_root / "temp" / "3d_coordinate_estimation_result" / "3d_coordinates_estimation_result.json"
-        
-        # No tracker needed for current functionality
         
         # State variables
         self.keypoints_3d = None
