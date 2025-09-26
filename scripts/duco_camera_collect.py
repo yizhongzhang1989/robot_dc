@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
@@ -154,12 +155,21 @@ class CameraCalibrationNode(Node):
         self.robot_thread = threading.Thread(target=self._monitor_robot, daemon=True)
         self.robot_thread.start()
         
+    # Create QoS profile optimized for real-time video streaming
+    # Using RELIABLE delivery helps downstream consumers keep synchronized frames
+        video_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        
         # Create subscriber for camera images
         self.image_subscriber = self.create_subscription(
             Image,
             self.camera_topic,
             self.image_callback,
-            10
+            video_qos
         )
         
         # Initialize Flask app with better shutdown handling
