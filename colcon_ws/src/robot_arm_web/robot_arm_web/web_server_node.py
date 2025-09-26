@@ -254,9 +254,9 @@ class RobotArmWebServer(Node):
         self.camera_image_lock = threading.Lock()
         
         # Subscribe to camera image topic with optimized QoS for real-time streaming
-        # CRITICAL: Use BEST_EFFORT to prevent blocking when processing is slow
+        # Using RELIABLE delivery ensures frames arrive when network conditions allow
         camera_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops - prevents blocking
+            reliability=ReliabilityPolicy.RELIABLE,      # Deliver frames reliably to the web server
             durability=DurabilityPolicy.VOLATILE,       # Don't store messages
             history=HistoryPolicy.KEEP_LAST,           # Only keep latest frame
             depth=1                                     # Only keep the most recent frame

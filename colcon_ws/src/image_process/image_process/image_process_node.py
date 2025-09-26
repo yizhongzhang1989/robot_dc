@@ -53,10 +53,10 @@ class ImageProcessNode(Node):
         self.load_calibration_parameters()
         
         # Create QoS profile optimized for real-time video streaming
-        # CRITICAL: Use BEST_EFFORT to prevent blocking when subscribers are slow
-        # This ensures image processing pipeline doesn't block the entire camera system
+        # Use RELIABLE delivery to make sure downstream consumers receive frames when possible
+        # This helps ensure the image processing pipeline keeps data consistent across nodes
         video_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1

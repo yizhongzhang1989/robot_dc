@@ -58,7 +58,7 @@ class ROS2ImageSubscriber(Node):
             print(f"Subscribing to topic: {self.topic_name}")
             
             qos_profile = QoSProfile(
-                reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops - no blocking!
+                reliability=ReliabilityPolicy.RELIABLE,      # Ensure frames delivered when possible
                 durability=DurabilityPolicy.VOLATILE,       # Don't store messages
                 history=HistoryPolicy.KEEP_LAST,           # Only keep latest messages
                 depth=1                                     # Only keep the most recent frame

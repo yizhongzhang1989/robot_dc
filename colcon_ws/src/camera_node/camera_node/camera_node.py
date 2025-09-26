@@ -472,9 +472,9 @@ class CameraNode(Node):
         # Create ROS2 Image Publisher for camera (only if enabled)
         if self.publish_ros_image:
             # Create QoS profile optimized for real-time video streaming
-            # CRITICAL: Use BEST_EFFORT to prevent blocking subscribers when they are slow
+            # Use RELIABLE delivery so downstream nodes receive all frames when possible
             camera_publisher_qos = QoSProfile(
-                reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops - prevents blocking
+                reliability=ReliabilityPolicy.RELIABLE,      # Deliver frames reliably to subscribers
                 durability=DurabilityPolicy.VOLATILE,       # Don't store messages
                 history=HistoryPolicy.KEEP_LAST,           # Only keep latest frame
                 depth=1                                     # Only keep the most recent frame
@@ -483,7 +483,7 @@ class CameraNode(Node):
             self.camera_image_publisher = self.create_publisher(
                 Image,
                 self.ros_topic_name,
-                camera_publisher_qos  # Use optimized QoS instead of default RELIABLE
+                camera_publisher_qos  # Use optimized QoS with explicit RELIABLE delivery
             )
             
             # CV Bridge for converting between OpenCV and ROS image formats
@@ -1051,7 +1051,7 @@ class CameraNode(Node):
                     if not self.camera_image_publisher:
                         # Create QoS profile optimized for real-time video streaming
                         camera_publisher_qos = QoSProfile(
-                            reliability=ReliabilityPolicy.BEST_EFFORT,  # Allow frame drops
+                            reliability=ReliabilityPolicy.RELIABLE,      # Deliver frames reliably
                             durability=DurabilityPolicy.VOLATILE,       # Don't store messages
                             history=HistoryPolicy.KEEP_LAST,           # Only keep latest frame
                             depth=1                                     # Only keep the most recent frame
