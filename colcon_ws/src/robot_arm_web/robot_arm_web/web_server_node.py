@@ -29,6 +29,19 @@ import math
 # Import common utilities
 from common import get_temp_directory, get_scripts_directory
 
+# Add scripts directory to path for camera calibration toolkit
+scripts_dir = get_scripts_directory()
+if scripts_dir and scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
+
+# Import camera calibration toolkit
+try:
+    from ThirdParty.camera_calibration_toolkit.core.calibration_patterns import StandardChessboard, get_pattern_manager
+    CALIBRATION_TOOLKIT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Camera calibration toolkit not available: {e}")
+    CALIBRATION_TOOLKIT_AVAILABLE = False
+
 def get_stream_resolution(url):
     """获取RTSP流的分辨率，带错误处理"""
     try:
@@ -207,6 +220,17 @@ class RobotArmWebServer(Node):
     def __init__(self):
         super().__init__('robot_arm_web_server')
         
+        # Pattern type mapping from frontend display names to backend IDs
+        self.pattern_type_mapping = {
+            'ChessBoard': 'standard_chessboard',
+            'CharucoBoard': 'charuco_board',
+            'GridBoard': 'grid_board',
+            # Add reverse mapping for compatibility
+            'standard_chessboard': 'standard_chessboard',
+            'charuco_board': 'charuco_board',
+            'grid_board': 'grid_board'
+        }
+        
         # Declare parameters
         self.declare_parameter('device_id', 1)
         self.declare_parameter('port', 8080)
@@ -324,40 +348,176 @@ class RobotArmWebServer(Node):
             return image
             
         try:
-            # Convert to grayscale for corner detection
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # Get chessboard size (default if not set)
-            chessboard_size = getattr(self, 'chessboard_size', (11, 8))
-            
-            # Find chessboard corners
-            ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
-            
-            if ret:
-                # Refine corner positions for better accuracy
-                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-                corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-                
-                # Draw corners on the image
-                cv2.drawChessboardCorners(image, chessboard_size, corners, ret)
-                
-                # Add status text
-                cv2.putText(image, f'Corners: {len(corners)} found', (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            if CALIBRATION_TOOLKIT_AVAILABLE:
+                # Use calibration toolkit for better corner detection
+                return self._process_corner_detection_with_toolkit(image)
             else:
-                # No corners found
-                cv2.putText(image, 'No corners detected', (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                           
-            # Add chessboard size info
-            cv2.putText(image, f'Target: {chessboard_size[0]}x{chessboard_size[1]}', (10, 70), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                       
+                # Fallback to original implementation
+                return self._process_corner_detection_fallback(image)
+                
         except Exception as e:
             self.get_logger().error(f'Error in corner detection: {e}')
             # Add error text to image
             cv2.putText(image, 'Corner detection error', (10, 30), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
+        return image
+    
+    def _process_corner_detection_with_toolkit(self, image):
+        """Process corner detection using calibration toolkit with multiple pattern support"""
+        # Get pattern parameters
+        chessboard_size = getattr(self, 'chessboard_size', (11, 8))
+        pattern_type = getattr(self, 'pattern_type', 'standard_chessboard')
+        
+        try:
+            # Create or reuse pattern instance
+            if not hasattr(self, '_current_pattern') or \
+               (hasattr(self._current_pattern, 'width') and 
+                (self._current_pattern.width != chessboard_size[0] or 
+                 self._current_pattern.height != chessboard_size[1])) or \
+               getattr(self, '_current_pattern_type', None) != pattern_type:
+                
+                # Get pattern manager for creating different pattern types
+                pattern_manager = get_pattern_manager()
+                
+                try:
+                    if pattern_type == 'standard_chessboard':
+                        # Get physical parameters
+                        physical_params = getattr(self, 'pattern_physical_params', {})
+                        square_size = float(physical_params.get('square_size', 0.02))
+                        
+                        self._current_pattern = pattern_manager.create_pattern(
+                            'standard_chessboard',
+                            width=chessboard_size[0],
+                            height=chessboard_size[1],
+                            square_size=square_size
+                        )
+                    elif pattern_type == 'charuco_board':
+                        # ChArUco board support
+                        physical_params = getattr(self, 'pattern_physical_params', {})
+                        square_size = float(physical_params.get('square_size', 0.03))  # 30mm default
+                        marker_size = float(physical_params.get('marker_size', 0.0225))  # 22.5mm default
+                        dictionary_id = int(physical_params.get('dictionary_id', 5))  # Default to DICT_5X5_100
+                        
+                        self._current_pattern = pattern_manager.create_pattern(
+                            'charuco_board',
+                            width=chessboard_size[0],
+                            height=chessboard_size[1],
+                            square_size=square_size,
+                            marker_size=marker_size,
+                            dictionary_id=dictionary_id
+                        )
+                    elif pattern_type == 'grid_board':
+                        # ArUco Grid Board support - use markers_x and markers_y
+                        physical_params = getattr(self, 'pattern_physical_params', {})
+                        marker_size = float(physical_params.get('marker_size', 0.04))
+                        marker_separation = float(physical_params.get('marker_separation', 0.01))
+                        dictionary_id = int(physical_params.get('dictionary_id', 20))  # Default to DICT_APRILTAG_36H11
+                        
+                        self._current_pattern = pattern_manager.create_pattern(
+                            'grid_board',
+                            markers_x=chessboard_size[0],
+                            markers_y=chessboard_size[1],
+                            marker_size=marker_size,
+                            marker_separation=marker_separation,
+                            dictionary_id=dictionary_id
+                        )
+                    else:
+                        # Default to standard chessboard
+                        self.get_logger().warning(f"Unknown pattern type {pattern_type}, using standard chessboard")
+                        self._current_pattern = pattern_manager.create_pattern(
+                            'standard_chessboard',
+                            width=chessboard_size[0],
+                            height=chessboard_size[1],
+                            square_size=0.02
+                        )
+                        pattern_type = 'standard_chessboard'
+                    
+                    # Store current pattern type for comparison
+                    self._current_pattern_type = pattern_type
+                    self.get_logger().info(f"Created pattern: {pattern_type} ({chessboard_size[0]}x{chessboard_size[1]})")
+                    
+                except Exception as e:
+                    self.get_logger().error(f"Failed to create pattern {pattern_type}: {e}")
+                    # Fallback to standard chessboard
+                    self._current_pattern = pattern_manager.create_pattern(
+                        'standard_chessboard',
+                        width=chessboard_size[0],
+                        height=chessboard_size[1],
+                        square_size=0.02
+                    )
+                    self._current_pattern_type = 'standard_chessboard'
+                    pattern_type = 'standard_chessboard'
+            
+            # Detect corners using toolkit
+            ret, corners, point_ids = self._current_pattern.detect_corners(image)
+            
+            if ret and corners is not None:
+                # Draw corners using toolkit
+                image = self._current_pattern.draw_corners(image, corners, point_ids)
+                
+                # Add status text with pattern type
+                pattern_display = pattern_type.replace('_', ' ').title()
+                corner_count = len(corners) if corners is not None else 0
+                cv2.putText(image, f'{pattern_display}: {corner_count} points', (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                
+                # Add additional info for different pattern types
+                if pattern_type == 'charuco_board' and point_ids is not None:
+                    cv2.putText(image, f'ChArUco IDs: {len(point_ids)}', (10, 60), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                elif pattern_type == 'grid_board' and point_ids is not None:
+                    cv2.putText(image, f'ArUco Markers: {len(point_ids)//4}', (10, 60), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            else:
+                # No corners found
+                pattern_display = pattern_type.replace('_', ' ').title()
+                cv2.putText(image, f'{pattern_display}: No pattern detected', (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                           
+        except Exception as e:
+            self.get_logger().error(f'Error in toolkit corner detection: {e}')
+            # Add error text
+            cv2.putText(image, f'Pattern error: {str(e)[:40]}...', (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                       
+        # Add pattern info
+        pattern_display = pattern_type.replace('_', ' ').title()
+        cv2.putText(image, f'{pattern_display} {chessboard_size[0]}x{chessboard_size[1]}', (10, image.shape[0] - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        
+        return image
+    
+    def _process_corner_detection_fallback(self, image):
+        """Fallback corner detection using original OpenCV implementation"""
+        # Convert to grayscale for corner detection
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Get chessboard size (default if not set)
+        chessboard_size = getattr(self, 'chessboard_size', (11, 8))
+        
+        # Find chessboard corners
+        ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
+        
+        if ret:
+            # Refine corner positions for better accuracy
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+            corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+            
+            # Draw corners on the image
+            cv2.drawChessboardCorners(image, chessboard_size, corners, ret)
+            
+            # Add status text
+            cv2.putText(image, f'Corners: {len(corners)} found (Fallback)', (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        else:
+            # No corners found
+            cv2.putText(image, 'No corners detected (Fallback)', (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                       
+        # Add chessboard size info
+        cv2.putText(image, f'Target: {chessboard_size[0]}x{chessboard_size[1]}', (10, 70), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
         
         return image
     
@@ -1136,23 +1296,81 @@ class RobotArmWebServer(Node):
             
             @app.post("/api/calibration/corner-detection")
             async def toggle_corner_detection(request: Request):
-                """Toggle corner detection for calibration"""
+                """Toggle corner detection for calibration with support for multiple pattern types"""
                 try:
                     data = await request.json()
                     enable = data.get('enable', False)
                     
                     if enable:
-                        chessboard_width = data.get('chessboard_width', 11)
-                        chessboard_height = data.get('chessboard_height', 8)
+                        chessboard_width = int(data.get('chessboard_width', 11))
+                        chessboard_height = int(data.get('chessboard_height', 8))
+                        pattern_type = data.get('pattern_type', 'standard_chessboard')
                         
-                        # Store corner detection parameters
+                        # Extract physical parameters with pattern-specific defaults and type conversion
+                        square_size = float(data.get('square_size', 0.02))  # 20mm default
+                        marker_size = float(data.get('marker_size', 0.02))  # 20mm default
+                        marker_separation = float(data.get('marker_separation', 0.01))  # 10mm default
+                        
+                        # Set pattern-specific dictionary_id defaults
+                        if pattern_type in ['CharucoBoard', 'charuco_board']:
+                            dictionary_id = int(data.get('dictionary_id', 5))  # DICT_5X5_100 for CharucoBoard
+                        else:
+                            dictionary_id = int(data.get('dictionary_id', 20))  # DICT_APRILTAG_36H11 for GridBoard
+                        
+                        # Map frontend pattern type to backend pattern type
+                        backend_pattern_type = self.pattern_type_mapping.get(pattern_type, 'standard_chessboard')
+                        
+                        # For GridBoard, the width/height represent actual marker counts
+                        # For CharucoBoard, we need squares count (grid_width/grid_height)  
+                        # For other patterns, they represent corners (already converted from squares)
+                        if backend_pattern_type == 'grid_board':
+                            # Use the raw grid values as marker counts for ArUco grid
+                            actual_width = data.get('grid_width', chessboard_width + 1)
+                            actual_height = data.get('grid_height', chessboard_height + 1)
+                        elif backend_pattern_type == 'charuco_board':
+                            # For CharucoBoard, use squares count (grid_width/grid_height), not corners
+                            actual_width = data.get('grid_width', chessboard_width + 1)
+                            actual_height = data.get('grid_height', chessboard_height + 1)
+                        else:
+                            # Use corner counts for standard chessboard patterns
+                            actual_width = chessboard_width
+                            actual_height = chessboard_height
+                        
+                        # Store corner detection parameters including physical dimensions
                         self.corner_detection_enabled = True
-                        self.chessboard_size = (chessboard_width, chessboard_height)
+                        self.chessboard_size = (actual_width, actual_height)
+                        self.pattern_type = backend_pattern_type
+                        self.pattern_physical_params = {
+                            'square_size': square_size,
+                            'marker_size': marker_size,
+                            'marker_separation': marker_separation,
+                            'dictionary_id': dictionary_id
+                        }
                         
-                        self.get_logger().info(f"Corner detection enabled: {chessboard_width}x{chessboard_height}")
+                        # Clear cached pattern to force recreation with new parameters
+                        if hasattr(self, '_current_pattern'):
+                            delattr(self, '_current_pattern')
+                        if hasattr(self, '_current_pattern_type'):
+                            delattr(self, '_current_pattern_type')
+                        
+                        # Create a detailed message with physical parameters
+                        param_details = []
+                        if backend_pattern_type in ['standard_chessboard', 'charuco_board']:
+                            param_details.append(f"square_size={square_size}m")
+                        if backend_pattern_type in ['charuco_board', 'grid_board']:
+                            param_details.append(f"marker_size={marker_size}m")
+                        if backend_pattern_type == 'grid_board':
+                            param_details.append(f"separation={marker_separation}m")
+                        
+                        param_str = f" ({', '.join(param_details)})" if param_details else ""
+                        
+                        self.get_logger().info(f"Corner detection enabled: {backend_pattern_type} {actual_width}x{actual_height}{param_str}")
                         return JSONResponse(content={
                             'success': True,
-                            'message': f'Corner detection enabled ({chessboard_width}x{chessboard_height})'
+                            'message': f'Corner detection enabled ({backend_pattern_type}: {actual_width}x{actual_height}{param_str})',
+                            'pattern_type': backend_pattern_type,
+                            'dimensions': [actual_width, actual_height],
+                            'physical_params': self.pattern_physical_params
                         })
                     else:
                         self.corner_detection_enabled = False
@@ -1164,6 +1382,88 @@ class RobotArmWebServer(Node):
                         
                 except Exception as e:
                     self.get_logger().error(f"Error toggling corner detection: {str(e)}")
+                    return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
+            
+            @app.get("/api/calibration/pattern-types")
+            async def get_available_pattern_types():
+                """Get available calibration pattern types"""
+                try:
+                    if CALIBRATION_TOOLKIT_AVAILABLE:
+                        pattern_manager = get_pattern_manager()
+                        available_patterns = pattern_manager.get_available_patterns()
+                        
+                        pattern_types = []
+                        # Define display mapping and order
+                        pattern_display_info = {
+                            'standard_chessboard': {
+                                'name': 'ChessBoard',
+                                'icon': '🏁',
+                                'description': 'Traditional black and white checkerboard pattern with internal corner detection'
+                            },
+                            'charuco_board': {
+                                'name': 'CharucoBoard', 
+                                'icon': '🎯',
+                                'description': 'ChArUco board combining chessboard and ArUco markers for robust detection'
+                            },
+                            'grid_board': {
+                                'name': 'GridBoard',
+                                'icon': '⬜',
+                                'description': 'ArUco marker grid pattern for marker-based calibration'
+                            }
+                        }
+                        
+                        # Process patterns in preferred order
+                        for pattern_id in ['standard_chessboard', 'charuco_board', 'grid_board']:
+                            if pattern_id in available_patterns:
+                                pattern_class = available_patterns[pattern_id]
+                                display_info = pattern_display_info.get(pattern_id, {})
+                                
+                                try:
+                                    # Get pattern configuration schema
+                                    config = pattern_class.get_configuration_schema()
+                                    pattern_info = {
+                                        'id': pattern_id,
+                                        'name': display_info.get('name', config.get('name', pattern_id.replace('_', ' ').title())),
+                                        'icon': display_info.get('icon', config.get('icon', '📐')),
+                                        'description': display_info.get('description', config.get('description', '')),
+                                        'parameters': config.get('parameters', [])
+                                    }
+                                    pattern_types.append(pattern_info)
+                                except Exception as e:
+                                    self.get_logger().warning(f"Could not get config for pattern {pattern_id}: {e}")
+                                    # Add basic info for patterns without proper schema
+                                    pattern_types.append({
+                                        'id': pattern_id,
+                                        'name': display_info.get('name', pattern_id.replace('_', ' ').title()),
+                                        'icon': display_info.get('icon', '📐'),
+                                        'description': display_info.get('description', 'Calibration pattern'),
+                                        'parameters': []
+                                    })
+                        
+                        return JSONResponse(content={
+                            'success': True,
+                            'patterns': pattern_types,
+                            'toolkit_available': True
+                        })
+                    else:
+                        # Fallback: only standard chessboard
+                        return JSONResponse(content={
+                            'success': True,
+                            'patterns': [{
+                                'id': 'standard_chessboard',
+                                'name': 'ChessBoard',
+                                'icon': '🏁',
+                                'description': 'Traditional black and white checkerboard pattern',
+                                'parameters': [
+                                    {'name': 'width', 'label': 'Width (corners)', 'type': 'integer', 'default': 11, 'min': 3, 'max': 20},
+                                    {'name': 'height', 'label': 'Height (corners)', 'type': 'integer', 'default': 8, 'min': 3, 'max': 20}
+                                ]
+                            }],
+                            'toolkit_available': False
+                        })
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error getting pattern types: {str(e)}")
                     return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
             
             @app.post("/api/calibration/clear")

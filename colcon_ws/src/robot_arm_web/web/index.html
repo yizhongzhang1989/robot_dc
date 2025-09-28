@@ -3014,28 +3014,26 @@
 
   <!-- Corner Detection Settings Modal -->
   <div id="cornerDetectionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
       <div class="bg-blue-500 text-white px-6 py-4 rounded-t-lg relative">
-        <h3 class="text-lg font-semibold">Corner Detection Settings</h3>
+        <h3 id="patternModalTitle" class="text-lg font-semibold">📐 Pattern Detection Settings</h3>
         <button onclick="closeCornerDetectionModal()" class="absolute top-4 right-4 text-white hover:text-gray-200">
           ✕
         </button>
       </div>
       <div class="p-6">
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Chessboard Width:
-          </label>
-          <input type="number" id="chessboardWidth" value="12" min="2" max="20" 
-                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <!-- Pattern description -->
+        <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <p id="patternDescription" class="text-sm text-blue-700">
+            Configure detection parameters for the selected calibration pattern.
+          </p>
         </div>
-        <div class="mb-6">
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Chessboard Height:
-          </label>
-          <input type="number" id="chessboardHeight" value="9" min="2" max="20" 
-                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        
+        <!-- Dynamic parameter container -->
+        <div id="patternParametersContainer">
+          <!-- Parameters will be dynamically inserted here -->
         </div>
+        
         <div class="flex justify-end space-x-3">
           <button onclick="closeCornerDetectionModal()" 
                   class="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
@@ -3043,7 +3041,7 @@
           </button>
           <button onclick="confirmCornerDetection()" 
                   class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
-            Confirm
+            Start Detection
           </button>
         </div>
       </div>
@@ -3144,6 +3142,9 @@
           this.src = '/images/camera_placeholder.png';
         };
       }
+      
+      // Initialize board types from server
+      await initializeBoardTypes();
       
       // Initialize save path (now async)
       await initializeSavePath();
@@ -3284,9 +3285,45 @@
       }
     }
 
-    // Calibration board types
-    const calibrationBoardTypes = ['ChessBoard', 'CharucoBoard', 'GridBoard'];
+    // Calibration board types - now dynamically loaded
+    let calibrationBoardTypes = ['ChessBoard', 'CharucoBoard', 'GridBoard'];
     let currentBoardTypeIndex = 0;
+    let availablePatternTypes = []; // Will be loaded from server
+
+    // Initialize board types from server
+    async function initializeBoardTypes() {
+      try {
+        const response = await fetch('/api/calibration/pattern-types');
+        const data = await response.json();
+        
+        if (data.success && data.patterns && data.patterns.length > 0) {
+          // Update available patterns from server
+          availablePatternTypes = data.patterns;
+          calibrationBoardTypes = data.patterns.map(p => p.name);
+          
+          // Update display with first pattern
+          currentBoardTypeIndex = 0;
+          const textElement = document.getElementById('boardTypeText');
+          if (textElement) {
+            textElement.textContent = calibrationBoardTypes[0];
+          }
+          
+          console.log('Loaded pattern types:', calibrationBoardTypes);
+        } else {
+          console.warn('Failed to load pattern types, using defaults');
+          // Keep default types
+          availablePatternTypes = [
+            { id: 'standard_chessboard', name: 'ChessBoard', icon: '🏁', description: 'Standard chessboard pattern' }
+          ];
+        }
+      } catch (error) {
+        console.error('Error loading pattern types:', error);
+        // Keep default types
+        availablePatternTypes = [
+          { id: 'standard_chessboard', name: 'ChessBoard', icon: '🏁', description: 'Standard chessboard pattern' }
+        ];
+      }
+    }
 
     // Handle calibration board type cycling
     function cycleCalibrationType() {
@@ -3313,8 +3350,46 @@
         }, 150);
       }
       
-      // 这里后续可以添加更多逻辑来处理不同标定板类型的切换
-      // 比如更新UI、加载不同的配置等
+      // If corner detection is currently enabled, restart it with new pattern type
+      if (cornerDetectionEnabled) {
+        console.log('Restarting corner detection with new pattern type:', currentType);
+        restartCornerDetectionWithNewPattern();
+      }
+    }
+
+    // Restart corner detection with current pattern type
+    async function restartCornerDetectionWithNewPattern() {
+      try {
+        // First disable current detection
+        await disableCornerDetection();
+        
+        // Wait a moment for the disable to process
+        setTimeout(async () => {
+          // Then enable with current pattern type
+          await enableCornerDetectionWithCurrentPattern();
+        }, 500);
+      } catch (error) {
+        console.error('Error restarting corner detection:', error);
+      }
+    }
+
+    // Get current pattern type info
+    function getCurrentPatternType() {
+      if (availablePatternTypes && availablePatternTypes.length > currentBoardTypeIndex) {
+        return availablePatternTypes[currentBoardTypeIndex];
+      } else {
+        // Fallback to standard chessboard
+        return { 
+          id: 'standard_chessboard', 
+          name: 'ChessBoard', 
+          icon: '🏁', 
+          description: 'Standard chessboard pattern',
+          parameters: [
+            { name: 'width', type: 'integer', default: 12, min: 3, max: 20 },
+            { name: 'height', type: 'integer', default: 9, min: 3, max: 20 }
+          ]
+        };
+      }
     }
 
     // === Save Path Management Functions ===
@@ -3541,7 +3616,175 @@
     }
 
     function showCornerDetectionModal() {
-      document.getElementById('cornerDetectionModal').classList.remove('hidden');
+      const currentPattern = getCurrentPatternType();
+      const modal = document.getElementById('cornerDetectionModal');
+      
+      // Update modal title
+      const title = document.getElementById('patternModalTitle');
+      if (title) {
+        title.innerHTML = `${currentPattern.icon || '📐'} ${currentPattern.name} Settings`;
+      }
+      
+      // Update description
+      const description = document.getElementById('patternDescription');
+      if (description) {
+        description.textContent = currentPattern.description || 'Configure detection parameters for the selected calibration pattern.';
+      }
+      
+      // Generate dynamic parameters
+      generatePatternParameters(currentPattern);
+      
+      modal.classList.remove('hidden');
+    }
+
+    function generatePatternParameters(pattern) {
+      const container = document.getElementById('patternParametersContainer');
+      if (!container) return;
+      
+      container.innerHTML = ''; // Clear existing content
+      
+      // Define parameter configurations for different pattern types
+      const parameterConfigs = {
+        'ChessBoard': [
+          { id: 'width', label: 'Squares Width', type: 'number', value: 12, min: 3, max: 20, 
+            description: 'Number of squares across the width' },
+          { id: 'height', label: 'Squares Height', type: 'number', value: 9, min: 3, max: 20, 
+            description: 'Number of squares across the height' },
+          { id: 'square_size', label: 'Square Size (m)', type: 'number', value: 0.02, min: 0.001, max: 1.0, step: 0.001,
+            description: 'Physical size of each square in meters (e.g., 0.02 = 20mm)' }
+        ],
+        'CharucoBoard': [
+          { id: 'width', label: 'Squares Width', type: 'number', value: 12, min: 3, max: 15, 
+            description: 'Number of squares across the width' },
+          { id: 'height', label: 'Squares Height', type: 'number', value: 9, min: 3, max: 15, 
+            description: 'Number of squares across the height' },
+          { id: 'square_size', label: 'Square Size (m)', type: 'number', value: 0.03, min: 0.001, max: 1.0, step: 0.001,
+            description: 'Physical size of each square in meters (e.g., 0.03 = 30mm)' },
+          { id: 'marker_size', label: 'Marker Size (m)', type: 'number', value: 0.0225, min: 0.001, max: 1.0, step: 0.0001,
+            description: 'Physical size of ArUco markers in meters (e.g., 0.0225 = 22.5mm)' },
+          { id: 'dictionary_id', label: 'ArUco Dictionary', type: 'select', value: 5, 
+            options: [
+              { value: 0, label: 'DICT_4X4_50' },
+              { value: 1, label: 'DICT_4X4_100' },
+              { value: 2, label: 'DICT_4X4_250' },
+              { value: 3, label: 'DICT_4X4_1000' },
+              { value: 4, label: 'DICT_5X5_50' },
+              { value: 5, label: 'DICT_5X5_100' },
+              { value: 6, label: 'DICT_5X5_250' },
+              { value: 7, label: 'DICT_5X5_1000' },
+              { value: 8, label: 'DICT_6X6_50' },
+              { value: 9, label: 'DICT_6X6_100' },
+              { value: 10, label: 'DICT_6X6_250' },
+              { value: 11, label: 'DICT_6X6_1000' },
+              { value: 12, label: 'DICT_7X7_50' },
+              { value: 13, label: 'DICT_7X7_100' },
+              { value: 14, label: 'DICT_7X7_250' },
+              { value: 15, label: 'DICT_7X7_1000' },
+              { value: 16, label: 'DICT_ARUCO_ORIGINAL' }
+            ],
+            description: 'ArUco dictionary type (DICT_5X5_100 works best for your board)' }
+        ],
+        'GridBoard': [
+          { id: 'width', label: 'Markers Width', type: 'number', value: 6, min: 2, max: 20, 
+            description: 'Number of ArUco markers across the width' },
+          { id: 'height', label: 'Markers Height', type: 'number', value: 6, min: 2, max: 20, 
+            description: 'Number of ArUco markers across the height' },
+          { id: 'marker_size', label: 'Marker Size (m)', type: 'number', value: 0.022, min: 0.001, max: 1.0, step: 0.001,
+            description: 'Physical size of each marker in meters (e.g., 0.022 = 2.2cm)' },
+          { id: 'marker_separation', label: 'Marker Separation (m)', type: 'number', value: 0.0066, min: 0.001, max: 1.0, step: 0.0001,
+            description: 'Physical separation between markers in meters (e.g., 0.0066 = 0.66cm)' },
+          { id: 'dictionary_id', label: 'ArUco Dictionary', type: 'select', value: 20,
+            options: [
+              { value: 0, label: 'DICT_4X4_50' },
+              { value: 1, label: 'DICT_4X4_100' },
+              { value: 2, label: 'DICT_4X4_250' },
+              { value: 3, label: 'DICT_4X4_1000' },
+              { value: 4, label: 'DICT_5X5_50' },
+              { value: 5, label: 'DICT_5X5_100' },
+              { value: 6, label: 'DICT_5X5_250' },
+              { value: 7, label: 'DICT_5X5_1000' },
+              { value: 8, label: 'DICT_6X6_50' },
+              { value: 9, label: 'DICT_6X6_100' },
+              { value: 10, label: 'DICT_6X6_250' },
+              { value: 11, label: 'DICT_6X6_1000' },
+              { value: 12, label: 'DICT_7X7_50' },
+              { value: 13, label: 'DICT_7X7_100' },
+              { value: 14, label: 'DICT_7X7_250' },
+              { value: 15, label: 'DICT_7X7_1000' },
+              { value: 16, label: 'DICT_ARUCO_ORIGINAL' },
+              { value: 17, label: 'DICT_APRILTAG_16H5' },
+              { value: 18, label: 'DICT_APRILTAG_25H9' },
+              { value: 19, label: 'DICT_APRILTAG_36H10' },
+              { value: 20, label: 'DICT_APRILTAG_36H11' },
+              { value: 21, label: 'DICT_ARUCO_MIP_36H12' }
+            ],
+            description: 'ArUco/AprilTag dictionary type (DICT_APRILTAG_36H11 is commonly used)' }
+        ]
+      };
+      
+      const patternName = pattern.name || 'ChessBoard';
+      const params = parameterConfigs[patternName] || parameterConfigs['ChessBoard'];
+      
+      params.forEach(param => {
+        // Create parameter group
+        const paramGroup = document.createElement('div');
+        paramGroup.className = 'mb-4';
+        
+        // Label
+        const label = document.createElement('label');
+        label.className = 'block text-sm font-medium text-gray-700 mb-2';
+        label.textContent = param.label + ':';
+        
+        // Input or Select
+        let inputElement;
+        if (param.type === 'select') {
+          inputElement = document.createElement('select');
+          inputElement.className = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
+          param.options.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option.value;
+            optionElement.textContent = option.label;
+            if (option.value === param.value) {
+              optionElement.selected = true;
+            }
+            inputElement.appendChild(optionElement);
+          });
+        } else {
+          inputElement = document.createElement('input');
+          inputElement.type = param.type;
+          inputElement.value = param.value;
+          inputElement.min = param.min;
+          inputElement.max = param.max;
+          if (param.step) inputElement.step = param.step;
+          inputElement.className = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
+        }
+        
+        inputElement.id = getInputId(param.id); // Use helper function to get consistent IDs
+        
+        // Description
+        const desc = document.createElement('p');
+        desc.className = 'text-xs text-gray-500 mt-1';
+        desc.textContent = param.description;
+        
+        // Assemble parameter group
+        paramGroup.appendChild(label);
+        paramGroup.appendChild(inputElement);
+        paramGroup.appendChild(desc);
+        
+        container.appendChild(paramGroup);
+      });
+    }
+
+    // Helper function to get consistent input IDs
+    function getInputId(paramId) {
+      const idMapping = {
+        'width': 'chessboardWidth',
+        'height': 'chessboardHeight',
+        'square_size': 'squareSize',
+        'marker_size': 'markerSize',
+        'marker_separation': 'markerSeparation'
+      };
+      return idMapping[paramId] || paramId;
     }
 
     function closeCornerDetectionModal() {
@@ -3551,12 +3794,15 @@
     async function confirmCornerDetection() {
       const width = parseInt(document.getElementById('chessboardWidth').value);
       const height = parseInt(document.getElementById('chessboardHeight').value);
+      const currentPattern = getCurrentPatternType();
       
+      // Validate basic dimensions
       if (isNaN(width) || isNaN(height) || width <= 1 || height <= 1) {
+        const patternName = currentPattern.name || 'Pattern';
         await showAlertModal(
           '⚠️ Invalid Input',
           `<div class="text-orange-600">
-            <p class="mb-2">Please enter valid chessboard dimensions.</p>
+            <p class="mb-2">Please enter valid ${patternName.toLowerCase()} dimensions.</p>
             <div class="bg-orange-50 p-3 rounded-lg border border-orange-200">
               <p class="text-sm text-orange-700"><strong>Requirements:</strong></p>
               <ul class="text-sm text-orange-600 mt-1 list-disc list-inside">
@@ -3570,40 +3816,166 @@
         return;
       }
       
+      // Collect all pattern-specific parameters
+      const patternParams = collectPatternParameters(currentPattern);
+      
+      // Validate pattern-specific parameters
+      if (!validatePatternParameters(patternParams, currentPattern)) {
+        return; // Validation failed, error already shown
+      }
+      
+      await enableCornerDetectionWithCurrentPattern(width, height, patternParams);
+    }
+
+    // Collect parameters based on pattern type
+    function collectPatternParameters(pattern) {
+      const params = {};
+      const patternName = pattern.name || 'ChessBoard';
+      
+      // Collect all parameter inputs based on the generatePatternParameters structure
+      const parameterIds = {
+        'ChessBoard': ['width', 'height', 'square_size'],
+        'CharucoBoard': ['width', 'height', 'square_size', 'marker_size', 'dictionary_id'],
+        'GridBoard': ['width', 'height', 'marker_size', 'marker_separation', 'dictionary_id']
+      };
+      
+      const ids = parameterIds[patternName] || parameterIds['ChessBoard'];
+      
+      ids.forEach(id => {
+        const element = document.getElementById(getInputId(id));
+        if (element) {
+          if (element.tagName === 'SELECT') {
+            params[id] = parseInt(element.value);
+          } else if (element.type === 'number') {
+            params[id] = parseFloat(element.value);
+          } else {
+            params[id] = element.value;
+          }
+        }
+      });
+      
+      return params;
+    }
+
+    // Validate pattern-specific parameters
+    function validatePatternParameters(params, pattern) {
+      const patternName = pattern.name || 'ChessBoard';
+      
+      for (const [key, value] of Object.entries(params)) {
+        if (isNaN(value) || value <= 0) {
+          showAlertModal(
+            '⚠️ Invalid Parameter',
+            `<div class="text-orange-600">
+              <p class="mb-2">Invalid value for ${key.replace('_', ' ')}: ${value}</p>
+              <p class="text-sm text-orange-700">All physical measurements must be positive numbers greater than 0.</p>
+            </div>`
+          );
+          return false;
+        }
+      }
+      
+      // Pattern-specific validations
+      if (patternName === 'CharucoBoard' && params.marker_size && params.square_size) {
+        if (params.marker_size >= params.square_size) {
+          showAlertModal(
+            '⚠️ Invalid ChArUco Parameters',
+            `<div class="text-orange-600">
+              <p class="mb-2">Marker size (${params.marker_size}m) must be smaller than square size (${params.square_size}m).</p>
+              <p class="text-sm text-orange-700">Typically, marker size should be 50-80% of square size.</p>
+            </div>`
+          );
+          return false;
+        }
+      }
+      
+      return true;
+    }
+
+    // Enable corner detection with current pattern type
+    async function enableCornerDetectionWithCurrentPattern(width = null, height = null, patternParams = {}) {
       try {
+        // Get current pattern type
+        const currentPattern = getCurrentPatternType();
+        
+        // Use provided dimensions or defaults from modal inputs
+        const detectionWidth = width || parseInt(document.getElementById('chessboardWidth').value);
+        const detectionHeight = height || parseInt(document.getElementById('chessboardHeight').value);
+        
+        // Prepare request data based on pattern type
+        let requestData = {
+          enable: true,
+          pattern_type: currentPattern.name, // Use display name which will be mapped by backend
+        };
+        
+        // Add pattern-specific parameters
+        if (currentPattern.name === 'GridBoard') {
+          // For ArUco Grid Board, we use the values directly as marker counts
+          requestData.chessboard_width = detectionWidth;
+          requestData.chessboard_height = detectionHeight;
+          requestData.grid_width = detectionWidth;
+          requestData.grid_height = detectionHeight;
+          // Add physical parameters
+          if (patternParams.marker_size) requestData.marker_size = patternParams.marker_size;
+          if (patternParams.marker_separation) requestData.marker_separation = patternParams.marker_separation;
+          if (patternParams.dictionary_id !== undefined) requestData.dictionary_id = patternParams.dictionary_id;
+        } else {
+          // For ChessBoard and CharucoBoard, convert squares to corners
+          requestData.chessboard_width = detectionWidth - 1;
+          requestData.chessboard_height = detectionHeight - 1;
+          requestData.grid_width = detectionWidth;
+          requestData.grid_height = detectionHeight;
+          // Add physical parameters
+          if (patternParams.square_size) requestData.square_size = patternParams.square_size;
+          if (patternParams.marker_size) requestData.marker_size = patternParams.marker_size;
+          if (patternParams.dictionary_id !== undefined) requestData.dictionary_id = patternParams.dictionary_id;
+        }
+        
+        console.log('Enabling corner detection with pattern:', currentPattern.name, requestData);
+        
         const response = await fetch('/api/calibration/corner-detection', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            enable: true,
-            chessboard_width: width - 1,  // Convert grid size to corner size
-            chessboard_height: height - 1,
-            grid_width: width,
-            grid_height: height
-          })
+          body: JSON.stringify(requestData)
         });
         
         const data = await response.json();
         if (data.success) {
           cornerDetectionEnabled = true;
-          document.getElementById('cornerDetectionBtn').textContent = '🛑 Stop Detection';
+          const btnText = `🛑 Stop Detection`;
+          document.getElementById('cornerDetectionBtn').textContent = btnText;
           document.getElementById('cornerDetectionBtn').className = 'robot-arm-button status-style-button status-button-red font-semibold rounded-lg text-base';
           
           // Update status bar
           const cornerStatus = document.getElementById('calibrationCornerStatus');
           if (cornerStatus) {
-            cornerStatus.textContent = 'Enabled';
+            cornerStatus.textContent = `Enabled (${currentPattern.name})`;
             cornerStatus.className = 'status-bar-value connected';
           }
           
           closeCornerDetectionModal();
+          
+          // Show success message with parameter details
+          const physicalParams = Object.entries(patternParams)
+            .map(([key, value]) => `${key.replace('_', ' ')}: ${value}m`)
+            .join(', ');
+          const successMsg = `Corner detection enabled: ${currentPattern.name} ${detectionWidth}x${detectionHeight}` + 
+                           (physicalParams ? ` (${physicalParams})` : '');
+          console.log(successMsg);
         } else {
           console.error('Failed to enable corner detection:', data.message);
+          await showAlertModal(
+            '❌ Detection Error', 
+            `<div class="text-red-600">Failed to enable corner detection: ${data.message}</div>`
+          );
         }
       } catch (error) {
         console.error('Corner detection error:', error);
+        await showAlertModal(
+          '❌ Network Error', 
+          `<div class="text-red-600">Network error: ${error.message}</div>`
+        );
       }
     }
 
