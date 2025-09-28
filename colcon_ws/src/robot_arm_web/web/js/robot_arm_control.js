@@ -762,7 +762,7 @@ function updateRobotStateDisplay(state) {
 
     if (state.robotStatus !== undefined) {
         const robotStates = {0: "Start", 1: "Initialize", 2: "Logout", 3: "Login", 
-                           4: "PowerOff", 5: "Disable/PowerOn", 6: "Enable"};
+                           4: "PowerOff", 5: "PowerOn", 6: "Enable"};
         const statusText = robotStates[state.robotStatus] || `Unknown (${state.robotStatus})`;
         document.getElementById('robotStatus').textContent = statusText;
         document.getElementById('robotStatus').className = state.robotStatus === 6 ? 'normal-indicator' : 'warning-indicator';
@@ -3040,7 +3040,7 @@ function toggleFTSensor() {
         // Enable FT Sensor
         console.log('Enabling FT Sensor...');
         startFTSensorUDP();
-        buttonText.textContent = 'Stop FT';
+        buttonText.textContent = 'Stop Sensor';
         button.className = 'robot-arm-button bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition-all';
         logCommand('FT Sensor', 'Started', 'success');
     } else {
