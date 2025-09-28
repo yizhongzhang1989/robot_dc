@@ -1172,16 +1172,40 @@ class RobotArmWebServer(Node):
                     self.get_logger().error(f"Error clearing calibration images: {str(e)}")
                     return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
             
-            @app.get("/api/calibration/thumbnails")
-            async def get_calibration_thumbnails():
-                """Get list of calibration image thumbnails"""
+            @app.post("/api/calibration/thumbnails")
+            async def get_calibration_thumbnails_with_path(request: Request):
+                """Get list of calibration image thumbnails from specified path"""
                 try:
-                    # Get calibration directory using common utilities
-                    try:
-                        temp_dir = get_temp_directory()
-                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
-                    except RuntimeError:
-                        return JSONResponse(content={'thumbnails': []})
+                    data = await request.json()
+                    save_path = data.get('save_path', '')
+                    
+                    # Determine calibration directory
+                    if save_path and save_path.strip():
+                        # Use custom path
+                        calibration_dir = save_path.strip()
+                        # If it's a relative path starting with './', make it absolute relative to project root
+                        if calibration_dir.startswith('./'):
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir[2:])
+                            except RuntimeError:
+                                return JSONResponse(content={'thumbnails': []})
+                        elif not os.path.isabs(calibration_dir):
+                            # Handle other relative paths as relative to project root
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir)
+                            except RuntimeError:
+                                return JSONResponse(content={'thumbnails': []})
+                    else:
+                        # Use default path
+                        try:
+                            temp_dir = get_temp_directory()
+                            calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                        except RuntimeError:
+                            return JSONResponse(content={'thumbnails': []})
                     
                     if not os.path.exists(calibration_dir):
                         return JSONResponse(content={'thumbnails': []})
@@ -1201,15 +1225,36 @@ class RobotArmWebServer(Node):
                     return JSONResponse(content={'thumbnails': []}, status_code=500)
             
             @app.get("/api/calibration/thumbnail/{filename}")
-            async def get_calibration_thumbnail(filename: str):
+            async def get_calibration_thumbnail(filename: str, save_path: str = None):
                 """Get a calibration image thumbnail"""
                 try:
-                    # Get calibration directory using common utilities
-                    try:
-                        temp_dir = get_temp_directory()
-                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
-                    except RuntimeError:
-                        return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
+                    # Determine calibration directory
+                    if save_path and save_path.strip():
+                        # Use custom path
+                        calibration_dir = save_path.strip()
+                        # If it's a relative path starting with './', make it absolute relative to project root
+                        if calibration_dir.startswith('./'):
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir[2:])
+                            except RuntimeError:
+                                return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
+                        elif not os.path.isabs(calibration_dir):
+                            # Handle other relative paths as relative to project root
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir)
+                            except RuntimeError:
+                                return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
+                    else:
+                        # Use default path
+                        try:
+                            temp_dir = get_temp_directory()
+                            calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                        except RuntimeError:
+                            return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
                     
                     file_path = os.path.join(calibration_dir, filename)
                     
@@ -1237,12 +1282,37 @@ class RobotArmWebServer(Node):
                     return JSONResponse(content={'error': str(e)}, status_code=500)
             
             @app.get("/api/calibration/image/{filename}")
-            async def get_calibration_image(filename: str):
+            async def get_calibration_image(filename: str, save_path: str = None):
                 """Get a full calibration image"""
                 try:
-                    # Get the temporary directory
-                    temp_dir = get_temp_directory()
-                    calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    # Determine calibration directory
+                    if save_path and save_path.strip():
+                        # Use custom path
+                        calibration_dir = save_path.strip()
+                        # If it's a relative path starting with './', make it absolute relative to project root
+                        if calibration_dir.startswith('./'):
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir[2:])
+                            except RuntimeError:
+                                return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
+                        elif not os.path.isabs(calibration_dir):
+                            # Handle other relative paths as relative to project root
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir)
+                            except RuntimeError:
+                                return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
+                    else:
+                        # Use default path
+                        try:
+                            temp_dir = get_temp_directory()
+                            calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                        except RuntimeError:
+                            return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
+                    
                     file_path = os.path.join(calibration_dir, filename)
                     
                     if os.path.exists(file_path) and os.path.isfile(file_path):
@@ -1830,6 +1900,74 @@ except Exception as e:
                         'running': False,
                         'process_id': None,
                         'status': f'Error: {str(e)}'
+                    }, status_code=500)
+            
+            @app.get("/api/calibration/default-path")
+            async def get_default_calibration_path():
+                """Get the default calibration data save path"""
+                try:
+                    temp_dir = get_temp_directory()
+                    default_path = os.path.join(temp_dir, 'camera_calibration_data')
+                    return JSONResponse(content={
+                        'success': True,
+                        'default_path': default_path
+                    })
+                except RuntimeError as e:
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': f'Could not determine default path: {str(e)}'
+                    }, status_code=500)
+            
+            @app.post("/api/calibration/resolve-path")
+            async def resolve_calibration_path(request: Request):
+                """Resolve a relative or absolute path to its full absolute path"""
+                try:
+                    data = await request.json()
+                    input_path = data.get('path', '').strip()
+                    
+                    if not input_path:
+                        return JSONResponse(content={
+                            'success': False,
+                            'message': 'Path is required'
+                        }, status_code=400)
+                    
+                    # Resolve path using same logic as other APIs
+                    if os.path.isabs(input_path):
+                        # Already absolute path
+                        resolved_path = input_path
+                    elif input_path.startswith('./'):
+                        # Relative path starting with './'
+                        try:
+                            temp_dir = get_temp_directory()
+                            project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                            resolved_path = os.path.join(project_root, input_path[2:])
+                        except RuntimeError as e:
+                            return JSONResponse(content={
+                                'success': False,
+                                'message': f'Could not resolve path: {str(e)}'
+                            }, status_code=500)
+                    else:
+                        # Other relative paths
+                        try:
+                            temp_dir = get_temp_directory()
+                            project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                            resolved_path = os.path.join(project_root, input_path)
+                        except RuntimeError as e:
+                            return JSONResponse(content={
+                                'success': False,
+                                'message': f'Could not resolve path: {str(e)}'
+                            }, status_code=500)
+                    
+                    return JSONResponse(content={
+                        'success': True,
+                        'original_path': input_path,
+                        'resolved_path': os.path.abspath(resolved_path)
+                    })
+                    
+                except Exception as e:
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': f'Error resolving path: {str(e)}'
                     }, status_code=500)
             
             # Static file serving for urdf-loaders library

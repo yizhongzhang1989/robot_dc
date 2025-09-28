@@ -931,6 +931,45 @@
       gap: 0.75rem;
     }
     
+    /* Custom grid for calibration page status bar with variable column sizes */
+    .calibration-status-bar-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr 1fr 2fr;
+      gap: 0.75rem;
+      min-width: 0; /* Ensure grid items can shrink */
+    }
+    
+    /* Special styling for Data Save Path in calibration page - now last item */
+    .calibration-status-bar-grid .status-bar-item:nth-child(6) {
+      min-width: 200px; /* Minimum width for Data Save Path */
+    }
+    
+    .calibration-status-bar-grid .status-bar-item:nth-child(6) .status-bar-value {
+      word-break: break-all;
+      font-size: 0.65rem;
+      line-height: 1.2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .calibration-status-bar-grid .status-bar-item:nth-child(6) .status-bar-value:hover {
+      white-space: normal;
+      overflow: visible;
+      z-index: 10;
+      position: relative;
+    }
+    
+    @media (max-width: 1024px) {
+      .calibration-status-bar-grid {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+      
+      .calibration-status-bar-grid .status-bar-item:nth-child(6) {
+        min-width: 140px;
+      }
+    }
+    
     .status-bar-item {
       padding: 0.5rem;
       background: rgba(255, 255, 255, 0.8);
@@ -1032,6 +1071,7 @@
       color: #7c3aed !important;
       cursor: pointer;
       transition: all 0.2s ease;
+      font-size: 0.75rem; /* 12px, smaller than default */
     }
     
     #calibrationSavePath:hover {
@@ -2747,7 +2787,7 @@
           Status
         </div>
         <div class="status-bar-content">
-          <div class="status-bar-grid">
+          <div class="calibration-status-bar-grid">
             <div class="status-bar-item">
               <div class="status-bar-label">Camera Status</div>
               <div id="calibrationCameraStatus" class="status-bar-value">Connecting...</div>
@@ -2755,10 +2795,6 @@
             <div class="status-bar-item">
               <div class="status-bar-label">Robot Status</div>
               <div id="calibrationRobotStatus" class="status-bar-value">Disconnected</div>
-            </div>
-            <div class="status-bar-item">
-              <div class="status-bar-label">Save Path</div>
-              <div id="calibrationSavePath" class="status-bar-value" title="Images and results save location">temp/</div>
             </div>
             <div class="status-bar-item">
               <div class="status-bar-label">Image Count</div>
@@ -2769,10 +2805,14 @@
               <div id="calibrationCornerStatus" class="status-bar-value">Disabled</div>
             </div>
             <div class="status-bar-item calibration-board-selector" onclick="cycleCalibrationType()">
-              <div class="status-bar-label">Calibration Board</div>
+              <div class="status-bar-label">Board Type</div>
               <div id="calibrationBoardType" class="status-bar-value clickable">
                 <span id="boardTypeText">ChessBoard</span>
               </div>
+            </div>
+            <div class="status-bar-item calibration-board-selector" onclick="openSavePathDialog()">
+              <div class="status-bar-label">Data Save Path</div>
+              <div id="calibrationSavePath" class="status-bar-value clickable" title="Click to change save path">Loading...</div>
             </div>
           </div>
         </div>
@@ -3090,9 +3130,12 @@
     // Camera Calibration Functions
     let cornerDetectionEnabled = false;
     let calibrationImageCount = 0;
+    let customSavePath = '';  // Custom save path set by user (for API calls)
+    let customSavePathDisplay = '';  // Custom save path for display (resolved full path)
+    let defaultSavePath = '';  // Default save path from server
     
     // Initialize camera calibration when page loads
-    function initializeCameraCalibration() {
+    async function initializeCameraCalibration() {
       // Update camera feed with existing camera stream
       const calibrationFeed = document.getElementById('calibrationCameraFeed');
       if (calibrationFeed) {
@@ -3101,6 +3144,9 @@
           this.src = '/images/camera_placeholder.png';
         };
       }
+      
+      // Initialize save path (now async)
+      await initializeSavePath();
       
       // Initialize status update for calibration page
       updateCalibrationStatus();
@@ -3251,6 +3297,220 @@
       
       // 这里后续可以添加更多逻辑来处理不同标定板类型的切换
       // 比如更新UI、加载不同的配置等
+    }
+
+    // === Save Path Management Functions ===
+    
+    // Initialize save path display
+    async function initializeSavePath() {
+      // Load custom path from localStorage
+      customSavePath = localStorage.getItem('calibrationCustomPath') || '';
+      
+      // If we have a custom path and it's relative, resolve it for display
+      if (customSavePath && (customSavePath.startsWith('./') || !customSavePath.startsWith('/'))) {
+        try {
+          const response = await fetch('/api/calibration/resolve-path', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              path: customSavePath
+            })
+          });
+          
+          const data = await response.json();
+          if (data.success) {
+            customSavePathDisplay = data.resolved_path;
+          } else {
+            console.warn('Failed to resolve saved path, using original:', data.message);
+            customSavePathDisplay = customSavePath;
+          }
+        } catch (error) {
+          console.warn('Error resolving saved path, using original:', error);
+          customSavePathDisplay = customSavePath;
+        }
+      } else {
+        customSavePathDisplay = customSavePath;
+      }
+      
+      // Get default path from server
+      try {
+        const response = await fetch('/api/calibration/default-path');
+        const data = await response.json();
+        if (data.success) {
+          defaultSavePath = data.default_path;
+        } else {
+          console.warn('Failed to get default path from server, using fallback');
+          defaultSavePath = './temp/camera_calibration_data/';
+        }
+      } catch (error) {
+        console.warn('Error fetching default path from server, using fallback:', error);
+        defaultSavePath = './temp/camera_calibration_data/';
+      }
+      
+      // Update display
+      updateSavePathDisplay();
+    }
+    
+    // Update save path display
+    function updateSavePathDisplay() {
+      const savePathElement = document.getElementById('calibrationSavePath');
+      if (savePathElement) {
+        // Use display path if available, otherwise fall back to original path or default
+        const displayPath = customSavePathDisplay || customSavePath || defaultSavePath;
+        savePathElement.textContent = displayPath;
+        savePathElement.title = 'Click to change save path: ' + displayPath;
+      }
+    }
+    
+    // Open save path configuration dialog
+    function openSavePathDialog() {
+      const modal = document.getElementById('savePathModal');
+      const input = document.getElementById('savePathInput');
+      
+      if (modal && input) {
+        // Set current values
+        input.value = customSavePath;
+        
+        // Show modal
+        modal.style.display = 'flex';
+        
+        // Focus on input
+        setTimeout(() => input.focus(), 100);
+      } else {
+        console.error('Save path modal elements not found');
+      }
+    }
+    
+    // Close save path dialog
+    function closeSavePathDialog() {
+      const modal = document.getElementById('savePathModal');
+      if (modal) {
+        modal.style.display = 'none';
+      }
+    }
+    
+    // Reset save path to default
+    function resetSavePathToDefault() {
+      const input = document.getElementById('savePathInput');
+      
+      if (input) {
+        input.value = '';
+      }
+      
+      // Apply the default path directly
+      customSavePath = '';
+      customSavePathDisplay = '';  // Clear display path too
+      localStorage.removeItem('calibrationCustomPath');
+      
+      // Update display
+      updateSavePathDisplay();
+      
+      // Update thumbnails to show images from default path
+      updateCalibrationThumbnails();
+      
+      // Close modal
+      closeSavePathDialog();
+      
+      // Log success message
+      console.log('Save path reset to default');
+    }
+    
+    // Confirm save path setting
+    async function confirmSavePath() {
+      const input = document.getElementById('savePathInput');
+      
+      if (!input) return;
+      
+      const newPath = input.value.trim();
+      
+      // Update local variables
+      customSavePath = newPath;
+      
+      // If it's a relative path, resolve it to get the full path for display
+      if (newPath && (newPath.startsWith('./') || !newPath.startsWith('/'))) {
+        try {
+          const response = await fetch('/api/calibration/resolve-path', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              path: newPath
+            })
+          });
+          
+          const data = await response.json();
+          if (data.success) {
+            // Store the original path for API calls, but display the resolved path
+            customSavePathDisplay = data.resolved_path;
+          } else {
+            console.warn('Failed to resolve path, using original:', data.message);
+            customSavePathDisplay = newPath;
+          }
+        } catch (error) {
+          console.warn('Error resolving path, using original:', error);
+          customSavePathDisplay = newPath;
+        }
+      } else {
+        // For absolute paths or empty paths, display as-is
+        customSavePathDisplay = newPath;
+      }
+      
+      // Save to localStorage
+      if (newPath) {
+        localStorage.setItem('calibrationCustomPath', newPath);
+      } else {
+        localStorage.removeItem('calibrationCustomPath');
+      }
+      
+      // Update display
+      updateSavePathDisplay();
+      
+      // Update thumbnails to show images from new path
+      updateCalibrationThumbnails();
+      
+      // Close modal
+      closeSavePathDialog();
+      
+      // Log success message
+      console.log('Save path updated to:', newPath || 'default');
+    }
+    
+    // Show brief success message
+    function showBriefSuccess(message) {
+      const savePathElement = document.getElementById('calibrationSavePath');
+      if (savePathElement) {
+        const originalText = savePathElement.textContent;
+        const originalColor = savePathElement.style.color;
+        
+        savePathElement.textContent = '✓ Updated';
+        savePathElement.style.color = '#10b981';
+        
+        setTimeout(() => {
+          savePathElement.textContent = originalText;
+          savePathElement.style.color = originalColor;
+        }, 1500);
+      }
+    }
+    
+    // Handle keyboard input in save path dialog
+    function handleSavePathInputKeydown(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        confirmSavePath();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSavePathDialog();
+      }
+    }
+    
+    // Close save path dialog when clicking outside
+    function closeSavePathDialogOnOutsideClick(event) {
+      if (event.target === event.currentTarget) {
+        closeSavePathDialog();
+      }
     }
 
     // Toggle corner detection
@@ -3990,7 +4250,19 @@
     // Update calibration thumbnails
     async function updateCalibrationThumbnails() {
       try {
-        const response = await fetch('/api/calibration/thumbnails');
+        // Get current save path (custom or default)
+        const currentSavePath = customSavePath || defaultSavePath;
+        
+        // Send current save path to server
+        const response = await fetch('/api/calibration/thumbnails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            save_path: currentSavePath
+          })
+        });
         const data = await response.json();
         
         const thumbnailGrid = document.getElementById('calibrationThumbnailGrid');
@@ -4019,7 +4291,7 @@
             
             thumbnailDiv.innerHTML = `
               <div class="relative">
-                <img src="/api/calibration/thumbnail/${thumbnail.filename}" 
+                <img src="/api/calibration/thumbnail/${thumbnail.filename}?save_path=${encodeURIComponent(currentSavePath)}" 
                      alt="${thumbnail.filename}" 
                      class="w-full h-20 object-cover rounded-lg">
                 <div class="absolute bottom-1 left-1 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
@@ -4048,7 +4320,9 @@
       modal.style.cursor = 'pointer';
       
       const img = document.createElement('img');
-      img.src = `/api/calibration/image/${filename}`;
+      // Get current save path (custom or default)
+      const currentSavePath = customSavePath || defaultSavePath;
+      img.src = `/api/calibration/image/${filename}?save_path=${encodeURIComponent(currentSavePath)}`;
       img.className = 'max-w-90vw max-h-90vh object-contain rounded-lg';
       
       modal.appendChild(img);
@@ -4204,8 +4478,8 @@
     }
 
     // Initialize camera calibration when page loads
-    document.addEventListener('DOMContentLoaded', function() {
-      initializeCameraCalibration();
+    document.addEventListener('DOMContentLoaded', async function() {
+      await initializeCameraCalibration();
       
       // Add ESC key listener for closing modals
       document.addEventListener('keydown', function(event) {
@@ -4405,5 +4679,37 @@
       </div>
 
       <script src="/js/robot_arm_control.js?v=6&ts=1755534000"></script>
+      
+      <!-- Save Path Configuration Modal (Global) -->
+      <div id="savePathModal" class="modal-overlay" onclick="closeSavePathDialogOnOutsideClick(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <h3 class="modal-title">📁 Calibration Data Save Path</h3>
+            <p class="modal-subtitle">Set the directory for saving calibration data</p>
+          </div>
+          
+          <div class="modal-joint-grid">
+            <div class="modal-joint-item">
+              <label class="modal-joint-label">Save Path:</label>
+              <input type="text" id="savePathInput" class="modal-joint-input" 
+                     style="width: 280px; font-family: monospace;" 
+                     placeholder="Enter the directory"
+                     onkeydown="handleSavePathInputKeydown(event)">
+            </div>
+          </div>
+          
+          <div class="modal-buttons">
+            <button class="modal-button modal-button-secondary" onclick="closeSavePathDialog()">
+              Cancel
+            </button>
+            <button class="modal-button modal-button-secondary" onclick="resetSavePathToDefault()" style="background-color: #f59e0b; border-color: #f59e0b;">
+              Use Default
+            </button>
+            <button class="modal-button modal-button-primary" onclick="confirmSavePath()">
+              Set Path
+            </button>
+          </div>
+        </div>
+      </div>
 </body>
 </html>
