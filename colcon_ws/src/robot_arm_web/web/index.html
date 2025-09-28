@@ -2857,7 +2857,7 @@
               class="robot-arm-button status-style-button status-button-cyan font-semibold rounded-lg text-base"
               onclick="runAutoCollect()"
             >
-              🤖 AutoCollect
+              🦾 AutoCollect
             </button>
 
             <!-- 5. Clear Images Button -->
@@ -2883,7 +2883,7 @@
               class="robot-arm-button status-style-button status-button-indigo font-semibold rounded-lg text-base"
               onclick="runEyeInHandCalibration()"
             >
-              🤖 CalibExtrinsic
+              ⚙️ CalibExtrinsic
             </button>
           </div>
         </div>
@@ -3244,6 +3244,9 @@
     // Take screenshot for calibration
     async function takeCalibrationScreenshot() {
       try {
+        // Get current save path (use original path for API, not display path)
+        const currentSavePath = customSavePath || defaultSavePath;
+        
         const response = await fetch('/api/calibration/screenshot', {
           method: 'POST',
           headers: {
@@ -3251,13 +3254,28 @@
           },
           body: JSON.stringify({
             joint_angles: robotStateData?.jointActualPosition || [],
-            tcp_pose: robotStateData?.TCPActualPosition || []
+            tcp_pose: robotStateData?.TCPActualPosition || [],
+            save_path: currentSavePath
           })
         });
         
         const data = await response.json();
         if (data.success) {
           updateCalibrationThumbnails();
+          console.log(`Screenshot saved: ${data.filename} in ${data.save_path}`);
+          
+          // Optional: Show a brief success message to user
+          const imageCountElement = document.getElementById('calibrationImageCount');
+          if (imageCountElement) {
+            const originalText = imageCountElement.textContent;
+            imageCountElement.textContent = '✓ Saved';
+            imageCountElement.style.color = '#10b981';
+            
+            setTimeout(() => {
+              imageCountElement.textContent = originalText;
+              imageCountElement.style.color = '';
+            }, 1500);
+          }
         } else {
           console.error('Screenshot failed:', data.message);
         }
@@ -3630,13 +3648,20 @@
 
     // Clear calibration images
     async function clearCalibrationImages() {
+      // Get current save path for display in confirmation dialog
+      const currentSavePath = customSavePathDisplay || customSavePath || defaultSavePath;
+      
       if (!(await showConfirmationModal(
         '🗑️ Clear Calibration Images',
         `<div class="text-gray-700">
           <p class="mb-2">Are you sure you want to clear all calibration images?</p>
+          <div class="bg-blue-50 p-3 rounded-lg border border-blue-200 mb-3">
+            <p class="text-sm text-blue-700"><strong>📁 Target Directory:</strong></p>
+            <p class="text-xs text-blue-600 mt-1 font-mono">${currentSavePath}</p>
+          </div>
           <div class="bg-red-50 p-3 rounded-lg border border-red-200">
             <p class="text-sm text-red-700"><strong>⚠️ Warning:</strong></p>
-            <p class="text-sm text-red-600 mt-1">This action cannot be undone. All captured calibration images will be permanently deleted.</p>
+            <p class="text-sm text-red-600 mt-1">This action cannot be undone. All captured calibration images in the above directory will be permanently deleted.</p>
           </div>
           <p class="text-sm text-gray-600 mt-2">Current image count: <strong>${calibrationImageCount}</strong></p>
         </div>`
@@ -3645,8 +3670,17 @@
       }
       
       try {
+        // Use original path for API call
+        const apiSavePath = customSavePath || defaultSavePath;
+        
         const response = await fetch('/api/calibration/clear', {
-          method: 'POST'
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            save_path: apiSavePath
+          })
         });
         
         const data = await response.json();
@@ -3743,7 +3777,7 @@
       } finally {
         // Reset button
         autoCollectBtn.disabled = false;
-        autoCollectBtn.textContent = '🤖 AutoCollect';
+        autoCollectBtn.textContent = '🦾 AutoCollect';
       }
     }
 
@@ -4243,7 +4277,7 @@
       } finally {
         // Reset button
         calibrateBtn.disabled = false;
-        calibrateBtn.textContent = '🤖 CalibExtrinsic';
+        calibrateBtn.textContent = '⚙️ CalibExtrinsic';
       }
     }
 

@@ -975,16 +975,44 @@ class RobotArmWebServer(Node):
                     data = await request.json()
                     joint_angles = data.get('joint_angles', [])
                     tcp_pose = data.get('tcp_pose', [])
+                    save_path = data.get('save_path', '')
                     
-                    # Get calibration directory using common utilities
-                    try:
-                        temp_dir = get_temp_directory()
-                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
-                    except RuntimeError as e:
-                        return JSONResponse(content={
-                            'success': False, 
-                            'message': f'Could not find workspace root: {str(e)}'
-                        }, status_code=500)
+                    # Determine calibration directory
+                    if save_path and save_path.strip():
+                        # Use custom path
+                        calibration_dir = save_path.strip()
+                        # If it's a relative path starting with './', make it absolute relative to project root
+                        if calibration_dir.startswith('./'):
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir[2:])
+                            except RuntimeError as e:
+                                return JSONResponse(content={
+                                    'success': False, 
+                                    'message': f'Could not resolve custom path: {str(e)}'
+                                }, status_code=500)
+                        elif not os.path.isabs(calibration_dir):
+                            # Handle other relative paths as relative to project root
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir)
+                            except RuntimeError as e:
+                                return JSONResponse(content={
+                                    'success': False, 
+                                    'message': f'Could not resolve custom path: {str(e)}'
+                                }, status_code=500)
+                    else:
+                        # Use default path
+                        try:
+                            temp_dir = get_temp_directory()
+                            calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                        except RuntimeError as e:
+                            return JSONResponse(content={
+                                'success': False, 
+                                'message': f'Could not find workspace root: {str(e)}'
+                            }, status_code=500)
                     
                     os.makedirs(calibration_dir, exist_ok=True)
                     
@@ -1089,11 +1117,12 @@ class RobotArmWebServer(Node):
                         with open(state_filepath, 'w') as f:
                             json.dump(state_data, f, indent=2)
                         
-                        self.get_logger().info(f"Calibration screenshot saved: {filename}")
+                        self.get_logger().info(f"Calibration screenshot saved: {filename} in {calibration_dir}")
                         return JSONResponse(content={
                             'success': True, 
                             'filename': filename,
-                            'sequence': next_sequence
+                            'sequence': next_sequence,
+                            'save_path': calibration_dir
                         })
                     else:
                         return JSONResponse(content={
@@ -1138,15 +1167,39 @@ class RobotArmWebServer(Node):
                     return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
             
             @app.post("/api/calibration/clear")
-            async def clear_calibration_images():
+            async def clear_calibration_images(request: Request):
                 """Clear all calibration images"""
                 try:
-                    # Get calibration directory using common utilities
-                    try:
-                        temp_dir = get_temp_directory()
-                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
-                    except RuntimeError:
-                        return JSONResponse(content={'success': True, 'message': 'No images to clear'})
+                    data = await request.json()
+                    save_path = data.get('save_path', '')
+                    
+                    # Determine calibration directory
+                    if save_path and save_path.strip():
+                        # Use custom path
+                        calibration_dir = save_path.strip()
+                        # If it's a relative path starting with './', make it absolute relative to project root
+                        if calibration_dir.startswith('./'):
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir[2:])
+                            except RuntimeError:
+                                return JSONResponse(content={'success': True, 'message': 'No images to clear'})
+                        elif not os.path.isabs(calibration_dir):
+                            # Handle other relative paths as relative to project root
+                            try:
+                                temp_dir = get_temp_directory()
+                                project_root = os.path.dirname(temp_dir)  # Get robot_dc directory
+                                calibration_dir = os.path.join(project_root, calibration_dir)
+                            except RuntimeError:
+                                return JSONResponse(content={'success': True, 'message': 'No images to clear'})
+                    else:
+                        # Use default path
+                        try:
+                            temp_dir = get_temp_directory()
+                            calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                        except RuntimeError:
+                            return JSONResponse(content={'success': True, 'message': 'No images to clear'})
                     
                     if os.path.exists(calibration_dir):
                         
@@ -1163,8 +1216,12 @@ class RobotArmWebServer(Node):
                             if filename != 'chessboard_config.json':
                                 os.remove(file_path)
                         
-                        self.get_logger().info("Calibration images and poses cleared (keeping chessboard config)")
-                        return JSONResponse(content={'success': True, 'message': 'Images cleared successfully'})
+                        self.get_logger().info(f"Calibration images and poses cleared from {calibration_dir} (keeping chessboard config)")
+                        return JSONResponse(content={
+                            'success': True, 
+                            'message': 'Images cleared successfully',
+                            'cleared_path': calibration_dir
+                        })
                     else:
                         return JSONResponse(content={'success': True, 'message': 'No images to clear'})
                         
