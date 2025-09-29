@@ -10,14 +10,14 @@ Method:
 - Computes robust mean of tip positions across multiple observations
 
 Input Parameters:
-- --pyr-config: Pyramid geometry & chessboard mapping JSON
+- --pyr_config: Pyramid geometry & chessboard mapping JSON
 - --camera_intrinsic: Camera intrinsic parameters JSON  
 - --camera_extrinsic: Eye-in-hand calibration result JSON
 - --output: Output calibration result file (optional)
 
 Usage:
     python3 duco_calibrate_sticks.py \
-        --pyr-config temp/stick_calibration_data/pyramid_parameters.json \
+        --pyr_config temp/stick_calibration_data/pyramid_parameters.json \
         --camera_intrinsic temp/camera_parameters/calibration_result.json \
         --camera_extrinsic temp/camera_parameters/eye_in_hand_result.json
 
@@ -166,7 +166,7 @@ def main():
 	pattern_rows = 9
 	square_size = 0.02  # meters
 
-	parser.add_argument("--pyr-config", type=str, required=True, help="JSON file with pyramid size & chessboard mapping")
+	parser.add_argument("--pyr_config", type=str, required=True, help="JSON file with pyramid size & chessboard mapping")
 	parser.add_argument("--camera_intrinsic", type=str, required=True, help="JSON with camera intrinsic calibration result")
 	parser.add_argument("--camera_extrinsic", type=str, required=True, help="JSON with eye-in-hand calibration result")
 	parser.add_argument("--output", type=str, default="temp/stick_calibration_result/stick_calibration_result.json", help="Output calibration result file")
@@ -209,12 +209,35 @@ def main():
 		pyr_col_min, pyr_col_max, pyr_row_min, pyr_row_max, square_size, pyr_apex_height
 	)
 
-	# Open RTSP camera (similar to estimation_task_auto_positioning.py)
+	# Initialize IP camera similar to estimation_task_auto_positioning.py
 	rtsp_url = "rtsp://admin:123456@192.168.1.102/stream0"
-	cap = cv2.VideoCapture(rtsp_url)
-	if cap.isOpened():
-		# Set buffer size to minimize latency for IP cameras
-		cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+	
+	def get_latest_frame():
+		"""Get the latest frame by reconnecting to camera (ensures fresh frame)"""
+		try:
+			cap_temp = cv2.VideoCapture(rtsp_url)
+			if cap_temp.isOpened():
+				# Set buffer size to minimize latency
+				cap_temp.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+				
+				# Read a frame to ensure connection is stable
+				ret, frame = cap_temp.read()
+				cap_temp.release()  # Release immediately after reading
+				if ret:
+					return ret, frame
+				else:
+					print("Failed to read frame after connection")
+					return False, None
+			else:
+				print("Failed to connect to camera")
+				return False, None
+		except Exception as e:
+			print(f"Error connecting to camera: {e}")
+			return False, None
+	
+	# Test initial connection
+	ret, test_frame = get_latest_frame()
+	if ret:
 		print(f"Successfully connected to IP camera: {rtsp_url}")
 	else:
 		print(f"Failed to connect to IP camera: {rtsp_url}")
@@ -222,6 +245,11 @@ def main():
 		cap = cv2.VideoCapture(0)
 		if not cap.isOpened():
 			raise RuntimeError("Cannot open any camera source")
+		
+		def get_latest_frame():
+			"""Fallback function for local camera"""
+			ret, frame = cap.read()
+			return ret, frame
 
 	print("Instructions: Move robot so stick tip touches apex. Press SPACE to capture, 'q' to quit early.")
 	print("Using IP camera for calibration...")
@@ -234,11 +262,26 @@ def main():
 	win_name = "stick_calibration"
 	cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
 
+	frame_skip_count = 0
+	max_frame_skips = 10
+	
 	while True:
-		ret, frame = cap.read()
+		ret, frame = get_latest_frame()
 		if not ret:
-			print("[WARN] Failed to read frame")
-			break
+			frame_skip_count += 1
+			print(f"[WARN] Failed to read frame ({frame_skip_count}/{max_frame_skips})")
+			if frame_skip_count >= max_frame_skips:
+				print("[ERROR] Too many consecutive frame read failures. Exiting.")
+				break
+			cv2.waitKey(100)  # Wait a bit before retrying
+			continue
+		
+		# Reset skip counter on successful read
+		frame_skip_count = 0
+		
+		if frame is None or frame.size == 0:
+			print("[WARN] Empty frame received, skipping...")
+			continue
 
 		display = frame.copy()
 		gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -285,7 +328,12 @@ def main():
 			break
 		idx += 1
 
-	cap.release()
+	# Clean up camera resources
+	try:
+		if 'cap' in locals():
+			cap.release()
+	except:
+		pass
 	cv2.destroyAllWindows()
 
 	accepted_points = [s.p_ee_tip for s in collected if s.accepted]
