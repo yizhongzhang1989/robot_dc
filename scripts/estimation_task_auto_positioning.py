@@ -21,8 +21,9 @@ from gen_py.robot.ttypes import Op
 from thrift import Thrift  
 
 # Import KeypointTracker for keypoint tracking functionality
+# Note: KeypointTracker now uses FFPPWebAPIKeypointTracker directly instead of HTTP API
 try:
-    from estimation_task_keypoints_track import KeypointTracker
+    from estimation_task_keypoints_track import KeypointTrackerInTaskEstimation
     KEYPOINT_TRACKER_AVAILABLE = True
 except ImportError:
     print("Warning: estimation_task_keypoints_track module not found. Keypoint tracking will be skipped.")
@@ -255,7 +256,7 @@ def main():
     time.sleep(1.0)
 
     # move to a safe middle position
-    print("Move to the middle pose 2")
+    print("Move to the middle pose 3")
     capture_pose = [65.25, -38.05, -105.18, -42.96, -26.7, -86.01]   # deg
     ConvertPose2Rad(capture_pose)
     res = robot.movej2(capture_pose, 2.0, 1.0, 0.0, True, op)
@@ -342,21 +343,31 @@ def main():
     # Check if KeypointTracker is available and run tracking
     if KEYPOINT_TRACKER_AVAILABLE:
         try:
-            # Initialize the keypoint tracker
-            api_url = "http://10.172.151.12:8009"  # Default API URL
-            tracker = KeypointTracker(api_url=api_url)
+            # Initialize the keypoint tracker with FlowFormer++ service URL
+            service_url = "http://msraig-ubuntu-3:8001"  # FlowFormer++ Web API service URL
+            
+            print(f"Initializing KeypointTrackerInTaskEstimation with service URL: {service_url}")
+            tracker = KeypointTrackerInTaskEstimation(service_url=service_url)
             
             # Run the complete keypoint tracking pipeline
             print("Running keypoint tracking pipeline...")
+            print(f"Using FlowFormer++ service at: {service_url}")
             tracking_success = tracker.run_tracking_pipeline(bidirectional=False)
             
             if tracking_success:
                 print("✅ Keypoint tracking completed successfully!")
+                print("📁 Results saved to: temp/positioning_data/*_tracking_result.json")
+                print("🎨 Visualizations saved to: temp/keypoints_track_results/*_track_result.jpg")
             else:
                 print("❌ Keypoint tracking failed!")
+                print("⚠️  This may affect subsequent 3D coordinate estimation steps")
                 
+        except ImportError as e:
+            print(f"❌ Failed to initialize KeypointTracker: {e}")
+            print("💡 Make sure robot_vision module is available and FFPPWebAPIKeypointTracker can be imported")
         except Exception as e:
-            print(f"Error during keypoint tracking: {e}")
+            print(f"❌ Error during keypoint tracking: {e}")
+            print("💡 Check if FlowFormer++ service is running at the specified URL")
     else:
         print("❌ Keypoint tracking skipped - KeypointTracker not available")
     
@@ -578,14 +589,14 @@ def main():
 
     # move to a safe middle position
     middle_pose = [65.13, -24.23, -104.84, -43.0, -99.23, -111.14]
-    print("Move to middle pose")
+    print("Move to middle pose 1")
     ConvertPose2Rad(middle_pose)
     res = robot.movej2(middle_pose, 2.0, 1.0, 0.0, True, op)
     time.sleep(1.0)
 
     # move to a safe middle position
     middle_pose = [65.13, -24.23, -104.84, 46.77, -99.23, -111.14]
-    print("Move to middle pose")
+    print("Move to middle pose 2")
     ConvertPose2Rad(middle_pose)
     res = robot.movej2(middle_pose, 2.0, 1.0, 0.0, True, op)
     time.sleep(1.0)

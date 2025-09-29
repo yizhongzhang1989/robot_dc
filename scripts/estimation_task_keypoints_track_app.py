@@ -3,16 +3,15 @@
 Keypoint Tracking Task
 =====================
 
-This script implements keypoint tracking functionality using FFPPWebAPIKeypointTracker directly.
+This script implements keypoint tracking functionality using the robot_vision API.
 It loads reference images and keypoints from the positioning_data folder,
 then tracks keypoints across target images (1-5.jpg).
 
 Dependencies:
-- FFPPWebAPIKeypointTracker: For keypoint tracking via FlowFormer++ web service
+- requests: For API communication
 - json: For data handling
 - os: For file operations
-- cv2: For image handling
-- PIL: For image processing
+- PIL: For image handling
 """
 
 import os
@@ -20,21 +19,17 @@ import sys
 import json
 import time
 import logging
+import requests
 import cv2
 import numpy as np
 from typing import Dict, List, Optional
 import traceback
-from PIL import Image
 
 # Add common package to path for workspace utilities
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 common_path = os.path.join(project_root, 'colcon_ws/src/common')
 sys.path.insert(0, common_path)
-
-# Add robot_vision path for FFPPWebAPIKeypointTracker
-robot_vision_path = os.path.join(current_dir, 'ThirdParty', 'robot_vision')
-sys.path.insert(0, robot_vision_path)
 
 # Import workspace utilities
 try:
@@ -44,15 +39,6 @@ except ImportError as e:
     print(f"Warning: Could not import common package: {e}")
     COMMON_AVAILABLE = False
 
-# Import FFPPWebAPIKeypointTracker
-try:
-    from core.ffpp_webapi_keypoint_tracker import FFPPWebAPIKeypointTracker
-    FFPP_WEBAPI_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Could not import FFPPWebAPIKeypointTracker: {e}")
-    print("Make sure you're in the correct environment and robot_vision is available.")
-    FFPP_WEBAPI_AVAILABLE = False
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -60,31 +46,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class KeypointTrackerInTaskEstimation:
-    """Keypoint tracking task using FFPPWebAPIKeypointTracker directly."""
+class KeypointTracker:
+    """Keypoint tracker using robot_vision API."""
     
-    def __init__(self, service_url: str = "http://msraig-ubuntu-3:8001"):
+    def __init__(self, api_url: str = "http://msraig-ubuntu-2.guest.corp.microsoft.com:8009"):
         """Initialize the keypoint tracker.
         
         Args:
-            service_url: Base URL for the FlowFormer++ web service
+            api_url: Base URL for the robot_vision API
         """
-        if not FFPP_WEBAPI_AVAILABLE:
-            raise ImportError("FFPPWebAPIKeypointTracker is not available")
-            
-        self.service_url = service_url.rstrip('/')
-        
-        # Initialize FFPPWebAPIKeypointTracker
-        try:
-            self.tracker = FFPPWebAPIKeypointTracker(
-                service_url=service_url,
-                timeout=30,
-                image_format="jpg",
-                jpeg_quality=95
-            )
-        except Exception as e:
-            logger.error(f"Failed to initialize FFPPWebAPIKeypointTracker: {e}")
-            raise
+        self.api_url = api_url.rstrip('/')
+        self.session = requests.Session()
+        self.session.timeout = 30  # 30 second timeout
         
         # Setup data paths using workspace utilities if available
         if COMMON_AVAILABLE:
@@ -112,31 +85,31 @@ class KeypointTrackerInTaskEstimation:
             os.makedirs(self.visualization_dir)
             logger.info(f"Created visualization directory: {self.visualization_dir}")
         
-        logger.info(f"Initialized KeypointTrackerInTaskEstimation with service URL: {self.service_url}")
+        logger.info(f"Initialized KeypointTracker with API URL: {self.api_url}")
         logger.info(f"Positioning data path: {self.positioning_data_path}")
         logger.info(f"Visualization results path: {self.visualization_dir}")
-        logger.info(f"Using FFPPWebAPIKeypointTracker directly (no HTTP client needed)")
     
     def check_api_health(self) -> bool:
-        """Check if the FlowFormer++ web service is healthy and ready.
+        """Check if the robot_vision API is healthy and ready.
         
         Returns:
-            bool: True if service is healthy, False otherwise
+            bool: True if API is healthy, False otherwise
         """
         try:
-            health_result = self.tracker.get_service_health()
-            is_healthy = health_result.get('success', False)
-            logger.info(f"Service health check: {'✅ Healthy' if is_healthy else '❌ Degraded'}")
-            
-            if is_healthy:
-                logger.info(f"Service status: {health_result.get('status', 'unknown')}")
-                logger.info(f"Message: {health_result.get('message', 'No message')}")
+            response = self.session.get(f"{self.api_url}/health")
+            if response.status_code == 200:
+                data = response.json()
+                is_healthy = data.get('success', False)
+                logger.info(f"API health check: {'✅ Healthy' if is_healthy else '❌ Degraded'}")
+                if data.get('data'):
+                    logger.info(f"Tracker loaded: {data['data'].get('tracker_loaded', False)}")
+                    logger.info(f"Device: {data['data'].get('device', 'unknown')}")
+                return is_healthy
             else:
-                logger.error(f"Health check failed: {health_result.get('error', 'Unknown error')}")
-                
-            return is_healthy
+                logger.error(f"Health check failed with status code: {response.status_code}")
+                return False
         except Exception as e:
-            logger.error(f"Failed to check service health: {str(e)}")
+            logger.error(f"Failed to check API health: {str(e)}")
             return False
     
     def load_reference_keypoints(self) -> List[Dict]:
@@ -170,7 +143,7 @@ class KeypointTrackerInTaskEstimation:
             raise
     
     def set_reference_image(self, keypoints: List[Dict]) -> bool:
-        """Set reference image with keypoints using FFPPWebAPIKeypointTracker.
+        """Set reference image with keypoints using the API.
         
         Args:
             keypoints: List of keypoint dictionaries
@@ -182,28 +155,33 @@ class KeypointTrackerInTaskEstimation:
             if not os.path.exists(self.ref_img_path):
                 raise FileNotFoundError(f"Reference image not found: {self.ref_img_path}")
             
-            # Load reference image
-            ref_image = cv2.imread(self.ref_img_path)
-            if ref_image is None:
-                raise ValueError(f"Failed to load reference image: {self.ref_img_path}")
+            # Prepare the request
+            with open(self.ref_img_path, 'rb') as img_file:
+                files = {
+                    'image': ('ref_img.jpg', img_file, 'image/jpeg')
+                }
+                data = {
+                    'keypoints': json.dumps(keypoints),
+                    'image_name': 'reference'
+                }
+                
+                response = self.session.post(
+                    f"{self.api_url}/set_reference",
+                    files=files,
+                    data=data
+                )
             
-            # Convert BGR to RGB for the tracker
-            ref_image_rgb = cv2.cvtColor(ref_image, cv2.COLOR_BGR2RGB)
-            
-            # Set reference image with keypoints
-            result = self.tracker.set_reference_image(
-                image=ref_image_rgb,
-                keypoints=keypoints,
-                image_name='reference'
-            )
-            
-            if result.get('success', False):
-                logger.info(f"✅ Reference image set successfully with {len(keypoints)} keypoints")
-                logger.info(f"Reference key: {result.get('key', 'unknown')}")
-                logger.info(f"Keypoints count: {result.get('keypoints_count', 0)}")
-                return True
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success', False):
+                    logger.info(f"✅ Reference image set successfully with {len(keypoints)} keypoints")
+                    return True
+                else:
+                    logger.error(f"API returned success=False: {result.get('message', 'Unknown error')}")
+                    return False
             else:
-                logger.error(f"Failed to set reference image: {result.get('error', 'Unknown error')}")
+                logger.error(f"Failed to set reference image. Status: {response.status_code}")
+                logger.error(f"Response: {response.text}")
                 return False
                 
         except Exception as e:
@@ -225,40 +203,35 @@ class KeypointTrackerInTaskEstimation:
             if not os.path.exists(target_image_path):
                 raise FileNotFoundError(f"Target image not found: {target_image_path}")
             
-            # Load target image
-            target_image = cv2.imread(target_image_path)
-            if target_image is None:
-                raise ValueError(f"Failed to load target image: {target_image_path}")
-            
-            # Convert BGR to RGB for the tracker
-            target_image_rgb = cv2.cvtColor(target_image, cv2.COLOR_BGR2RGB)
-            
-            # Track keypoints
-            result = self.tracker.track_keypoints(
-                target_image=target_image_rgb,
-                reference_name='reference',
-                bidirectional=bidirectional,
-                return_flow=False
-            )
-            
-            if result.get('success', False):
-                logger.info(f"✅ Tracked {result.get('keypoints_count', 0)} keypoints in {os.path.basename(target_image_path)}")
-                logger.info(f"Processing time: {result.get('total_processing_time', 0):.3f}s")
-                
-                # Format result to match expected structure
-                tracking_data = {
-                    'tracked_keypoints': result.get('tracked_keypoints', []),
-                    'keypoints_count': result.get('keypoints_count', 0),
-                    'processing_time': result.get('total_processing_time', 0),
-                    'reference_used': result.get('reference_name', 'reference'),
-                    'bidirectional_enabled': result.get('bidirectional_enabled', bidirectional),
-                    'device_used': result.get('device_used', 'unknown'),
-                    'bidirectional_stats': result.get('bidirectional_stats')
+            # Prepare the request
+            with open(target_image_path, 'rb') as img_file:
+                files = {
+                    'image': (os.path.basename(target_image_path), img_file, 'image/jpeg')
+                }
+                data = {
+                    'reference_name': 'reference',
+                    'bidirectional': str(bidirectional).lower()
                 }
                 
-                return tracking_data
+                response = self.session.post(
+                    f"{self.api_url}/track_keypoints",
+                    files=files,
+                    data=data
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success', False):
+                    tracking_data = result.get('data', {})
+                    logger.info(f"✅ Tracked {tracking_data.get('keypoints_count', 0)} keypoints in {os.path.basename(target_image_path)}")
+                    logger.info(f"Processing time: {tracking_data.get('processing_time', 0):.3f}s")
+                    return tracking_data
+                else:
+                    logger.error(f"Tracking failed: {result.get('message', 'Unknown error')}")
+                    return None
             else:
-                logger.error(f"Tracking failed: {result.get('error', 'Unknown error')}")
+                logger.error(f"API request failed. Status: {response.status_code}")
+                logger.error(f"Response: {response.text}")
                 return None
                 
         except Exception as e:
@@ -554,34 +527,26 @@ class KeypointTrackerInTaskEstimation:
 
 def main():
     """Main function to run the keypoint tracking task."""
-    logger.info("🎯 Keypoint Tracking Task - Direct FFPPWebAPIKeypointTracker")
+    logger.info("🎯 Keypoint Tracking Task - Robot Vision API")
     logger.info("="*60)
     
-    # Get service URL from environment variable or command line argument
-    service_url = "http://msraig-ubuntu-3:8001"  # default FlowFormer++ service URL
+    # Get API URL from environment variable or command line argument
+    api_url = "http://10.172.151.12:8009"  # default to msraig-ubuntu-2
     
     if len(sys.argv) > 1:
-        service_url = sys.argv[1]
-        logger.info(f"Using service URL from command line: {service_url}")
-    elif "FLOWFORMER_SERVICE_URL" in os.environ:
-        service_url = os.environ["FLOWFORMER_SERVICE_URL"]
-        logger.info(f"Using service URL from environment: {service_url}")
+        api_url = sys.argv[1]
+        logger.info(f"Using API URL from command line: {api_url}")
+    elif "ROBOT_VISION_API_URL" in os.environ:
+        api_url = os.environ["ROBOT_VISION_API_URL"]
+        logger.info(f"Using API URL from environment: {api_url}")
     else:
-        logger.info(f"Using default FlowFormer++ service URL: {service_url}")
+        logger.info(f"Using default API URL (msraig-ubuntu-2): {api_url}")
         logger.info("You can specify a different URL with:")
-        logger.info("  python3 estimation_task_keypoints_track.py http://your-server:8001")
-        logger.info("  or set FLOWFORMER_SERVICE_URL environment variable")
+        logger.info("  python3 estimation_task_keypoints_track.py http://your-server:8009")
+        logger.info("  or set ROBOT_VISION_API_URL environment variable")
     
     # Initialize tracker
-    try:
-        tracker = KeypointTrackerInTaskEstimation(service_url=service_url)
-    except ImportError as e:
-        logger.error(f"Failed to initialize tracker: {e}")
-        logger.error("Make sure you have the robot_vision module available")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Failed to initialize tracker: {e}")
-        sys.exit(1)
+    tracker = KeypointTracker(api_url=api_url)
     
     # Run the tracking pipeline
     success = tracker.run_tracking_pipeline(bidirectional=False)
