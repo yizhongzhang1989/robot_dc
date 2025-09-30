@@ -1,262 +1,152 @@
-# Robot Monitor Node
+# Cartesian Controller Node
 
-## Overview
+This repository provides a set of tools, launch files, and utility nodes for using Cartesian controllers with a robot equipped with a force/torque (F/T) sensor. It includes support for joystick teleoperation, calibration, force control, compliance control, and motion control.
 
-The Robot Monitor Node is a ROS2 node that listens to robot UDP data streams and automatically records them to rosbag files. This node implements the same functionality as the `dk_test.py` script but adds ROS2 integration and automatic data recording capabilities.
+---
 
-## Features
+## 1. Aliases
 
-- ✅ **UDP Data Listening**: Listens simultaneously on ports 5566 (robot data) and 5577 (log data)
-- ✅ **Port Sharing**: Uses SO_REUSEPORT to share port 5566 with robot_arm_web_server
-- ✅ **Automatic Timestamps**: Adds nanosecond-level timestamps to all received data
-- ✅ **ROS2 Topic Publishing**: 
-  - `/robot_data` - Robot status data (TCP position, joint angles, force sensors, etc.)
-  - `/log_data` - System logs and status messages (optional, for debugging and status monitoring)
-- ✅ **Automatic rosbag Recording**: Automatically starts rosbag recording and saves to specified directory
-- ✅ **Configurable Storage**: Supports custom data storage locations
-- ✅ **Session Information**: Automatically generates session metadata files
-- ✅ **Data Compression**: Uses zstd compression to save storage space
-
-## System Requirements
-
-- ROS2 Humble
-- Python 3.8+
-- Linux system with SO_REUSEPORT support
-
-## Quick Start
-
-### 1. Build and Install
+For simplicity, convenient aliases are defined in `a@msraig-robot-02:~/.bashrc`:
 
 ```bash
-# Enter workspace and build
-cd /path/to/robot_dc3/colcon_ws
-colcon build --packages-select monitor
-source install/setup.bash
+alias myrun="ros2 launch duco_gcr5_910_moveit_config cartesian_controller.launch.py robot_ip:=192.168.1.10"
+alias myswitch_to_force="ros2 control switch_controllers --deactivate cartesian_compliance_controller cartesian_motion_controller --activate cartesian_force_controller"
+alias myswitch_to_compliance="ros2 control switch_controllers --deactivate cartesian_force_controller cartesian_motion_controller --activate cartesian_compliance_controller"
+alias myswitch_to_motion="ros2 control switch_controllers --deactivate cartesian_force_controller cartesian_compliance_controller --activate cartesian_motion_controller"
+alias mybuild="colcon build --packages-select duco_gcr5_910_moveit_config cartesian_controller_node && source install/setup.bash"
+alias myjoy="ros2 run joy joy_node"
+alias mycalib="python3 ft_calibrator.py --dir calib --out ft_calib_result.json"
 ```
 
-### 2. Start Monitoring
+> **Tip:** In the usage examples below, always prefer using these aliases for simplicity.
 
+---
+
+## 2. Build Instructions
+
+- To build required packages:
+  ```bash
+  mybuild
+  ```
+
+- The `duco_gcr5_910_moveit_config` package (from branch `duco_ros2_driver`) contains modifications required for Cartesian controllers:
+  - `config/cartesian_controller_manager.yaml`
+  - `launch/cartesian_controller.launch.py`
+
+These files configure and launch the Cartesian controllers.
+
+---
+
+## 3. Controllers Overview
+
+- **`cartesian_motion_controller`**  
+  Follows commanded Cartesian motions.
+
+- **`cartesian_force_controller`**  
+  Tracks external forces applied to the robot.
+
+- **`cartesian_compliance_controller`**  
+  Balances motion and force tracking. The stiffness parameters in  
+  `config/cartesian_controller_manager.yaml` control the balance.
+
+> The parameters in `cartesian_controller_manager.yaml` have been tuned for stable operation. Start with these values and adjust gradually if needed.
+
+---
+
+## 4. Utility Nodes
+
+Located under `branch_cartesian_control/cartesian_controller_node/cartesian_controller_node`:
+
+- **`zero_force_control_node.py`**  
+  Publishes zero vectors to `/target_wrench`. Used for zero force control.
+
+- **`joystick_calibration_node.py`**  
+  Controls robot motion using a joystick during calibration.
+
+- **`joystick_compliance_control_node.py`**  
+  Controls motion with a joystick. Pressing the **A button** applies a downward 20N force.  
+  The balance between motion and force is determined by stiffness parameters in  
+  `duco_gcr5_910_moveit_config/config/cartesian_controller_manager.yaml`.
+
+- **`joystick_force_control_node.py`**  
+  Controls force application via joystick. (Rotation control may not yet be implemented.)
+
+- **`calibration_data_recorder.py`**  
+  Records poses and F/T sensor values for calibration.
+
+- **`ft_calibrator.py`**  
+  Processes calibration data and outputs a calibration file.  
+  Example:
+  ```bash
+  python3 ft_calibrator.py --dir calib --out ft_calib_result.json
+  ```
+
+---
+
+## 5. Usage Guide
+
+### Calibration
+1. Ensure the `calib` folder (user-specified) is empty before starting.
+2. Run:
+   ```bash
+   myrun
+   myjoy
+   myswitch_to_motion
+   ros2 launch cartesian_controller_node joystick_calibration.launch.py
+   ros2 launch cartesian_controller_node calibration_data_recorder.launch.py
+   ```
+3. Use the joystick to rotate the robot randomly.  
+   Every 5 seconds, the system records pose and F/T sensor data.  
+   Collect ~10–20 points.
+4. Generate calibration result:
+   ```bash
+   mycalib
+   ```
+   → Outputs `ft_calib_result.json` inside `calib/`.
+
+---
+
+### Joystick Teleoperation
 ```bash
-# Use default storage location (~/robot_data)
-ros2 launch monitor monitor.launch.py
-
-# Specify custom storage location
-ros2 launch monitor monitor.launch.py data_dir:=/your/custom/path
-
-# Or set environment variable
-export ROBOT_DATA_DIR=/your/custom/path
-ros2 launch monitor monitor.launch.py
+myrun
+myjoy
+myswitch_to_{compliance|force}
+ros2 launch cartesian_controller_node joystick_{compliance|force}_control.launch.py
 ```
+- Control the robot with the joystick in **compliance** or **force** mode.
 
-### 3. Data Management
+---
 
+### Direct Manual Control
+
+**(a) Zero Force Control**
 ```bash
-# View all sessions
-python3 scripts/robot_monitor_manager.py --list --detailed
-
-# Analyze specific session
-python3 scripts/robot_monitor_manager.py --analyze ~/robot_data/2025-08-25/robot_monitor_HHMMSS
-
-# View data content
-python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-08-25/robot_monitor_HHMMSS --limit 5 --full
-
-# View raw binary data format
-python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-08-25/robot_monitor_HHMMSS --limit 2 --raw
+myrun
+myswitch_to_force
+ros2 launch cartesian_controller_node zero_force_control.launch.py
 ```
 
-## Runtime Information
-
-### Node Startup Logs
-
-After the Monitor node starts, it will display the following information in real-time in the terminal:
-
-```
-[INFO] [robot_monitor_node]: Robot Monitor Node started
-[INFO] [robot_monitor_node]: Data will be saved to: /home/user/robot_data
-[INFO] [robot_monitor_node]: Rosbag will be saved to: /home/user/robot_data/2025-08-25/robot_monitor_134753
-[INFO] [robot_monitor_node]: Session info saved to: /home/user/robot_data/2025-08-25/robot_monitor_134753_info.json
-[INFO] [robot_monitor_node]: Started rosbag recording with PID: 12345
-[INFO] [robot_monitor_node]: Listening on ports 5566 (data) and 5577 (log)
-[INFO] [robot_monitor_node]: Using SO_REUSEPORT to share port 5566 with robot_arm_web_server
-[INFO] [robot_monitor_node]: Data receiver bound to 0.0.0.0:5566
-[INFO] [robot_monitor_node]: Log receiver bound to 0.0.0.0:5577
-[INFO] [robot_monitor_node]: [DATA] From 192.168.1.100:5566 - RobotTcpPos: [-98.85, 658.5, 500.85, -3.81, 0.13, -170.38]
-[INFO] [robot_monitor_node]: [LOG] From 192.168.1.100:5577: System status OK
-```
-
-> ✅ **Real-time Monitoring**: When the node is running, it automatically displays received data in the terminal, no additional commands needed to view real-time data streams.
-
-### Data Content Examples
-
-**Robot Data** (`/robot_data` topic) - Main data stream:
-- **RobotTcpPos**: TCP position [x, y, z, rx, ry, rz] (mm and degrees)
-- **RobotAxis**: Joint angles [J1-J6] (degrees)
-- **RobotTrack**: Rail position
-- **FTSensorData**: Force/torque sensor [Fx, Fy, Fz, Mx, My, Mz]
-- **FTTarget**: Force/torque target values
-
-**Log Data** (`/log_data` topic) - Auxiliary data stream (optional):
-- System log messages and events
-- Error notifications and status updates
-- Debug information
-
-> 📝 **Note**: In actual use, focus mainly on the `/robot_data` topic. The `/log_data` topic is for system logs and may have no data or less data.
-
-## Data Storage
-
-### Storage Structure
-
-```
-Data Root Directory/
-├── 2025-08-25/
-│   ├── robot_monitor_134753/          # rosbag data directory
-│   │   ├── robot_monitor_134753_0.db3.zstd # Compressed SQLite database file
-│   │   └── metadata.yaml              # rosbag metadata
-│   └── robot_monitor_134753_info.json # Session information file
-├── 2025-08-26/
-└── ...
-```
-
-### Storage Location Configuration
-
-**Method 1: Environment Variable (Recommended)**
+**(b) Compliance Control**
 ```bash
-export ROBOT_DATA_DIR=/your/custom/path
+myrun
+myswitch_to_compliance
+ros2 launch cartesian_controller_node zero_force_control.launch.py
 ```
 
-**Method 2: Launch Parameter**
-```bash
-ros2 launch monitor monitor.launch.py data_dir:=/your/custom/path
+- In zero force mode, the robot follows external forces.  
+- In compliance mode, the robot follows external forces but returns to its original position once released (due to compliance stiffness).  
+
+You can configure constrained axes via:
+```yaml
+config/cartesian_controller_manager.yaml   # see lines 87–94
 ```
 
-**Method 3: View Current Configuration**
-```bash
-python3 scripts/robot_monitor_manager.py --config
-```
+---
 
-### Session Information File Example
+## 6. Troubleshooting
 
-```json
-{
-  "session_start": "2025-08-25T13:47:53.123456",
-  "bag_name": "robot_monitor_134753",
-  "data_sources": {
-    "robot_data_port": 5566,
-    "log_data_port": 5577
-  },
-  "topics": ["/robot_data", "/log_data"]
-}
-```
+- **Symptom:** Robot drifts in force/compliance control.  
+  **Cause:** F/T sensor not calibrated.  
+  **Solution:** Repeat the calibration procedure.
 
-## Management Tools
-
-### robot_monitor_manager.py - Unified Data Management
-
-**Main Features**: Configuration management, session listing, data analysis, content viewing
-
-```bash
-# Basic operations
-python3 scripts/robot_monitor_manager.py --config           # View configuration
-python3 scripts/robot_monitor_manager.py --list --detailed  # List sessions
-python3 scripts/robot_monitor_manager.py --test             # Test connection
-
-# Data analysis
-python3 scripts/robot_monitor_manager.py --analyze ~/robot_data/2025-08-25/robot_monitor_HHMMSS
-
-# Data viewing
-python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-08-25/robot_monitor_HHMMSS --limit 5 --full
-python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-08-25/robot_monitor_HHMMSS --topic /log_data  # View logs (may have no data)
-
-# View raw data format
-python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-08-25/robot_monitor_HHMMSS --limit 2 --raw  # Hexadecimal raw data
-
-# View database structure and timestamp storage details
-python3 scripts/robot_monitor_manager.py --db-info ~/robot_data/2025-08-25/robot_monitor_HHMMSS
-
-# Data cleanup
-python3 scripts/robot_monitor_manager.py --cleanup 30          # Preview cleanup
-python3 scripts/robot_monitor_manager.py --cleanup-confirm 30  # Confirm cleanup
-```
-
-### test_udp_send.py - Test Data Sending Tool
-
-```bash
-python3 scripts/test_udp_send.py -n 20 -i 0.5  # Send 20 messages with 0.5s interval
-```
-
-> 💡 **Note**: This tool is for development and testing environments. In actual deployment, the robot will send UDP data directly.
-
-## Data Viewing
-
-### Real-time Monitoring
-
-When the monitor node is running, all received data will be displayed in real-time directly in the node terminal:
-
-```
-[INFO] [robot_monitor_node]: [DATA] 15:49:05.844 From 192.168.1.100:5566 - RobotTcpPos: [-41.04, 238.16, 652.56, 87.34, 6.03, 179.41], RobotAxis: [1.15, -0.45, 1.31, 0.81, -1.62, -1.95], FTSensorData: [0.84, 1.02, 29.48, 0.26, -0.56, 0.36]
-[INFO] [robot_monitor_node]: [LOG] 15:49:06.123 From 192.168.1.100:5577: System status OK
-```
-
-### Timestamp Explanation
-
-### Detailed Timestamp Information
-
-**rosbag Timestamp Storage Location**:
-- **Table**: `messages`
-- **Field**: `timestamp` (INTEGER type, 64-bit)
-- **Precision**: Nanosecond level (1756108145806574972 = 2025-08-25 15:49:05.806574972)
-- **Source**: System time when ROS2 node receives UDP data packets
-
-**Database Field Description**:
-
-| Field Name  | Type      | Purpose                                     | Your Actual Data Example     |
-|-------------|-----------|---------------------------------------------|------------------------------|
-| `id`        | INTEGER   | Unique message identifier                   | 1, 2, 3...                   |
-| `topic_id`  | INTEGER   | Topic ID (1=/robot_data, 2=/log_data)      | 1                            |
-| `timestamp` | INTEGER   | **Timestamp (nanoseconds)**                | 1756108145806574972          |
-| `data`      | BLOB      | **Robot data (binary)**                    | 232 bytes of robot data      |
-
-**Why Use Reception Timestamp**:
-1. Robot's raw data contains no timestamp, only position, angle, force sensor data
-2. Reception timestamp more accurately reflects when data was recorded
-3. Avoids network delay and clock synchronization issues
-
-**View Complete Database Information**:
-```bash
-python3 scripts/robot_monitor_manager.py --db-info ~/robot_data/2025-08-25/robot_monitor_HHMMSS
-```
-Shows: database structure, timestamp storage details, message statistics, recording duration, etc.
-
-**Raw Data Format**:
-```json
-{
-  "RobotTcpPos": [-41.04, 238.16, 652.56, 87.34, 6.03, 179.41],
-  "RobotAxis": [1.15, -0.45, 1.31, 0.81, -1.62, -1.95],
-  "RobotTrack": 0,
-  "FTSensorData": [0.85, 1.01, 29.2, 0.26, -0.58, 0.36],
-  "FTTarget": [0, 0, 0, 0, 0, 0]
-}
-```
-
-**Storage Format**:
-```json
-{
-  "raw_message": "{Original robot JSON data}"
-}
-```
-Timestamps are stored in the rosbag message header.
-
-### View Historical Data
-
-```bash
-# View data content, supports compressed files
-python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-08-25/robot_monitor_HHMMSS --limit 5 --full
-
-# View raw binary data format (hexadecimal and ASCII)
-python3 scripts/robot_monitor_manager.py --view ~/robot_data/2025-08-25/robot_monitor_HHMMSS --limit 2 --raw
-```
-
-> 💡 **Note**: When the Monitor node is running, it will print received data in real-time in the terminal:
-> - `[DATA] timestamp From IP - RobotTcpPos: [...], RobotAxis: [...], FTSensorData: [...]`
-> - `[LOG] timestamp From IP: message`
 
