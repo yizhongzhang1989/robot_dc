@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
@@ -11,7 +12,6 @@ from fastapi.responses import JSONResponse, Response
 from ament_index_python.packages import get_package_share_directory
 import os
 import sys
-from ament_index_python.packages import get_package_share_directory
 import threading
 import json
 import asyncio
@@ -23,6 +23,11 @@ import time
 import cv2
 import subprocess
 import numpy as np
+import glob
+import math
+
+# Import common utilities
+from common import get_temp_directory, get_scripts_directory
 
 def get_stream_resolution(url):
     """获取RTSP流的分辨率，带错误处理"""
@@ -248,16 +253,29 @@ class RobotArmWebServer(Node):
         self.latest_camera_image = None
         self.camera_image_lock = threading.Lock()
         
-        # Subscribe to camera image topic
+        # Subscribe to camera image topic with optimized QoS for real-time streaming
+        # Using RELIABLE delivery ensures frames arrive when network conditions allow
+        camera_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,      # Deliver frames reliably to the web server
+            durability=DurabilityPolicy.VOLATILE,       # Don't store messages
+            history=HistoryPolicy.KEEP_LAST,           # Only keep latest frame
+            depth=1                                     # Only keep the most recent frame
+        )
+        
         self.camera_subscription = self.create_subscription(
             Image,
             '/robot_arm_camera/image_raw',
             self.camera_image_callback,
-            1
+            camera_qos  # Use optimized QoS instead of default RELIABLE
         )
         
         # CV Bridge for image conversion
         self.bridge = CvBridge()
+        
+        # Camera calibration attributes
+        self.corner_detection_enabled = False
+        self.chessboard_size = (11, 8)  # Default chessboard size (corners)
+        self.latest_image = None  # For calibration API compatibility
         
         self.get_logger().info("Subscribed to camera topic: /robot_arm_camera/image_raw")
         
@@ -265,6 +283,10 @@ class RobotArmWebServer(Node):
         self.latest_ft_data = None
         self.ft_data_lock = threading.Lock()
         self.ft_connection_manager = ConnectionManager()
+        
+        # Auto collect script process management
+        self.auto_collect_process = None
+        self.auto_collect_process_lock = threading.Lock()
         
         # Load URDF functionality
         self.load_urdf_data()
@@ -285,40 +307,64 @@ class RobotArmWebServer(Node):
             # Convert ROS Image to OpenCV format
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
             
+            # Process corner detection if enabled
+            processed_image = self.process_corner_detection(cv_image.copy())
+            
             with self.camera_image_lock:
-                self.latest_camera_image = cv_image
+                self.latest_camera_image = processed_image
+                # Store both formats for compatibility
+                self.latest_image = msg  # Keep original ROS message for calibration API
                 
         except Exception as e:
             self.get_logger().error(f'Error processing camera image: {e}')
     
+    def process_corner_detection(self, image):
+        """Process corner detection and draw corners on image if enabled"""
+        if not hasattr(self, 'corner_detection_enabled') or not self.corner_detection_enabled:
+            return image
+            
+        try:
+            # Convert to grayscale for corner detection
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            
+            # Get chessboard size (default if not set)
+            chessboard_size = getattr(self, 'chessboard_size', (11, 8))
+            
+            # Find chessboard corners
+            ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
+            
+            if ret:
+                # Refine corner positions for better accuracy
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                
+                # Draw corners on the image
+                cv2.drawChessboardCorners(image, chessboard_size, corners, ret)
+                
+                # Add status text
+                cv2.putText(image, f'Corners: {len(corners)} found', (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            else:
+                # No corners found
+                cv2.putText(image, 'No corners detected', (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                           
+            # Add chessboard size info
+            cv2.putText(image, f'Target: {chessboard_size[0]}x{chessboard_size[1]}', (10, 70), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                       
+        except Exception as e:
+            self.get_logger().error(f'Error in corner detection: {e}')
+            # Add error text to image
+            cv2.putText(image, 'Corner detection error', (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
+        return image
+    
     def add_scripts_to_path(self):
         """Add the scripts directory to Python path for importing FTC modules"""
-        # Find the robot_dc2 directory and add scripts to path
-        current_file = os.path.abspath(__file__)
-        self.get_logger().info(f"Current file path: {current_file}")
-        
-        scripts_dir = None
-        path_parts = current_file.split(os.sep)
-        self.get_logger().info(f"Path parts: {path_parts}")
-        
-        for i, part in enumerate(path_parts):
-            if part == 'robot_dc2':
-                scripts_dir = os.sep.join(path_parts[:i+1] + ['scripts'])
-                break
-        
-        if scripts_dir is None:
-            # Fallback: try different approach 
-            # Look for robot_dc2 in the path more flexibly
-            for i, part in enumerate(path_parts):
-                if 'robot_dc2' in part:
-                    base_dir = os.sep.join(path_parts[:i+1])
-                    if part != 'robot_dc2':
-                        # If the directory contains robot_dc2 but has different name
-                        base_dir = os.path.dirname(base_dir)
-                    scripts_dir = os.path.join(base_dir, 'scripts')
-                    break
-        
-        self.get_logger().info(f"Computed scripts directory: {scripts_dir}")
+        scripts_dir = get_scripts_directory()
+        self.get_logger().info(f"Scripts directory: {scripts_dir}")
         
         if scripts_dir and os.path.exists(scripts_dir):
             if scripts_dir not in sys.path:
@@ -775,29 +821,21 @@ class RobotArmWebServer(Node):
                     
                     # Tool states (first 4 bits)
                     tool_states = {
-                        'gripper': bool_register_output[0] or bool_register_output[0] == 1,
-                        'frame': bool_register_output[1] or bool_register_output[1] == 1,
-                        'stickP': bool_register_output[2] or bool_register_output[2] == 1,
-                        'stickR': bool_register_output[3] or bool_register_output[3] == 1,
+                        'gripper': bool(bool_register_output[0]) if bool_register_output[0] is not None else False,
+                        'frame': bool(bool_register_output[1]) if bool_register_output[1] is not None else False,
+                        'stickP': bool(bool_register_output[2]) if bool_register_output[2] is not None else False,
+                        'stickR': bool(bool_register_output[3]) if bool_register_output[3] is not None else False,
                     }
                     
                     # Program status (bit 4, inverted logic)
-                    is_program_completed = not bool_register_output[4] or bool_register_output[4] == 0
-                    
-                    # Current state array
-                    current_state = [
-                        1 if tool_states['gripper'] else 0,
-                        1 if tool_states['frame'] else 0,
-                        1 if tool_states['stickP'] else 0,
-                        1 if tool_states['stickR'] else 0
-                    ]
+                    is_program_completed = not bool(bool_register_output[4])
                     
                     return JSONResponse(content={
-                        'tool_states': tool_states,
-                        'program_completed': is_program_completed,
-                        'controls_enabled': is_program_completed,
-                        'current_state': current_state,
-                        'available_operations': ['gripper', 'frame', 'stickP', 'stickR', 'homing']
+                        'program': is_program_completed,
+                        'gripper': gripper_state,
+                        'frame': frame_state,
+                        'stickP': stickP_state,
+                        'stickR': stickR_state,
                     })
                     
                 except Exception as e:
@@ -928,6 +966,871 @@ class RobotArmWebServer(Node):
                 except Exception as e:
                     self.get_logger().error(f"Error executing FTC setFTSetAllRT: {str(e)}")
                     return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            # Camera Calibration API endpoints
+            @app.post("/api/calibration/screenshot")
+            async def take_calibration_screenshot(request: Request):
+                """Take a screenshot for camera calibration"""
+                try:
+                    data = await request.json()
+                    joint_angles = data.get('joint_angles', [])
+                    tcp_pose = data.get('tcp_pose', [])
+                    
+                    # Get calibration directory using common utilities
+                    try:
+                        temp_dir = get_temp_directory()
+                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    except RuntimeError as e:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': f'Could not find workspace root: {str(e)}'
+                        }, status_code=500)
+                    
+                    os.makedirs(calibration_dir, exist_ok=True)
+                    
+                    # Get current camera image
+                    if self.latest_image is not None:
+                        # Convert ROS image to OpenCV format
+                        cv_image = self.bridge.imgmsg_to_cv2(self.latest_image, "bgr8")
+                        
+                        # Find next available sequence number
+                        existing_files = glob.glob(os.path.join(calibration_dir, '*.jpg'))
+                        used_numbers = set()
+                        for file_path in existing_files:
+                            filename = os.path.basename(file_path)
+                            name_without_ext = filename.replace('.jpg', '')
+                            try:
+                                counter = int(name_without_ext)
+                                used_numbers.add(counter)
+                            except ValueError:
+                                # Skip files that don't match the numeric format
+                                continue
+                        
+                        # Find the next available number starting from 0
+                        next_sequence = 0
+                        while next_sequence in used_numbers:
+                            next_sequence += 1
+                        
+                        # Save image with simple numeric filename (matching duco_camera_collect.py)
+                        filename = f"{next_sequence}.jpg"
+                        filepath = os.path.join(calibration_dir, filename)
+                        
+                        cv2.imwrite(filepath, cv_image)
+                        
+                        # Save robot state data with matching format
+                        state_filename = f"{next_sequence}.json"
+                        state_filepath = os.path.join(calibration_dir, state_filename)
+                        
+                        # Convert joint angles and tcp pose to match duco_camera_collect.py format
+                        
+                        # Convert joint_angles from degrees to radians (if they were in degrees)
+                        joint_angles_rad = joint_angles if isinstance(joint_angles, list) and len(joint_angles) >= 6 else [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                        
+                        # Convert tcp_pose to proper format (if available)
+                        if isinstance(tcp_pose, list) and len(tcp_pose) >= 6:
+                            tcp_pose_data = {
+                                "x": tcp_pose[0] / 1000.0 if tcp_pose[0] > 100 else tcp_pose[0],  # Convert mm to m if needed
+                                "y": tcp_pose[1] / 1000.0 if tcp_pose[1] > 100 else tcp_pose[1],
+                                "z": tcp_pose[2] / 1000.0 if tcp_pose[2] > 100 else tcp_pose[2], 
+                                "rx": math.radians(tcp_pose[3]) if abs(tcp_pose[3]) > 6.28 else tcp_pose[3],  # Convert degrees to radians if needed
+                                "ry": math.radians(tcp_pose[4]) if abs(tcp_pose[4]) > 6.28 else tcp_pose[4],
+                                "rz": math.radians(tcp_pose[5]) if abs(tcp_pose[5]) > 6.28 else tcp_pose[5]
+                            }
+                            
+                            # Create 4x4 transformation matrix from tcp pose
+                            x, y, z, rx, ry, rz = tcp_pose_data["x"], tcp_pose_data["y"], tcp_pose_data["z"], tcp_pose_data["rx"], tcp_pose_data["ry"], tcp_pose_data["rz"]
+                            
+                            # Create rotation matrices for each axis
+                            cos_rx, sin_rx = math.cos(rx), math.sin(rx)
+                            cos_ry, sin_ry = math.cos(ry), math.sin(ry)
+                            cos_rz, sin_rz = math.cos(rz), math.sin(rz)
+                            
+                            # Rotation matrix around X axis
+                            R_x = np.array([
+                                [1, 0, 0],
+                                [0, cos_rx, -sin_rx],
+                                [0, sin_rx, cos_rx]
+                            ])
+                            
+                            # Rotation matrix around Y axis
+                            R_y = np.array([
+                                [cos_ry, 0, sin_ry],
+                                [0, 1, 0],
+                                [-sin_ry, 0, cos_ry]
+                            ])
+                            
+                            # Rotation matrix around Z axis
+                            R_z = np.array([
+                                [cos_rz, -sin_rz, 0],
+                                [sin_rz, cos_rz, 0],
+                                [0, 0, 1]
+                            ])
+                            
+                            # Combined rotation matrix (order: Z-Y-X)
+                            R = R_z @ R_y @ R_x
+                            
+                            # Create 4x4 transformation matrix
+                            transform_matrix = np.eye(4)
+                            transform_matrix[:3, :3] = R
+                            transform_matrix[:3, 3] = [x, y, z]
+                        else:
+                            tcp_pose_data = {
+                                "x": 0.0, "y": 0.0, "z": 0.0,
+                                "rx": 0.0, "ry": 0.0, "rz": 0.0
+                            }
+                            transform_matrix = np.eye(4)
+                        
+                        # Create JSON data matching duco_camera_collect.py format
+                        state_data = {
+                            "joint_angles": joint_angles_rad[:6],
+                            "end_xyzrpy": tcp_pose_data,
+                            "end2base": transform_matrix.tolist()
+                        }
+                        with open(state_filepath, 'w') as f:
+                            json.dump(state_data, f, indent=2)
+                        
+                        self.get_logger().info(f"Calibration screenshot saved: {filename}")
+                        return JSONResponse(content={
+                            'success': True, 
+                            'filename': filename,
+                            'sequence': next_sequence
+                        })
+                    else:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': 'No camera image available'
+                        }, status_code=400)
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error taking calibration screenshot: {str(e)}")
+                    return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
+            
+            @app.post("/api/calibration/corner-detection")
+            async def toggle_corner_detection(request: Request):
+                """Toggle corner detection for calibration"""
+                try:
+                    data = await request.json()
+                    enable = data.get('enable', False)
+                    
+                    if enable:
+                        chessboard_width = data.get('chessboard_width', 11)
+                        chessboard_height = data.get('chessboard_height', 8)
+                        
+                        # Store corner detection parameters
+                        self.corner_detection_enabled = True
+                        self.chessboard_size = (chessboard_width, chessboard_height)
+                        
+                        self.get_logger().info(f"Corner detection enabled: {chessboard_width}x{chessboard_height}")
+                        return JSONResponse(content={
+                            'success': True,
+                            'message': f'Corner detection enabled ({chessboard_width}x{chessboard_height})'
+                        })
+                    else:
+                        self.corner_detection_enabled = False
+                        self.get_logger().info("Corner detection disabled")
+                        return JSONResponse(content={
+                            'success': True,
+                            'message': 'Corner detection disabled'
+                        })
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error toggling corner detection: {str(e)}")
+                    return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
+            
+            @app.post("/api/calibration/clear")
+            async def clear_calibration_images():
+                """Clear all calibration images"""
+                try:
+                    # Get calibration directory using common utilities
+                    try:
+                        temp_dir = get_temp_directory()
+                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    except RuntimeError:
+                        return JSONResponse(content={'success': True, 'message': 'No images to clear'})
+                    
+                    if os.path.exists(calibration_dir):
+                        
+                        # Remove all jpg files
+                        jpg_files = glob.glob(os.path.join(calibration_dir, '*.jpg'))
+                        for file_path in jpg_files:
+                            os.remove(file_path)
+                        
+                        # Remove pose json files (but preserve chessboard_config.json)
+                        json_files = glob.glob(os.path.join(calibration_dir, '*.json'))
+                        for file_path in json_files:
+                            filename = os.path.basename(file_path)
+                            # Skip chessboard_config.json, only delete pose files (numbered files like 1.json, 2.json, etc.)
+                            if filename != 'chessboard_config.json':
+                                os.remove(file_path)
+                        
+                        self.get_logger().info("Calibration images and poses cleared (keeping chessboard config)")
+                        return JSONResponse(content={'success': True, 'message': 'Images cleared successfully'})
+                    else:
+                        return JSONResponse(content={'success': True, 'message': 'No images to clear'})
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error clearing calibration images: {str(e)}")
+                    return JSONResponse(content={'success': False, 'message': str(e)}, status_code=500)
+            
+            @app.get("/api/calibration/thumbnails")
+            async def get_calibration_thumbnails():
+                """Get list of calibration image thumbnails"""
+                try:
+                    # Get calibration directory using common utilities
+                    try:
+                        temp_dir = get_temp_directory()
+                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    except RuntimeError:
+                        return JSONResponse(content={'thumbnails': []})
+                    
+                    if not os.path.exists(calibration_dir):
+                        return JSONResponse(content={'thumbnails': []})
+                    
+                    import glob
+                    image_files = glob.glob(os.path.join(calibration_dir, '*.jpg'))
+                    
+                    thumbnails = []
+                    for file_path in sorted(image_files):
+                        filename = os.path.basename(file_path)
+                        thumbnails.append({'filename': filename})
+                    
+                    return JSONResponse(content={'thumbnails': thumbnails})
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error getting calibration thumbnails: {str(e)}")
+                    return JSONResponse(content={'thumbnails': []}, status_code=500)
+            
+            @app.get("/api/calibration/thumbnail/{filename}")
+            async def get_calibration_thumbnail(filename: str):
+                """Get a calibration image thumbnail"""
+                try:
+                    # Get calibration directory using common utilities
+                    try:
+                        temp_dir = get_temp_directory()
+                        calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    except RuntimeError:
+                        return JSONResponse(content={'error': 'Could not find workspace root'}, status_code=500)
+                    
+                    file_path = os.path.join(calibration_dir, filename)
+                    
+                    if os.path.exists(file_path) and os.path.isfile(file_path):
+                        # Read and resize image for thumbnail
+                        image = cv2.imread(file_path)
+                        if image is not None:
+                            # Resize to thumbnail size
+                            height, width = image.shape[:2]
+                            thumbnail_height = 150
+                            thumbnail_width = int(width * thumbnail_height / height)
+                            thumbnail = cv2.resize(image, (thumbnail_width, thumbnail_height))
+                            
+                            # Encode as JPEG
+                            _, buffer = cv2.imencode('.jpg', thumbnail)
+                            
+                            return Response(content=buffer.tobytes(), media_type="image/jpeg")
+                        else:
+                            return JSONResponse(content={'error': 'Unable to read image'}, status_code=400)
+                    else:
+                        return JSONResponse(content={'error': 'Image not found'}, status_code=404)
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error getting calibration thumbnail: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            @app.get("/api/calibration/image/{filename}")
+            async def get_calibration_image(filename: str):
+                """Get a full calibration image"""
+                try:
+                    # Get the temporary directory
+                    temp_dir = get_temp_directory()
+                    calibration_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    file_path = os.path.join(calibration_dir, filename)
+                    
+                    if os.path.exists(file_path) and os.path.isfile(file_path):
+                        return FileResponse(file_path, media_type="image/jpeg")
+                    else:
+                        return JSONResponse(content={'error': 'Image not found'}, status_code=404)
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error getting calibration image: {str(e)}")
+                    return JSONResponse(content={'error': str(e)}, status_code=500)
+            
+            @app.post("/api/calibration/intrinsic")
+            async def run_intrinsic_calibration(request: Request):
+                """Run intrinsic camera calibration using the camera calibration toolkit"""
+                try:
+                    data = await request.json()
+                    chessboard_width = data.get('chessboard_width', 11)
+                    chessboard_height = data.get('chessboard_height', 8) 
+                    square_size = data.get('square_size', 0.02)  # 20mm
+                    
+                    # Set up paths
+                    temp_dir = get_temp_directory()
+                    scripts_base_dir = get_scripts_directory()
+                    scripts_dir = os.path.join(scripts_base_dir, 'ThirdParty', 'camera_calibration_toolkit') if scripts_base_dir else None
+                    calibration_data_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    
+                    if not os.path.exists(calibration_data_dir):
+                        return JSONResponse(content={'success': False, 'message': 'No calibration images found in camera_calibration_data directory'}, status_code=400)
+                    
+                    if not scripts_dir or not os.path.exists(scripts_dir):
+                        return JSONResponse(content={'success': False, 'message': 'Camera calibration toolkit not found'}, status_code=500)
+                    
+                    # Check for image files
+                    import glob
+                    image_files = glob.glob(os.path.join(calibration_data_dir, '*.jpg'))
+                    if len(image_files) < 10:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': f'Not enough calibration images. Found {len(image_files)} images, need at least 10'
+                        }, status_code=400)
+                    
+                    self.get_logger().info(f"Starting intrinsic calibration with {len(image_files)} images")
+                    
+                    # Create chessboard config file
+                    config_data = {
+                        "pattern_id": "standard_chessboard",
+                        "name": "Standard Chessboard",
+                        "description": "Traditional black and white checkerboard pattern",
+                        "is_planar": True,
+                        "parameters": {
+                            "width": chessboard_width,
+                            "height": chessboard_height,
+                            "square_size": square_size
+                        }
+                    }
+                    
+                    config_path = os.path.join(temp_dir, 'chessboard_config.json')
+                    with open(config_path, 'w') as f:
+                        json.dump(config_data, f, indent=2)
+                    
+                    # Run calibration using subprocess to call the calibration script
+                    import subprocess
+                    import sys
+                    
+                    # Create a Python script to run the calibration
+                    calibration_script = f'''
+import os
+import sys
+import glob
+import json
+import numpy as np
+
+# Add the camera calibration toolkit to Python path
+sys.path.append('{scripts_dir}')
+
+try:
+    from core.intrinsic_calibration import IntrinsicCalibrator
+    from core.calibration_patterns import load_pattern_from_json
+    
+    # Set up paths
+    temp_dir = '{temp_dir}'
+    calibration_data_dir = os.path.join(temp_dir, 'camera_calibration_data')
+    image_paths = sorted(glob.glob(os.path.join(calibration_data_dir, '*.jpg')))
+    config_path = os.path.join(temp_dir, 'chessboard_config.json')
+    
+    print(f"Found {{len(image_paths)}} images for calibration")
+    
+    # Load pattern configuration
+    with open(config_path, 'r') as f:
+        config_data = json.load(f)
+    pattern = load_pattern_from_json(config_data)
+    
+    # Create calibrator
+    calibrator = IntrinsicCalibrator(
+        image_paths=image_paths,
+        calibration_pattern=pattern
+    )
+    
+    # Run calibration
+    result = calibrator.calibrate(
+        cameraMatrix=None,
+        distCoeffs=None,
+        flags=0,
+        criteria=None,
+        verbose=True
+    )
+    
+    # Generate report in temp directory
+    report_result = calibrator.generate_calibration_report(os.path.join(temp_dir, "intrinsic_calibration_report"))
+    
+    # Save results to JSON file for the web interface
+    output_data = {{
+        'success': True,
+        'rms_error': float(result['rms_error']),
+        'camera_matrix': result['camera_matrix'].tolist(),
+        'distortion_coefficients': result['distortion_coefficients'].flatten().tolist(),
+        'image_count': len(image_paths),
+        'report_html': report_result.get('html_report', '') if report_result else '',
+        'report_json': report_result.get('json_data', '') if report_result else ''
+    }}
+    
+    # Ensure camera_parameters directory exists
+    camera_params_dir = os.path.join(temp_dir, 'camera_parameters')
+    os.makedirs(camera_params_dir, exist_ok=True)
+    
+    output_path = os.path.join(camera_params_dir, 'calibration_result.json')
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    
+    print("✅ Calibration completed successfully!")
+    print(f"RMS Error: {{result['rms_error']}}")
+    
+except Exception as e:
+    print(f"❌ Calibration failed: {{str(e)}}")
+    import traceback
+    traceback.print_exc()
+    
+    # Save error result
+    error_data = {{
+        'success': False,
+        'message': str(e),
+        'error_type': type(e).__name__
+    }}
+    
+    # Ensure camera_parameters directory exists
+    camera_params_dir = os.path.join('{temp_dir}', 'camera_parameters')
+    os.makedirs(camera_params_dir, exist_ok=True)
+    
+    output_path = os.path.join(camera_params_dir, 'calibration_result.json')
+    with open(output_path, 'w') as f:
+        json.dump(error_data, f, indent=2)
+'''
+                    
+                    # Write the calibration script to a temporary file
+                    script_path = os.path.join(temp_dir, 'run_calibration.py')
+                    with open(script_path, 'w') as f:
+                        f.write(calibration_script)
+                    
+                    # Run the calibration script
+                    camera_params_dir = os.path.join(temp_dir, 'camera_parameters')
+                    os.makedirs(camera_params_dir, exist_ok=True)
+                    result_file = os.path.join(camera_params_dir, 'calibration_result.json')
+                    
+                    # Remove any existing result file
+                    if os.path.exists(result_file):
+                        os.remove(result_file)
+                    
+                    # Run the script with proper Python environment
+                    process = subprocess.run([
+                        sys.executable, script_path
+                    ], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=300,  # 5 minute timeout
+                    cwd=scripts_dir
+                    )
+                    
+                    self.get_logger().info(f"Calibration process stdout: {process.stdout}")
+                    if process.stderr:
+                        self.get_logger().warning(f"Calibration process stderr: {process.stderr}")
+                    
+                    # Read the result
+                    if os.path.exists(result_file):
+                        with open(result_file, 'r') as f:
+                            result_data = json.load(f)
+                        
+                        # Clean up temporary files
+                        try:
+                            os.remove(script_path)
+                            os.remove(config_path)
+                        except Exception:
+                            pass
+                        
+                        return JSONResponse(content=result_data)
+                    else:
+                        return JSONResponse(content={
+                            'success': False,
+                            'message': f'Calibration process failed. Return code: {process.returncode}',
+                            'stdout': process.stdout,
+                            'stderr': process.stderr
+                        }, status_code=500)
+                    
+                except subprocess.TimeoutExpired:
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': 'Calibration process timed out (>5 minutes). Please try with fewer images or check the calibration target.'
+                    }, status_code=500)
+                except Exception as e:
+                    self.get_logger().error(f"Error running intrinsic calibration: {str(e)}")
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': f'Server error: {str(e)}'
+                    }, status_code=500)
+            
+            @app.post("/api/calibration/eye-in-hand")
+            async def run_eye_in_hand_calibration(request: Request):
+                """Run eye-in-hand camera calibration using the camera calibration toolkit"""
+                try:
+                    data = await request.json()
+                    chessboard_width = data.get('chessboard_width', 11)
+                    chessboard_height = data.get('chessboard_height', 8) 
+                    square_size = data.get('square_size', 0.02)  # 20mm
+                    
+                    # Set up paths
+                    temp_dir = get_temp_directory()
+                    scripts_base_dir = get_scripts_directory()
+                    scripts_dir = os.path.join(scripts_base_dir, 'ThirdParty', 'camera_calibration_toolkit') if scripts_base_dir else None
+                    
+                    if not os.path.exists(temp_dir):
+                        return JSONResponse(content={'success': False, 'message': 'Temp directory not found'}, status_code=400)
+                    
+                    calibration_data_dir = os.path.join(temp_dir, 'camera_calibration_data')
+                    
+                    if not os.path.exists(calibration_data_dir):
+                        return JSONResponse(content={'success': False, 'message': 'No calibration images found in camera_calibration_data directory'}, status_code=400)
+                    
+                    if not scripts_dir or not os.path.exists(scripts_dir):
+                        return JSONResponse(content={'success': False, 'message': 'Camera calibration toolkit not found'}, status_code=500)
+                    
+                    # Check for image files and corresponding JSON files
+                    import glob
+                    image_files = glob.glob(os.path.join(calibration_data_dir, '*.jpg'))
+                    
+                    if len(image_files) < 5:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': f'Not enough calibration images. Found {len(image_files)} images, need at least 5'
+                        }, status_code=400)
+                    
+                    # Check if we have pose data for images
+                    pose_count = 0
+                    for img_file in image_files:
+                        img_basename = os.path.basename(img_file).replace('.jpg', '')
+                        json_file = os.path.join(calibration_data_dir, f'{img_basename}.json')
+                        if os.path.exists(json_file):
+                            pose_count += 1
+                    
+                    if pose_count < 5:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': f'Not enough pose data. Found {pose_count} poses, need at least 5'
+                        }, status_code=400)
+                    
+                    self.get_logger().info(f"Starting eye-in-hand calibration with {len(image_files)} images and {pose_count} poses")
+                    
+                    # Create chessboard config file
+                    config_data = {
+                        "pattern_id": "standard_chessboard",
+                        "name": "Standard Chessboard",
+                        "description": "Traditional black and white checkerboard pattern",
+                        "is_planar": True,
+                        "parameters": {
+                            "width": chessboard_width,
+                            "height": chessboard_height,
+                            "square_size": square_size
+                        }
+                    }
+                    
+                    config_path = os.path.join(temp_dir, 'chessboard_config.json')
+                    with open(config_path, 'w') as f:
+                        json.dump(config_data, f, indent=2)
+                    
+                    # Create a Python script to run the eye-in-hand calibration
+                    calibration_script = f'''
+import os
+import sys
+import glob
+import json
+import numpy as np
+import cv2
+
+# Add the camera calibration toolkit to Python path
+sys.path.append('{scripts_dir}')
+
+try:
+    from core.eye_in_hand_calibration import EyeInHandCalibrator
+    from core.intrinsic_calibration import IntrinsicCalibrator
+    from core.calibration_patterns import load_pattern_from_json
+    
+    # Set up paths
+    temp_dir = '{temp_dir}'
+    calibration_data_dir = os.path.join(temp_dir, 'camera_calibration_data')
+    config_path = os.path.join(temp_dir, 'chessboard_config.json')
+    
+    # Load pattern configuration
+    with open(config_path, 'r') as f:
+        config_data = json.load(f)
+    pattern = load_pattern_from_json(config_data)
+    
+    # Load images and poses
+    image_files = sorted(glob.glob(os.path.join(calibration_data_dir, '*.jpg')))
+    images = []
+    end2base_matrices = []
+    
+    for img_file in image_files:
+        # Load image
+        img = cv2.imread(img_file)
+        if img is not None:
+            # Load corresponding pose
+            img_basename = os.path.basename(img_file).replace('.jpg', '')
+            json_file = os.path.join(calibration_data_dir, f'{{img_basename}}.json')
+            
+            if os.path.exists(json_file):
+                with open(json_file, 'r') as f:
+                    pose_data = json.load(f)
+                end2base_matrix = np.array(pose_data['end2base'])
+                
+                images.append(img)
+                end2base_matrices.append(end2base_matrix)
+            else:
+                print(f"Warning: No pose file found for {{img_file}}")
+    
+    print(f"Loaded {{len(images)}} images and {{len(end2base_matrices)}} robot poses")
+    
+    if len(images) < 5 or len(end2base_matrices) < 5:
+        raise Exception(f"Insufficient data: {{len(images)}} images, {{len(end2base_matrices)}} poses")
+    
+    # Step 1: Perform intrinsic calibration
+    print("Performing intrinsic calibration...")
+    intrinsic_calibrator = IntrinsicCalibrator(images=images, calibration_pattern=pattern)
+    intrinsic_results = intrinsic_calibrator.calibrate(verbose=True)
+    
+    if not intrinsic_results:
+        raise Exception("Intrinsic calibration failed")
+    
+    camera_matrix = intrinsic_results['camera_matrix']
+    distortion_coeffs = intrinsic_results['distortion_coefficients']
+    intrinsic_rms = intrinsic_results['rms_error']
+    print(f"Intrinsic calibration completed - RMS: {{intrinsic_rms:.4f}} pixels")
+    
+    # Step 2: Perform eye-in-hand calibration
+    print("Performing eye-in-hand calibration...")
+    calibrator = EyeInHandCalibrator(
+        images=images,
+        end2base_matrices=end2base_matrices,
+        calibration_pattern=pattern,
+        camera_matrix=camera_matrix,
+        distortion_coefficients=distortion_coeffs.flatten(),
+        verbose=True
+    )
+    
+    result = calibrator.calibrate(verbose=True)
+    
+    if result is None:
+        raise Exception("Eye-in-hand calibration failed")
+    
+    # Generate report in temp directory
+    report_result = calibrator.generate_calibration_report(os.path.join(temp_dir, "eye_in_hand_calibration_report"))
+    
+    # Save results to JSON file for the web interface
+    output_data = {{
+        'success': True,
+        'rms_error': float(result['rms_error']),
+        'intrinsic_rms_error': float(intrinsic_rms),
+        'cam2end_matrix': result['cam2end_matrix'].tolist(),
+        'target2base_matrix': result['target2base_matrix'].tolist(),
+        'camera_matrix': camera_matrix.tolist(),
+        'distortion_coefficients': distortion_coeffs.flatten().tolist(),
+        'image_count': len(images),
+        'pose_count': len(end2base_matrices),
+        'report_html': report_result.get('html_report', '') if report_result else '',
+        'report_json': report_result.get('json_data', '') if report_result else ''
+    }}
+    
+    # Ensure camera_parameters directory exists
+    camera_params_dir = os.path.join(temp_dir, 'camera_parameters')
+    os.makedirs(camera_params_dir, exist_ok=True)
+    
+    output_path = os.path.join(camera_params_dir, 'eye_in_hand_result.json')
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    
+    print("✅ Eye-in-hand calibration completed successfully!")
+    print(f"Intrinsic RMS Error: {{intrinsic_rms:.4f}} pixels")
+    print(f"Eye-in-hand RMS Error: {{result['rms_error']:.4f}} pixels")
+    
+except Exception as e:
+    print(f"❌ Eye-in-hand calibration failed: {{str(e)}}")
+    import traceback
+    traceback.print_exc()
+    
+    # Save error result
+    error_data = {{
+        'success': False,
+        'message': str(e),
+        'error_type': type(e).__name__
+    }}
+    
+    # Ensure camera_parameters directory exists
+    camera_params_dir = os.path.join('{temp_dir}', 'camera_parameters')
+    os.makedirs(camera_params_dir, exist_ok=True)
+    
+    output_path = os.path.join(camera_params_dir, 'eye_in_hand_result.json')
+    with open(output_path, 'w') as f:
+        json.dump(error_data, f, indent=2)
+'''
+                    
+                    # Write the calibration script to a temporary file
+                    script_path = os.path.join(temp_dir, 'run_eye_in_hand_calibration.py')
+                    with open(script_path, 'w') as f:
+                        f.write(calibration_script)
+                    
+                    # Run the calibration script
+                    camera_params_dir = os.path.join(temp_dir, 'camera_parameters')
+                    os.makedirs(camera_params_dir, exist_ok=True)
+                    result_file = os.path.join(camera_params_dir, 'eye_in_hand_result.json')
+                    
+                    # Remove any existing result file
+                    if os.path.exists(result_file):
+                        os.remove(result_file)
+                    
+                    # Run the script with proper Python environment
+                    import subprocess
+                    import sys
+                    process = subprocess.run([
+                        sys.executable, script_path
+                    ], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=600,  # 10 minute timeout for eye-in-hand calibration
+                    cwd=scripts_dir
+                    )
+                    
+                    self.get_logger().info(f"Eye-in-hand calibration process stdout: {process.stdout}")
+                    if process.stderr:
+                        self.get_logger().warning(f"Eye-in-hand calibration process stderr: {process.stderr}")
+                    
+                    # Read the result
+                    if os.path.exists(result_file):
+                        with open(result_file, 'r') as f:
+                            result_data = json.load(f)
+                        
+                        # Clean up temporary files
+                        try:
+                            os.remove(script_path)
+                            os.remove(config_path)
+                        except Exception:
+                            pass
+                        
+                        return JSONResponse(content=result_data)
+                    else:
+                        return JSONResponse(content={
+                            'success': False,
+                            'message': f'Eye-in-hand calibration process failed. Return code: {process.returncode}',
+                            'stdout': process.stdout,
+                            'stderr': process.stderr
+                        }, status_code=500)
+                    
+                except subprocess.TimeoutExpired:
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': 'Eye-in-hand calibration process timed out (>10 minutes). Please try with fewer images or check the calibration setup.'
+                    }, status_code=500)
+                except Exception as e:
+                    self.get_logger().error(f"Error running eye-in-hand calibration: {str(e)}")
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': f'Server error: {str(e)}'
+                    }, status_code=500)
+            
+            @app.post("/api/calibration/auto-collect")
+            async def run_auto_collect_script(request: Request):
+                """Run the auto collect images script asynchronously"""
+                try:
+                    # Check if there's already a running process
+                    with self.auto_collect_process_lock:
+                        if self.auto_collect_process and self.auto_collect_process.poll() is None:
+                            return JSONResponse(content={
+                                'success': False, 
+                                'message': 'Auto collect script is already running',
+                                'process_id': self.auto_collect_process.pid
+                            }, status_code=409)  # Conflict
+                    
+                    # Get the scripts directory
+                    scripts_base_dir = get_scripts_directory()
+                    if not scripts_base_dir:
+                        return JSONResponse(content={
+                            'success': False, 
+                            'message': 'Scripts directory not found'
+                        }, status_code=500)
+                    
+                    # Path to the auto collect script
+                    script_path = os.path.join(scripts_base_dir, 'duco_auto_collect_images.py')
+                    
+                    if not os.path.exists(script_path):
+                        return JSONResponse(content={
+                            'success': False,
+                            'message': f'Auto collect script not found at: {script_path}'
+                        }, status_code=404)
+                    
+                    self.get_logger().info(f"Starting auto collect script asynchronously: {script_path}")
+                    
+                    # Start the script asynchronously using Popen
+                    with self.auto_collect_process_lock:
+                        self.auto_collect_process = subprocess.Popen([
+                            sys.executable, script_path
+                        ], 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        cwd=scripts_base_dir
+                        )
+                    
+                    self.get_logger().info(f"Auto collect script started with PID: {self.auto_collect_process.pid}")
+                    
+                    # Return immediately with process ID
+                    return JSONResponse(content={
+                        'success': True,
+                        'message': 'Auto collect script started in background',
+                        'process_id': self.auto_collect_process.pid
+                    })
+                        
+                except Exception as e:
+                    self.get_logger().error(f"Error starting auto collect script: {str(e)}")
+                    return JSONResponse(content={
+                        'success': False,
+                        'message': f'Server error: {str(e)}'
+                    }, status_code=500)
+            
+            @app.get("/api/calibration/auto-collect/status")
+            async def get_auto_collect_status():
+                """Get the status of auto collect script"""
+                try:
+                    with self.auto_collect_process_lock:
+                        if not self.auto_collect_process:
+                            return JSONResponse(content={
+                                'running': False,
+                                'process_id': None,
+                                'status': 'No process started'
+                            })
+                        
+                        # Check if process is still running
+                        poll_result = self.auto_collect_process.poll()
+                        
+                        if poll_result is None:
+                            # Process is still running
+                            return JSONResponse(content={
+                                'running': True,
+                                'process_id': self.auto_collect_process.pid,
+                                'status': 'Running'
+                            })
+                        else:
+                            # Process has finished
+                            stdout, stderr = self.auto_collect_process.communicate()
+                            
+                            success = poll_result == 0
+                            status = 'Completed successfully' if success else f'Failed with exit code {poll_result}'
+                            
+                            # Clean up the process reference
+                            self.auto_collect_process = None
+                            
+                            return JSONResponse(content={
+                                'running': False,
+                                'process_id': None,
+                                'status': status,
+                                'success': success,
+                                'exit_code': poll_result,
+                                'output': stdout,
+                                'stderr': stderr
+                            })
+                            
+                except Exception as e:
+                    self.get_logger().error(f"Error checking auto collect status: {str(e)}")
+                    return JSONResponse(content={
+                        'running': False,
+                        'process_id': None,
+                        'status': f'Error: {str(e)}'
+                    }, status_code=500)
             
             # Static file serving for urdf-loaders library
             @app.get("/third_party/{path:path}")
@@ -1107,35 +2010,19 @@ class RobotArmWebServer(Node):
     async def execute_tool_control_operation(self, tool_type, bool_register_output, wait_completion=False, timeout=100000):
         """Execute tool control operation and optionally wait for completion"""
         try:
-            # Define target states based on tool type
-            target_states = {
-                'gripper': [0, 1, 1, 1],      # A: gripper
-                'frame': [1, 0, 1, 1],   # B: frame  
-                'stickP': [0, 1, 0, 1],   # C: gripper + stickP
-                'stickR': [0, 1, 1, 0],   # D: gripper + stickR
-                'homing': [1, 1, 1, 1]    # Reset to default state
-            }
-            
-            # Define valid states
-            valid_states = {
-                '1,1,1,1',  # 1111 - All tools are at home position
-                '0,1,1,1',  # 0111 - Get Gripper
-                '1,0,1,1',  # 1011 - Get Frame
-                '0,1,0,1',  # 0101 - Get StickP(must operate after get gripper)
-                '0,1,1,0'   # 0110 - Get StickR(must operate after get gripper)
-            }
-            
             # Get current state
-            gripper_state = 1 if bool_register_output[0] or bool_register_output[0] == 1 else 0
-            frame_state = 1 if bool_register_output[1] or bool_register_output[1] == 1 else 0
-            stick_p_state = 1 if bool_register_output[2] or bool_register_output[2] == 1 else 0
-            stick_r_state = 1 if bool_register_output[3] or bool_register_output[3] == 1 else 0
+            gripper_state = 1 if bool(bool_register_output[0]) else 0
+            frame_state = 1 if bool(bool_register_output[1]) else 0
+            stick_p_state = 1 if bool(bool_register_output[2]) else 0
+            stick_r_state = 1 if bool(bool_register_output[3]) else 0
             
             current_state = [gripper_state, frame_state, stick_p_state, stick_r_state]
-            target_state = target_states.get(tool_type, [1, 1, 1, 1])
             
-            # Find shortest path using BFS
-            path = self.find_shortest_path(current_state, target_state, valid_states)
+            # Calculate target state dynamically based on current state and tool type (like JavaScript version)
+            target_state = self.calculate_target_state(current_state, tool_type)
+            
+            # Find shortest path using enhanced BFS with constraint checking
+            path = self.find_shortest_path_enhanced(current_state, target_state)
             
             if not path:
                 return {
@@ -1173,8 +2060,79 @@ class RobotArmWebServer(Node):
                 'error': str(e)
             }
     
-    def find_shortest_path(self, current_state, target_state, valid_states):
-        """Find shortest path using BFS algorithm (similar to duco_test_tool.py)"""
+    def calculate_target_state(self, current_state, button):
+        """Calculate target state dynamically based on current state and button (like JavaScript version)"""
+        target_state = current_state.copy()
+        
+        if button == 'gripper':  # A: gripper取反
+            target_state[0] = 1 - target_state[0]
+            
+            # 如果要取gripper，需要确保stickP和stickR都已放回
+            if target_state[0] == 0:  # 要取出gripper
+                target_state[2] = 1  # 强制放回stickP
+                target_state[3] = 1  # 强制放回stickR
+        elif button == 'frame':  # B: frame取反
+            # 如果gripper正在使用，不能操作frame
+            if current_state[0] == 0:
+                # gripper已被取出时可以正常操作frame
+                target_state[1] = 1 - target_state[1]
+            else:
+                # gripper在位时可以正常操作frame
+                target_state[1] = 1 - target_state[1]
+        elif button == 'stickP':  # C: gripper置0，stickP取反
+            target_state[0] = 0  # gripper强制取出
+            
+            # 如果stickR已经取出，需要先放回stickR（互斥约束）
+            if current_state[3] == 0:
+                target_state[3] = 1  # 放回stickR
+            
+            target_state[2] = 1 - current_state[2]  # stickP取反
+        elif button == 'stickR':  # D: gripper置0，stickR取反
+            target_state[0] = 0  # gripper强制取出
+            
+            # 如果stickP已经取出，需要先放回stickP（互斥约束）
+            if current_state[2] == 0:
+                target_state[2] = 1  # 放回stickP
+            
+            target_state[3] = 1 - current_state[3]  # stickR取反
+        elif button == 'homing':
+            target_state = [1, 1, 1, 1]  # 归位到默认状态
+        
+        return target_state
+    
+    def is_action_allowed(self, current_state, action_name):
+        """Check if action is allowed in current state (like JavaScript version)"""
+        # 关键约束：gripper正在使用时，不能操作frame（取出或放回）
+        if (action_name in ['zero2frame', 'frame2zero']) and current_state[0] == 0:
+            return False  # gripper已取出时不能操作frame
+        
+        # stickP和stickR只有在gripper被取出时才能夹取
+        if action_name == 'zero2stickP' and current_state[0] == 1:
+            return False  # gripper在位时不能取stickP
+        
+        if action_name == 'zero2stickR' and current_state[0] == 1:
+            return False  # gripper在位时不能取stickR
+        
+        # 不能同时取stickP和stickR
+        if action_name == 'zero2stickP' and current_state[3] == 0:
+            return False  # stickR已取出时不能取stickP
+        
+        if action_name == 'zero2stickR' and current_state[2] == 0:
+            return False  # stickP已取出时不能取stickR
+        
+        return True
+    
+    def find_shortest_path_enhanced(self, current_state, target_state):
+        """Find shortest path using BFS algorithm with enhanced constraint checking (like JavaScript version)"""
+        # Define valid states
+        valid_states = {
+            '1,1,1,1',  # 1111 - All tools are at home position
+            '0,1,1,1',  # 0111 - Get Gripper
+            '1,0,1,1',  # 1011 - Get Frame
+            '0,1,0,1',  # 0101 - Get StickP(must operate after get gripper)
+            '0,1,1,0'   # 0110 - Get StickR(must operate after get gripper)
+        }
+        
         # Convert states to string for comparison
         current_state_str = ','.join(map(str, current_state))
         target_state_str = ','.join(map(str, target_state))
@@ -1235,14 +2193,16 @@ class RobotArmWebServer(Node):
                     
                     # Check if new state is valid and not visited
                     if new_state_str in valid_states and new_state_str not in visited:
-                        new_path = path + [action['name']]
-                        
-                        # If reached target state
-                        if new_state_str == target_state_str:
-                            return new_path
-                        
-                        queue.append([new_state, new_path])
-                        visited.add(new_state_str)
+                        # Enhanced constraint checking: ensure action follows business logic
+                        if self.is_action_allowed(current_state, action['name']):
+                            new_path = path + [action['name']]
+                            
+                            # If reached target state
+                            if new_state_str == target_state_str:
+                                return new_path
+                            
+                            queue.append([new_state, new_path])
+                            visited.add(new_state_str)
         
         # No path found
         return ['No valid path found']

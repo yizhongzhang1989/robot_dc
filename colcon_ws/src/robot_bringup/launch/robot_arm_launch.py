@@ -132,6 +132,27 @@ def generate_launch_description():
         ]
     )
 
+    # Image process node - launch after camera node is ready
+    image_process_node = TimerAction(
+        period=3.0,
+        actions=[
+            Node(
+                package='image_process',
+                executable='image_process_node',
+                name='image_process_node',
+                parameters=[
+                    {'input_topic': '/robot_arm_camera/image_raw'},
+                    {'output_resized_topic': '/robot_arm_camera/image_resized_raw'},
+                    {'resize_width': 640},
+                    {'resize_height': 480}
+                ],
+                output='screen',
+                emulate_tty=True,
+            )
+        ]
+    )
+
+
     return LaunchDescription([
         robot_ip_arg,
         robot_port_arg,
@@ -145,5 +166,6 @@ def generate_launch_description():
         robot_arm_node,
         robot_state_node,
         robot_arm_web_node,
-        robot_arm_cam_node
+        robot_arm_cam_node,
+        image_process_node
     ])
