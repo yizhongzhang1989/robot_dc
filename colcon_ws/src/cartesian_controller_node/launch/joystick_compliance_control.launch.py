@@ -13,12 +13,12 @@ def generate_launch_description():
     and target wrench for force control applications.
     
     Usage:
-    ros2 launch monitor joystick_compliance_control.launch.py
+    ros2 launch cartesian_controller_node joystick_compliance_control.launch.py
     """
     
     return LaunchDescription([
         Node(
-            package='monitor',
+            package='cartesian_controller_node',
             executable='joystick_compliance_control_node',
             name='joystick_compliance_control',
             output='both',

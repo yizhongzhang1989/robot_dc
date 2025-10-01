@@ -13,12 +13,12 @@ def generate_launch_description():
     data pairs when Enter key is pressed.
     
     Usage:
-    ros2 launch monitor calibration_data_recorder.launch.py
+    ros2 launch cartesian_controller_node calibration_data_recorder.launch.py
     """
     
     return LaunchDescription([
         Node(
-            package='monitor',
+            package='cartesian_controller_node',
             executable='calibration_data_recorder',
             name='calibration_data_recorder',
             output='both',

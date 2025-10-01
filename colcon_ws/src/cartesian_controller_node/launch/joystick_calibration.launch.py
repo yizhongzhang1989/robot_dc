@@ -9,7 +9,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         Node(
-            package='monitor',
+            package='cartesian_controller_node',
             executable='joystick_calibration_node',
             name='joystick_calibration',
             output='both',
