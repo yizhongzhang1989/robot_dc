@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'monitor'
+package_name = 'cartesian_controller_node'
 
 setup(
     name=package_name,
@@ -21,16 +21,16 @@ setup(
     zip_safe=True,
     maintainer='user',
     maintainer_email='user@example.com',
-    description='Robot monitoring node with UDP data collection and rosbag recording',
+    description='Robot cartesian_controller_node with UDP data collection and rosbag recording',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'zero_force_control_node = monitor.zero_force_control_node:main',
-            'joystick_force_control_node = monitor.joystick_force_control_node:main',
-            'joystick_compliance_control_node = monitor.joystick_compliance_control_node:main',
-            'joystick_calibration_node = monitor.joystick_calibration_node:main',
-            'calibration_data_recorder = monitor.calibration_data_recorder:main',
+            'zero_force_control_node = cartesian_controller_node.zero_force_control_node:main',
+            'joystick_force_control_node = cartesian_controller_node.joystick_force_control_node:main',
+            'joystick_compliance_control_node = cartesian_controller_node.joystick_compliance_control_node:main',
+            'joystick_calibration_node = cartesian_controller_node.joystick_calibration_node:main',
+            'calibration_data_recorder = cartesian_controller_node.calibration_data_recorder:main',
         ],
     },
 )

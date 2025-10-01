@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypelang="xml" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>monitor</name>
+  <name>cartesian_controller_node</name>
   <version>0.0.0</version>
-  <description>Robot monitoring node with UDP data collection and rosbag recording</description>
+  <description>Robot cartesian controller node with UDP data collection and rosbag recording</description>
   <maintainer email="user@example.com">user</maintainer>
   <license>Apache-2.0</license>
 
