@@ -1,0 +1,7 @@
+<library path="duco_hardware">
+  <class name="duco_hardware/DucoHardwareInterface" type="duco_hardware::DucoHardwareInterface" base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Official ROS2 Control hardware interface for DUCO robots
+    </description>
+  </class>
+</library>
