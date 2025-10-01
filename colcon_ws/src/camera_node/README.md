@@ -41,7 +41,7 @@ A generic ROS2 node for IP camera RTSP streaming and control with comprehensive 
 1. **Clone to ROS2 workspace** (if not already present):
 ```bash
 cd ~/your_workspace/src
-# Package should already be here as part of the robot_dc2 project
+# Package should already be here as part of the robot_dc project
 ```
 
 2. **Install system dependencies**:
@@ -433,8 +433,8 @@ else:
 
 ## License
 
-This project is part of the robot_dc2 robotics system.
+This project is part of the robot_dc robotics system.
 
 ---
 
-**For more information about the robot_dc2 project, see the main repository documentation.**
+**For more information about the robot_dc project, see the main repository documentation.**
