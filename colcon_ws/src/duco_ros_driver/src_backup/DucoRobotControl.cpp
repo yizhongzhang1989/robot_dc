@@ -109,7 +109,7 @@ void DucoRobotControl::handle_robot_control(const std::shared_ptr<duco_msg::srv:
         response->response = std::to_string(ret);
         return;
     }
-    if ("poweron"==request->command)
+    if ("power_on"==request->command)
     {
         ret = _duco_robots[request->arm_num]->power_on(request->block);
     }
@@ -121,7 +121,7 @@ void DucoRobotControl::handle_robot_control(const std::shared_ptr<duco_msg::srv:
     {
         ret = _duco_robots[request->arm_num]->disable(request->block);
     }
-    else if("poweroff"==request->command)
+    else if("power_off"==request->command)
     {
         ret =_duco_robots[request->arm_num]->power_off(request->block);
     }
@@ -217,7 +217,7 @@ void DucoRobotControl::handle_robot_move(const std::shared_ptr<duco_msg::srv::Ro
                     request->r,
                     request->block);
     }
-    else if ("movejpose"==request->command)
+    else if ("movej_pose"==request->command)
     {
         if (request->p.size()<6)
         {
@@ -253,7 +253,7 @@ void DucoRobotControl::handle_robot_move(const std::shared_ptr<duco_msg::srv::Ro
                     request->tool,request->wobj,
                     request->block);
     }
-    else if ("movejpose2"==request->command)
+    else if ("movej_pose2"==request->command)
     {
         if (request->p.size()<6)
         {
@@ -281,7 +281,7 @@ void DucoRobotControl::handle_robot_move(const std::shared_ptr<duco_msg::srv::Ro
         {
             pose.push_back(request->p[i]);
         }
-        ret = _duco_robots[request->arm_num]->movej_pose(
+        ret = _duco_robots[request->arm_num]->movej_pose2(  // 修正：调用 movej_pose2 而不是 movej_pose
                     pose,
                     request->v,request->a,
                     request->r,
@@ -325,7 +325,7 @@ void DucoRobotControl::handle_robot_move(const std::shared_ptr<duco_msg::srv::Ro
                     request->tool,request->wobj,
                     request->block);
     }
-    else if ("movetcp"==request->command)
+    else if ("tcp_move"==request->command)
     {
         if (request->p.size()<6)
         {
@@ -385,7 +385,7 @@ void DucoRobotControl::handle_robot_io_control(const std::shared_ptr<duco_msg::s
         response->response = std::to_string(ret);
         return;
     }
-    if ("setIo"==request->command || "SetIo"==request->command)
+    if ("set_digital_out"==request->command)
     {
         if (0==request->type)
         {
@@ -404,7 +404,7 @@ void DucoRobotControl::handle_robot_io_control(const std::shared_ptr<duco_msg::s
         else
             RCLCPP_ERROR(this->get_logger(),"Invalid Io Type");
     }
-    else if ("getIo"==request->command || "GetIo"==request->command)
+    else if ("get_digital_in"==request->command)
     {
         if (0==request->type)
         {

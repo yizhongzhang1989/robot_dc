@@ -41,6 +41,8 @@ controller_manager:
   ros__parameters:
     arm_1_controller:
       type: joint_trajectory_controller/JointTrajectoryController
+    joint_position_controller:
+      type: joint_position_controller/JointPositionController
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
     update_rate: 250
@@ -53,3 +55,17 @@ joint_state_broadcaster:
     - arm_1_joint_4
     - arm_1_joint_5
     - arm_1_joint_6
+
+joint_position_controller:
+  ros__parameters:
+    joints:
+    - arm_1_joint_1
+    - arm_1_joint_2
+    - arm_1_joint_3
+    - arm_1_joint_4
+    - arm_1_joint_5
+    - arm_1_joint_6
+    interpolation_time: 5.0  # seconds to reach target position
+    max_velocity: 1.0        # rad/s
+    max_acceleration: 1.0    # rad/s²
+

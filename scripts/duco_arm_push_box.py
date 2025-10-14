@@ -243,7 +243,8 @@ def main():
     # Task_closeleft(duco_cobot, op)  # 关闭左边把手任务
 
     # Task_closeright(duco_cobot, op)  # 关闭右边把手任务
-
+    res=duco_cobot.get_actual_joints_position()
+    print("joint angles:{}",res)
 
     # =======================结束任务，断使能，断点，断连接=======================
     # rlt = duco_cobot.disable(True)  # 断使能

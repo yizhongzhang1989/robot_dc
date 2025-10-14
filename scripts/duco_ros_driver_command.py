@@ -55,14 +55,14 @@ class DucoRobotCommandNode(Node):
         Send control command to robot
         
         Args:
-            command: Command string (poweron, poweroff, enable, disable)
+            command: Command string (power_on, power_off, enable, disable)
             arm_num: Robot arm number (default: 0)
             block: Block until command completes (default: True)
         """
         # Command descriptions for better user feedback
         command_descriptions = {
-            'poweron': 'Powering on robot (this may take 10-20 seconds)',
-            'poweroff': 'Powering off robot',
+            'power_on': 'Powering on robot (this may take 10-20 seconds)',
+            'power_off': 'Powering off robot',
             'enable': 'Enabling robot motors (this may take 5-15 seconds)',
             'disable': 'Disabling robot motors'
         }
@@ -130,12 +130,12 @@ def main(args=None):
                 if key == 'q':
                     print('\r\n')
                     node.log('🔑 Key "q" pressed - Powering ON robot')
-                    node.send_command('poweron', arm_num=0, block=True)
+                    node.send_command('power_on', arm_num=0, block=True)
                     
                 elif key == 'w':
                     print('\r\n')
                     node.log('🔑 Key "w" pressed - Powering OFF robot')
-                    node.send_command('poweroff', arm_num=0, block=True)
+                    node.send_command('power_off', arm_num=0, block=True)
                     
                 elif key == 'e':
                     print('\r\n')

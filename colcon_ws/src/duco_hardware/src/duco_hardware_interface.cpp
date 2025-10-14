@@ -129,13 +129,34 @@ hardware_interface::CallbackReturn DucoHardwareInterface::on_deactivate(
 {
   RCLCPP_INFO(rclcpp::get_logger("DucoHardwareInterface"), "Deactivating DUCO hardware interface...");
   
-  if (duco_robot_)
+  if (duco_robot_ && controller_connected_flag_)
   {
-    duco_robot_->close();
+    // Disable robot and power off (opposite of on_activate)
+    duco_robot_->enable(false);
+    usleep(500000);  // 0.5 second delay
+    duco_robot_->power_on(false);
+    usleep(500000);  // 0.5 second delay
   }
+  
   controller_connected_flag_ = false;
   
   RCLCPP_INFO(rclcpp::get_logger("DucoHardwareInterface"), "DUCO hardware interface deactivated");
+  return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+hardware_interface::CallbackReturn DucoHardwareInterface::on_cleanup(
+  const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  RCLCPP_INFO(rclcpp::get_logger("DucoHardwareInterface"), "Cleaning up DUCO hardware interface...");
+  
+  if (duco_robot_)
+  {
+    // Close the connection to the robot
+    duco_robot_->close();
+    RCLCPP_INFO(rclcpp::get_logger("DucoHardwareInterface"), "Connection to DUCO robot closed");
+  }
+  
+  RCLCPP_INFO(rclcpp::get_logger("DucoHardwareInterface"), "DUCO hardware interface cleaned up");
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -203,13 +224,23 @@ hardware_interface::return_type DucoHardwareInterface::write(
       // Send joint commands to DUCO robot
       std::vector<double> commands(hw_commands_.begin(), hw_commands_.end());
       
-      // Use servoj for continuous servo control (better trajectory following)
-      // 参数优化以解决250Hz (4ms间隔)下的容差违规问题：
-      // - 降低velocity和acceleration以提高跟踪精度
-      // - 调整kp, kd增益以平衡响应速度和稳定性
-      // - 降低smooth_vel参数以获得更精确的轨迹跟踪
-      // Parameters: joints, velocity, acceleration, non-blocking, kp, kd, smooth_vel, smooth_acc
-      duco_robot_->servoj(commands, 3.5, 3.5, false, 400, 80, 5, 2);
+     /*
+      Use servoj for continuous servo control
+      Parameters: 
+        joints_angles_rad:  target joint angles in radians
+        velocity:           maximum joint speed
+        acceleration:       maximum joint acceleration
+        non-blocking:       False = non-blocking, execution immediately
+        kp:                 recommended default value = 200
+        kd:                 recommended default value = 25
+        smooth_vel:         speed ​​smoothing coefficient, large value means stronger speed smoothing effect with a greater following lag.
+        smooth_acc:         acceleration ​​smoothing coefficient, large value means stronger speed smoothing effect with a greater following lag.
+      Parameter optimization to address tolerance violations at 250Hz (4ms interval):
+        - Reduce velocity and acceleration to improve tracking accuracy
+        - Adjust kp and kd gains to balance response speed and stability
+        - Reduce the smooth_vel parameter for more accurate trajectory tracking
+     */
+      duco_robot_->servoj(commands, 3.5, 3.5, false, 200, 25, 2, 1);
       
       // Update previous commands
       hw_commands_prev_ = hw_commands_;
