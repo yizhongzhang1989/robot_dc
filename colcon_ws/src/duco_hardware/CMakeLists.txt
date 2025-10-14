@@ -23,8 +23,7 @@ $<INSTALL_INTERFACE:include/duco_hardware>
 )
 
 # Link the DUCO RPC library (same as used by duco_ros_driver)
-# TODO: Library file libDucoCobotAPI.a is missing, need to rebuild or locate it
-# target_link_libraries(duco_hardware PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../duco_ros_driver/lib/libDucoCobotAPI.a)
+target_link_libraries(duco_hardware PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../duco_ros_driver/lib/libDucoCobotAPI.a)
 
 ament_target_dependencies(
   duco_hardware PUBLIC
