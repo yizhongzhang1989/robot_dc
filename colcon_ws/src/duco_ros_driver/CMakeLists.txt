@@ -28,9 +28,10 @@ install(
 )
 
 # Install library file
-install(
-  FILES lib/libDucoCobotAPI.a
-  DESTINATION lib
-)
+# TODO: Library file libDucoCobotAPI.a is missing, need to rebuild or locate it
+# install(
+#   FILES lib/libDucoCobotAPI.a
+#   DESTINATION lib
+# )
 
 ament_package()
