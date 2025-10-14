@@ -931,6 +931,45 @@
       gap: 0.75rem;
     }
     
+    /* Custom grid for calibration page status bar with variable column sizes */
+    .calibration-status-bar-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr 1fr 2fr;
+      gap: 0.75rem;
+      min-width: 0; /* Ensure grid items can shrink */
+    }
+    
+    /* Special styling for Data Save Path in calibration page - now last item */
+    .calibration-status-bar-grid .status-bar-item:nth-child(6) {
+      min-width: 200px; /* Minimum width for Data Save Path */
+    }
+    
+    .calibration-status-bar-grid .status-bar-item:nth-child(6) .status-bar-value {
+      word-break: break-all;
+      font-size: 0.65rem;
+      line-height: 1.2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .calibration-status-bar-grid .status-bar-item:nth-child(6) .status-bar-value:hover {
+      white-space: normal;
+      overflow: visible;
+      z-index: 10;
+      position: relative;
+    }
+    
+    @media (max-width: 1024px) {
+      .calibration-status-bar-grid {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+      
+      .calibration-status-bar-grid .status-bar-item:nth-child(6) {
+        min-width: 140px;
+      }
+    }
+    
     .status-bar-item {
       padding: 0.5rem;
       background: rgba(255, 255, 255, 0.8);
@@ -1032,6 +1071,7 @@
       color: #7c3aed !important;
       cursor: pointer;
       transition: all 0.2s ease;
+      font-size: 0.75rem; /* 12px, smaller than default */
     }
     
     #calibrationSavePath:hover {
@@ -2747,7 +2787,7 @@
           Status
         </div>
         <div class="status-bar-content">
-          <div class="status-bar-grid">
+          <div class="calibration-status-bar-grid">
             <div class="status-bar-item">
               <div class="status-bar-label">Camera Status</div>
               <div id="calibrationCameraStatus" class="status-bar-value">Connecting...</div>
@@ -2755,10 +2795,6 @@
             <div class="status-bar-item">
               <div class="status-bar-label">Robot Status</div>
               <div id="calibrationRobotStatus" class="status-bar-value">Disconnected</div>
-            </div>
-            <div class="status-bar-item">
-              <div class="status-bar-label">Save Path</div>
-              <div id="calibrationSavePath" class="status-bar-value" title="Images and results save location">temp/</div>
             </div>
             <div class="status-bar-item">
               <div class="status-bar-label">Image Count</div>
@@ -2769,10 +2805,14 @@
               <div id="calibrationCornerStatus" class="status-bar-value">Disabled</div>
             </div>
             <div class="status-bar-item calibration-board-selector" onclick="cycleCalibrationType()">
-              <div class="status-bar-label">Calibration Board</div>
+              <div class="status-bar-label">Board Type</div>
               <div id="calibrationBoardType" class="status-bar-value clickable">
                 <span id="boardTypeText">ChessBoard</span>
               </div>
+            </div>
+            <div class="status-bar-item calibration-board-selector" onclick="openSavePathDialog()">
+              <div class="status-bar-label">Data Save Path</div>
+              <div id="calibrationSavePath" class="status-bar-value clickable" title="Click to change save path">Loading...</div>
             </div>
           </div>
         </div>
@@ -2817,7 +2857,7 @@
               class="robot-arm-button status-style-button status-button-cyan font-semibold rounded-lg text-base"
               onclick="runAutoCollect()"
             >
-              🤖 AutoCollect
+              🦾 AutoCollect
             </button>
 
             <!-- 5. Clear Images Button -->
@@ -2843,7 +2883,7 @@
               class="robot-arm-button status-style-button status-button-indigo font-semibold rounded-lg text-base"
               onclick="runEyeInHandCalibration()"
             >
-              🤖 CalibExtrinsic
+              ⚙️ CalibExtrinsic
             </button>
           </div>
         </div>
@@ -2974,28 +3014,26 @@
 
   <!-- Corner Detection Settings Modal -->
   <div id="cornerDetectionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
       <div class="bg-blue-500 text-white px-6 py-4 rounded-t-lg relative">
-        <h3 class="text-lg font-semibold">Corner Detection Settings</h3>
+        <h3 id="patternModalTitle" class="text-lg font-semibold">📐 Pattern Detection Settings</h3>
         <button onclick="closeCornerDetectionModal()" class="absolute top-4 right-4 text-white hover:text-gray-200">
           ✕
         </button>
       </div>
       <div class="p-6">
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Chessboard Width:
-          </label>
-          <input type="number" id="chessboardWidth" value="12" min="2" max="20" 
-                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <!-- Pattern description -->
+        <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <p id="patternDescription" class="text-sm text-blue-700">
+            Configure detection parameters for the selected calibration pattern.
+          </p>
         </div>
-        <div class="mb-6">
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Chessboard Height:
-          </label>
-          <input type="number" id="chessboardHeight" value="9" min="2" max="20" 
-                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        
+        <!-- Dynamic parameter container -->
+        <div id="patternParametersContainer">
+          <!-- Parameters will be dynamically inserted here -->
         </div>
+        
         <div class="flex justify-end space-x-3">
           <button onclick="closeCornerDetectionModal()" 
                   class="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
@@ -3003,7 +3041,7 @@
           </button>
           <button onclick="confirmCornerDetection()" 
                   class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
-            Confirm
+            Start Detection
           </button>
         </div>
       </div>
@@ -3090,9 +3128,12 @@
     // Camera Calibration Functions
     let cornerDetectionEnabled = false;
     let calibrationImageCount = 0;
+    let customSavePath = '';  // Custom save path set by user (for API calls)
+    let customSavePathDisplay = '';  // Custom save path for display (resolved full path)
+    let defaultSavePath = '';  // Default save path from server
     
     // Initialize camera calibration when page loads
-    function initializeCameraCalibration() {
+    async function initializeCameraCalibration() {
       // Update camera feed with existing camera stream
       const calibrationFeed = document.getElementById('calibrationCameraFeed');
       if (calibrationFeed) {
@@ -3101,6 +3142,12 @@
           this.src = '/images/camera_placeholder.png';
         };
       }
+      
+      // Initialize board types from server
+      await initializeBoardTypes();
+      
+      // Initialize save path (now async)
+      await initializeSavePath();
       
       // Initialize status update for calibration page
       updateCalibrationStatus();
@@ -3134,7 +3181,7 @@
             2: "Logout", 
             3: "Login", 
             4: "PowerOff", 
-            5: "Disable/PowerOn", 
+            5: "PowerOn", 
             6: "Enable"
           };
           const statusText = robotStates[robotStateData.robotStatus] || `Unknown (${robotStateData.robotStatus})`;
@@ -3198,6 +3245,9 @@
     // Take screenshot for calibration
     async function takeCalibrationScreenshot() {
       try {
+        // Get current save path (use original path for API, not display path)
+        const currentSavePath = customSavePath || defaultSavePath;
+        
         const response = await fetch('/api/calibration/screenshot', {
           method: 'POST',
           headers: {
@@ -3205,13 +3255,28 @@
           },
           body: JSON.stringify({
             joint_angles: robotStateData?.jointActualPosition || [],
-            tcp_pose: robotStateData?.TCPActualPosition || []
+            tcp_pose: robotStateData?.TCPActualPosition || [],
+            save_path: currentSavePath
           })
         });
         
         const data = await response.json();
         if (data.success) {
           updateCalibrationThumbnails();
+          console.log(`Screenshot saved: ${data.filename} in ${data.save_path}`);
+          
+          // Optional: Show a brief success message to user
+          const imageCountElement = document.getElementById('calibrationImageCount');
+          if (imageCountElement) {
+            const originalText = imageCountElement.textContent;
+            imageCountElement.textContent = '✓ Saved';
+            imageCountElement.style.color = '#10b981';
+            
+            setTimeout(() => {
+              imageCountElement.textContent = originalText;
+              imageCountElement.style.color = '';
+            }, 1500);
+          }
         } else {
           console.error('Screenshot failed:', data.message);
         }
@@ -3220,9 +3285,45 @@
       }
     }
 
-    // Calibration board types
-    const calibrationBoardTypes = ['ChessBoard', 'CharucoBoard', 'GridBoard'];
+    // Calibration board types - now dynamically loaded
+    let calibrationBoardTypes = ['ChessBoard', 'CharucoBoard', 'GridBoard'];
     let currentBoardTypeIndex = 0;
+    let availablePatternTypes = []; // Will be loaded from server
+
+    // Initialize board types from server
+    async function initializeBoardTypes() {
+      try {
+        const response = await fetch('/api/calibration/pattern-types');
+        const data = await response.json();
+        
+        if (data.success && data.patterns && data.patterns.length > 0) {
+          // Update available patterns from server
+          availablePatternTypes = data.patterns;
+          calibrationBoardTypes = data.patterns.map(p => p.name);
+          
+          // Update display with first pattern
+          currentBoardTypeIndex = 0;
+          const textElement = document.getElementById('boardTypeText');
+          if (textElement) {
+            textElement.textContent = calibrationBoardTypes[0];
+          }
+          
+          console.log('Loaded pattern types:', calibrationBoardTypes);
+        } else {
+          console.warn('Failed to load pattern types, using defaults');
+          // Keep default types
+          availablePatternTypes = [
+            { id: 'standard_chessboard', name: 'ChessBoard', icon: '🏁', description: 'Standard chessboard pattern' }
+          ];
+        }
+      } catch (error) {
+        console.error('Error loading pattern types:', error);
+        // Keep default types
+        availablePatternTypes = [
+          { id: 'standard_chessboard', name: 'ChessBoard', icon: '🏁', description: 'Standard chessboard pattern' }
+        ];
+      }
+    }
 
     // Handle calibration board type cycling
     function cycleCalibrationType() {
@@ -3249,8 +3350,260 @@
         }, 150);
       }
       
-      // 这里后续可以添加更多逻辑来处理不同标定板类型的切换
-      // 比如更新UI、加载不同的配置等
+      // If corner detection is currently enabled, restart it with new pattern type
+      if (cornerDetectionEnabled) {
+        console.log('Restarting corner detection with new pattern type:', currentType);
+        restartCornerDetectionWithNewPattern();
+      }
+    }
+
+    // Restart corner detection with current pattern type
+    async function restartCornerDetectionWithNewPattern() {
+      try {
+        // First disable current detection
+        await disableCornerDetection();
+        
+        // Wait a moment for the disable to process
+        setTimeout(async () => {
+          // Then enable with current pattern type
+          await enableCornerDetectionWithCurrentPattern();
+        }, 500);
+      } catch (error) {
+        console.error('Error restarting corner detection:', error);
+      }
+    }
+
+    // Get current pattern type info
+    function getCurrentPatternType() {
+      if (availablePatternTypes && availablePatternTypes.length > currentBoardTypeIndex) {
+        return availablePatternTypes[currentBoardTypeIndex];
+      } else {
+        // Fallback to standard chessboard
+        return { 
+          id: 'standard_chessboard', 
+          name: 'ChessBoard', 
+          icon: '🏁', 
+          description: 'Standard chessboard pattern',
+          parameters: [
+            { name: 'width', type: 'integer', default: 12, min: 3, max: 20 },
+            { name: 'height', type: 'integer', default: 9, min: 3, max: 20 }
+          ]
+        };
+      }
+    }
+
+    // === Save Path Management Functions ===
+    
+    // Initialize save path display
+    async function initializeSavePath() {
+      // Load custom path from localStorage
+      customSavePath = localStorage.getItem('calibrationCustomPath') || '';
+      
+      // If we have a custom path and it's relative, resolve it for display
+      if (customSavePath && (customSavePath.startsWith('./') || !customSavePath.startsWith('/'))) {
+        try {
+          const response = await fetch('/api/calibration/resolve-path', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              path: customSavePath
+            })
+          });
+          
+          const data = await response.json();
+          if (data.success) {
+            customSavePathDisplay = data.resolved_path;
+          } else {
+            console.warn('Failed to resolve saved path, using original:', data.message);
+            customSavePathDisplay = customSavePath;
+          }
+        } catch (error) {
+          console.warn('Error resolving saved path, using original:', error);
+          customSavePathDisplay = customSavePath;
+        }
+      } else {
+        customSavePathDisplay = customSavePath;
+      }
+      
+      // Get default path from server
+      try {
+        const response = await fetch('/api/calibration/default-path');
+        const data = await response.json();
+        if (data.success) {
+          defaultSavePath = data.default_path;
+        } else {
+          console.warn('Failed to get default path from server, using fallback');
+          defaultSavePath = './temp/camera_calibration_data/';
+        }
+      } catch (error) {
+        console.warn('Error fetching default path from server, using fallback:', error);
+        defaultSavePath = './temp/camera_calibration_data/';
+      }
+      
+      // Update display
+      updateSavePathDisplay();
+    }
+    
+    // Update save path display
+    function updateSavePathDisplay() {
+      const savePathElement = document.getElementById('calibrationSavePath');
+      if (savePathElement) {
+        // Use display path if available, otherwise fall back to original path or default
+        const displayPath = customSavePathDisplay || customSavePath || defaultSavePath;
+        savePathElement.textContent = displayPath;
+        savePathElement.title = 'Click to change save path: ' + displayPath;
+      }
+    }
+    
+    // Open save path configuration dialog
+    function openSavePathDialog() {
+      const modal = document.getElementById('savePathModal');
+      const input = document.getElementById('savePathInput');
+      
+      if (modal && input) {
+        // Set current values
+        input.value = customSavePath;
+        
+        // Show modal
+        modal.style.display = 'flex';
+        
+        // Focus on input
+        setTimeout(() => input.focus(), 100);
+      } else {
+        console.error('Save path modal elements not found');
+      }
+    }
+    
+    // Close save path dialog
+    function closeSavePathDialog() {
+      const modal = document.getElementById('savePathModal');
+      if (modal) {
+        modal.style.display = 'none';
+      }
+    }
+    
+    // Reset save path to default
+    function resetSavePathToDefault() {
+      const input = document.getElementById('savePathInput');
+      
+      if (input) {
+        input.value = '';
+      }
+      
+      // Apply the default path directly
+      customSavePath = '';
+      customSavePathDisplay = '';  // Clear display path too
+      localStorage.removeItem('calibrationCustomPath');
+      
+      // Update display
+      updateSavePathDisplay();
+      
+      // Update thumbnails to show images from default path
+      updateCalibrationThumbnails();
+      
+      // Close modal
+      closeSavePathDialog();
+      
+      // Log success message
+      console.log('Save path reset to default');
+    }
+    
+    // Confirm save path setting
+    async function confirmSavePath() {
+      const input = document.getElementById('savePathInput');
+      
+      if (!input) return;
+      
+      const newPath = input.value.trim();
+      
+      // Update local variables
+      customSavePath = newPath;
+      
+      // If it's a relative path, resolve it to get the full path for display
+      if (newPath && (newPath.startsWith('./') || !newPath.startsWith('/'))) {
+        try {
+          const response = await fetch('/api/calibration/resolve-path', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              path: newPath
+            })
+          });
+          
+          const data = await response.json();
+          if (data.success) {
+            // Store the original path for API calls, but display the resolved path
+            customSavePathDisplay = data.resolved_path;
+          } else {
+            console.warn('Failed to resolve path, using original:', data.message);
+            customSavePathDisplay = newPath;
+          }
+        } catch (error) {
+          console.warn('Error resolving path, using original:', error);
+          customSavePathDisplay = newPath;
+        }
+      } else {
+        // For absolute paths or empty paths, display as-is
+        customSavePathDisplay = newPath;
+      }
+      
+      // Save to localStorage
+      if (newPath) {
+        localStorage.setItem('calibrationCustomPath', newPath);
+      } else {
+        localStorage.removeItem('calibrationCustomPath');
+      }
+      
+      // Update display
+      updateSavePathDisplay();
+      
+      // Update thumbnails to show images from new path
+      updateCalibrationThumbnails();
+      
+      // Close modal
+      closeSavePathDialog();
+      
+      // Log success message
+      console.log('Save path updated to:', newPath || 'default');
+    }
+    
+    // Show brief success message
+    function showBriefSuccess(message) {
+      const savePathElement = document.getElementById('calibrationSavePath');
+      if (savePathElement) {
+        const originalText = savePathElement.textContent;
+        const originalColor = savePathElement.style.color;
+        
+        savePathElement.textContent = '✓ Updated';
+        savePathElement.style.color = '#10b981';
+        
+        setTimeout(() => {
+          savePathElement.textContent = originalText;
+          savePathElement.style.color = originalColor;
+        }, 1500);
+      }
+    }
+    
+    // Handle keyboard input in save path dialog
+    function handleSavePathInputKeydown(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        confirmSavePath();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSavePathDialog();
+      }
+    }
+    
+    // Close save path dialog when clicking outside
+    function closeSavePathDialogOnOutsideClick(event) {
+      if (event.target === event.currentTarget) {
+        closeSavePathDialog();
+      }
     }
 
     // Toggle corner detection
@@ -3263,7 +3616,175 @@
     }
 
     function showCornerDetectionModal() {
-      document.getElementById('cornerDetectionModal').classList.remove('hidden');
+      const currentPattern = getCurrentPatternType();
+      const modal = document.getElementById('cornerDetectionModal');
+      
+      // Update modal title
+      const title = document.getElementById('patternModalTitle');
+      if (title) {
+        title.innerHTML = `${currentPattern.icon || '📐'} ${currentPattern.name} Settings`;
+      }
+      
+      // Update description
+      const description = document.getElementById('patternDescription');
+      if (description) {
+        description.textContent = currentPattern.description || 'Configure detection parameters for the selected calibration pattern.';
+      }
+      
+      // Generate dynamic parameters
+      generatePatternParameters(currentPattern);
+      
+      modal.classList.remove('hidden');
+    }
+
+    function generatePatternParameters(pattern) {
+      const container = document.getElementById('patternParametersContainer');
+      if (!container) return;
+      
+      container.innerHTML = ''; // Clear existing content
+      
+      // Define parameter configurations for different pattern types
+      const parameterConfigs = {
+        'ChessBoard': [
+          { id: 'width', label: 'Squares Width', type: 'number', value: 12, min: 3, max: 20, 
+            description: 'Number of squares across the width' },
+          { id: 'height', label: 'Squares Height', type: 'number', value: 9, min: 3, max: 20, 
+            description: 'Number of squares across the height' },
+          { id: 'square_size', label: 'Square Size (m)', type: 'number', value: 0.02, min: 0.001, max: 1.0, step: 0.001,
+            description: 'Physical size of each square in meters (e.g., 0.02 = 20mm)' }
+        ],
+        'CharucoBoard': [
+          { id: 'width', label: 'Squares Width', type: 'number', value: 12, min: 3, max: 15, 
+            description: 'Number of squares across the width' },
+          { id: 'height', label: 'Squares Height', type: 'number', value: 9, min: 3, max: 15, 
+            description: 'Number of squares across the height' },
+          { id: 'square_size', label: 'Square Size (m)', type: 'number', value: 0.03, min: 0.001, max: 1.0, step: 0.001,
+            description: 'Physical size of each square in meters (e.g., 0.03 = 30mm)' },
+          { id: 'marker_size', label: 'Marker Size (m)', type: 'number', value: 0.0225, min: 0.001, max: 1.0, step: 0.0001,
+            description: 'Physical size of ArUco markers in meters (e.g., 0.0225 = 22.5mm)' },
+          { id: 'dictionary_id', label: 'ArUco Dictionary', type: 'select', value: 5, 
+            options: [
+              { value: 0, label: 'DICT_4X4_50' },
+              { value: 1, label: 'DICT_4X4_100' },
+              { value: 2, label: 'DICT_4X4_250' },
+              { value: 3, label: 'DICT_4X4_1000' },
+              { value: 4, label: 'DICT_5X5_50' },
+              { value: 5, label: 'DICT_5X5_100' },
+              { value: 6, label: 'DICT_5X5_250' },
+              { value: 7, label: 'DICT_5X5_1000' },
+              { value: 8, label: 'DICT_6X6_50' },
+              { value: 9, label: 'DICT_6X6_100' },
+              { value: 10, label: 'DICT_6X6_250' },
+              { value: 11, label: 'DICT_6X6_1000' },
+              { value: 12, label: 'DICT_7X7_50' },
+              { value: 13, label: 'DICT_7X7_100' },
+              { value: 14, label: 'DICT_7X7_250' },
+              { value: 15, label: 'DICT_7X7_1000' },
+              { value: 16, label: 'DICT_ARUCO_ORIGINAL' }
+            ],
+            description: 'ArUco dictionary type (DICT_5X5_100 works best for your board)' }
+        ],
+        'GridBoard': [
+          { id: 'width', label: 'Markers Width', type: 'number', value: 6, min: 2, max: 20, 
+            description: 'Number of ArUco markers across the width' },
+          { id: 'height', label: 'Markers Height', type: 'number', value: 6, min: 2, max: 20, 
+            description: 'Number of ArUco markers across the height' },
+          { id: 'marker_size', label: 'Marker Size (m)', type: 'number', value: 0.022, min: 0.001, max: 1.0, step: 0.001,
+            description: 'Physical size of each marker in meters (e.g., 0.022 = 2.2cm)' },
+          { id: 'marker_separation', label: 'Marker Separation (m)', type: 'number', value: 0.0066, min: 0.001, max: 1.0, step: 0.0001,
+            description: 'Physical separation between markers in meters (e.g., 0.0066 = 0.66cm)' },
+          { id: 'dictionary_id', label: 'ArUco Dictionary', type: 'select', value: 20,
+            options: [
+              { value: 0, label: 'DICT_4X4_50' },
+              { value: 1, label: 'DICT_4X4_100' },
+              { value: 2, label: 'DICT_4X4_250' },
+              { value: 3, label: 'DICT_4X4_1000' },
+              { value: 4, label: 'DICT_5X5_50' },
+              { value: 5, label: 'DICT_5X5_100' },
+              { value: 6, label: 'DICT_5X5_250' },
+              { value: 7, label: 'DICT_5X5_1000' },
+              { value: 8, label: 'DICT_6X6_50' },
+              { value: 9, label: 'DICT_6X6_100' },
+              { value: 10, label: 'DICT_6X6_250' },
+              { value: 11, label: 'DICT_6X6_1000' },
+              { value: 12, label: 'DICT_7X7_50' },
+              { value: 13, label: 'DICT_7X7_100' },
+              { value: 14, label: 'DICT_7X7_250' },
+              { value: 15, label: 'DICT_7X7_1000' },
+              { value: 16, label: 'DICT_ARUCO_ORIGINAL' },
+              { value: 17, label: 'DICT_APRILTAG_16H5' },
+              { value: 18, label: 'DICT_APRILTAG_25H9' },
+              { value: 19, label: 'DICT_APRILTAG_36H10' },
+              { value: 20, label: 'DICT_APRILTAG_36H11' },
+              { value: 21, label: 'DICT_ARUCO_MIP_36H12' }
+            ],
+            description: 'ArUco/AprilTag dictionary type (DICT_APRILTAG_36H11 is commonly used)' }
+        ]
+      };
+      
+      const patternName = pattern.name || 'ChessBoard';
+      const params = parameterConfigs[patternName] || parameterConfigs['ChessBoard'];
+      
+      params.forEach(param => {
+        // Create parameter group
+        const paramGroup = document.createElement('div');
+        paramGroup.className = 'mb-4';
+        
+        // Label
+        const label = document.createElement('label');
+        label.className = 'block text-sm font-medium text-gray-700 mb-2';
+        label.textContent = param.label + ':';
+        
+        // Input or Select
+        let inputElement;
+        if (param.type === 'select') {
+          inputElement = document.createElement('select');
+          inputElement.className = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
+          param.options.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option.value;
+            optionElement.textContent = option.label;
+            if (option.value === param.value) {
+              optionElement.selected = true;
+            }
+            inputElement.appendChild(optionElement);
+          });
+        } else {
+          inputElement = document.createElement('input');
+          inputElement.type = param.type;
+          inputElement.value = param.value;
+          inputElement.min = param.min;
+          inputElement.max = param.max;
+          if (param.step) inputElement.step = param.step;
+          inputElement.className = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
+        }
+        
+        inputElement.id = getInputId(param.id); // Use helper function to get consistent IDs
+        
+        // Description
+        const desc = document.createElement('p');
+        desc.className = 'text-xs text-gray-500 mt-1';
+        desc.textContent = param.description;
+        
+        // Assemble parameter group
+        paramGroup.appendChild(label);
+        paramGroup.appendChild(inputElement);
+        paramGroup.appendChild(desc);
+        
+        container.appendChild(paramGroup);
+      });
+    }
+
+    // Helper function to get consistent input IDs
+    function getInputId(paramId) {
+      const idMapping = {
+        'width': 'chessboardWidth',
+        'height': 'chessboardHeight',
+        'square_size': 'squareSize',
+        'marker_size': 'markerSize',
+        'marker_separation': 'markerSeparation'
+      };
+      return idMapping[paramId] || paramId;
     }
 
     function closeCornerDetectionModal() {
@@ -3273,12 +3794,15 @@
     async function confirmCornerDetection() {
       const width = parseInt(document.getElementById('chessboardWidth').value);
       const height = parseInt(document.getElementById('chessboardHeight').value);
+      const currentPattern = getCurrentPatternType();
       
+      // Validate basic dimensions
       if (isNaN(width) || isNaN(height) || width <= 1 || height <= 1) {
+        const patternName = currentPattern.name || 'Pattern';
         await showAlertModal(
           '⚠️ Invalid Input',
           `<div class="text-orange-600">
-            <p class="mb-2">Please enter valid chessboard dimensions.</p>
+            <p class="mb-2">Please enter valid ${patternName.toLowerCase()} dimensions.</p>
             <div class="bg-orange-50 p-3 rounded-lg border border-orange-200">
               <p class="text-sm text-orange-700"><strong>Requirements:</strong></p>
               <ul class="text-sm text-orange-600 mt-1 list-disc list-inside">
@@ -3292,40 +3816,166 @@
         return;
       }
       
+      // Collect all pattern-specific parameters
+      const patternParams = collectPatternParameters(currentPattern);
+      
+      // Validate pattern-specific parameters
+      if (!validatePatternParameters(patternParams, currentPattern)) {
+        return; // Validation failed, error already shown
+      }
+      
+      await enableCornerDetectionWithCurrentPattern(width, height, patternParams);
+    }
+
+    // Collect parameters based on pattern type
+    function collectPatternParameters(pattern) {
+      const params = {};
+      const patternName = pattern.name || 'ChessBoard';
+      
+      // Collect all parameter inputs based on the generatePatternParameters structure
+      const parameterIds = {
+        'ChessBoard': ['width', 'height', 'square_size'],
+        'CharucoBoard': ['width', 'height', 'square_size', 'marker_size', 'dictionary_id'],
+        'GridBoard': ['width', 'height', 'marker_size', 'marker_separation', 'dictionary_id']
+      };
+      
+      const ids = parameterIds[patternName] || parameterIds['ChessBoard'];
+      
+      ids.forEach(id => {
+        const element = document.getElementById(getInputId(id));
+        if (element) {
+          if (element.tagName === 'SELECT') {
+            params[id] = parseInt(element.value);
+          } else if (element.type === 'number') {
+            params[id] = parseFloat(element.value);
+          } else {
+            params[id] = element.value;
+          }
+        }
+      });
+      
+      return params;
+    }
+
+    // Validate pattern-specific parameters
+    function validatePatternParameters(params, pattern) {
+      const patternName = pattern.name || 'ChessBoard';
+      
+      for (const [key, value] of Object.entries(params)) {
+        if (isNaN(value) || value <= 0) {
+          showAlertModal(
+            '⚠️ Invalid Parameter',
+            `<div class="text-orange-600">
+              <p class="mb-2">Invalid value for ${key.replace('_', ' ')}: ${value}</p>
+              <p class="text-sm text-orange-700">All physical measurements must be positive numbers greater than 0.</p>
+            </div>`
+          );
+          return false;
+        }
+      }
+      
+      // Pattern-specific validations
+      if (patternName === 'CharucoBoard' && params.marker_size && params.square_size) {
+        if (params.marker_size >= params.square_size) {
+          showAlertModal(
+            '⚠️ Invalid ChArUco Parameters',
+            `<div class="text-orange-600">
+              <p class="mb-2">Marker size (${params.marker_size}m) must be smaller than square size (${params.square_size}m).</p>
+              <p class="text-sm text-orange-700">Typically, marker size should be 50-80% of square size.</p>
+            </div>`
+          );
+          return false;
+        }
+      }
+      
+      return true;
+    }
+
+    // Enable corner detection with current pattern type
+    async function enableCornerDetectionWithCurrentPattern(width = null, height = null, patternParams = {}) {
       try {
+        // Get current pattern type
+        const currentPattern = getCurrentPatternType();
+        
+        // Use provided dimensions or defaults from modal inputs
+        const detectionWidth = width || parseInt(document.getElementById('chessboardWidth').value);
+        const detectionHeight = height || parseInt(document.getElementById('chessboardHeight').value);
+        
+        // Prepare request data based on pattern type
+        let requestData = {
+          enable: true,
+          pattern_type: currentPattern.name, // Use display name which will be mapped by backend
+        };
+        
+        // Add pattern-specific parameters
+        if (currentPattern.name === 'GridBoard') {
+          // For ArUco Grid Board, we use the values directly as marker counts
+          requestData.chessboard_width = detectionWidth;
+          requestData.chessboard_height = detectionHeight;
+          requestData.grid_width = detectionWidth;
+          requestData.grid_height = detectionHeight;
+          // Add physical parameters
+          if (patternParams.marker_size) requestData.marker_size = patternParams.marker_size;
+          if (patternParams.marker_separation) requestData.marker_separation = patternParams.marker_separation;
+          if (patternParams.dictionary_id !== undefined) requestData.dictionary_id = patternParams.dictionary_id;
+        } else {
+          // For ChessBoard and CharucoBoard, convert squares to corners
+          requestData.chessboard_width = detectionWidth - 1;
+          requestData.chessboard_height = detectionHeight - 1;
+          requestData.grid_width = detectionWidth;
+          requestData.grid_height = detectionHeight;
+          // Add physical parameters
+          if (patternParams.square_size) requestData.square_size = patternParams.square_size;
+          if (patternParams.marker_size) requestData.marker_size = patternParams.marker_size;
+          if (patternParams.dictionary_id !== undefined) requestData.dictionary_id = patternParams.dictionary_id;
+        }
+        
+        console.log('Enabling corner detection with pattern:', currentPattern.name, requestData);
+        
         const response = await fetch('/api/calibration/corner-detection', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            enable: true,
-            chessboard_width: width - 1,  // Convert grid size to corner size
-            chessboard_height: height - 1,
-            grid_width: width,
-            grid_height: height
-          })
+          body: JSON.stringify(requestData)
         });
         
         const data = await response.json();
         if (data.success) {
           cornerDetectionEnabled = true;
-          document.getElementById('cornerDetectionBtn').textContent = '🛑 Stop Detection';
+          const btnText = `🛑 Stop Detection`;
+          document.getElementById('cornerDetectionBtn').textContent = btnText;
           document.getElementById('cornerDetectionBtn').className = 'robot-arm-button status-style-button status-button-red font-semibold rounded-lg text-base';
           
           // Update status bar
           const cornerStatus = document.getElementById('calibrationCornerStatus');
           if (cornerStatus) {
-            cornerStatus.textContent = 'Enabled';
+            cornerStatus.textContent = `Enabled (${currentPattern.name})`;
             cornerStatus.className = 'status-bar-value connected';
           }
           
           closeCornerDetectionModal();
+          
+          // Show success message with parameter details
+          const physicalParams = Object.entries(patternParams)
+            .map(([key, value]) => `${key.replace('_', ' ')}: ${value}m`)
+            .join(', ');
+          const successMsg = `Corner detection enabled: ${currentPattern.name} ${detectionWidth}x${detectionHeight}` + 
+                           (physicalParams ? ` (${physicalParams})` : '');
+          console.log(successMsg);
         } else {
           console.error('Failed to enable corner detection:', data.message);
+          await showAlertModal(
+            '❌ Detection Error', 
+            `<div class="text-red-600">Failed to enable corner detection: ${data.message}</div>`
+          );
         }
       } catch (error) {
         console.error('Corner detection error:', error);
+        await showAlertModal(
+          '❌ Network Error', 
+          `<div class="text-red-600">Network error: ${error.message}</div>`
+        );
       }
     }
 
@@ -3370,13 +4020,20 @@
 
     // Clear calibration images
     async function clearCalibrationImages() {
+      // Get current save path for display in confirmation dialog
+      const currentSavePath = customSavePathDisplay || customSavePath || defaultSavePath;
+      
       if (!(await showConfirmationModal(
         '🗑️ Clear Calibration Images',
         `<div class="text-gray-700">
           <p class="mb-2">Are you sure you want to clear all calibration images?</p>
+          <div class="bg-blue-50 p-3 rounded-lg border border-blue-200 mb-3">
+            <p class="text-sm text-blue-700"><strong>📁 Target Directory:</strong></p>
+            <p class="text-xs text-blue-600 mt-1 font-mono">${currentSavePath}</p>
+          </div>
           <div class="bg-red-50 p-3 rounded-lg border border-red-200">
             <p class="text-sm text-red-700"><strong>⚠️ Warning:</strong></p>
-            <p class="text-sm text-red-600 mt-1">This action cannot be undone. All captured calibration images will be permanently deleted.</p>
+            <p class="text-sm text-red-600 mt-1">This action cannot be undone. All captured calibration images in the above directory will be permanently deleted.</p>
           </div>
           <p class="text-sm text-gray-600 mt-2">Current image count: <strong>${calibrationImageCount}</strong></p>
         </div>`
@@ -3385,8 +4042,17 @@
       }
       
       try {
+        // Use original path for API call
+        const apiSavePath = customSavePath || defaultSavePath;
+        
         const response = await fetch('/api/calibration/clear', {
-          method: 'POST'
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            save_path: apiSavePath
+          })
         });
         
         const data = await response.json();
@@ -3483,7 +4149,7 @@
       } finally {
         // Reset button
         autoCollectBtn.disabled = false;
-        autoCollectBtn.textContent = '🤖 AutoCollect';
+        autoCollectBtn.textContent = '🦾 AutoCollect';
       }
     }
 
@@ -3983,14 +4649,26 @@
       } finally {
         // Reset button
         calibrateBtn.disabled = false;
-        calibrateBtn.textContent = '🤖 CalibExtrinsic';
+        calibrateBtn.textContent = '⚙️ CalibExtrinsic';
       }
     }
 
     // Update calibration thumbnails
     async function updateCalibrationThumbnails() {
       try {
-        const response = await fetch('/api/calibration/thumbnails');
+        // Get current save path (custom or default)
+        const currentSavePath = customSavePath || defaultSavePath;
+        
+        // Send current save path to server
+        const response = await fetch('/api/calibration/thumbnails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            save_path: currentSavePath
+          })
+        });
         const data = await response.json();
         
         const thumbnailGrid = document.getElementById('calibrationThumbnailGrid');
@@ -4019,7 +4697,7 @@
             
             thumbnailDiv.innerHTML = `
               <div class="relative">
-                <img src="/api/calibration/thumbnail/${thumbnail.filename}" 
+                <img src="/api/calibration/thumbnail/${thumbnail.filename}?save_path=${encodeURIComponent(currentSavePath)}" 
                      alt="${thumbnail.filename}" 
                      class="w-full h-20 object-cover rounded-lg">
                 <div class="absolute bottom-1 left-1 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
@@ -4048,7 +4726,9 @@
       modal.style.cursor = 'pointer';
       
       const img = document.createElement('img');
-      img.src = `/api/calibration/image/${filename}`;
+      // Get current save path (custom or default)
+      const currentSavePath = customSavePath || defaultSavePath;
+      img.src = `/api/calibration/image/${filename}?save_path=${encodeURIComponent(currentSavePath)}`;
       img.className = 'max-w-90vw max-h-90vh object-contain rounded-lg';
       
       modal.appendChild(img);
@@ -4204,8 +4884,8 @@
     }
 
     // Initialize camera calibration when page loads
-    document.addEventListener('DOMContentLoaded', function() {
-      initializeCameraCalibration();
+    document.addEventListener('DOMContentLoaded', async function() {
+      await initializeCameraCalibration();
       
       // Add ESC key listener for closing modals
       document.addEventListener('keydown', function(event) {
@@ -4405,5 +5085,37 @@
       </div>
 
       <script src="/js/robot_arm_control.js?v=6&ts=1755534000"></script>
+      
+      <!-- Save Path Configuration Modal (Global) -->
+      <div id="savePathModal" class="modal-overlay" onclick="closeSavePathDialogOnOutsideClick(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <h3 class="modal-title">📁 Calibration Data Save Path</h3>
+            <p class="modal-subtitle">Set the directory for saving calibration data</p>
+          </div>
+          
+          <div class="modal-joint-grid">
+            <div class="modal-joint-item">
+              <label class="modal-joint-label">Save Path:</label>
+              <input type="text" id="savePathInput" class="modal-joint-input" 
+                     style="width: 280px; font-family: monospace;" 
+                     placeholder="Enter the directory"
+                     onkeydown="handleSavePathInputKeydown(event)">
+            </div>
+          </div>
+          
+          <div class="modal-buttons">
+            <button class="modal-button modal-button-secondary" onclick="closeSavePathDialog()">
+              Cancel
+            </button>
+            <button class="modal-button modal-button-secondary" onclick="resetSavePathToDefault()" style="background-color: #f59e0b; border-color: #f59e0b;">
+              Use Default
+            </button>
+            <button class="modal-button modal-button-primary" onclick="confirmSavePath()">
+              Set Path
+            </button>
+          </div>
+        </div>
+      </div>
 </body>
 </html>
