@@ -32,6 +32,12 @@ def generate_launch_description():
         'draw_wire_sensor.launch.py'
     )
 
+    pushrod_path = os.path.join(
+        get_package_share_directory('lift_robot_pushrod'),
+        'launch',
+        'lift_robot_pushrod_launch.py'
+    )
+
     web_path = os.path.join(
         get_package_share_directory('lift_robot_web'),
         'launch',
@@ -47,6 +53,12 @@ def generate_launch_description():
     lift_robot_launch = TimerAction(
         period=3.0,  # Wait 3 seconds for modbus driver to initialize
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(lift_robot_path))]
+    )
+
+    # Start pushrod controller shortly after platform (stagger to avoid bus burst)
+    pushrod_launch = TimerAction(
+        period=3.5,
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(pushrod_path))]
     )
 
     # Start cable sensor after modbus driver is ready
@@ -73,6 +85,7 @@ def generate_launch_description():
         web_port_arg,
         modbus_launch,
         lift_robot_launch,
+    pushrod_launch,
     cable_sensor_launch,
         web_launch,
     ])

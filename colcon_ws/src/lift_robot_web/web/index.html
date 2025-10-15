@@ -25,10 +25,20 @@
   <span class="ml-4 text-slate-500">Frequency: <span id="freq">-</span> Hz</span>
   <span class="ml-4 text-slate-500">Latency: <span id="age">-</span> ms</span>
       </div>
-      <div class="flex gap-2 pt-1">
-        <button data-cmd="up" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded">Up</button>
-        <button data-cmd="down" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded">Down</button>
-        <button data-cmd="stop" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded">Stop</button>
+      <div class="flex flex-col gap-2 pt-1">
+        <div class="flex gap-2">
+          <span class="text-xs font-semibold text-slate-600 pr-2">Platform:</span>
+          <button data-cmd="up" data-target="platform" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded">Up</button>
+          <button data-cmd="down" data-target="platform" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded">Down</button>
+          <button data-cmd="stop" data-target="platform" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded">Stop</button>
+        </div>
+        <div class="flex gap-2">
+          <span class="text-xs font-semibold text-slate-600 pr-2">Pushrod:</span>
+          <button data-cmd="up" data-target="pushrod" class="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded">Up</button>
+          <button data-cmd="timed_up" data-target="pushrod" data-duration="5" class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded">Up 5s</button>
+          <button data-cmd="down" data-target="pushrod" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded">Down</button>
+          <button data-cmd="stop" data-target="pushrod" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded">Stop</button>
+        </div>
         <span id="cmdStatus" class="text-xs text-slate-500"></span>
       </div>
       <div class="grid grid-cols-2 gap-2 text-sm">
@@ -60,13 +70,19 @@ connect();
 document.querySelectorAll('button[data-cmd]').forEach(btn=>{
   btn.addEventListener('click', async ()=>{
     const command=btn.getAttribute('data-cmd');
-  $('cmdStatus').textContent='Sending '+command+' ...';
+    const target=btn.getAttribute('data-target')||'platform';
+    const durationAttr=btn.getAttribute('data-duration');
+    const duration=durationAttr?parseFloat(durationAttr):undefined;
+    $('cmdStatus').textContent='Sending '+command+' ...';
+    const payload={command,target};
+    if(duration!==undefined) payload.duration=duration;
     try {
-      const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command})});
-  if(!r.ok){ $('cmdStatus').textContent='Failed '+command; return; }
-  $('cmdStatus').textContent='Done '+command;
-      setTimeout(()=>$('cmdStatus').textContent='',1500);
-  } catch(e){ $('cmdStatus').textContent='Error'; }
+      const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!r.ok){ $('cmdStatus').textContent='Failed '+command; return; }
+      const resp=await r.json();
+      $('cmdStatus').textContent='Done '+command+(resp.duration?(' ('+resp.duration+'s)'):'');
+      setTimeout(()=>$('cmdStatus').textContent='',2000);
+    } catch(e){ $('cmdStatus').textContent='Error'; }
   });
 });
 </script>

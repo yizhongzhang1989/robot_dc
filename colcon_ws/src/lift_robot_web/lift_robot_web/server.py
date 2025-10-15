@@ -22,14 +22,17 @@ class LiftRobotWeb(Node):
         self.port = self.get_parameter('port').value
         self.sensor_topic = self.get_parameter('sensor_topic').value
 
+        # State holders
         self.latest_raw = None
         self.latest_obj = None
         self.connections = []
         self.loop = None
 
+        # ROS interfaces
         self.sub = self.create_subscription(String, self.sensor_topic, self.sensor_cb, 10)
-        # Publisher for platform commands
         self.cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
+        self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
+
         self.get_logger().info(f"Web server subscribing: {self.sensor_topic}")
         self.start_server()
 
@@ -78,12 +81,36 @@ class LiftRobotWeb(Node):
             @app.post('/api/cmd')
             async def send_cmd(payload: dict):
                 cmd = payload.get('command')
-                if cmd not in ('up','down','stop'):
+                target = payload.get('target','platform')
+                duration = payload.get('duration')
+                allowed = {'up','down','stop','timed_up','timed_down','stop_timed'}
+                if cmd not in allowed:
                     return JSONResponse({'error':'invalid command'}, status_code=400)
-                msg = String()
-                msg.data = json.dumps({'command': cmd})
-                self.cmd_pub.publish(msg)
-                return {'status':'ok','command':cmd}
+                # Timed commands only meaningful for pushrod target currently
+                if cmd.startswith('timed') and target != 'pushrod':
+                    return JSONResponse({'error':'timed commands only supported for pushrod target'}, status_code=400)
+                # Auto inject 5s for timed_up if not provided
+                if cmd == 'timed_up' and (duration is None):
+                    duration = 5
+                if cmd == 'timed_down' and (duration is None):
+                    # Provide a default if user omits (optional design choice)
+                    duration = 5
+                if duration is not None:
+                    try:
+                        duration = float(duration)
+                        if duration <= 0:
+                            return JSONResponse({'error':'duration must be > 0'}, status_code=400)
+                    except Exception:
+                        return JSONResponse({'error':'invalid duration'}, status_code=400)
+                body = {'command': cmd}
+                if duration is not None:
+                    body['duration'] = duration
+                msg = String(); msg.data = json.dumps(body)
+                if target == 'pushrod':
+                    self.pushrod_cmd_pub.publish(msg)
+                else:
+                    self.cmd_pub.publish(msg)
+                return {'status':'ok','command':cmd,'target':target,'duration':duration}
 
             @app.websocket('/ws')
             async def ws_endpoint(ws: WebSocket):
