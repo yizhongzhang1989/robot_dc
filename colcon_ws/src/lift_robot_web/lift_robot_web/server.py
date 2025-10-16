@@ -91,10 +91,10 @@ class LiftRobotWeb(Node):
                     return JSONResponse({'error':'timed commands only supported for pushrod target'}, status_code=400)
                 # Auto inject 5s for timed_up if not provided
                 if cmd == 'timed_up' and (duration is None):
-                    duration = 5
+                    duration = 4.0
                 if cmd == 'timed_down' and (duration is None):
                     # Provide a default if user omits (optional design choice)
-                    duration = 5
+                    duration = 4.0
                 if duration is not None:
                     try:
                         duration = float(duration)
