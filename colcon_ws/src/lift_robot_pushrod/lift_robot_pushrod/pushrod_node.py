@@ -18,7 +18,7 @@ class PushrodNode(Node):
         super().__init__('lift_robot_pushrod')
 
         # Parameters
-        self.declare_parameter('device_id', 50)
+        self.declare_parameter('device_id', 53)
         self.declare_parameter('use_ack_patch', True)
 
         self.device_id = self.get_parameter('device_id').value
