@@ -17,13 +17,13 @@ from scipy.spatial.transform import Rotation as R
 import json
 import os
 from datetime import datetime
-from UR15Robot import UR15Robot
+from ur15_robot_arm.ur15 import UR15Robot
 from cv_bridge import CvBridge
 import cv2
 
 
 class JoystickCartesianControl(Node):
-    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, save_dir="../temp/ur15_cam_calibraition_data"):
+    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, save_dir="../temp/ur15_cam_calibration_data"):
         super().__init__('joystick_cartesian_control')
         
         # UR15 Robot connection for reading actual pose and joints
@@ -466,7 +466,7 @@ def main(args=None):
     # You can customize these parameters
     robot_ip = "192.168.1.15"  # UR robot IP address
     robot_port = 30002          # UR robot port
-    save_dir = "../temp/ur15_cam_calibraition_data"  # Directory to save pose files
+    save_dir = "../temp/ur15_cam_calibration_data"  # Directory to save pose files
     
     try:
         joystick_control_node = JoystickCartesianControl(
