@@ -32,6 +32,12 @@ def generate_launch_description():
         'draw_wire_sensor.launch.py'
     )
 
+    force_sensor_path = os.path.join(
+        get_package_share_directory('lift_robot_force_sensor'),
+        'launch',
+        'lift_robot_force_sensor_launch.py'
+    )
+
     pushrod_path = os.path.join(
         get_package_share_directory('lift_robot_pushrod'),
         'launch',
@@ -67,6 +73,12 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cable_sensor_path), launch_arguments={'device_id': '51', 'read_interval': '0.1'}.items())]
     )
 
+    # Start force sensor after cable sensor (stagger to avoid simultaneous Modbus reads)
+    force_sensor_launch = TimerAction(
+        period=4.5,
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(force_sensor_path))]
+    )
+
     # Start web after sensor (optional)
     web_launch = TimerAction(
         period=5.0,
@@ -87,5 +99,6 @@ def generate_launch_description():
         lift_robot_launch,
     pushrod_launch,
     cable_sensor_launch,
+    force_sensor_launch,
         web_launch,
     ])

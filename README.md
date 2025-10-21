@@ -70,6 +70,24 @@ robot_dc/
    ros2 launch robot_bringup robot_launch.py
    ```
 
+   ## Draw-wire Sensor Calibration
+
+   Interactive script: `scripts/draw_wire_calibrate.py`
+
+   Usage:
+   1. Build and launch system so `/draw_wire_sensor/data` is publishing.
+   2. Source workspace:
+      ```bash
+      source install/setup.bash
+      python3 scripts/draw_wire_calibrate.py
+      ```
+   3. Move platform to a known physical height, type the numeric height and press Enter.
+   4. Repeat for several heights covering the operating range.
+   5. Type `cal` to compute linear calibration: `height ≈ sensor * scale + offset`.
+   6. Type `save` to write `calibration_draw_wire.json`.
+   7. Type `list` to view collected samples; `quit` to exit.
+
+   Default raw field used is `register_1`. Adjust `RAW_FIELD` in the script if needed.
 3. **Alternatively, run in simulation mode (no physical hardware required):**
 
    ```bash

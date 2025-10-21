@@ -46,11 +46,20 @@
         <div>register_1: <span id="reg1" class="font-mono">-</span></div>
         <div>seq_id: <span id="seq" class="font-mono">-</span></div>
         <div>device_id: <span id="device" class="font-mono">-</span></div>
+        <div class="col-span-2">height: <span id="heightVal" class="font-mono font-semibold">-</span></div>
       </div>
   <div class="text-sm text-slate-600">Last message timestamp: <span id="ts">-</span></div>
     </div>
+    <div class="p-3 bg-white rounded shadow space-y-2">
+      <h2 class="font-semibold">Force Sensors</h2>
+      <div class="grid grid-cols-2 gap-2 text-sm">
+        <div>Right (CH2): <span id="rightForce" class="font-mono">-</span></div>
+        <div>Left (CH3): <span id="leftForce" class="font-mono">-</span></div>
+      </div>
+      <div class="text-xs text-slate-500" id="forceTs">-</div>
+    </div>
     <div class="bg-white p-3 rounded shadow">
-  <h2 class="font-semibold mb-2">Raw JSON</h2>
+      <h2 class="font-semibold mb-2">Raw JSON</h2>
       <pre id="raw" class="bg-slate-50 p-2 rounded max-h-72 overflow-auto"></pre>
     </div>
   </div>
@@ -61,7 +70,19 @@ function setState(type,text){ const d=$('stateDot'); d.className='dot '+type; $(
 function connect(){ const proto=location.protocol==='https:'?'wss':'ws'; ws=new WebSocket(proto+'://'+location.host+'/ws'); ws.onopen=()=>{usePolling=false; $('mode').textContent='WebSocket'; setState('live','Live'); if(pollTimer){clearInterval(pollTimer);} }; ws.onmessage=e=>{ if(e.data==='ping') return; handle(e.data); }; ws.onclose=()=>{ setState('disc','Disconnected'); fallback(); setTimeout(connect,3000); }; ws.onerror=()=> setState('disc','Error'); }
 function fallback(){ if(usePolling) return; usePolling=true; $('mode').textContent='Polling'; pollTimer=setInterval(async()=>{ try{ const r=await fetch('/api/latest'); if(!r.ok) return; handle(JSON.stringify(await r.json())); }catch(e){} }, 1000); }
 function handle(raw){ lastReceive=Date.now(); $('raw').textContent=raw; try{ const data=JSON.parse(raw); update(data); setState('live','Live'); }catch(e){} }
-function update(d){ if(d.register_0!==undefined) $('reg0').textContent=d.register_0; if(d.register_1!==undefined) $('reg1').textContent=d.register_1; if(d.seq_id!==undefined) $('seq').textContent=d.seq_id; if(d.device_id!==undefined) $('device').textContent=d.device_id; if(d.timestamp){ $('ts').textContent=d.timestamp; } if(d.read_interval){ readInterval=d.read_interval*1000; } computeFreq(); }
+function update(d){
+  if(d.register_0!==undefined) $('reg0').textContent=d.register_0;
+  if(d.register_1!==undefined) $('reg1').textContent=d.register_1;
+  if(d.seq_id!==undefined) $('seq').textContent=d.seq_id;
+  if(d.device_id!==undefined) $('device').textContent=d.device_id;
+  if(d.timestamp){ $('ts').textContent=d.timestamp; }
+  if(d.read_interval){ readInterval=d.read_interval*1000; }
+  if(d.height!==undefined){ $('heightVal').textContent = (d.height===null?'-':(d.height.toFixed?d.height.toFixed(2):d.height)); }
+  if(d.right_force_sensor!==undefined){ $('rightForce').textContent=(d.right_force_sensor===null?'-':d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(3):d.right_force_sensor); }
+  if(d.left_force_sensor!==undefined){ $('leftForce').textContent=(d.left_force_sensor===null?'-':d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(3):d.left_force_sensor); }
+  if(d.right_force_sensor!==undefined || d.left_force_sensor!==undefined){ $('forceTs').textContent='Updated at '+new Date().toLocaleTimeString(); }
+  computeFreq();
+}
 function computeFreq(){ intervals.push(Date.now()); if(intervals.length>25) intervals.shift(); if(intervals.length>1){ const diffs=[]; for(let i=1;i<intervals.length;i++) diffs.push(intervals[i]-intervals[i-1]); const avg=diffs.reduce((a,b)=>a+b,0)/diffs.length; $('freq').textContent=(1000/avg).toFixed(2); } }
 setInterval(()=>{ if(!lastReceive){ $('age').textContent='-'; return; } const age=Date.now()-lastReceive; $('age').textContent=age; const staleThreshold=Math.max(2500,2.5*readInterval); if(age>staleThreshold){ setState('stale','Stale'); } },500);
 connect();

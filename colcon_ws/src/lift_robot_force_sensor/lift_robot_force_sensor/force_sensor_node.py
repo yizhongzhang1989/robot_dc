@@ -20,7 +20,7 @@ class LiftRobotForceSensorNode(Node):
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
         self.read_interval = float(self.get_parameter('read_interval').value)
 
-        self.get_logger().info(f"Start force sensor node: device_id={self.device_id}, interval={self.read_interval}s")
+        self.get_logger().info(f"Start force sensor node (CH2/CH3 floats): device_id={self.device_id}, interval={self.read_interval}s")
 
         self.controller = ForceSensorController(self.device_id, self, self.use_ack_patch)
         self.controller.initialize()
@@ -28,13 +28,14 @@ class LiftRobotForceSensorNode(Node):
         # Sequence id generator
         self.seq_id = 0
 
-    # Publisher for force value (32-bit raw)
-    from std_msgs.msg import Int64
-    self.force_pub = self.create_publisher(Int64, '/lift_robot_force_sensor/value', 10)
+        # Publishers for right (CH2) and left (CH3) force values (Float32)
+        from std_msgs.msg import Float32
+        self.right_pub = self.create_publisher(Float32, '/right_force_sensor', 10)
+        self.left_pub = self.create_publisher(Float32, '/left_force_sensor', 10)
 
-    # Periodic read timer (10Hz if read_interval=0.1)
-    self.timer = self.create_timer(self.read_interval, self.periodic_read)
-    self.get_logger().info(f"Force sensor reading timer started at {1.0/self.read_interval:.1f} Hz")
+        # Periodic read timer
+        self.timer = self.create_timer(self.read_interval, self.periodic_read)
+        self.get_logger().info(f"Force sensor reading timer started at {1.0/self.read_interval:.1f} Hz")
 
     def next_seq(self):
         self.seq_id += 1
@@ -42,16 +43,16 @@ class LiftRobotForceSensorNode(Node):
 
     def periodic_read(self):
         seq = self.next_seq()
-        self.controller.read_once(seq_id=seq)
-        # Publish last value after read (will be updated in callback asynchronously; minor race acceptable for simple case)
-        val, regs, ts = self.controller.get_last()
-        if val is not None:
-            from std_msgs.msg import Int64
-            msg = Int64()
-            msg.data = val
-            self.force_pub.publish(msg)
-            # Debug log at lower verbosity to avoid spam
-            self.get_logger().debug(f"Publish force value: {val} (reg0=0x{regs[0]:04X} reg1=0x{regs[1]:04X})")
+        self.controller.read_ch2_ch3(seq_id=seq)
+        # After asynchronous callbacks complete, publish last known values (race acceptable for simple UI display)
+        last = self.controller.get_last()
+        from std_msgs.msg import Float32
+        if last['right_value'] is not None:
+            m = Float32(); m.data = float(last['right_value'])
+            self.right_pub.publish(m)
+        if last['left_value'] is not None:
+            m2 = Float32(); m2.data = float(last['left_value'])
+            self.left_pub.publish(m2)
 
     def destroy_node(self):
         self.get_logger().info("Shutting down force sensor node...")

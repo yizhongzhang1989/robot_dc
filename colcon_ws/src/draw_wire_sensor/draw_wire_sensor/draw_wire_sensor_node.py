@@ -11,10 +11,17 @@ class DrawWireSensorNode(Node):
         self.declare_parameter('device_id', 51)
         self.declare_parameter('use_ack_patch', True)
         self.declare_parameter('read_interval', 0.1)
+        # Calibration parameters (linear): height = register_1 * scale + offset
+        self.declare_parameter('calibration.scale', 0.024537)
+        self.declare_parameter('calibration.offset', 681.837575)
+        self.declare_parameter('calibration.enable', True)
 
         self.device_id = self.get_parameter('device_id').value
         use_ack_patch = self.get_parameter('use_ack_patch').value
         self.read_interval = float(self.get_parameter('read_interval').value)
+        self.cal_scale = float(self.get_parameter('calibration.scale').value)
+        self.cal_offset = float(self.get_parameter('calibration.offset').value)
+        self.cal_enable = bool(self.get_parameter('calibration.enable').value)
 
         self.get_logger().info(f"Start draw-wire sensor node: device_id={self.device_id}, interval={self.read_interval}s")
 
@@ -55,13 +62,20 @@ class DrawWireSensorNode(Node):
 
     def publish_sensor_data(self, seq_id=None):
         reg0, reg1, ts = self.controller.get_sensor_data()
+        height_val = None
+        if self.cal_enable and reg1 is not None:
+            try:
+                height_val = reg1 * self.cal_scale + self.cal_offset
+            except Exception:
+                height_val = None
         msg_obj = {
             'timestamp': ts,
             'register_0': reg0,
             'register_1': reg1,
             'device_id': self.device_id,
             'seq_id': seq_id,
-            'read_interval': self.read_interval
+            'read_interval': self.read_interval,
+            'height': height_val
         }
         m = String(); m.data = json.dumps(msg_obj)
         self.pub.publish(m)

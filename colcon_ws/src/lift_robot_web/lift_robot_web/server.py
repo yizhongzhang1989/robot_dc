@@ -27,9 +27,18 @@ class LiftRobotWeb(Node):
         self.latest_obj = None
         self.connections = []
         self.loop = None
+        self.right_force = None
+        self.left_force = None
 
         # ROS interfaces
         self.sub = self.create_subscription(String, self.sensor_topic, self.sensor_cb, 10)
+        # Force sensor subscriptions (Float32)
+        try:
+            from std_msgs.msg import Float32
+            self.right_sub = self.create_subscription(Float32, '/right_force_sensor', self.right_cb, 10)
+            self.left_sub = self.create_subscription(Float32, '/left_force_sensor', self.left_cb, 10)
+        except Exception as e:
+            self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
         self.cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
         self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
 
@@ -43,7 +52,22 @@ class LiftRobotWeb(Node):
         except Exception:
             self.latest_obj = None
         if self.loop and self.connections:
-            asyncio.run_coroutine_threadsafe(self.broadcast(msg.data), self.loop)
+            # Merge force values minimally if available
+            outbound = msg.data
+            if self.latest_obj is not None:
+                merged = dict(self.latest_obj)
+                if self.right_force is not None:
+                    merged['right_force_sensor'] = self.right_force
+                if self.left_force is not None:
+                    merged['left_force_sensor'] = self.left_force
+                outbound = json.dumps(merged)
+            asyncio.run_coroutine_threadsafe(self.broadcast(outbound), self.loop)
+
+    def right_cb(self, msg):
+        self.right_force = msg.data
+
+    def left_cb(self, msg):
+        self.left_force = msg.data
 
     async def broadcast(self, text):
         drop = []
