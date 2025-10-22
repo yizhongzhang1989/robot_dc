@@ -441,11 +441,30 @@ def save_calibration_results(output_dir, intrinsic_results, intrinsic_calibrator
         if verbose:
             print(f"   ⚠️  Failed to generate eye-in-hand calibration report: {e}")
     
-    # 3. Save eye_in_hand_result.json in camera_parameters directory (like web interface)
-    camera_params_dir = os.path.join(output_dir, 'camera_parameters')
+    # 3. Save calibration_result.json in ur15_camera_parameters directory (like web interface)
+    camera_params_dir = os.path.join(output_dir, 'ur15_camera_parameters')
     os.makedirs(camera_params_dir, exist_ok=True)
     
-    output_data = {
+    # Save intrinsic calibration result (matching temp/camera_parameters/calibration_result.json format)
+    intrinsic_output_data = {
+        'success': True,
+        'rms_error': float(intrinsic_results['rms_error']),
+        'camera_matrix': intrinsic_results['camera_matrix'].tolist(),
+        'distortion_coefficients': intrinsic_results['distortion_coefficients'].flatten().tolist(),
+        'image_count': len(image_filenames),
+        'report_html': os.path.join(intrinsic_report_dir, 'calibration_report.html') if intrinsic_report_result and os.path.exists(os.path.join(intrinsic_report_dir, 'calibration_report.html')) else '',
+        'report_json': os.path.join(intrinsic_report_dir, 'calibration_data.json') if intrinsic_report_result and os.path.exists(os.path.join(intrinsic_report_dir, 'calibration_data.json')) else ''
+    }
+    
+    intrinsic_output_path = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
+    with open(intrinsic_output_path, 'w') as f:
+        json.dump(intrinsic_output_data, f, indent=2)
+    
+    if verbose:
+        print(f"   ✅ Saved: {camera_params_dir}/ur15_cam_calibration_result.json")
+    
+    # 4. Save eye_in_hand_result.json in ur15_camera_parameters directory (like web interface)
+    eye_in_hand_output_data = {
         'success': True,
         'rms_error': float(eye_in_hand_result['rms_error']),
         'intrinsic_rms_error': float(intrinsic_results['rms_error']),
@@ -455,16 +474,16 @@ def save_calibration_results(output_dir, intrinsic_results, intrinsic_calibrator
         'distortion_coefficients': intrinsic_results['distortion_coefficients'].flatten().tolist(),
         'image_count': len(image_filenames),
         'pose_count': len(image_filenames),
-        'report_html': os.path.join(eye_in_hand_report_dir, 'calibration_report.html') if os.path.exists(os.path.join(eye_in_hand_report_dir, 'calibration_report.html')) else '',
-        'report_json': os.path.join(eye_in_hand_report_dir, 'calibration_data.json') if os.path.exists(os.path.join(eye_in_hand_report_dir, 'calibration_data.json')) else ''
+        'report_html': os.path.join(eye_in_hand_report_dir, 'calibration_report.html') if eye_in_hand_report_result and os.path.exists(os.path.join(eye_in_hand_report_dir, 'calibration_report.html')) else '',
+        'report_json': os.path.join(eye_in_hand_report_dir, 'calibration_data.json') if eye_in_hand_report_result and os.path.exists(os.path.join(eye_in_hand_report_dir, 'calibration_data.json')) else ''
     }
     
-    output_path = os.path.join(camera_params_dir, 'ur15_eye_in_hand_result.json')
-    with open(output_path, 'w') as f:
-        json.dump(output_data, f, indent=2)
+    eye_in_hand_output_path = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
+    with open(eye_in_hand_output_path, 'w') as f:
+        json.dump(eye_in_hand_output_data, f, indent=2)
     
     if verbose:
-        print(f"   ✅ Saved: {camera_params_dir}/ur15_eye_in_hand_result.json")
+        print(f"   ✅ Saved: {camera_params_dir}/ur15_cam_eye_in_hand_result.json")
 
 
 def print_summary(intrinsic_results, eye_in_hand_result, output_dir):
@@ -510,8 +529,9 @@ def print_summary(intrinsic_results, eye_in_hand_result, output_dir):
     print("   │   ├── reprojection/             (Reprojection error visualization)")
     print("   │   ├── undistorted/              (Undistorted images)")
     print("   │   └── analysis/                 (Analysis charts)")
-    print("   └── camera_parameters/")
-    print("       └── ur15_eye_in_hand_result.json  (Final calibration results)")
+    print("   └── ur15_camera_parameters/")
+    print("       ├── ur15_cam_calibration_result.json        (Intrinsic calibration results)")
+    print("       └── ur15_cam_eye_in_hand_result.json        (Eye-in-hand calibration results)")
     
     print("\n" + "="*70)
     print("✅ Calibration completed! You can now use the results for your application.")
