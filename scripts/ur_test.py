@@ -30,11 +30,11 @@ def main():
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
-        # # 3. enter freedrive mode for 15 seconds
-        # freedrive_duration = 15 #seconds
-        # robot.freedrive_mode(duration=freedrive_duration)
-        # # wait for freedrive_duration seconds to end freedrive mode
-        # robot.end_freedrive_mode()
+        # 3. enter freedrive mode f
+        freedrive_duration = 30 #seconds
+        robot.freedrive_mode(duration=freedrive_duration)
+        # wait for freedrive_duration seconds to end freedrive mode
+        robot.end_freedrive_mode()
 
         # # 4. get target TCP pose and joint positions
         # pose = robot.get_target_tcp_pose()
@@ -101,22 +101,22 @@ def main():
         # # res = robot.socket_send_all('192.168.1.15', 54321, lock_command, socket_name='socket_0')
         # # print(f"RS485 Lock command result: {res}")
 
-        # or Directly use socket to send and receive data
-        rs485_socket.sendall(bytes(status_command))
-        time.sleep(0.5)
-        rs485_data = rs485_socket.recv(1024)
-        print('Rs485 Received Data:', ' '.join(f'0x{b:02x}' for b in rs485_data))
-        time.sleep(0.5)
-        rs485_socket.sendall(bytes(lock_command))
-        time.sleep(0.5)
-        rs485_data = rs485_socket.recv(1024)
-        print('Rs485 Received Data:', ' '.join(f'0x{b:02x}' for b in rs485_data))
-        time.sleep(0.5)
-        rs485_socket.sendall(bytes(status_command))
-        time.sleep(0.5)
-        rs485_data = rs485_socket.recv(1024)
-        print('Rs485 Received Data:', ' '.join(f'0x{b:02x}' for b in rs485_data))
-        time.sleep(0.5)
+        # # or Directly use socket to send and receive data
+        # rs485_socket.sendall(bytes(status_command))
+        # time.sleep(0.5)
+        # rs485_data = rs485_socket.recv(1024)
+        # print('Rs485 Received Data:', ' '.join(f'0x{b:02x}' for b in rs485_data))
+        # time.sleep(0.5)
+        # rs485_socket.sendall(bytes(lock_command))
+        # time.sleep(0.5)
+        # rs485_data = rs485_socket.recv(1024)
+        # print('Rs485 Received Data:', ' '.join(f'0x{b:02x}' for b in rs485_data))
+        # time.sleep(0.5)
+        # rs485_socket.sendall(bytes(status_command))
+        # time.sleep(0.5)
+        # rs485_data = rs485_socket.recv(1024)
+        # print('Rs485 Received Data:', ' '.join(f'0x{b:02x}' for b in rs485_data))
+        # time.sleep(0.5)
         
 
     else:

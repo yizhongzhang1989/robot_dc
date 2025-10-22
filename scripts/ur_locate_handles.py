@@ -4,8 +4,30 @@ Handle Location Tracking Script
 ================================
 
 This script uses the FlowFormer++ keypoint tracking API (port 8001) to track
-handle locations across images. It processes images from temp/handles_location_data
-and saves results to temp/handles_location_result.
+handle locations across images. It processes images from handles_location_data
+directory and saves results to handles_location_result directory.
+
+Command Line Arguments:
+  --api-url         FlowFormer++ API base URL (default: http://msraig-ubuntu-2:8001)
+  --data-dir        Path to handles location data directory (default: robot_dc/temp/ur15_handles_location_data)
+  --result-dir      Path to handles location result directory (default: robot_dc/temp/ur15_handles_location_result)
+  --camera-params   Path to camera parameters directory (default: robot_dc/temp/ur15_cam_calibration_result/ur15_camera_parameters)
+
+Usage Examples:
+  # Use default paths and API URL
+  python3 duco_locate_handles.py
+  
+  # Specify custom API URL
+  python3 duco_locate_handles.py --api-url http://localhost:8001
+  
+  # Specify custom data and result directories
+  python3 duco_locate_handles.py --data-dir /path/to/data --result-dir /path/to/results
+  
+  # Specify custom camera parameters directory
+  python3 duco_locate_handles.py --camera-params /path/to/camera_params
+  
+  # Specify all parameters
+  python3 duco_locate_handles.py --api-url http://server:8001 --data-dir /path/to/data --result-dir /path/to/results --camera-params /path/to/camera_params
 
 Dependencies:
 - requests: For API communication
@@ -37,22 +59,36 @@ logger = logging.getLogger(__name__)
 class HandleLocationTracker:
     """Handle location tracker using FlowFormer++ API."""
     
-    def __init__(self, api_url: str = "http://msraig-ubuntu-2:8001"):
+    def __init__(self, api_url: str = "http://msraig-ubuntu-2:8001",
+                 data_dir: str = None,
+                 result_dir: str = None,
+                 camera_params_dir: str = None):
         """Initialize the handle location tracker.
         
         Args:
             api_url: Base URL for the FlowFormer++ API
+            data_dir: Path to handles location data directory (default: robot_dc/temp/ur15_handles_location_data)
+            result_dir: Path to handles location result directory (default: robot_dc/temp/ur15_handles_location_result)
+            camera_params_dir: Path to camera parameters directory (default: robot_dc/temp/ur15_cam_calibration_result/ur15_camera_parameters)
         """
         self.api_url = api_url.rstrip('/')
         self.session = requests.Session()
         self.session.timeout = 60  # 60 second timeout
         
-        # Setup data paths
+        # Setup data paths with defaults
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         temp_dir = os.path.join(project_root, "temp")
         
-        self.data_dir = os.path.join(temp_dir, "handles_location_data")
-        self.result_dir = os.path.join(temp_dir, "handles_location_result")
+        # Use provided paths or default paths
+        if data_dir is None:
+            self.data_dir = os.path.join(temp_dir, "ur15_handles_location_data")
+        else:
+            self.data_dir = os.path.abspath(data_dir)
+        
+        if result_dir is None:
+            self.result_dir = os.path.join(temp_dir, "ur15_handles_location_result")
+        else:
+            self.result_dir = os.path.abspath(result_dir)
         
         # Setup file paths
         self.ref_img_path = os.path.join(self.data_dir, "ref_img.jpg")
@@ -61,7 +97,11 @@ class HandleLocationTracker:
         self.test_pose_path = os.path.join(self.data_dir, "test_pose.json")
         
         # Camera parameters paths
-        self.camera_params_dir = os.path.join(temp_dir, "camera_parameters")
+        if camera_params_dir is None:
+            self.camera_params_dir = os.path.join(temp_dir, "ur15_cam_calibration_result", "ur15_camera_parameters")
+        else:
+            self.camera_params_dir = os.path.abspath(camera_params_dir)
+        
         self.calibration_result_path = os.path.join(self.camera_params_dir, "calibration_result.json")
         self.eye_in_hand_result_path = os.path.join(self.camera_params_dir, "eye_in_hand_result.json")
         
@@ -74,6 +114,7 @@ class HandleLocationTracker:
         logger.info(f"API URL: {self.api_url}")
         logger.info(f"Data directory: {self.data_dir}")
         logger.info(f"Result directory: {self.result_dir}")
+        logger.info(f"Camera parameters directory: {self.camera_params_dir}")
     
     def check_api_status(self) -> bool:
         """Check if the API is ready.
@@ -336,6 +377,30 @@ class HandleLocationTracker:
         
         return displacements
     
+    def find_calibration_file(self, base_name: str, possible_prefixes: List[str]) -> Optional[str]:
+        """Find calibration file with various naming conventions.
+        
+        Args:
+            base_name: Base file name (e.g., 'calibration_result.json')
+            possible_prefixes: List of possible prefixes (e.g., ['ur15_cam_', 'ur15_', 'ur_cam_', 'ur_'])
+            
+        Returns:
+            str: Path to the found file, or None if not found
+        """
+        # First try without prefix
+        test_path = os.path.join(self.camera_params_dir, base_name)
+        if os.path.exists(test_path):
+            return test_path
+        
+        # Try with each prefix
+        for prefix in possible_prefixes:
+            test_path = os.path.join(self.camera_params_dir, f"{prefix}{base_name}")
+            if os.path.exists(test_path):
+                logger.info(f"Found calibration file: {prefix}{base_name}")
+                return test_path
+        
+        return None
+    
     def load_camera_parameters(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Load camera intrinsic parameters and hand-eye calibration matrix.
         
@@ -343,8 +408,18 @@ class HandleLocationTracker:
             Tuple[np.ndarray, np.ndarray, np.ndarray]: camera_matrix, dist_coeffs, cam2end_matrix
         """
         try:
+            # Try to find eye-in-hand calibration result file with various naming conventions
+            possible_prefixes = ['ur15_cam_', 'ur15_', 'ur_cam_', 'ur_', 'duco_cam_', 'duco_']
+            eye_in_hand_path = self.find_calibration_file('eye_in_hand_result.json', possible_prefixes)
+            
+            if eye_in_hand_path is None:
+                raise FileNotFoundError(
+                    f"Eye-in-hand calibration result not found in {self.camera_params_dir}. "
+                    f"Looking for: eye_in_hand_result.json with prefixes like ur15_cam_, ur15_, ur_cam_, ur_, etc."
+                )
+            
             # Load eye-in-hand calibration result
-            with open(self.eye_in_hand_result_path, 'r') as f:
+            with open(eye_in_hand_path, 'r') as f:
                 eye_in_hand_data = json.load(f)
             
             camera_matrix = np.array(eye_in_hand_data['camera_matrix'])
@@ -352,6 +427,7 @@ class HandleLocationTracker:
             cam2end_matrix = np.array(eye_in_hand_data['cam2end_matrix'])
             
             logger.info("✅ Loaded camera parameters")
+            logger.info(f"   File: {os.path.basename(eye_in_hand_path)}")
             logger.info(f"   Camera matrix shape: {camera_matrix.shape}")
             logger.info(f"   Cam2End matrix shape: {cam2end_matrix.shape}")
             
@@ -1103,22 +1179,85 @@ class HandleLocationTracker:
 
 def main():
     """Main function to run the handle location tracking."""
+    import argparse
+    
     logger.info("🎯 Handle Location Tracking - FlowFormer++ API")
     logger.info("="*70)
     
-    # Get API URL from command line argument or use default
-    api_url = "http://msraig-ubuntu-2:8001"
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='Handle Location Tracking using FlowFormer++ API',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Use default paths and API URL
+  python3 duco_locate_handles.py
+  
+  # Specify custom API URL
+  python3 duco_locate_handles.py --api-url http://localhost:8001
+  
+  # Specify custom data and result directories
+  python3 duco_locate_handles.py --data-dir /path/to/data --result-dir /path/to/results
+  
+  # Specify custom camera parameters directory
+  python3 duco_locate_handles.py --camera-params /path/to/camera_params
+  
+  # Specify all parameters
+  python3 duco_locate_handles.py --api-url http://server:8001 --data-dir /path/to/data --result-dir /path/to/results --camera-params /path/to/camera_params
+        """
+    )
     
-    if len(sys.argv) > 1:
-        api_url = sys.argv[1]
-        logger.info(f"Using API URL from command line: {api_url}")
-    else:
-        logger.info(f"Using default API URL: {api_url}")
-        logger.info("You can specify a different URL with:")
-        logger.info("  python3 duco_locate_handles.py http://your-server:8001")
+    # Get default paths
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    default_data_dir = os.path.join(project_root, "temp", "ur15_handles_location_data")
+    default_result_dir = os.path.join(project_root, "temp", "ur15_handles_location_result")
+    default_camera_params_dir = os.path.join(project_root, "temp", "ur15_cam_calibration_result", "ur15_camera_parameters")
+    
+    parser.add_argument(
+        '--api-url',
+        type=str,
+        default="http://msraig-ubuntu-2:8001",
+        help='FlowFormer++ API base URL (default: http://msraig-ubuntu-2:8001)'
+    )
+    
+    parser.add_argument(
+        '--data-dir',
+        type=str,
+        default=None,
+        help=f'Path to handles location data directory (default: {default_data_dir})'
+    )
+    
+    parser.add_argument(
+        '--result-dir',
+        type=str,
+        default=None,
+        help=f'Path to handles location result directory (default: {default_result_dir})'
+    )
+    
+    parser.add_argument(
+        '--camera-params',
+        type=str,
+        default=None,
+        help=f'Path to camera parameters directory (default: {default_camera_params_dir})'
+    )
+    
+    args = parser.parse_args()
+    
+    # Display configuration
+    logger.info(f"Configuration:")
+    logger.info(f"  API URL: {args.api_url}")
+    logger.info(f"  Data directory: {args.data_dir if args.data_dir else default_data_dir}")
+    logger.info(f"  Result directory: {args.result_dir if args.result_dir else default_result_dir}")
+    logger.info(f"  Camera parameters directory: {args.camera_params if args.camera_params else default_camera_params_dir}")
+    logger.info("="*70)
     
     # Initialize tracker
-    tracker = HandleLocationTracker(api_url=api_url)
+    tracker = HandleLocationTracker(
+        api_url=args.api_url,
+        data_dir=args.data_dir,
+        result_dir=args.result_dir,
+        camera_params_dir=args.camera_params
+    )
     
     # Run the tracking pipeline
     success = tracker.run_tracking_pipeline()
