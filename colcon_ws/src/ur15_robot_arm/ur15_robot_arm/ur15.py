@@ -282,6 +282,147 @@ class UR15Robot:
         return self._send_command("end_freedrive_mode()")
 
     # ------------------------------------------------------------
+    # Tool control commands
+    # ------------------------------------------------------------
+    def set_tool_voltage(self, voltage):
+        """
+        Sets the voltage level for the power supply that delivers power to the connector plug 
+        in the tool flange of the robot. The voltage can be 0, 12 or 24 volts.
+        """
+        # Validate voltage parameter
+        if voltage not in [0, 12, 24]:
+            print(f"[ERROR] Invalid voltage value: {voltage}. Must be 0, 12, or 24.")
+            return -1
+        
+        # Build URScript command with sleep to allow the voltage to be applied
+        # The sleep ensures the robot has time to actually set the voltage before the program ends
+        cmd = f"set_tool_voltage({voltage})\n  sleep(1)"
+        return self._send_command(cmd)
+
+    def socket_open(self, address, port, socket_name='socket_0'):
+        """
+        Open TCP/IP ethernet communication socket.
+        """
+        # Validate parameters
+        if not isinstance(address, str) or not address:
+            print(f"[ERROR] Invalid address: {address}. Must be a non-empty string.")
+            return False
+        
+        if not isinstance(port, int) or port < 1 or port > 65535:
+            print(f"[ERROR] Invalid port: {port}. Must be an integer between 1 and 65535.")
+            return False
+        
+        if not isinstance(socket_name, str) or not socket_name:
+            print(f"[ERROR] Invalid socket_name: {socket_name}. Must be a non-empty string.")
+            return False
+        
+        # Build URScript command
+        # socket_open returns True/False, we need to capture and return this
+        cmd = f'socket_open("{address}", {port}, "{socket_name}")'
+        
+        result = self._send_command(cmd)
+    
+        if result == 0:
+            print(f"[INFO] Socket '{socket_name}' opened to {address}:{port}")
+            return True
+        else:
+            print(f"[ERROR] Failed to send socket_open command")
+            return False
+
+    def socket_send_byte(self, value, socket_name='socket_0'):
+        """
+        Sends a byte to the server.
+        """
+        # Validate value parameter
+        if not isinstance(value, int) or value < 0 or value > 255:
+            print(f"[ERROR] Invalid value: {value}. Must be an integer between 0 and 255 (byte range).")
+            return False
+        
+        # Validate socket_name parameter
+        if not isinstance(socket_name, str) or not socket_name:
+            print(f"[ERROR] Invalid socket_name: {socket_name}. Must be a non-empty string.")
+            return False
+        
+        # Build URScript command
+        cmd = f'socket_send_byte({value}, "{socket_name}")'
+        
+        result = self._send_command(cmd)
+        
+        if result == 0:
+            return True
+        else:
+            print(f"[ERROR] Failed to send byte {value} through socket '{socket_name}'")
+            return False
+
+    def socket_close(self, socket_name='socket_0'):
+        """
+        Closes TCP/IP socket communication.
+        """
+        # Validate socket_name parameter
+        if not isinstance(socket_name, str) or not socket_name:
+            print(f"[ERROR] Invalid socket_name: {socket_name}. Must be a non-empty string.")
+            return -1
+        
+        # Build URScript command
+        cmd = f'socket_close("{socket_name}")'
+        
+        result = self._send_command(cmd)
+        
+        if result == 0:
+            print(f"[INFO] Socket '{socket_name}' closed")
+        
+        return result
+
+    def socket_send_all(self, address, port, data, socket_name='socket_0'):
+        """
+        Open socket, send data, and close socket in one atomic operation.
+        """
+        # Validate parameters (reuse validation from other methods)
+        if not isinstance(address, str) or not address:
+            print(f"[ERROR] Invalid address: {address}. Must be a non-empty string.")
+            return False
+        
+        if not isinstance(port, int) or port < 1 or port > 65535:
+            print(f"[ERROR] Invalid port: {port}. Must be an integer between 1 and 65535.")
+            return False
+        
+        if not isinstance(data, (list, tuple)) or len(data) == 0:
+            print(f"[ERROR] Invalid data. Must be a non-empty list or tuple of byte values.")
+            return False
+        
+        for i, value in enumerate(data):
+            if not isinstance(value, int) or value < 0 or value > 255:
+                print(f"[ERROR] Invalid byte at index {i}: {value}. Must be 0-255.")
+                return False
+        
+        if not isinstance(socket_name, str) or not socket_name:
+            print(f"[ERROR] Invalid socket_name: {socket_name}. Must be a non-empty string.")
+            return False
+        
+        # Build complete URScript program
+        commands = []
+        commands.append(f'socket_open("{address}", {port}, "{socket_name}")')
+        commands.append('sleep(0.5)')  # Wait for connection to establish
+        
+        for value in data:
+            commands.append(f'socket_send_byte({value}, "{socket_name}")')
+        
+        commands.append('sync()')  # Ensure all data is sent
+        commands.append('sleep(0.5)')  # Wait for data to be transmitted
+        commands.append(f'socket_close("{socket_name}")')
+        
+        full_cmd = "\n  ".join(commands)
+        
+        result = self._send_command(full_cmd)
+        
+        if result == 0:
+            print(f"[INFO] Sent {len(data)} bytes to {address}:{port}")
+            return True
+        else:
+            print(f"[ERROR] Failed to send data")
+            return False
+
+    # ------------------------------------------------------------
     # Query commands
     # ------------------------------------------------------------
     def get_target_tcp_pose(self):

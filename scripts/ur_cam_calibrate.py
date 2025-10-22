@@ -68,7 +68,7 @@ def parse_arguments():
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='../temp/ur15_calibration_result',
+        default='../temp/ur15_cam_calibration_result',
         help='Directory to save calibration results'
     )
     
