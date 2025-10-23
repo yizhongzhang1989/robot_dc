@@ -1,39 +1,6 @@
 #!/usr/bin/env python3
 """
 Handle Location Tracking Script
-================================
-
-This script uses the FlowFormer++ keypoint tracking API (port 8001) to track
-handle locations across images. It processes images from handles_location_data
-directory and saves results to handles_location_result directory.
-
-Command Line Arguments:
-  --api-url         FlowFormer++ API base URL (default: http://msraig-ubuntu-2:8001)
-  --data-dir        Path to handles location data directory (default: robot_dc/temp/ur15_handles_location_data)
-  --result-dir      Path to handles location result directory (default: robot_dc/temp/ur15_handles_location_result)
-  --camera-params   Path to camera parameters directory (default: robot_dc/temp/ur15_cam_calibration_result/ur15_camera_parameters)
-
-Usage Examples:
-  # Use default paths and API URL
-  python3 duco_locate_handles.py
-  
-  # Specify custom API URL
-  python3 duco_locate_handles.py --api-url http://localhost:8001
-  
-  # Specify custom data and result directories
-  python3 duco_locate_handles.py --data-dir /path/to/data --result-dir /path/to/results
-  
-  # Specify custom camera parameters directory
-  python3 duco_locate_handles.py --camera-params /path/to/camera_params
-  
-  # Specify all parameters
-  python3 duco_locate_handles.py --api-url http://server:8001 --data-dir /path/to/data --result-dir /path/to/results --camera-params /path/to/camera_params
-
-Dependencies:
-- requests: For API communication
-- json: For data handling
-- cv2 (OpenCV): For image visualization
-- base64: For image encoding
 """
 
 import os
@@ -271,6 +238,15 @@ class HandleLocationTracker:
                     logger.info(f"   Processing time: {tracking_data.get('total_processing_time', 0):.3f}s")
                     if 'flow_magnitude' in tracking_data:
                         logger.info(f"   Flow magnitude: {tracking_data.get('flow_magnitude', 0):.2f}")
+                    
+                    # Check for bidirectional stats and log detailed info
+                    if 'bidirectional_stats' in tracking_data:
+                        logger.info(f"   ✅ Bidirectional stats available")
+                    else:
+                        logger.warning(f"   ⚠️ No bidirectional_stats in response")
+                        logger.warning(f"   Available keys: {list(tracking_data.keys())}")
+                        logger.warning(f"   Request had bidirectional={bidirectional}")
+                    
                     return tracking_data
                 else:
                     logger.error(f"Tracking failed: {result.get('message', 'Unknown error')}")
@@ -305,17 +281,70 @@ class HandleLocationTracker:
             # Get tracked keypoints (API returns as list of {"x": value, "y": value} objects)
             tracked_kps_raw = tracking_data.get('tracked_keypoints', [])
             
-            # Format tracked keypoints with labels
+            # Extract forward-backward errors for individual keypoints
+            forward_backward_errors = []
+            for kp in tracked_kps_raw:
+                if isinstance(kp, dict) and 'consistency_distance' in kp:
+                    forward_backward_errors.append(float(kp['consistency_distance']))
+                else:
+                    forward_backward_errors.append(None)  # No error data available
+            
+            # Format tracked keypoints with labels and forward-backward errors
             tracked_keypoints = []
             for i, kp in enumerate(tracked_kps_raw, 1):
                 if isinstance(kp, dict) and 'x' in kp and 'y' in kp:
-                    tracked_keypoints.append({
+                    keypoint_data = {
                         'id': i,
                         'name': f'Handle Point {i}',
                         'x': float(kp['x']),
                         'y': float(kp['y']),
                         'coordinates_type': 'image_pixels'
-                    })
+                    }
+                    
+                    # Add forward-backward error if available
+                    if 'consistency_distance' in kp:
+                        keypoint_data['forward_backward_error'] = float(kp['consistency_distance'])
+                    
+                    tracked_keypoints.append(keypoint_data)
+            
+            # Extract bidirectional validation results if available
+            bidirectional_validation = None
+            if 'bidirectional_stats' in tracking_data:
+                bidirectional_stats = tracking_data['bidirectional_stats']
+                
+                # API uses different field names: mean/max/min_consistency_distance instead of forward_backward_error
+                mean_error = bidirectional_stats.get('mean_consistency_distance', 0)
+                max_error = bidirectional_stats.get('max_consistency_distance', 0)
+                min_error = bidirectional_stats.get('min_consistency_distance', 0)
+                consistent_kps = bidirectional_stats.get('consistent_keypoints', 0)
+                total_kps = bidirectional_stats.get('total_keypoints', 0)
+                
+                bidirectional_validation = {
+                    "enabled": True,
+                    "mean_consistency_distance": float(mean_error),
+                    "max_consistency_distance": float(max_error),
+                    "min_consistency_distance": float(min_error),
+                    "validation_passed": mean_error < 1.0,
+                    "statistics": {
+                        "total_keypoints": int(total_kps),
+                        "consistent_keypoints": int(consistent_kps),
+                        "consistency_rate": float(consistent_kps / total_kps) if total_kps > 0 else 0.0,
+                        "error_threshold": 1.0
+                    }
+                }
+                logger.info(f"   ✅ Bidirectional validation: mean={mean_error:.3f}px, consistent={consistent_kps}/{total_kps}")
+            
+            # Log individual keypoint forward-backward errors
+            if forward_backward_errors:
+                valid_errors = [e for e in forward_backward_errors if e is not None]
+                if valid_errors:
+                    logger.info(f"   📊 Individual keypoint FB errors:")
+                    for i, error in enumerate(forward_backward_errors, 1):
+                        if error is not None:
+                            status = "✅" if error < 2.0 else "❌"
+                            logger.info(f"      KP{i}: {error:.3f} px {status}")
+                        else:
+                            logger.info(f"      KP{i}: N/A (no FB data)")
             
             # Format the result
             result = {
@@ -327,7 +356,8 @@ class HandleLocationTracker:
                     "keypoints_count": len(tracked_keypoints),
                     "processing_time": tracking_data.get('total_processing_time', 0),
                     "flow_magnitude": tracking_data.get('flow_magnitude', 0),
-                    "reference_used": tracking_data.get('reference_used', 'handle_reference')
+                    "reference_used": tracking_data.get('reference_used', 'handle_reference'),
+                    "forward_backward_errors": forward_backward_errors
                 },
                 "reference_keypoints": [
                     {
@@ -338,7 +368,8 @@ class HandleLocationTracker:
                     }
                     for i, kp in enumerate(original_keypoints, 1)
                 ],
-                "displacement": self._calculate_displacement(original_keypoints, tracked_keypoints)
+                "displacement": self._calculate_displacement(original_keypoints, tracked_keypoints),
+                "bidirectional_validation": bidirectional_validation
             }
             
             with open(output_path, 'w') as f:
@@ -531,86 +562,11 @@ class HandleLocationTracker:
         
         return float(point_base[0]), float(point_base[1]), float(point_base[2])
     
-    def validate_ref_image_bidirectional(self) -> Optional[Dict]:
-        """Perform bidirectional validation on reference image.
-        
-        Returns:
-            Dict: Validation result with validated keypoints, or None if failed
-        """
-        try:
-            logger.info("\n🔄 Performing bidirectional validation on reference image...")
-            
-            # Track reference image to itself with bidirectional validation
-            tracking_data = self.track_keypoints_in_image(self.ref_img_path, bidirectional=True)
-            
-            if not tracking_data:
-                logger.error("Failed to perform bidirectional validation")
-                return None
-            
-            # Check if bidirectional stats are available
-            bidirectional_stats = tracking_data.get('bidirectional_stats')
-            if not bidirectional_stats:
-                logger.warning("No bidirectional statistics returned by API")
-                return None
-            
-            # Calculate average error
-            forward_backward_errors = bidirectional_stats.get('forward_backward_error', [])
-            if forward_backward_errors:
-                avg_error = np.mean(forward_backward_errors)
-                max_error = np.max(forward_backward_errors)
-                bidirectional_stats['average_error'] = float(avg_error)
-                bidirectional_stats['max_error'] = float(max_error)
-            else:
-                avg_error = 0.0
-                max_error = 0.0
-            
-            logger.info(f"✅ Bidirectional validation completed:")
-            logger.info(f"   Average error: {avg_error:.3f} pixels")
-            logger.info(f"   Max error: {max_error:.3f} pixels")
-            
-            # Check if validation passed (average error < 1 pixel)
-            validation_passed = avg_error < 1.0
-            
-            if validation_passed:
-                logger.info(f"✅ Validation PASSED (avg error < 1.0 pixel)")
-            else:
-                logger.warning(f"⚠️ Validation FAILED (avg error >= 1.0 pixel)")
-            
-            # Get validated keypoints
-            validated_keypoints = tracking_data.get('tracked_keypoints', [])
-            
-            # Create visualization
-            original_keypoints = self.load_reference_keypoints()
-            validated_kps_list = []
-            for kp in validated_keypoints:
-                if isinstance(kp, dict):
-                    validated_kps_list.append({'x': kp['x'], 'y': kp['y']})
-            
-            self.draw_bidirectional_validation(
-                self.ref_img_path,
-                original_keypoints,
-                validated_kps_list,
-                bidirectional_stats,
-                'ref_img'
-            )
-            
-            return {
-                'validated_keypoints': validated_keypoints,
-                'bidirectional_stats': bidirectional_stats,
-                'validation_passed': validation_passed,
-                'average_error': avg_error
-            }
-            
-        except Exception as e:
-            logger.error(f"Error during bidirectional validation: {str(e)}")
-            logger.error(traceback.format_exc())
-            return None
-    
     def estimate_handles_location(self, ref_tracking_result: Dict, test_tracking_result: Dict) -> Dict:
         """Estimate 3D locations of keypoints 3 and 4 in base frame.
         
         Args:
-            ref_tracking_result: Tracking result for reference image (with bidirectional validation)
+            ref_tracking_result: Tracking result for reference image (original keypoints)
             test_tracking_result: Tracking result for test image
             
         Returns:
@@ -618,12 +574,6 @@ class HandleLocationTracker:
         """
         try:
             logger.info("\n🔍 Estimating handle locations in base frame...")
-            
-            # Check bidirectional validation status
-            if 'validation_passed' in ref_tracking_result and not ref_tracking_result['validation_passed']:
-                logger.error("❌ Reference image bidirectional validation failed!")
-                logger.error("Cannot proceed with 3D estimation due to unreliable keypoints.")
-                return None
             
             # Load camera parameters
             camera_matrix, dist_coeffs, cam2end_matrix = self.load_camera_parameters()
@@ -748,144 +698,6 @@ class HandleLocationTracker:
             logger.error(traceback.format_exc())
             return None
     
-    def draw_bidirectional_validation(self, image_path: str, 
-                                      original_keypoints: List[Dict],
-                                      validated_keypoints: List[Dict],
-                                      bidirectional_stats: Dict,
-                                      output_name: str) -> bool:
-        """Draw bidirectional validation results on reference image.
-        
-        Args:
-            image_path: Path to the reference image
-            original_keypoints: Original reference keypoints (red)
-            validated_keypoints: Bidirectionally validated keypoints (yellow)
-            bidirectional_stats: Statistics from bidirectional validation
-            output_name: Name for the output image (without extension)
-            
-        Returns:
-            bool: True if visualization saved successfully, False otherwise
-        """
-        try:
-            # Load the image
-            if not os.path.exists(image_path):
-                logger.error(f"Image file not found: {image_path}")
-                return False
-            
-            image = cv2.imread(image_path)
-            if image is None:
-                logger.error(f"Failed to load image: {image_path}")
-                return False
-            
-            # Define colors
-            original_color = (0, 0, 255)   # Red for original keypoints
-            validated_color = (0, 255, 255)  # Yellow for validated keypoints
-            line_color = (255, 0, 255)      # Magenta for connection lines
-            
-            # Draw connection lines first
-            for orig_kp, val_kp in zip(original_keypoints, validated_keypoints):
-                orig_x, orig_y = int(orig_kp['x']), int(orig_kp['y'])
-                val_x, val_y = int(val_kp['x']), int(val_kp['y'])
-                
-                # Draw line connecting original to validated position
-                cv2.line(image, (orig_x, orig_y), (val_x, val_y), 
-                        line_color, 2, cv2.LINE_AA)
-                
-                # Calculate error
-                error = np.sqrt((val_x - orig_x)**2 + (val_y - orig_y)**2)
-                
-                # Draw error text near the midpoint
-                mid_x = (orig_x + val_x) // 2
-                mid_y = (orig_y + val_y) // 2
-                cv2.putText(image, f"{error:.2f}px", (mid_x + 10, mid_y), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, line_color, 1)
-            
-            # Draw original keypoints (red)
-            for i, kp in enumerate(original_keypoints, 1):
-                x, y = int(kp['x']), int(kp['y'])
-                cv2.circle(image, (x, y), 8, original_color, -1)
-                cv2.circle(image, (x, y), 10, (255, 255, 255), 2)
-                cv2.putText(image, f"O{i}", (x + 15, y - 10), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, original_color, 2)
-            
-            # Draw validated keypoints (yellow)
-            for i, kp in enumerate(validated_keypoints, 1):
-                x, y = int(kp['x']), int(kp['y'])
-                cv2.circle(image, (x, y), 8, validated_color, -1)
-                cv2.circle(image, (x, y), 10, (255, 255, 255), 2)
-                cv2.putText(image, f"V{i}", (x + 15, y + 20), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, validated_color, 2)
-            
-            # Add legend
-            legend_x, legend_y = 20, 80
-            legend_width = 280
-            legend_height = 120
-            
-            # Draw legend background
-            cv2.rectangle(image, 
-                         (legend_x - 10, legend_y - 10), 
-                         (legend_x + legend_width, legend_y + legend_height), 
-                         (0, 0, 0), -1)
-            cv2.rectangle(image, 
-                         (legend_x - 10, legend_y - 10), 
-                         (legend_x + legend_width, legend_y + legend_height), 
-                         (255, 255, 255), 2)
-            
-            # Legend title
-            cv2.putText(image, "Bidirectional Validation:", (legend_x, legend_y + 15), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            
-            # Legend items
-            cv2.circle(image, (legend_x + 8, legend_y + 35), 6, original_color, -1)
-            cv2.putText(image, "Original Keypoints", (legend_x + 25, legend_y + 40), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            
-            cv2.circle(image, (legend_x + 8, legend_y + 60), 6, validated_color, -1)
-            cv2.putText(image, "Validated Keypoints", (legend_x + 25, legend_y + 65), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            
-            cv2.line(image, (legend_x + 5, legend_y + 85), (legend_x + 15, legend_y + 85), 
-                    line_color, 2)
-            cv2.putText(image, "Forward-Backward Error", (legend_x + 25, legend_y + 90), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            
-            # Add summary information
-            avg_error = bidirectional_stats.get('average_error', 0)
-            max_error = bidirectional_stats.get('max_error', 0)
-            valid_count = sum(1 for v in bidirectional_stats.get('valid_points', []) if v)
-            total_count = len(bidirectional_stats.get('valid_points', []))
-            
-            summary_text = f"Bidirectional Validation"
-            avg_text = f"Avg Error: {avg_error:.3f}px"
-            max_text = f"Max Error: {max_error:.3f}px"
-            valid_text = f"Valid: {valid_count}/{total_count}"
-            
-            # Draw summary background
-            cv2.rectangle(image, (10, 10), (320, 80), (0, 0, 0), -1)
-            cv2.putText(image, summary_text, (20, 28), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-            cv2.putText(image, avg_text, (20, 46), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            cv2.putText(image, max_text, (20, 62), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            cv2.putText(image, valid_text, (20, 78), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0) if avg_error < 1.0 else (0, 0, 255), 1)
-            
-            # Save visualization result
-            output_path = os.path.join(self.result_dir, f"{output_name}_bidirectional_validation.jpg")
-            success = cv2.imwrite(output_path, image)
-            
-            if success:
-                logger.info(f"🎨 Saved bidirectional validation visualization: {output_path}")
-                return True
-            else:
-                logger.error(f"Failed to save validation visualization: {output_path}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error creating bidirectional validation visualization: {str(e)}")
-            logger.error(traceback.format_exc())
-            return False
-    
     def draw_keypoints_comparison(self, image_path: str, tracking_data: Dict,
                                   original_keypoints: List[Dict], output_name: str) -> bool:
         """Draw comparison of reference and tracked keypoints on image.
@@ -961,14 +773,14 @@ class HandleLocationTracker:
             logger.error(traceback.format_exc())
             return False
     
-    def process_target_images(self, image_names: List[str] = None) -> Dict[str, bool]:
+    def process_target_images(self, image_names: List[str] = None) -> Dict[str, Dict]:
         """Process target images for keypoint tracking.
         
         Args:
             image_names: List of image names (without extension). If None, auto-detect
             
         Returns:
-            Dict[str, bool]: Dictionary mapping image names to success status
+            Dict[str, Dict]: Dictionary mapping image names to result dict with success status and tracking data
         """
         if image_names is None:
             # Auto-detect images in the data directory
@@ -994,15 +806,28 @@ class HandleLocationTracker:
             
             if not os.path.exists(target_path):
                 logger.warning(f"Image file not found: {target_path}")
-                results[image_name] = False
+                results[image_name] = {'success': False, 'tracking_data': None}
                 continue
             
-            # Track keypoints
-            tracking_data = self.track_keypoints_in_image(target_path)
+            # Track keypoints with bidirectional validation enabled
+            tracking_data = self.track_keypoints_in_image(target_path, bidirectional=True)
             
             if tracking_data:
                 # Load original keypoints for comparison
                 original_kps = self.load_reference_keypoints()
+                
+                # Log bidirectional validation results if available
+                if 'bidirectional_stats' in tracking_data:
+                    bidirectional_stats = tracking_data['bidirectional_stats']
+                    mean_error = bidirectional_stats.get('mean_consistency_distance', 0)
+                    max_error = bidirectional_stats.get('max_consistency_distance', 0)
+                    consistent_kps = bidirectional_stats.get('consistent_keypoints', 0)
+                    total_kps = bidirectional_stats.get('total_keypoints', 0)
+                    logger.info(f"🔄 Bidirectional validation:")
+                    logger.info(f"   Mean consistency distance: {mean_error:.3f} pixels")
+                    logger.info(f"   Max consistency distance: {max_error:.3f} pixels")
+                    logger.info(f"   Consistent keypoints: {consistent_kps}/{total_kps}")
+                    logger.info(f"   Status: {'✅ PASSED' if mean_error < 1.0 else '⚠️ WARNING'}")
                 
                 # Save result
                 save_success = self.save_tracking_result(image_name, tracking_data, original_kps)
@@ -1012,14 +837,15 @@ class HandleLocationTracker:
                     target_path, tracking_data, original_kps, image_name
                 )
                 
-                results[image_name] = save_success and viz_success
+                success = save_success and viz_success
+                results[image_name] = {'success': success, 'tracking_data': tracking_data}
                 
-                if results[image_name]:
+                if success:
                     logger.info(f"✅ Successfully processed {image_name}.jpg")
                 else:
                     logger.warning(f"⚠️ Partially failed for {image_name}.jpg")
             else:
-                results[image_name] = False
+                results[image_name] = {'success': False, 'tracking_data': None}
                 logger.error(f"❌ Failed to track keypoints in {image_name}.jpg")
         
         return results
@@ -1056,82 +882,82 @@ class HandleLocationTracker:
                 return False
             logger.info("✅ Reference image set successfully")
             
-            # Step 4: Process target images
-            logger.info("\n🔍 Step 4: Processing target images...")
+            # Step 4: Process target images (with bidirectional validation)
+            logger.info("\n🔍 Step 4: Processing target images with bidirectional validation...")
             results = self.process_target_images()
             
-            # Step 5: Perform bidirectional validation on reference image
-            logger.info("\n🔄 Step 5: Bidirectional validation...")
-            validation_result = self.validate_ref_image_bidirectional()
-            
-            # Step 6: Estimate 3D positions of keypoints 3 and 4
-            logger.info("\n📐 Step 6: Estimating 3D positions...")
+            # Step 5: Estimate 3D positions of keypoints 3 and 4
+            logger.info("\n📐 Step 5: Estimating 3D positions...")
             estimation_result = None
-            if 'test_img' in results and results['test_img']:
+            if 'test_img' in results and results['test_img']['success']:
                 try:
-                    # Check if validation passed
-                    if validation_result is None:
-                        logger.error("❌ Bidirectional validation failed, skipping 3D estimation")
-                    elif not validation_result.get('validation_passed', False):
-                        logger.warning("⚠️ Bidirectional validation average error >= 1.0 pixel")
-                        logger.warning("Skipping 3D estimation due to unreliable keypoints")
-                    else:
-                        # Load the test tracking result
+                    # Get tracking data with bidirectional validation
+                    test_tracking_data = results['test_img']['tracking_data']
+                    
+                    # Check bidirectional validation on test image
+                    skip_estimation = False
+                    if 'bidirectional_stats' in test_tracking_data:
+                        bidirectional_stats = test_tracking_data['bidirectional_stats']
+                        mean_error = bidirectional_stats.get('mean_consistency_distance', 0)
+                        if mean_error >= 2.0:
+                            logger.error(f"❌ Test image bidirectional consistency distance = {mean_error:.3f} pixels (>= 2.0)")
+                            logger.error("Keypoint tracking is too unreliable, skipping 3D coordinate estimation")
+                            skip_estimation = True
+                        elif mean_error >= 1.0:
+                            logger.warning(f"⚠️ Test image bidirectional consistency distance = {mean_error:.3f} pixels (>= 1.0)")
+                            logger.warning("Keypoint tracking may be unreliable")
+                    
+                    if not skip_estimation:
+                        # Load the reference and test tracking results
                         test_result_path = os.path.join(self.result_dir, "test_img_tracking_result.json")
                         
                         if os.path.exists(test_result_path):
                             with open(test_result_path, 'r') as f:
                                 test_result = json.load(f)
                             
-                            # Use validated keypoints from bidirectional validation
-                            validated_keypoints = validation_result['validated_keypoints']
+                            # Use original reference keypoints (not tracked)
+                            original_keypoints = self.load_reference_keypoints()
                             
                             ref_result = {
                                 "tracking_result": {
                                     "tracked_keypoints": [
                                         {
                                             "id": i,
-                                            "x": kp['x'] if isinstance(kp, dict) else kp[0],
-                                            "y": kp['y'] if isinstance(kp, dict) else kp[1]
+                                            "x": kp['x'],
+                                            "y": kp['y']
                                         }
-                                        for i, kp in enumerate(validated_keypoints, 1)
+                                        for i, kp in enumerate(original_keypoints, 1)
                                     ]
-                                },
-                                "validation_passed": validation_result['validation_passed'],
-                                "average_error": validation_result['average_error']
+                                }
                             }
                             
                             estimation_result = self.estimate_handles_location(ref_result, test_result)
-                        
+                            
                             if estimation_result:
                                 logger.info("✅ 3D position estimation completed successfully")
                             else:
                                 logger.warning("⚠️ 3D position estimation failed")
                         else:
                             logger.warning("Test tracking result not found, skipping 3D estimation")
-                        
+                    else:
+                        logger.info("🚫 Skipping 3D estimation due to high bidirectional consistency error")
+                    
                 except Exception as e:
                     logger.error(f"Error during 3D estimation: {str(e)}")
                     logger.error(traceback.format_exc())
             else:
                 logger.info("Skipping 3D estimation (test_img not processed successfully)")
             
-            # Step 7: Summary
+            # Step 6: Summary
             logger.info("\n" + "="*60)
             logger.info("📊 FINAL SUMMARY")
             logger.info("="*60)
-            
-            # Bidirectional validation summary
-            if validation_result:
-                logger.info(f"\nBidirectional Validation:")
-                logger.info(f"  Average error: {validation_result['average_error']:.3f} pixels")
-                logger.info(f"  Status: {'✅ PASSED' if validation_result['validation_passed'] else '❌ FAILED'}")
             
             if not results:
                 logger.warning("No images were processed")
                 return False
             
-            successful = sum(1 for success in results.values() if success)
+            successful = sum(1 for result in results.values() if result['success'])
             total = len(results)
             
             logger.info(f"Total images processed: {total}")
@@ -1140,20 +966,25 @@ class HandleLocationTracker:
             logger.info(f"Success rate: {(successful/total*100):.1f}%")
             
             logger.info("\nDetailed results:")
-            for image_name, success in results.items():
-                status = "✅ Success" if success else "❌ Failed"
+            for image_name, result in results.items():
+                status = "✅ Success" if result['success'] else "❌ Failed"
                 logger.info(f"  {image_name}.jpg: {status}")
+                
+                # Show bidirectional validation results if available
+                if result['success'] and result['tracking_data']:
+                    tracking_data = result['tracking_data']
+                    if 'bidirectional_stats' in tracking_data:
+                        bidirectional_stats = tracking_data['bidirectional_stats']
+                        mean_error = bidirectional_stats.get('mean_consistency_distance', 0)
+                        logger.info(f"    Bidirectional consistency: {mean_error:.3f} pixels")
             
             if successful > 0:
                 logger.info(f"\n📁 Results saved to: {self.result_dir}")
                 logger.info("Files created:")
-                for image_name, success in results.items():
-                    if success:
+                for image_name, result in results.items():
+                    if result['success']:
                         logger.info(f"  - {image_name}_tracking_result.json")
                         logger.info(f"  - {image_name}_tracking_visualization.jpg")
-                
-                if validation_result:
-                    logger.info(f"  - ref_img_bidirectional_validation.jpg")
                 
                 if estimation_result:
                     logger.info(f"  - handles_location_estimation_result.json")

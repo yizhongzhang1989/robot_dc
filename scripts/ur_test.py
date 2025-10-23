@@ -1,6 +1,43 @@
 from ur15_robot_arm.ur15 import UR15Robot
 import time
 import socket
+import math
+
+def tcp_normalize(robot, a=0.5, v=0.2):
+    """
+    Normalize TCP orientation so that:
+    - TCP z+ aligns with base z- (pointing downward)
+    - TCP y+ aligns with base y+ (same direction)
+    - TCP x+ aligns with base x- (opposite direction)
+    """
+    # Get current TCP pose
+    current_pose = robot.get_actual_tcp_pose()
+    if current_pose is None:
+        print("[ERROR] Failed to get current TCP pose")
+        return -1
+    
+    # Extract position (keep the same)
+    x, y, z = current_pose[0], current_pose[1], current_pose[2]
+    
+    # Set orientation: rotation of pi around Y axis
+    # This gives: X_tcp = -X_base, Y_tcp = Y_base, Z_tcp = -Z_base
+    rx, ry, rz = 0.0, math.pi, 0.0
+    
+    # Create target pose
+    target_pose = [x, y, z, rx, ry, rz]
+    
+    print(f"Current TCP pose: {current_pose}")
+    print(f"Target normalized pose: {target_pose}")
+    
+    # Move to target pose using movel (linear movement in base frame)
+    result = robot.movel(target_pose, a=a, v=v)
+    
+    if result == 0:
+        print("[SUCCESS] TCP normalized successfully")
+    else:
+        print("[ERROR] Failed to normalize TCP")
+    
+    return result
 
 def main():
     # Definition of robot IP and port
@@ -31,7 +68,7 @@ def main():
         # time.sleep(1)
 
         # 3. enter freedrive mode f
-        freedrive_duration = 30 #seconds
+        freedrive_duration = 20 #seconds
         robot.freedrive_mode(duration=freedrive_duration)
         # wait for freedrive_duration seconds to end freedrive mode
         robot.end_freedrive_mode()
@@ -53,10 +90,16 @@ def main():
         #     print(f"Actual tcp pose (m, rad): {actual_pose}")
         # if actual_joints:
         #     print(f"Actual joint positions (rad): {actual_joints}")
+        #     print(f"Actual joint positions (deg): {[j*180/3.1415926 for j in actual_joints]}")
 
         # # 6. move tcp
         # res = robot.move_tcp([0, 0, 0.1, 0, 0, 0], a=0.5, v=0.2)
         # print(f"Move TCP result: {res}")
+
+        # time.sleep(1)
+        # # 6.1 Test tcp_normalize function
+        # res = tcp_normalize(robot, a=0.2, v=0.2)
+        # print(f"TCP normalize result: {res}")
 
         # # 7. tcp force reading
         # try:
