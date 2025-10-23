@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 Lift Robot Pushrod ROS2 Node
-Controls the pushrod using CH5/CH6 relay state combinations.
+
+Controls the pushrod using discrete relay pulses (relay3 stop, relay4 up, relay5 down).
+Each action sends a single-coil ON (0xFF00) followed ~100ms later by OFF (0x0000),
+mirroring the lift platform controller style. Timed commands issue a direction pulse
+then schedule a stop pulse after the specified duration.
 """
 import rclpy
 from rclpy.node import Node
@@ -18,7 +22,8 @@ class PushrodNode(Node):
         super().__init__('lift_robot_pushrod')
 
         # Parameters
-        self.declare_parameter('device_id', 53)
+        # Default device_id corrected to 50 (0x32) per hardware mapping
+        self.declare_parameter('device_id', 50)
         self.declare_parameter('use_ack_patch', True)
 
         self.device_id = self.get_parameter('device_id').value
@@ -92,7 +97,7 @@ class PushrodNode(Node):
         status = {
             'node': 'lift_robot_pushrod',
             'device_id': self.device_id,
-            'active_timers': len(self.controller.active_timers),
+            'has_stop_timer': bool(self.controller.stop_timer),
             'status': 'online'
         }
         status_msg = String()

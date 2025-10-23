@@ -11,7 +11,7 @@ def generate_launch_description():
             output='screen',
             emulate_tty=True,
             parameters=[{
-                'device_id': 53,
+                'device_id': 50,
                 'use_ack_patch': True
             }],
         ),
