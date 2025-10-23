@@ -8,7 +8,7 @@ current_file_path = os.path.dirname(os.path.abspath(__file__))
 repo_root_path = os.path.abspath(os.path.join(current_file_path, '..'))
 duco_script_path = os.path.join(repo_root_path, 'colcon_ws/src/duco_robot_arm/duco_robot_arm')
 gen_py_path = os.path.join(duco_script_path, 'gen_py')
-lib_path = os.path.join(current_file_path, 'lib')
+lib_path = os.path.join(duco_script_path, 'lib')  # Fixed: Use correct lib path
 # Add the required paths for thrift and generated code
 sys.path.append(duco_script_path)
 sys.path.append(gen_py_path)
