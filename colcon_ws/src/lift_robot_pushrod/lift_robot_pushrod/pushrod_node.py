@@ -86,6 +86,12 @@ class PushrodNode(Node):
                 self.controller.timed_down(duration, seq_id=seq_id)
             elif command == 'stop_timed':
                 self.controller.stop_timed(seq_id=seq_id)
+            elif command == 'goto_point':
+                point = command_data.get('point')
+                if not point:
+                    self.get_logger().warning("goto_point command missing 'point' field")
+                else:
+                    self.controller.goto_point(point, seq_id=seq_id)
             else:
                 self.get_logger().warning(f"Unknown pushrod command: {command}")
         except json.JSONDecodeError:
@@ -98,6 +104,8 @@ class PushrodNode(Node):
             'node': 'lift_robot_pushrod',
             'device_id': self.device_id,
             'has_stop_timer': bool(self.controller.stop_timer),
+            'current_position_seconds': self.controller.current_position,
+            'current_point': self.controller.current_point,
             'status': 'online'
         }
         status_msg = String()

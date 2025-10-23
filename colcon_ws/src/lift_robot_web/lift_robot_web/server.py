@@ -29,6 +29,18 @@ class LiftRobotWeb(Node):
         self.loop = None
         self.right_force = None
         self.left_force = None
+        # Pushrod status
+        self.pushrod_point = None
+        self.pushrod_position_seconds = None
+        # Offsets in millimeters for each point
+        self.pushrod_offsets_mm = {
+            'base': 0.0,
+            'only forward': 5.5,
+            'safe mode': 1.0,
+            'fwd&back': 9.8,
+            'all direction': 20.1,
+        }
+        self.pushrod_offset_mm = 0.0
 
         # ROS interfaces
         self.sub = self.create_subscription(String, self.sensor_topic, self.sensor_cb, 10)
@@ -41,6 +53,7 @@ class LiftRobotWeb(Node):
             self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
         self.cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
         self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
+        self.pushrod_status_sub = self.create_subscription(String, '/lift_robot_pushrod/status', self.pushrod_status_cb, 10)
 
         self.get_logger().info(f"Web server subscribing: {self.sensor_topic}")
         self.start_server()
@@ -60,6 +73,16 @@ class LiftRobotWeb(Node):
                     merged['right_force_sensor'] = self.right_force
                 if self.left_force is not None:
                     merged['left_force_sensor'] = self.left_force
+                # Apply pushrod offset to height if base height present
+                if 'height' in merged and isinstance(merged['height'], (int,float)):
+                    merged['raw_height'] = merged['height']
+                    merged['pushrod_point'] = self.pushrod_point
+                    merged['pushrod_position_seconds'] = self.pushrod_position_seconds
+                    merged['pushrod_offset_mm'] = self.pushrod_offset_mm
+                    try:
+                        merged['height'] = merged['raw_height'] + self.pushrod_offset_mm
+                    except Exception:
+                        pass
                 outbound = json.dumps(merged)
             asyncio.run_coroutine_threadsafe(self.broadcast(outbound), self.loop)
 
@@ -68,6 +91,19 @@ class LiftRobotWeb(Node):
 
     def left_cb(self, msg):
         self.left_force = msg.data
+
+    def pushrod_status_cb(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+            self.pushrod_point = data.get('current_point')
+            self.pushrod_position_seconds = data.get('current_position_seconds')
+            if self.pushrod_point in self.pushrod_offsets_mm:
+                self.pushrod_offset_mm = self.pushrod_offsets_mm[self.pushrod_point]
+            else:
+                # If not a known point, you might approximate using position seconds proportionally; for now keep last offset
+                pass
+        except Exception:
+            self.get_logger().warn('Failed to parse pushrod status JSON')
 
     async def broadcast(self, text):
         drop = []
@@ -107,12 +143,18 @@ class LiftRobotWeb(Node):
                 cmd = payload.get('command')
                 target = payload.get('target','platform')
                 duration = payload.get('duration')
-                allowed = {'up','down','stop','timed_up','timed_down','stop_timed'}
+                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point'}
                 if cmd not in allowed:
                     return JSONResponse({'error':'invalid command'}, status_code=400)
                 # Timed commands only meaningful for pushrod target currently
                 if cmd.startswith('timed') and target != 'pushrod':
                     return JSONResponse({'error':'timed commands only supported for pushrod target'}, status_code=400)
+                if cmd == 'goto_point':
+                    if target != 'pushrod':
+                        return JSONResponse({'error':'goto_point only valid for pushrod target'}, status_code=400)
+                    point = payload.get('point')
+                    if not point:
+                        return JSONResponse({'error':'point field required for goto_point'}, status_code=400)
                 # Auto inject 5s for timed_up if not provided
                 if cmd == 'timed_up' and (duration is None):
                     duration = 3.5
@@ -127,6 +169,8 @@ class LiftRobotWeb(Node):
                     except Exception:
                         return JSONResponse({'error':'invalid duration'}, status_code=400)
                 body = {'command': cmd}
+                if cmd == 'goto_point':
+                    body['point'] = payload.get('point')
                 if duration is not None:
                     body['duration'] = duration
                 msg = String(); msg.data = json.dumps(body)

@@ -32,21 +32,31 @@
           <button data-cmd="down" data-target="platform" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded">Down</button>
           <button data-cmd="stop" data-target="platform" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded">Stop</button>
         </div>
-        <div class="flex gap-2">
-          <span class="text-xs font-semibold text-slate-600 pr-2">Pushrod:</span>
-          <button data-cmd="up" data-target="pushrod" class="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded">Up</button>
-          <button data-cmd="timed_up" data-target="pushrod" data-duration="3.5" class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded">Up 3.5s</button>
-          <button data-cmd="down" data-target="pushrod" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded">Down</button>
-          <button data-cmd="stop" data-target="pushrod" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded">Stop</button>
+        <div class="flex flex-wrap gap-2 items-center mb-1">
+          <span class="text-xs font-semibold text-slate-600 pr-2">Pushrod Points:</span>
+          <button data-cmd="goto_point" data-target="pushrod" data-point="base" class="px-3 py-1 bg-slate-500 hover:bg-slate-600 text-white text-xs rounded">Base</button>
+          <button data-cmd="goto_point" data-target="pushrod" data-point="only forward" class="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs rounded">Only Forward (3.5s)</button>
+          <button data-cmd="goto_point" data-target="pushrod" data-point="safe mode" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded">Safe Mode (2.7s)</button>
+          <button data-cmd="goto_point" data-target="pushrod" data-point="fwd&back" class="px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white text-xs rounded">Fwd&Back (4.5s)</button>
+          <button data-cmd="goto_point" data-target="pushrod" data-point="all direction" class="px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded">All Direction (6.8s)</button>
         </div>
-        <span id="cmdStatus" class="text-xs text-slate-500"></span>
+        <div class="flex flex-wrap gap-2 items-center">
+          <span class="text-xs font-semibold text-slate-600 pr-2">Pushrod Manual:</span>
+          <button data-cmd="up" data-target="pushrod" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded">Up</button>
+          <button data-cmd="down" data-target="pushrod" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded">Down</button>
+          <button data-cmd="stop" data-target="pushrod" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded">Stop</button>
+        </div>
+  <span id="cmdStatus" class="text-xs text-slate-500"></span>
       </div>
       <div class="grid grid-cols-2 gap-2 text-sm">
         <div>register_0: <span id="reg0" class="font-mono">-</span></div>
         <div>register_1: <span id="reg1" class="font-mono">-</span></div>
         <div>seq_id: <span id="seq" class="font-mono">-</span></div>
         <div>device_id: <span id="device" class="font-mono">-</span></div>
-        <div class="col-span-2">height: <span id="heightVal" class="font-mono font-semibold">-</span></div>
+        <div>raw height (mm): <span id="rawHeight" class="font-mono">-</span></div>
+        <div>pushrod offset (mm): <span id="pushrodOffset" class="font-mono">-</span></div>
+        <div class="col-span-2">adjusted height (mm): <span id="heightVal" class="font-mono font-semibold">-</span></div>
+        <div class="col-span-2">pushrod point: <span id="pushrodPoint" class="font-mono">-</span></div>
       </div>
   <div class="text-sm text-slate-600">Last message timestamp: <span id="ts">-</span></div>
     </div>
@@ -77,10 +87,14 @@ function update(d){
   if(d.device_id!==undefined) $('device').textContent=d.device_id;
   if(d.timestamp){ $('ts').textContent=d.timestamp; }
   if(d.read_interval){ readInterval=d.read_interval*1000; }
+  if(d.raw_height!==undefined){ $('rawHeight').textContent = (d.raw_height===null?'-':(d.raw_height.toFixed?d.raw_height.toFixed(2):d.raw_height)); }
+  if(d.pushrod_offset_mm!==undefined){ $('pushrodOffset').textContent = (d.pushrod_offset_mm===null?'-':(d.pushrod_offset_mm.toFixed?d.pushrod_offset_mm.toFixed(1):d.pushrod_offset_mm)); }
   if(d.height!==undefined){ $('heightVal').textContent = (d.height===null?'-':(d.height.toFixed?d.height.toFixed(2):d.height)); }
+  if(d.pushrod_point!==undefined){ $('pushrodPoint').textContent = d.pushrod_point; }
   if(d.right_force_sensor!==undefined){ $('rightForce').textContent=(d.right_force_sensor===null?'-':d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(3):d.right_force_sensor); }
   if(d.left_force_sensor!==undefined){ $('leftForce').textContent=(d.left_force_sensor===null?'-':d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(3):d.left_force_sensor); }
   if(d.right_force_sensor!==undefined || d.left_force_sensor!==undefined){ $('forceTs').textContent='Updated at '+new Date().toLocaleTimeString(); }
+  if(d.current_point!==undefined) $('pushrodPoint').textContent=d.current_point;
   computeFreq();
 }
 function computeFreq(){ intervals.push(Date.now()); if(intervals.length>25) intervals.shift(); if(intervals.length>1){ const diffs=[]; for(let i=1;i<intervals.length;i++) diffs.push(intervals[i]-intervals[i-1]); const avg=diffs.reduce((a,b)=>a+b,0)/diffs.length; $('freq').textContent=(1000/avg).toFixed(2); } }
@@ -93,10 +107,12 @@ document.querySelectorAll('button[data-cmd]').forEach(btn=>{
     const command=btn.getAttribute('data-cmd');
     const target=btn.getAttribute('data-target')||'platform';
     const durationAttr=btn.getAttribute('data-duration');
-    const duration=durationAttr?parseFloat(durationAttr):undefined;
+  const duration=durationAttr?parseFloat(durationAttr):undefined;
+  const point=btn.getAttribute('data-point');
     $('cmdStatus').textContent='Sending '+command+' ...';
     const payload={command,target};
-    if(duration!==undefined) payload.duration=duration;
+  if(duration!==undefined) payload.duration=duration;
+  if(point) payload.point=point;
     try {
       const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       if(!r.ok){ $('cmdStatus').textContent='Failed '+command; return; }
