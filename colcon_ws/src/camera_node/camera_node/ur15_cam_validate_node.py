@@ -332,6 +332,7 @@ class UR15CameraValidateNode(Node):
         .video-frame {
             border: 2px solid #ddd;
             border-radius: 8px;
+            width: 1280px;
             max-width: 100%;
             height: auto;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -1049,7 +1050,7 @@ class UR15CameraValidateNode(Node):
             end2base_matrix[:3, :3] = R
             end2base_matrix[:3, 3] = [x, y, z]
             
-            cam2base_matrix = cam2end_matrix @ end2base_matrix
+            cam2base_matrix = end2base_matrix @ cam2end_matrix
             base_origin_base = np.array([0.0, 0.0, 0.0, 1.0])
             base2cam_matrix = np.linalg.inv(cam2base_matrix)
             base_origin_cam = base2cam_matrix @ base_origin_base
@@ -1102,6 +1103,54 @@ class UR15CameraValidateNode(Node):
                 distance_text = f"Dist: {distance*1000:.1f}mm"
                 cv2.putText(frame, distance_text, (text_x, text_y + 25), 
                            font, 0.5, (255, 255, 255), 1)
+            
+            # Draw a circle with radius 102mm at z=0 plane centered at base origin
+            radius_mm = 102.0  # mm
+            radius_m = radius_mm / 1000.0  # Convert to meters
+            num_points = 72  # Number of points to draw the circle (every 5 degrees)
+            
+            circle_points_3d = []
+            for i in range(num_points):
+                angle = 2 * np.pi * i / num_points
+                # Point on circle in base coordinates (x, y, z=0)
+                circle_x = radius_m * np.cos(angle)
+                circle_y = radius_m * np.sin(angle)
+                circle_z = 0.0
+                
+                # Create homogeneous coordinate
+                point_base = np.array([circle_x, circle_y, circle_z, 1.0])
+                
+                # Transform to camera coordinates
+                point_cam = base2cam_matrix @ point_base
+                
+                # Check if point is in front of camera
+                if point_cam[2] > 0:
+                    circle_points_3d.append(point_cam[:3])
+            
+            # Project circle points to image
+            if len(circle_points_3d) > 0:
+                circle_points_3d_array = np.array(circle_points_3d).reshape(-1, 1, 3)
+                rvec = np.zeros((3, 1))
+                tvec = np.zeros((3, 1))
+                
+                circle_image_points, _ = cv2.projectPoints(
+                    circle_points_3d_array,
+                    rvec, tvec,
+                    camera_matrix,
+                    distortion_coefficients
+                )
+                
+                # Draw circle points
+                circle_color = (0, 0, 255)  # Red color (BGR format)
+                point_radius = 4
+                
+                for point in circle_image_points:
+                    px = int(point[0][0])
+                    py = int(point[0][1])
+                    
+                    # Check if point is within image bounds
+                    if 0 <= px < width and 0 <= py < height:
+                        cv2.circle(frame, (px, py), point_radius, circle_color, -1)
             
         except Exception as e:
             self.get_logger().error(f"Error projecting base origin: {e}")
