@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'camera_node = camera_node.camera_node:main',
             'camera_calibrate_node = camera_node.camera_calibrate_node:main',
+            'ur15_cam_validate_node = camera_node.ur15_cam_validate_node:main',
         ],
     },
 )

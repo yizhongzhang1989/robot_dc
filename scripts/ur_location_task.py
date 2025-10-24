@@ -2,13 +2,32 @@
 
 """
 UR Location Task Script
-start position:
+
+This script performs location estimation tasks for UR15 robot, including:
+1. Capture images and robot poses at various positions
+2. Estimate handle (keypoint) positions using optical flow and triangulation
+3. Move robot to estimated positions
+4. Perform precise triangulation estimation from multiple viewpoints
+
+Features:
+- Initial coarse estimation using two viewpoints
+- TCP normalization to align tool orientation
+- Precise triangulation using 5 viewpoints (x±5cm, y±5cm, z-5cm)
+- Multi-view 3D reconstruction for improved accuracy
+
+Start position:
 - -1.9282409153380335
 - -0.7752679586410522
 - -2.0096360645689906
 - 1.5786821842193604
 - 0.7375568747520447
 - -0.822796646748678
+
+Directories:
+- Data: ../temp/ur15_location_task_data/ (coarse estimation)
+- Data: ../temp/ur15_precise_location_data/ (precise estimation)
+- Results: ../temp/ur15_location_task_result/ (coarse results)
+- Results: ../temp/ur15_precise_location_result/ (precise results)
 """
 
 import rclpy
@@ -154,13 +173,18 @@ class URLocationTask(Node):
         """
         self.latest_image = msg
     
-    def capture_image_and_pose(self, save_dir="../temp/ur15_location_task_data"):
+    def capture_image_and_pose(self, save_dir="../temp/ur15_location_task_data", 
+                              img_filename="test_img.jpg", 
+                              pose_filename="test_pose.json",
+                              metadata=None):
         """
         Capture current camera image and robot pose
-        Save image to test_img.jpg and pose to test_pose.json
         
         Args:
             save_dir: Directory to save the files
+            img_filename: Filename for the image (default: "test_img.jpg")
+            pose_filename: Filename for the pose JSON (default: "test_pose.json")
+            metadata: Optional dict with extra metadata to include in pose JSON
             
         Returns:
             bool: True if successful, False otherwise
@@ -207,8 +231,12 @@ class URLocationTask(Node):
                 "timestamp": datetime.now().isoformat()
             }
             
+            # Add optional metadata
+            if metadata is not None:
+                data.update(metadata)
+            
             # Save to JSON file
-            json_filename = os.path.join(save_dir, "test_pose.json")
+            json_filename = os.path.join(save_dir, pose_filename)
             with open(json_filename, 'w') as f:
                 json.dump(data, f, indent=2)
             
@@ -223,7 +251,7 @@ class URLocationTask(Node):
                     cv_image = self.cv_bridge.imgmsg_to_cv2(self.latest_image, desired_encoding='bgr8')
                     
                     # Save image
-                    image_filename = os.path.join(save_dir, "test_img.jpg")
+                    image_filename = os.path.join(save_dir, img_filename)
                     cv2.imwrite(image_filename, cv_image)
                     self.get_logger().info(f'✓ Saved image to: {image_filename}')
                 except Exception as e:
@@ -273,7 +301,103 @@ class URLocationTask(Node):
                 "attempts": []
             }
             
-            # Main retry loop
+            # ==============================================================
+            # One-time setup: Load reference data and set reference image
+            # (These don't change across retry attempts)
+            # ==============================================================
+            
+            # Setup file paths
+            ref_img_path = ref_img
+            ref_keypoints_path = ref_keypoints
+            ref_pose_path = ref_pose
+            test_img_path = test_img
+            test_pose_path = test_pose
+            
+            # Validate input files exist
+            required_files = {
+                "Reference image": ref_img_path,
+                "Reference keypoints": ref_keypoints_path,
+                "Reference pose": ref_pose_path,
+                "Test image": test_img_path,
+                "Test pose": test_pose_path
+            }
+            
+            for name, path in required_files.items():
+                if not os.path.exists(path):
+                    self.get_logger().error(f"{name} not found: {path}")
+                    return None
+            
+            self.get_logger().info("✓ All required input files found")
+            
+            # Load reference keypoints
+            self.get_logger().info("\n📖 Loading reference keypoints...")
+            with open(ref_keypoints_path, 'r') as f:
+                ref_keypoints_data = json.load(f)
+            
+            ref_keypoints_list = []
+            for kp in ref_keypoints_data.get('keypoints', []):
+                ref_keypoints_list.append({
+                    'x': float(kp['x']),
+                    'y': float(kp['y'])
+                })
+            
+            self.get_logger().info(f"✓ Loaded {len(ref_keypoints_list)} reference keypoints")
+            
+            # Load camera parameters
+            self.get_logger().info("\n📖 Loading camera parameters...")
+            eye_in_hand_path = os.path.join(camera_params_dir, "ur15_cam_eye_in_hand_result.json")
+            if not os.path.exists(eye_in_hand_path):
+                self.get_logger().error(f"Camera parameters not found: {eye_in_hand_path}")
+                return None
+            
+            with open(eye_in_hand_path, 'r') as f:
+                eye_in_hand_data = json.load(f)
+            
+            camera_matrix = np.array(eye_in_hand_data['camera_matrix'])
+            dist_coeffs = np.array(eye_in_hand_data['distortion_coefficients'])
+            cam2end_matrix = np.array(eye_in_hand_data['cam2end_matrix'])
+            
+            self.get_logger().info("✓ Loaded camera parameters")
+            
+            # Load reference robot pose
+            self.get_logger().info("\n📖 Loading reference robot pose...")
+            with open(ref_pose_path, 'r') as f:
+                ref_pose_data = json.load(f)
+            ref_end2base = np.array(ref_pose_data['end2base'])
+            self.get_logger().info("✓ Loaded reference pose")
+            
+            # Setup FlowFormer++ API session
+            self.get_logger().info(f"\n🌐 Connecting to FlowFormer++ API at {api_url}...")
+            session = requests.Session()
+            session.timeout = 60
+            
+            # Encode images to base64
+            def encode_image_to_base64(image_path):
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
+                    return __import__('base64').b64encode(image_data).decode('utf-8')
+            
+            # Set reference image (only once, outside the retry loop)
+            self.get_logger().info("\n📤 Setting reference image with keypoints...")
+            ref_img_base64 = encode_image_to_base64(ref_img_path)
+            
+            ref_data = {
+                'image_base64': ref_img_base64,
+                'keypoints': ref_keypoints_list,
+                'image_name': 'ur_location_task_reference'
+            }
+            
+            response = session.post(f"{api_url}/set_reference_image", json=ref_data)
+            
+            if response.status_code != 200 or not response.json().get('success', False):
+                self.get_logger().error(f"Failed to set reference image: {response.text}")
+                return None
+            
+            self.get_logger().info("✓ Reference image set successfully")
+            
+            # ==============================================================
+            # Main retry loop - only test image tracking happens here
+            # ==============================================================
             while attempt_count < max_attempts:
                 attempt_count += 1
                 attempt_info = {
@@ -290,111 +414,12 @@ class URLocationTask(Node):
                     os.makedirs(result_dir)
                     self.get_logger().info(f'Created result directory: {result_dir}')
                 
-                # Setup file paths
-                ref_img_path = ref_img
-                ref_keypoints_path = ref_keypoints
-                ref_pose_path = ref_pose
-                test_img_path = test_img
-                test_pose_path = test_pose
-                
-                # Validate input files exist
-                required_files = {
-                    "Reference image": ref_img_path,
-                    "Reference keypoints": ref_keypoints_path,
-                    "Reference pose": ref_pose_path,
-                    "Test image": test_img_path,
-                    "Test pose": test_pose_path
-                }
-                
-                for name, path in required_files.items():
-                    if not os.path.exists(path):
-                        self.get_logger().error(f"{name} not found: {path}")
-                        attempt_info["status"] = "failed"
-                        attempt_info["failure_reason"] = f"Missing file: {name}"
-                        retry_log["attempts"].append(attempt_info)
-                        self._save_retry_log(result_dir, retry_log)
-                        return None
-                
-                self.get_logger().info("✓ All required input files found")
-                
-                # Load reference keypoints
-                self.get_logger().info("\n📖 Loading reference keypoints...")
-                with open(ref_keypoints_path, 'r') as f:
-                    ref_keypoints_data = json.load(f)
-                
-                ref_keypoints_list = []
-                for kp in ref_keypoints_data.get('keypoints', []):
-                    ref_keypoints_list.append({
-                        'x': float(kp['x']),
-                        'y': float(kp['y'])
-                    })
-                
-                self.get_logger().info(f"✓ Loaded {len(ref_keypoints_list)} reference keypoints")
-                
-                # Load camera parameters
-                self.get_logger().info("\n📖 Loading camera parameters...")
-                eye_in_hand_path = os.path.join(camera_params_dir, "ur15_cam_eye_in_hand_result.json")
-                if not os.path.exists(eye_in_hand_path):
-                    self.get_logger().error(f"Camera parameters not found: {eye_in_hand_path}")
-                    attempt_info["status"] = "failed"
-                    attempt_info["failure_reason"] = "Missing camera parameters"
-                    retry_log["attempts"].append(attempt_info)
-                    self._save_retry_log(result_dir, retry_log)
-                    return None
-                
-                with open(eye_in_hand_path, 'r') as f:
-                    eye_in_hand_data = json.load(f)
-                
-                camera_matrix = np.array(eye_in_hand_data['camera_matrix'])
-                dist_coeffs = np.array(eye_in_hand_data['distortion_coefficients'])
-                cam2end_matrix = np.array(eye_in_hand_data['cam2end_matrix'])
-                
-                self.get_logger().info("✓ Loaded camera parameters")
-                
-                # Load robot poses
-                self.get_logger().info("\n📖 Loading robot poses...")
-                with open(ref_pose_path, 'r') as f:
-                    ref_pose_data = json.load(f)
-                ref_end2base = np.array(ref_pose_data['end2base'])
-                
+                # Load test robot pose (may change in retry after micro-movement)
+                self.get_logger().info("\n📖 Loading test robot pose...")
                 with open(test_pose_path, 'r') as f:
                     test_pose_data = json.load(f)
                 test_end2base = np.array(test_pose_data['end2base'])
-                
-                self.get_logger().info("✓ Loaded robot poses")
-                
-                # Setup FlowFormer++ API session
-                self.get_logger().info(f"\n🌐 Connecting to FlowFormer++ API at {api_url}...")
-                session = requests.Session()
-                session.timeout = 60
-                
-                # Encode images to base64
-                def encode_image_to_base64(image_path):
-                    with open(image_path, 'rb') as f:
-                        image_data = f.read()
-                        return __import__('base64').b64encode(image_data).decode('utf-8')
-                
-                # Set reference image
-                self.get_logger().info("\n📤 Setting reference image with keypoints...")
-                ref_img_base64 = encode_image_to_base64(ref_img_path)
-                
-                ref_data = {
-                    'image_base64': ref_img_base64,
-                    'keypoints': ref_keypoints_list,
-                    'image_name': 'ur_location_task_reference'
-                }
-                
-                response = session.post(f"{api_url}/set_reference_image", json=ref_data)
-                
-                if response.status_code != 200 or not response.json().get('success', False):
-                    self.get_logger().error(f"Failed to set reference image: {response.text}")
-                    attempt_info["status"] = "failed"
-                    attempt_info["failure_reason"] = "API call failed: set_reference_image"
-                    retry_log["attempts"].append(attempt_info)
-                    self._save_retry_log(result_dir, retry_log)
-                    return None
-                
-                self.get_logger().info("✓ Reference image set successfully")
+                self.get_logger().info("✓ Loaded test pose")
                 
                 # Track keypoints in test image
                 self.get_logger().info("\n📤 Tracking keypoints in test image...")
@@ -444,13 +469,13 @@ class URLocationTask(Node):
                         attempt_info["avg_fb_error"] = float(avg_error)
                         attempt_info["max_fb_error"] = float(max_error)
                         
-                        # Check if validation passed (average error < 2 pixel)
-                        if avg_error >= 2.0:
-                            self.get_logger().error(f"❌ Bidirectional validation FAILED (avg error >= 2.0 pixel)")
+                        # Check if validation passed (average error < 3 pixel)
+                        if avg_error >= 3.0:
+                            self.get_logger().error(f"❌ Bidirectional validation FAILED (avg error >= 3.0 pixel)")
                             attempt_info["status"] = "failed"
-                            attempt_info["failure_reason"] = f"avg_fb_error >= 2.0 ({avg_error:.3f})"
+                            attempt_info["failure_reason"] = f"avg_fb_error >= 3.0 ({avg_error:.3f})"
                         else:
-                            self.get_logger().info(f"✅ Bidirectional validation PASSED (avg error < 2.0 pixel)")
+                            self.get_logger().info(f"✅ Bidirectional validation PASSED (avg error < 3.0 pixel)")
 
                             # --------------------------------------------------
                             # Critical keypoint validation: Only validate KP3 and KP4
@@ -975,29 +1000,362 @@ class URLocationTask(Node):
             self.get_logger().error(traceback.format_exc())
             return False
 
+    def precise_triangulation_estimation(self, 
+                                         ref_img="../temp/ur15_precise_location_data/ref_img.jpg",
+                                         ref_pose="../temp/ur15_precise_location_data/ref_pose.json",
+                                         ref_keypoints="../temp/ur15_precise_location_data/ref_keypoints.json",
+                                         data_dir="../temp/ur15_precise_location_data",
+                                         result_dir="../temp/ur15_precise_location_result"):
+        """
+        Perform precise triangulation estimation by capturing images from 5 viewpoints.
+        """
+        try:
+            self.get_logger().info("=" * 80)
+            self.get_logger().info("🎯 Starting Precise Triangulation Estimation")
+            self.get_logger().info("=" * 80)
+            
+            # Create directories
+            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(result_dir, exist_ok=True)
+            self.get_logger().info(f"Data directory: {data_dir}")
+            self.get_logger().info(f"Result directory: {result_dir}")
+            
+            # Check if robot is connected
+            if self.ur_robot is None:
+                self.get_logger().error('UR robot not connected. Cannot perform precise estimation.')
+                return None
+            
+            # Get current TCP pose as base position
+            base_pose = self.ur_robot.get_actual_tcp_pose()
+            if base_pose is None:
+                self.get_logger().error('Failed to get current TCP pose')
+                return None
+            
+            self.get_logger().info(f"Base position: {[f'{p:.4f}' for p in base_pose]}")
+            
+            # Define 5 capture positions relative to base
+            # Format: (description, [dx, dy, dz, drx, dry, drz])
+            capture_positions = [
+                ("x+5cm", [0.05, 0, 0, 0, 0, 0]),
+                ("x-5cm", [-0.05, 0, 0, 0, 0, 0]),
+                ("y+5cm", [0, 0.05, 0, 0, 0, 0]),
+                ("y-5cm", [0, -0.05, 0, 0, 0, 0]),
+                ("z-5cm", [0, 0, -0.05, 0, 0, 0])
+            ]
+            
+            # Capture images and poses at each position
+            captured_data = []
+            
+            for idx, (desc, offset) in enumerate(capture_positions):
+                self.get_logger().info(f"\n📸 Capturing position {idx}: {desc}")
+                
+                # Calculate target pose
+                target_pose = [
+                    base_pose[0] + offset[0],
+                    base_pose[1] + offset[1],
+                    base_pose[2] + offset[2],
+                    base_pose[3] + offset[3],
+                    base_pose[4] + offset[4],
+                    base_pose[5] + offset[5]
+                ]
+                
+                # Move to target position
+                self.get_logger().info(f"Moving to {desc}: {[f'{p:.4f}' for p in target_pose]}")
+                result = self.ur_robot.movel(target_pose, a=0.5, v=0.2)
+                
+                if result != 0:
+                    self.get_logger().error(f"Failed to move to position {idx} ({desc})")
+                    # Try to return to base position
+                    self.ur_robot.movel(base_pose, a=0.5, v=0.2)
+                    return None
+                
+                # Wait for robot to settle
+                time.sleep(2.0)
+                
+                # Capture image and pose using the unified function
+                metadata = {
+                    "description": desc,
+                    "offset": offset
+                }
+                
+                capture_success = self.capture_image_and_pose(
+                    save_dir=data_dir,
+                    img_filename=f"{idx}.jpg",
+                    pose_filename=f"{idx}.json",
+                    metadata=metadata
+                )
+                
+                if not capture_success:
+                    self.get_logger().error(f"Failed to capture data at position {idx} ({desc})")
+                    # Try to return to base position
+                    self.ur_robot.movel(base_pose, a=0.5, v=0.2)
+                    return None
+                
+                # Wait for image stabilization
+                time.sleep(2)
+                
+                # Store captured file paths
+                image_path = os.path.join(data_dir, f"{idx}.jpg")
+                pose_path = os.path.join(data_dir, f"{idx}.json")
+                
+                captured_data.append({
+                    "index": idx,
+                    "description": desc,
+                    "image_path": image_path,
+                    "pose_path": pose_path,
+                    "offset": offset
+                })
+            
+            # Return to base position
+            self.get_logger().info("\n↩️  Returning to base position...")
+            self.ur_robot.movel(base_pose, a=0.5, v=0.2)
+            time.sleep(1.0)
+            
+            self.get_logger().info(f"\n✅ Successfully captured {len(captured_data)} images")
+            
+            # Now perform triangulation estimation using the captured data
+            self.get_logger().info("\n📐 Performing triangulation estimation...")
+            
+            # Call triangulation API for each captured image
+            api_url = "http://msraig-ubuntu-2:8001"
+            camera_params_dir = "../temp/ur15_cam_calibration_result/ur15_camera_parameters"
+            
+            # Load reference keypoints
+            self.get_logger().info("Loading reference keypoints...")
+            with open(ref_keypoints, 'r') as f:
+                ref_keypoints_data = json.load(f)
+            
+            # Convert keypoints to list format expected by API
+            # Check if it's the new format (with 'keypoints' array) or old format (dict)
+            if 'keypoints' in ref_keypoints_data:
+                # New format: {"keypoints": [...]}
+                ref_keypoints_list = []
+                for kp in ref_keypoints_data['keypoints']:
+                    ref_keypoints_list.append({
+                        'x': kp['x'],
+                        'y': kp['y'],
+                        'name': kp.get('name', f"Point {kp.get('id', len(ref_keypoints_list)+1)}")
+                    })
+            else:
+                # Old format: {"keypoint_1": {...}, "keypoint_2": {...}}
+                ref_keypoints_list = []
+                for kp_name in sorted(ref_keypoints_data.keys()):
+                    kp = ref_keypoints_data[kp_name]
+                    ref_keypoints_list.append({
+                        'x': kp['x'],
+                        'y': kp['y'],
+                        'name': kp_name
+                    })
+            
+            self.get_logger().info(f"✓ Loaded {len(ref_keypoints_list)} reference keypoints")
+            
+            # Helper function to encode image to base64
+            def encode_image_to_base64(image_path):
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
+                    return __import__('base64').b64encode(image_data).decode('utf-8')
+            
+            # Set reference image
+            try:
+                # Set the reference image with keypoints
+                self.get_logger().info("Setting reference image with keypoints...")
+                ref_img_base64 = encode_image_to_base64(ref_img)
+                
+                ref_data = {
+                    'image_base64': ref_img_base64,
+                    'keypoints': ref_keypoints_list,
+                    'image_name': 'ur_precise_location_reference'
+                }
+                
+                response = requests.post(f"{api_url}/set_reference_image", json=ref_data, timeout=30)
+                
+                if response.status_code != 200 or not response.json().get('success', False):
+                    self.get_logger().error(f"Failed to set reference image: {response.text}")
+                    return None
+                
+                self.get_logger().info("✓ Reference image set successfully")
+                
+            except Exception as e:
+                self.get_logger().error(f"Error setting reference image: {e}")
+                self.get_logger().error(traceback.format_exc())
+                return None
+            
+            # Track keypoints across all images
+            triangulation_data = []
+            
+            for capture_info in captured_data:
+                idx = capture_info["index"]
+                img_path = capture_info["image_path"]
+                
+                self.get_logger().info(f"\nTracking keypoints in image {idx}...")
+                
+                try:
+                    # Encode image to base64
+                    img_base64 = encode_image_to_base64(img_path)
+                    
+                    track_data = {
+                        'image_base64': img_base64,
+                        'reference_name': 'ur_precise_location_reference',
+                        'bidirectional': False,  # No need for bidirectional check here
+                        'return_flow': False
+                    }
+                    
+                    response = requests.post(f"{api_url}/track_keypoints", json=track_data, timeout=30)
+                    
+                    if response.status_code != 200 or not response.json().get('success', False):
+                        self.get_logger().error(f"Failed to track keypoints in image {idx}: {response.text if response.status_code == 200 else response.status_code}")
+                        continue
+                    
+                    tracking_result = response.json().get('result', {})
+                    tracked_keypoints = tracking_result.get('tracked_keypoints', [])
+                    
+                    if len(tracked_keypoints) < 4:
+                        self.get_logger().error(f"Not enough keypoints tracked in image {idx}")
+                        continue
+                    
+                    # Extract KP3 and KP4 (indices 2 and 3)
+                    kp3 = tracked_keypoints[2]
+                    kp4 = tracked_keypoints[3]
+                    
+                    triangulation_data.append({
+                        "index": idx,
+                        "description": capture_info["description"],
+                        "pose_path": capture_info["pose_path"],
+                        "kp3": kp3,
+                        "kp4": kp4
+                    })
+                    
+                    self.get_logger().info(f"✓ Image {idx}: KP3=({kp3['x']:.1f}, {kp3['y']:.1f}), KP4=({kp4['x']:.1f}, {kp4['y']:.1f})")
+                    
+                except Exception as e:
+                    self.get_logger().error(f"Error tracking keypoints in image {idx}: {e}")
+                    continue
+            
+            if len(triangulation_data) < 2:
+                self.get_logger().error("Not enough valid views for triangulation (need at least 2)")
+                return None
+            
+            self.get_logger().info(f"\n✅ Successfully tracked keypoints in {len(triangulation_data)} images")
+            
+            # Perform triangulation for midpoint between KP3 and KP4
+            self.get_logger().info("\n🔺 Triangulating midpoint between KP3 and KP4...")
+            
+            # Load camera parameters from calibration result
+            calib_result_path = os.path.join(camera_params_dir, "ur15_cam_calibration_result.json")
+            with open(calib_result_path, 'r') as f:
+                calib_data = json.load(f)
+            
+            cam_matrix = np.array(calib_data['camera_matrix'])
+            fx, fy = cam_matrix[0, 0], cam_matrix[1, 1]
+            cx, cy = cam_matrix[0, 2], cam_matrix[1, 2]
+            
+            self.get_logger().info(f"✓ Loaded camera intrinsics: fx={fx:.2f}, fy={fy:.2f}, cx={cx:.2f}, cy={cy:.2f}")
+            
+            # Load camera to end-effector transformation
+            eye_in_hand_path = os.path.join(camera_params_dir, "ur15_cam_eye_in_hand_result.json")
+            with open(eye_in_hand_path, 'r') as f:
+                eye_in_hand_data = json.load(f)
+            
+            cam2end_matrix = np.array(eye_in_hand_data['cam2end_matrix'])
+            self.get_logger().info(f"✓ Loaded camera extrinsics (cam2end transformation)")
+            
+            # Collect rays for triangulation
+            rays = []
+            origins = []
+            
+            for tri_data in triangulation_data:
+                # Load pose
+                with open(tri_data["pose_path"], 'r') as f:
+                    pose_data = json.load(f)
+                
+                end2base_matrix = np.array(pose_data['end2base'])
+                
+                # Calculate camera to base transformation
+                cam2base_matrix = end2base_matrix @ cam2end_matrix
+                
+                # Calculate midpoint pixel coordinates
+                kp3 = tri_data["kp3"]
+                kp4 = tri_data["kp4"]
+                mid_u = (kp3['x'] + kp4['x']) / 2.0
+                mid_v = (kp3['y'] + kp4['y']) / 2.0
+                
+                # Convert to normalized image coordinates
+                x_norm = (mid_u - cx) / fx
+                y_norm = (mid_v - cy) / fy
+                
+                # Ray in camera frame (normalized)
+                ray_cam = np.array([x_norm, y_norm, 1.0])
+                ray_cam = ray_cam / np.linalg.norm(ray_cam)
+                
+                # Transform to base frame
+                ray_base = cam2base_matrix[:3, :3] @ ray_cam
+                origin_base = cam2base_matrix[:3, 3]
+                
+                rays.append(ray_base)
+                origins.append(origin_base)
+            
+            # Triangulate using least squares
+            # For each ray: P = origin + t * direction
+            # Find point P that minimizes distance to all rays
+            
+            A = []
+            b = []
+            
+            for ray, origin in zip(rays, origins):
+                # For each ray, we want to minimize |P - (origin + t*ray)|^2
+                # This gives us: (I - ray*ray^T) * P = (I - ray*ray^T) * origin
+                I = np.eye(3)
+                ray_outer = np.outer(ray, ray)
+                A.append(I - ray_outer)
+                b.append((I - ray_outer) @ origin)
+            
+            A = np.vstack(A)
+            b = np.hstack(b)
+            
+            # Solve least squares
+            P_estimated, residuals, rank, s = np.linalg.lstsq(A, b, rcond=None)
+            
+            self.get_logger().info(f"\n✅ Triangulation complete!")
+            self.get_logger().info(f"Estimated 3D position: ({P_estimated[0]:.6f}, {P_estimated[1]:.6f}, {P_estimated[2]:.6f})")
+            
+            # Save result
+            result = {
+                "timestamp": datetime.now().isoformat(),
+                "method": "multi_view_triangulation",
+                "num_views": len(triangulation_data),
+                "estimated_position": {
+                    "x": float(P_estimated[0]),
+                    "y": float(P_estimated[1]),
+                    "z": float(P_estimated[2])
+                },
+                "views": triangulation_data,
+                "reference_files": {
+                    "ref_img": ref_img,
+                    "ref_pose": ref_pose,
+                    "ref_keypoints": ref_keypoints
+                }
+            }
+            
+            result_path = os.path.join(result_dir, "precise_triangulation_result.json")
+            with open(result_path, 'w') as f:
+                json.dump(result, f, indent=2)
+            
+            self.get_logger().info(f"✓ Saved result to: {result_path}")
+            
+            self.get_logger().info("=" * 80)
+            self.get_logger().info("✅ Precise Triangulation Estimation Complete")
+            self.get_logger().info("=" * 80)
+            
+            return result
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in precise triangulation estimation: {e}")
+            self.get_logger().error(traceback.format_exc())
+            return None
+
     def tcp_normalize(self, x_axis=[1, 0, 0], y_axis=[0, -1, 0], z_axis=[0, 0, -1], a=0.5, v=0.2):
         """
         Normalize TCP orientation according to specified axis alignment.
-        
-        Args:
-            x_axis: [x, y, z] vector indicating desired TCP x-axis direction in base frame
-                    e.g., [1,0,0] means TCP x-axis aligns with base x-axis (same direction)
-                          [-1,0,0] means TCP x-axis aligns with base x-axis (opposite direction)
-            y_axis: [x, y, z] vector indicating desired TCP y-axis direction in base frame
-                    e.g., [0,1,0] means TCP y-axis aligns with base y-axis (same direction)
-                          [0,-1,0] means TCP y-axis aligns with base y-axis (opposite direction)
-            z_axis: [x, y, z] vector indicating desired TCP z-axis direction in base frame
-                    e.g., [0,0,1] means TCP z-axis aligns with base z-axis (same direction)
-                          [0,0,-1] means TCP z-axis aligns with base z-axis (opposite direction)
-            a: Acceleration in rad/s^2
-            v: Velocity in rad/s
-            
-        Returns:
-            True if successful, False otherwise
-            
-        Example:
-            # TCP x-axis same as base x-axis, TCP y-axis opposite to base y-axis, TCP z-axis opposite to base z-axis
-            tcp_normalize(x_axis=[1,0,0], y_axis=[0,-1,0], z_axis=[0,0,-1])
         """
         try:
             if self.ur_robot is None:
@@ -1070,6 +1428,66 @@ class URLocationTask(Node):
                 
         except Exception as e:
             self.get_logger().error(f"Error normalizing TCP: {str(e)}")
+            self.get_logger().error(traceback.format_exc())
+            return False
+
+    def tool_orientation_correction(self, z_rotation_deg=30, a=0.5, v=0.2):
+        """
+        Correct tool orientation by rotating around its Z-axis.
+        """
+        try:
+            if self.ur_robot is None:
+                self.get_logger().error('UR robot not connected. Cannot correct tool orientation.')
+                return False
+            
+            # Get current TCP pose
+            current_pose = self.ur_robot.get_actual_tcp_pose()
+            if current_pose is None:
+                self.get_logger().error("Failed to get current TCP pose")
+                return False
+            
+            # Extract position and orientation
+            x, y, z = current_pose[0], current_pose[1], current_pose[2]
+            rx, ry, rz = current_pose[3], current_pose[4], current_pose[5]
+            
+            # Get current rotation matrix
+            R_current = self._rotvec_to_matrix(rx, ry, rz)
+            
+            # Create rotation matrix for Z-axis rotation (in tool frame)
+            # Rotation around Z-axis
+            angle_rad = math.radians(z_rotation_deg)
+            Rz_tool = np.array([
+                [math.cos(angle_rad), -math.sin(angle_rad), 0],
+                [math.sin(angle_rad),  math.cos(angle_rad), 0],
+                [0,                    0,                   1]
+            ])
+            
+            # Apply rotation: R_new = R_current * Rz_tool
+            # (rotate in tool frame means post-multiply)
+            R_new = np.matmul(R_current, Rz_tool)
+            
+            # Convert back to rotation vector
+            rx_new, ry_new, rz_new = self._matrix_to_rotvec(R_new)
+            
+            # Create target pose
+            target_pose = [x, y, z, rx_new, ry_new, rz_new]
+            
+            self.get_logger().info(f"Current TCP pose: {[f'{p:.4f}' for p in current_pose]}")
+            self.get_logger().info(f"Rotating tool {z_rotation_deg}° around Z-axis...")
+            self.get_logger().info(f"Target pose: {[f'{p:.4f}' for p in target_pose]}")
+            
+            # Move to target pose using movel
+            result = self.ur_robot.movel(target_pose, a=a, v=v)
+            
+            if result == 0:
+                self.get_logger().info(f"✅ Tool orientation corrected successfully (rotated {z_rotation_deg}° around Z-axis)")
+                return True
+            else:
+                self.get_logger().error(f"❌ Failed to correct tool orientation (result: {result})")
+                return False
+                
+        except Exception as e:
+            self.get_logger().error(f"Error correcting tool orientation: {str(e)}")
             self.get_logger().error(traceback.format_exc())
             return False
 
@@ -1328,7 +1746,7 @@ def main(args=None):
             
             # Move to midpoint using the new method
             move_success = task_node.move_to_xy_position(midpoint_x, midpoint_y, a=0.2, v=0.2)
-            time.sleep(1)  # Wait a moment
+            time.sleep(5)  # Wait a moment
 
             # If move was successful, normalize TCP orientation
             if move_success:
@@ -1343,11 +1761,75 @@ def main(args=None):
                     a=0.2, 
                     v=0.2
                 )
+                time.sleep(2)
                 if normalize_success:
                     task_node.get_logger().info('✅ TCP normalization completed!')
+                    
+                    # Move to a closer position for finer estimation
+                    task_node.get_logger().info('\n🔍 Moving closer for precise estimation...')
+                    move_result = task_node.ur_robot.move_tcp([0, 0.1, 0.25, 0, 0, 0], a=0.5, v=0.2)
+                    time.sleep(2)
+                    
+                    if move_result == 0:
+                        task_node.get_logger().info('✅ Moved to closer position!')
+                        
+                        # Perform precise triangulation estimation
+                        task_node.get_logger().info('\n🎯 Starting precise triangulation estimation...')
+                        precise_result = task_node.precise_triangulation_estimation(
+                            ref_img="../temp/ur15_precise_location_data/ref_img.jpg",
+                            ref_pose="../temp/ur15_precise_location_data/ref_pose.json",
+                            ref_keypoints="../temp/ur15_precise_location_data/ref_keypoints.json",
+                            data_dir="../temp/ur15_precise_location_data",
+                            result_dir="../temp/ur15_precise_location_result"
+                        )
+                        
+                        if precise_result:
+                            task_node.get_logger().info('✅ Precise triangulation estimation completed!')
+                            task_node.get_logger().info(f"Precise estimated position: "
+                                                       f"({precise_result['estimated_position']['x']:.6f}, "
+                                                       f"{precise_result['estimated_position']['y']:.6f}, "
+                                                       f"{precise_result['estimated_position']['z']:.6f})")
+                            
+                            # Move to the precise estimated position (keep Z unchanged)
+                            task_node.get_logger().info('\n📍 Moving to precise estimated position...')
+                            precise_x = precise_result['estimated_position']['x']
+                            precise_y = precise_result['estimated_position']['y']
+                            
+                            precise_move_success = task_node.move_to_xy_position(
+                                precise_x, 
+                                precise_y, 
+                                a=0.2, 
+                                v=0.1
+                            )
+                            time.sleep(2)
+                            
+                            if precise_move_success:
+                                task_node.get_logger().info('✅ Successfully moved to precise estimated position!')
+                                
+                                # Perform tool orientation correction (rotate 30 degrees around Z-axis)
+                                task_node.get_logger().info('Performing tool orientation correction...')
+                                correction_success = task_node.tool_orientation_correction(
+                                    z_rotation_deg=30,
+                                    a=0.5,
+                                    v=0.2
+                                )
+                                time.sleep(2)
+                                
+                                if correction_success:
+                                    task_node.get_logger().info('✅ Tool orientation correction completed!')
+                                else:
+                                    task_node.get_logger().warn('⚠️ Tool orientation correction failed.')
+                            else:
+                                task_node.get_logger().warn('⚠️ Failed to move to precise estimated position.')
+                        else:
+                            task_node.get_logger().warn('⚠️ Precise triangulation estimation failed.')
+                    else:
+                        task_node.get_logger().warn('⚠️ Failed to move to closer position.')
                 else:
                     task_node.get_logger().warn('⚠️ TCP normalization failed, but position is correct.')
-        
+
+            
+
         # Keep node alive for a moment to ensure all logging is displayed
         time.sleep(1)
         

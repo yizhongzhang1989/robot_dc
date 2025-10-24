@@ -299,6 +299,43 @@ class UR15Robot:
         cmd = f"set_tool_voltage({voltage})\n  sleep(1)"
         return self._send_command(cmd)
 
+    def set_tcp(self, pose, tcp_name=""):
+        """
+        Sets the active TCP offset, i.e., the transformation from the output flange 
+        """
+        # Format pose
+        if isinstance(pose, (list, tuple)):
+            if len(pose) != 6:
+                print(f"[ERROR] Invalid pose: {pose}. Must have 6 elements [x,y,z,rx,ry,rz].")
+                return -1
+            pose_str = "p[" + ",".join([str(val) for val in pose]) + "]"
+        elif isinstance(pose, str):
+            pose_str = pose
+        else:
+            print(f"[ERROR] Invalid pose type: {type(pose)}. Must be list, tuple, or string.")
+            return -1
+        
+        # Validate tcp_name parameter
+        if not isinstance(tcp_name, str):
+            print(f"[ERROR] Invalid tcp_name: {tcp_name}. Must be a string.")
+            return -1
+        
+        # Build URScript command
+        if tcp_name:
+            cmd = f'set_tcp({pose_str}, "{tcp_name}")'
+        else:
+            cmd = f'set_tcp({pose_str})'
+        
+        result = self._send_command(cmd)
+        
+        if result == 0:
+            if tcp_name:
+                print(f"[INFO] TCP set to {pose_str} with name '{tcp_name}'")
+            else:
+                print(f"[INFO] TCP set to {pose_str}")
+        
+        return result
+
     def socket_open(self, address, port, socket_name='socket_0'):
         """
         Open TCP/IP ethernet communication socket.

@@ -2,13 +2,113 @@ from ur15_robot_arm.ur15 import UR15Robot
 import time
 import socket
 import math
+import numpy as np
 
-def tcp_normalize(robot, a=0.5, v=0.2):
+
+def rotvec_to_matrix(rx, ry, rz):
+    """Convert rotation vector to rotation matrix"""
+    angle = math.sqrt(rx**2 + ry**2 + rz**2)
+    if angle < 1e-10:
+        return np.eye(3)
+    
+    # Normalize axis
+    kx, ky, kz = rx/angle, ry/angle, rz/angle
+    
+    # Rodrigues' rotation formula
+    c = math.cos(angle)
+    s = math.sin(angle)
+    v = 1 - c
+    
+    R = np.array([
+        [kx*kx*v + c,    kx*ky*v - kz*s, kx*kz*v + ky*s],
+        [ky*kx*v + kz*s, ky*ky*v + c,    ky*kz*v - kx*s],
+        [kz*kx*v - ky*s, kz*ky*v + kx*s, kz*kz*v + c]
+    ])
+    return R
+
+
+def matrix_to_rotvec(R):
+    """Convert rotation matrix to rotation vector"""
+    trace = np.trace(R)
+    angle = math.acos(np.clip((trace - 1) / 2, -1.0, 1.0))
+    
+    if angle < 1e-10:
+        return 0.0, 0.0, 0.0
+    elif abs(angle - math.pi) < 1e-6:
+        # 180-degree rotation
+        if R[0, 0] >= R[1, 1] and R[0, 0] >= R[2, 2]:
+            kx = math.sqrt((R[0, 0] + 1) / 2)
+            ky = R[0, 1] / (2 * kx)
+            kz = R[0, 2] / (2 * kx)
+        elif R[1, 1] >= R[2, 2]:
+            ky = math.sqrt((R[1, 1] + 1) / 2)
+            kx = R[0, 1] / (2 * ky)
+            kz = R[1, 2] / (2 * ky)
+        else:
+            kz = math.sqrt((R[2, 2] + 1) / 2)
+            kx = R[0, 2] / (2 * kz)
+            ky = R[1, 2] / (2 * kz)
+    else:
+        # General case
+        kx = (R[2, 1] - R[1, 2]) / (2 * math.sin(angle))
+        ky = (R[0, 2] - R[2, 0]) / (2 * math.sin(angle))
+        kz = (R[1, 0] - R[0, 1]) / (2 * math.sin(angle))
+    
+    return angle * kx, angle * ky, angle * kz
+
+
+def tool_orientation_correction(robot, z_rotation_deg=30, a=0.5, v=0.2):
     """
-    Normalize TCP orientation so that:
-    - TCP z+ aligns with base z- (pointing downward)
-    - TCP y+ aligns with base y+ (same direction)
-    - TCP x+ aligns with base x- (opposite direction)
+    Correct tool orientation by rotating around its Z-axis.
+    """
+    # Get current TCP pose
+    current_pose = robot.get_actual_tcp_pose()
+    if current_pose is None:
+        print("[ERROR] Failed to get current TCP pose")
+        return -1
+    
+    # Extract position and orientation
+    x, y, z = current_pose[0], current_pose[1], current_pose[2]
+    rx, ry, rz = current_pose[3], current_pose[4], current_pose[5]
+    
+    # Get current rotation matrix
+    R_current = rotvec_to_matrix(rx, ry, rz)
+    
+    # Create rotation matrix for Z-axis rotation (in tool frame)
+    # Rotation around Z-axis
+    angle_rad = math.radians(z_rotation_deg)
+    Rz_tool = np.array([
+        [math.cos(angle_rad), -math.sin(angle_rad), 0],
+        [math.sin(angle_rad),  math.cos(angle_rad), 0],
+        [0,                    0,                   1]
+    ])
+    
+    # Apply rotation: R_new = R_current * Rz_tool
+    # (rotate in tool frame means post-multiply)
+    R_new = np.matmul(R_current, Rz_tool)
+    
+    # Convert back to rotation vector
+    rx_new, ry_new, rz_new = matrix_to_rotvec(R_new)
+    
+    # Create target pose
+    target_pose = [x, y, z, rx_new, ry_new, rz_new]
+    
+    print(f"Rotating tool {z_rotation_deg}° around Z-axis...")
+    
+    # Move to target pose using movel
+    result = robot.movel(target_pose, a=a, v=v)
+    
+    if result == 0:
+        print(f"✅ Tool orientation corrected successfully (rotated {z_rotation_deg}° around Z-axis)")
+        return 0
+    else:
+        print(f"❌ Failed to correct tool orientation (result: {result})")
+        return -1
+
+
+def tcp_normalize(robot, x_axis=[0, -1, 0], y_axis=[-1, 0, 0], z_axis=[0, 0, -1], a=0.5, v=0.2):
+    """
+    Normalize TCP orientation according to specified axis alignment.
     """
     # Get current TCP pose
     current_pose = robot.get_actual_tcp_pose()
@@ -19,25 +119,57 @@ def tcp_normalize(robot, a=0.5, v=0.2):
     # Extract position (keep the same)
     x, y, z = current_pose[0], current_pose[1], current_pose[2]
     
-    # Set orientation: rotation of pi around Y axis
-    # This gives: X_tcp = -X_base, Y_tcp = Y_base, Z_tcp = -Z_base
-    rx, ry, rz = 0.0, math.pi, 0.0
+    # Build rotation matrix from the desired axes
+    # The input axes define how TCP axes should align with base axes
+    x_vec = np.array(x_axis, dtype=float)
+    y_vec = np.array(y_axis, dtype=float)
+    z_vec = np.array(z_axis, dtype=float)
+    
+    # Normalize the vectors
+    x_vec = x_vec / np.linalg.norm(x_vec)
+    y_vec = y_vec / np.linalg.norm(y_vec)
+    z_vec = z_vec / np.linalg.norm(z_vec)
+    
+    # Check orthogonality
+    dot_xy = np.dot(x_vec, y_vec)
+    dot_xz = np.dot(x_vec, z_vec)
+    dot_yz = np.dot(y_vec, z_vec)
+    
+    if abs(dot_xy) > 0.01 or abs(dot_xz) > 0.01 or abs(dot_yz) > 0.01:
+        print(f'[WARN] Input axes are not orthogonal! dot(x,y)={dot_xy:.4f}, dot(x,z)={dot_xz:.4f}, dot(y,z)={dot_yz:.4f}')
+        # Orthogonalize using Gram-Schmidt process
+        y_vec = y_vec - np.dot(y_vec, x_vec) * x_vec
+        y_vec = y_vec / np.linalg.norm(y_vec)
+        z_vec = np.cross(x_vec, y_vec)
+        z_vec = z_vec / np.linalg.norm(z_vec)
+        print('[INFO] Axes orthogonalized using Gram-Schmidt process')
+    
+    # Construct rotation matrix (columns are the axis vectors)
+    R_target = np.column_stack([x_vec, y_vec, z_vec])
+    
+    # Verify it's a valid rotation matrix (det should be 1)
+    det = np.linalg.det(R_target)
+    if abs(det - 1.0) > 0.01:
+        print(f'[ERROR] Invalid rotation matrix! det={det:.4f}. Check if axes form a right-handed coordinate system.')
+        return -1
+    
+    # Convert rotation matrix to axis-angle representation (rotation vector)
+    rx, ry, rz = matrix_to_rotvec(R_target)
     
     # Create target pose
     target_pose = [x, y, z, rx, ry, rz]
     
-    print(f"Current TCP pose: {current_pose}")
-    print(f"Target normalized pose: {target_pose}")
+    print(f"Normalizing TCP orientation (a={a}, v={v})...")
     
     # Move to target pose using movel (linear movement in base frame)
     result = robot.movel(target_pose, a=a, v=v)
     
     if result == 0:
-        print("[SUCCESS] TCP normalized successfully")
+        print("✅ TCP normalized successfully")
+        return 0
     else:
-        print("[ERROR] Failed to normalize TCP")
-    
-    return result
+        print(f"❌ Failed to normalize TCP (result: {result})")
+        return -1
 
 def main():
     # Definition of robot IP and port
@@ -67,6 +199,11 @@ def main():
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
+        # #  2.1 move to task pose
+        # res = robot.movej([-0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822], a=0.8, v=1.05)
+        # print(f"MoveJ result: {res}")
+        # time.sleep(1)
+
         # 3. enter freedrive mode f
         freedrive_duration = 20 #seconds
         robot.freedrive_mode(duration=freedrive_duration)
@@ -85,7 +222,6 @@ def main():
         # # 5. get actual TCP pose and joint positions
         # actual_pose = robot.get_actual_tcp_pose()
         # actual_joints = robot.get_actual_joint_positions()
-
         # if actual_pose:
         #     print(f"Actual tcp pose (m, rad): {actual_pose}")
         # if actual_joints:
@@ -93,13 +229,26 @@ def main():
         #     print(f"Actual joint positions (deg): {[j*180/3.1415926 for j in actual_joints]}")
 
         # # 6. move tcp
-        # res = robot.move_tcp([0, 0, 0.1, 0, 0, 0], a=0.5, v=0.2)
+        # res = robot.move_tcp([0, 0.1, 0.25, 0, 0, 0], a=0.5, v=0.2)
         # print(f"Move TCP result: {res}")
-
         # time.sleep(1)
+
         # # 6.1 Test tcp_normalize function
-        # res = tcp_normalize(robot, a=0.2, v=0.2)
+        # res = tcp_normalize(robot, x_axis=[0, -1, 0], y_axis=[-1, 0, 0], z_axis=[0, 0, -1], a=0.5, v=0.2)
         # print(f"TCP normalize result: {res}")
+        # time.sleep(2)
+        # # 6.2 correct tool orientation (rotate 30 degrees around Z-axis)
+        # res = tool_orientation_correction(robot, z_rotation_deg=30, a=0.5, v=0.2)
+        # print(f"Tool orientation correction result: {res}")
+        # time.sleep(2)
+
+        # # 6.2 Test tool orientation correction (rotate 30 degrees around Z-axis)
+        # res = tool_orientation_correction(robot, z_rotation_deg=30, a=0.2, v=0.2)
+        # print(f"Tool orientation correction result: {res}")
+        # time.sleep(2)
+        # # Rotate back -30 degrees
+        # res = tool_orientation_correction(robot, z_rotation_deg=-30, a=0.2, v=0.2)
+        # print(f"Tool orientation correction result: {res}")
 
         # # 7. tcp force reading
         # try:
@@ -161,6 +310,18 @@ def main():
         # print('Rs485 Received Data:', ' '.join(f'0x{b:02x}' for b in rs485_data))
         # time.sleep(0.5)
         
+        # # 10. set active tool offset, it will not be affected by the configuration in installation-TCP
+        # toolPullPush_offset = [0.0, 0.0, 0.2265, 0.0, 0.0, 0.0] 
+        # res = robot.set_tcp(toolPullPush_offset,tcp_name="toolPullPush")
+        # time.sleep(1)
+
+        # res = robot.move_tcp([0, 0, 0, 0.5236/2, 0, 0], a=0.2, v=0.2)
+        # time.sleep(2)
+
+        # res = robot.move_tcp([0, 0, 0, -0.5236/2, 0, 0], a=0.2, v=0.2)
+        # time.sleep(1)
+        # print(f"Move TCP with tool offset result: {res}")
+
 
     else:
         print(f"Failed to connect to robot at {ur15_ip}:{ur15_port}")
