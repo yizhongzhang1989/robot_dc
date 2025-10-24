@@ -1371,6 +1371,17 @@ class URLocationTask(Node):
             
             self.get_logger().info(f"✓ Saved result to: {result_path}")
             
+            # Perform reprojection validation using the estimated 3D position
+            self.get_logger().info("\n🔍 Performing reprojection validation...")
+            self._perform_reprojection_validation(
+                estimated_3d_position=P_estimated,
+                triangulation_data=triangulation_data,
+                cam_matrix=cam_matrix,
+                cam2end_matrix=cam2end_matrix,
+                data_dir=data_dir,
+                result_dir=result_dir
+            )
+            
             self.get_logger().info("=" * 80)
             self.get_logger().info("✅ Precise Triangulation Estimation Complete")
             self.get_logger().info("=" * 80)
@@ -1721,6 +1732,259 @@ class URLocationTask(Node):
         except Exception as e:
             self.get_logger().error(f"Error creating reprojection visualization: {e}")
             return None
+    
+    def _perform_reprojection_validation(self, estimated_3d_position, triangulation_data, 
+                                        cam_matrix, cam2end_matrix, data_dir, result_dir):
+        """
+        Perform reprojection validation of the estimated 3D position on all captured images.
+        
+        Args:
+            estimated_3d_position: Estimated 3D position in base frame [x, y, z]
+            triangulation_data: Data from triangulation including pose information
+            cam_matrix: Camera intrinsic matrix
+            cam2end_matrix: Camera to end-effector transformation matrix
+            data_dir: Directory containing captured images and poses
+            result_dir: Directory to save reprojection validation results
+        """
+        try:
+            self.get_logger().info("🔍 Starting reprojection validation...")
+            
+            # Create validation results
+            validation_results = {
+                "timestamp": datetime.now().isoformat(),
+                "estimated_3d_position": {
+                    "x": float(estimated_3d_position[0]),
+                    "y": float(estimated_3d_position[1]),
+                    "z": float(estimated_3d_position[2])
+                },
+                "reprojections": []
+            }
+            
+            fx, fy = cam_matrix[0, 0], cam_matrix[1, 1]
+            cx, cy = cam_matrix[0, 2], cam_matrix[1, 2]
+            
+            # Process each captured image
+            for idx, tri_data in enumerate(triangulation_data):
+                image_path = os.path.join(data_dir, f"{idx}.jpg")
+                pose_path = tri_data["pose_path"]
+                
+                self.get_logger().info(f"  Processing image {idx}: {tri_data['description']}")
+                
+                # Load image
+                img = cv2.imread(image_path)
+                if img is None:
+                    self.get_logger().error(f"Failed to load image: {image_path}")
+                    continue
+                
+                # Load pose data
+                with open(pose_path, 'r') as f:
+                    pose_data = json.load(f)
+                
+                end2base_matrix = np.array(pose_data['end2base'])
+                
+                # Calculate camera to base transformation
+                cam2base_matrix = end2base_matrix @ cam2end_matrix
+                
+                # Transform 3D position from base frame to camera frame
+                P_base_homogeneous = np.array([
+                    estimated_3d_position[0],
+                    estimated_3d_position[1], 
+                    estimated_3d_position[2],
+                    1.0
+                ])
+                
+                # base -> camera transformation
+                base2cam_matrix = np.linalg.inv(cam2base_matrix)
+                P_cam = base2cam_matrix @ P_base_homogeneous
+                
+                Xc, Yc, Zc = P_cam[:3]
+                
+                if Zc <= 1e-9:
+                    self.get_logger().warn(f"Point is behind camera in view {idx}, skipping")
+                    continue
+                
+                # Project to image coordinates
+                u_proj = fx * (Xc / Zc) + cx
+                v_proj = fy * (Yc / Zc) + cy
+                
+                # Calculate midpoint of observed keypoints for comparison
+                kp3 = tri_data["kp3"]
+                kp4 = tri_data["kp4"]
+                u_observed = (kp3['x'] + kp4['x']) / 2.0
+                v_observed = (kp3['y'] + kp4['y']) / 2.0
+                
+                # Calculate reprojection error
+                error_u = u_proj - u_observed
+                error_v = v_proj - v_observed
+                error_pixel = np.sqrt(error_u**2 + error_v**2)
+                
+                # Store reprojection result
+                reprojection_result = {
+                    "view_index": idx,
+                    "description": tri_data['description'],
+                    "observed_midpoint": {"u": float(u_observed), "v": float(v_observed)},
+                    "reprojected_point": {"u": float(u_proj), "v": float(v_proj)},
+                    "error_pixels": float(error_pixel),
+                    "error_components": {"u": float(error_u), "v": float(error_v)}
+                }
+                
+                validation_results["reprojections"].append(reprojection_result)
+                
+                # Create visualization
+                img_vis = img.copy()
+                
+                # Draw observed midpoint (green circle)
+                cv2.circle(img_vis, (int(u_observed), int(v_observed)), 8, (0, 255, 0), 2)
+                cv2.putText(img_vis, "Observed", (int(u_observed) + 10, int(v_observed) - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                
+                # Draw reprojected point (magenta filled circle)
+                cv2.circle(img_vis, (int(u_proj), int(v_proj)), 6, (255, 0, 255), -1)
+                cv2.putText(img_vis, "Reprojected", (int(u_proj) + 10, int(v_proj) + 20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+                
+                # Draw connection line
+                cv2.line(img_vis, (int(u_observed), int(v_observed)), 
+                        (int(u_proj), int(v_proj)), (255, 255, 0), 1)
+                
+                # Draw individual keypoints (KP3 and KP4) for reference
+                cv2.circle(img_vis, (int(kp3['x']), int(kp3['y'])), 4, (0, 255, 255), 2)
+                cv2.circle(img_vis, (int(kp4['x']), int(kp4['y'])), 4, (0, 255, 255), 2)
+                cv2.putText(img_vis, "KP3", (int(kp3['x']) + 5, int(kp3['y']) - 5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+                cv2.putText(img_vis, "KP4", (int(kp4['x']) + 5, int(kp4['y']) - 5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+                
+                # Add info text
+                info_y = 30
+                cv2.putText(img_vis, f"View {idx}: {tri_data['description']}", (10, info_y),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.putText(img_vis, f"Reprojection Error: {error_pixel:.2f} px", (10, info_y + 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                cv2.putText(img_vis, f"3D Position: ({estimated_3d_position[0]:.4f}, {estimated_3d_position[1]:.4f}, {estimated_3d_position[2]:.4f})",
+                           (10, info_y + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                
+                # Save visualization
+                vis_filename = f"reprojection_validation_{idx}.jpg"
+                vis_path = os.path.join(result_dir, vis_filename)
+                cv2.imwrite(vis_path, img_vis)
+                
+                self.get_logger().info(f"    Error: {error_pixel:.2f} px, Saved: {vis_filename}")
+            
+            # Calculate overall statistics
+            if validation_results["reprojections"]:
+                errors = [r["error_pixels"] for r in validation_results["reprojections"]]
+                validation_results["statistics"] = {
+                    "mean_error_pixels": float(np.mean(errors)),
+                    "max_error_pixels": float(np.max(errors)),
+                    "min_error_pixels": float(np.min(errors)),
+                    "std_error_pixels": float(np.std(errors)),
+                    "num_views": len(errors)
+                }
+                
+                self.get_logger().info(f"\n📊 Reprojection validation statistics:")
+                self.get_logger().info(f"  Mean error: {validation_results['statistics']['mean_error_pixels']:.3f} px")
+                self.get_logger().info(f"  Max error:  {validation_results['statistics']['max_error_pixels']:.3f} px")
+                self.get_logger().info(f"  Min error:  {validation_results['statistics']['min_error_pixels']:.3f} px")
+                self.get_logger().info(f"  Std error:  {validation_results['statistics']['std_error_pixels']:.3f} px")
+            
+            # Save validation results
+            validation_path = os.path.join(result_dir, "reprojection_validation_result.json")
+            with open(validation_path, 'w') as f:
+                json.dump(validation_results, f, indent=2)
+            
+            self.get_logger().info(f"✅ Reprojection validation completed. Results saved to: {validation_path}")
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in reprojection validation: {e}")
+            self.get_logger().error(traceback.format_exc())
+    
+    def _generate_location_log_file(self, precise_result):
+        """
+        Generate location log file after successful correction.
+        
+        Args:
+            precise_result: Result from precise triangulation estimation
+        """
+        try:
+            if self.ur_robot is None:
+                self.get_logger().error('UR robot not connected. Cannot capture current state.')
+                return False
+            
+            # Get current TCP pose
+            current_tcp_pose = self.ur_robot.get_actual_tcp_pose()
+            if current_tcp_pose is None:
+                self.get_logger().error('Failed to get current TCP pose for location log')
+                return False
+            
+            # Get current joint positions
+            current_joint_positions = self.ur_robot.get_actual_joint_positions()
+            if current_joint_positions is None:
+                self.get_logger().error('Failed to get current joint positions for location log')
+                return False
+            
+            # Create location log data structure
+            location_log = {
+                "timestamp": datetime.now().isoformat(),
+                "status": "correct_success_completed",
+                "current_robot_state": {
+                    "tcp_pose": {
+                        "x": float(current_tcp_pose[0]),
+                        "y": float(current_tcp_pose[1]),
+                        "z": float(current_tcp_pose[2]),
+                        "rx": float(current_tcp_pose[3]),
+                        "ry": float(current_tcp_pose[4]),
+                        "rz": float(current_tcp_pose[5])
+                    },
+                    "joint_positions": {
+                        "joint_1": float(current_joint_positions[0]),
+                        "joint_2": float(current_joint_positions[1]),
+                        "joint_3": float(current_joint_positions[2]),
+                        "joint_4": float(current_joint_positions[3]),
+                        "joint_5": float(current_joint_positions[4]),
+                        "joint_6": float(current_joint_positions[5])
+                    },
+                    "joint_positions_degrees": {
+                        "joint_1": float(np.degrees(current_joint_positions[0])),
+                        "joint_2": float(np.degrees(current_joint_positions[1])),
+                        "joint_3": float(np.degrees(current_joint_positions[2])),
+                        "joint_4": float(np.degrees(current_joint_positions[3])),
+                        "joint_5": float(np.degrees(current_joint_positions[4])),
+                        "joint_6": float(np.degrees(current_joint_positions[5]))
+                    }
+                },
+                "estimated_position": {
+                    "x": float(precise_result['estimated_position']['x']),
+                    "y": float(precise_result['estimated_position']['y']),
+                    "z": float(precise_result['estimated_position']['z'])
+                },
+                "estimation_metadata": {
+                    "method": precise_result.get('method', 'unknown'),
+                    "num_views": precise_result.get('num_views', 0),
+                    "estimation_timestamp": precise_result.get('timestamp', 'unknown')
+                }
+            }
+            
+            # Save to result directory
+            result_dir = "../temp/ur15_precise_location_result"
+            os.makedirs(result_dir, exist_ok=True)
+            
+            log_filename = f"location_log_file.json"
+            log_path = os.path.join(result_dir, log_filename)
+            
+            with open(log_path, 'w') as f:
+                json.dump(location_log, f, indent=2, ensure_ascii=False)
+            
+            self.get_logger().info(f"✅ Location log file saved: {log_path}")
+            self.get_logger().info(f"📊 Current TCP position: ({current_tcp_pose[0]:.4f}, {current_tcp_pose[1]:.4f}, {current_tcp_pose[2]:.4f})")
+            self.get_logger().info(f"🎯 Estimated position: ({precise_result['estimated_position']['x']:.4f}, {precise_result['estimated_position']['y']:.4f}, {precise_result['estimated_position']['z']:.4f})")
+            
+            return True
+            
+        except Exception as e:
+            self.get_logger().error(f"Error generating location log file: {e}")
+            self.get_logger().error(traceback.format_exc())
+            return False
 
 
 def main(args=None):
@@ -1862,50 +2126,54 @@ def main(args=None):
                                 if correction_success:
                                     task_node.get_logger().info('✅ Tool orientation correction completed!')
                                     
-                                    # Perform Z-axis movement to estimated 3D position Z
-                                    task_node.get_logger().info('\n📏 Moving to estimated Z position...')
+                                    # Generate location log file after successful correction
+                                    task_node.get_logger().info('📝 Generating location log file...')
+                                    task_node._generate_location_log_file(precise_result)
                                     
-                                    # Get current TCP pose
-                                    current_tcp_pose = task_node.ur_robot.get_actual_tcp_pose()
-                                    if current_tcp_pose is not None:
-                                        current_z = current_tcp_pose[2]  # Adjust for tool length if needed
-                                        estimated_z = precise_result['estimated_position']['z']
-                                        target_z = estimated_z+0.2265-0.015
+                                    # # Perform Z-axis movement to estimated 3D position Z
+                                    # task_node.get_logger().info('\n📏 Moving to estimated Z position...')
+                                    
+                                    # # Get current TCP pose
+                                    # current_tcp_pose = task_node.ur_robot.get_actual_tcp_pose()
+                                    # if current_tcp_pose is not None:
+                                    #     current_z = current_tcp_pose[2]  # Adjust for tool length if needed
+                                    #     estimated_z = precise_result['estimated_position']['z']
+                                    #     target_z = estimated_z+0.2265-0.015
                                         
-                                        task_node.get_logger().info(f'Current TCP Z: {current_z:.6f} m')
-                                        task_node.get_logger().info(f'Target Z (estimated): {target_z:.6f} m')
-                                        task_node.get_logger().info(f'Z displacement: {target_z - current_z:.6f} m')
+                                    #     task_node.get_logger().info(f'Current TCP Z: {current_z:.6f} m')
+                                    #     task_node.get_logger().info(f'Target Z (estimated): {target_z:.6f} m')
+                                    #     task_node.get_logger().info(f'Z displacement: {target_z - current_z:.6f} m')
                                         
-                                        # Create target pose with only Z changed
-                                        target_pose_z = [
-                                            current_tcp_pose[0],  # X: keep current
-                                            current_tcp_pose[1],  # Y: keep current
-                                            target_z,             # Z: interpolated value
-                                            current_tcp_pose[3],  # Rx: keep current orientation
-                                            current_tcp_pose[4],  # Ry: keep current orientation
-                                            current_tcp_pose[5]   # Rz: keep current orientation
-                                        ]
+                                    #     # Create target pose with only Z changed
+                                    #     target_pose_z = [
+                                    #         current_tcp_pose[0],  # X: keep current
+                                    #         current_tcp_pose[1],  # Y: keep current
+                                    #         target_z,             # Z: interpolated value
+                                    #         current_tcp_pose[3],  # Rx: keep current orientation
+                                    #         current_tcp_pose[4],  # Ry: keep current orientation
+                                    #         current_tcp_pose[5]   # Rz: keep current orientation
+                                    #     ]
                                         
-                                        task_node.get_logger().info(f'Moving in Z direction to: {[f"{p:.4f}" for p in target_pose_z]}')
-                                        z_move_result = task_node.ur_robot.movel(target_pose_z, a=0.2, v=0.05)
-                                        time.sleep(2)
+                                    #     task_node.get_logger().info(f'Moving in Z direction to: {[f"{p:.4f}" for p in target_pose_z]}')
+                                    #     z_move_result = task_node.ur_robot.movel(target_pose_z, a=0.2, v=0.05)
+                                    #     time.sleep(2)
                                         
-                                        if z_move_result == 0:
-                                            task_node.get_logger().info('✅ Z-axis movement completed successfully!')
+                                    #     if z_move_result == 0:
+                                    #         task_node.get_logger().info('✅ Z-axis movement completed successfully!')
                                             
-                                            # Verify final position
-                                            final_tcp_pose = task_node.ur_robot.get_actual_tcp_pose()
-                                            if final_tcp_pose is not None:
-                                                task_node.get_logger().info(f'Final TCP pose: {[f"{p:.4f}" for p in final_tcp_pose]}')
-                                                task_node.get_logger().info(f'Final Z position: {final_tcp_pose[2]:.6f} m')
-                                                task_node.get_logger().info(f'Distance to estimated position: '
-                                                                          f'X={abs(final_tcp_pose[0] - precise_x):.6f} m, '
-                                                                          f'Y={abs(final_tcp_pose[1] - precise_y):.6f} m, '
-                                                                          f'Z={abs(final_tcp_pose[2] - estimated_z):.6f} m')
-                                        else:
-                                            task_node.get_logger().warn(f'⚠️ Z-axis movement failed with result code: {z_move_result}')
-                                    else:
-                                        task_node.get_logger().warn('⚠️ Failed to get current TCP pose for Z-axis movement.')
+                                    #         # Verify final position
+                                    #         final_tcp_pose = task_node.ur_robot.get_actual_tcp_pose()
+                                    #         if final_tcp_pose is not None:
+                                    #             task_node.get_logger().info(f'Final TCP pose: {[f"{p:.4f}" for p in final_tcp_pose]}')
+                                    #             task_node.get_logger().info(f'Final Z position: {final_tcp_pose[2]:.6f} m')
+                                    #             task_node.get_logger().info(f'Distance to estimated position: '
+                                    #                                       f'X={abs(final_tcp_pose[0] - precise_x):.6f} m, '
+                                    #                                       f'Y={abs(final_tcp_pose[1] - precise_y):.6f} m, '
+                                    #                                       f'Z={abs(final_tcp_pose[2] - estimated_z):.6f} m')
+                                    #     else:
+                                    #         task_node.get_logger().warn(f'⚠️ Z-axis movement failed with result code: {z_move_result}')
+                                    # else:
+                                    #     task_node.get_logger().warn('⚠️ Failed to get current TCP pose for Z-axis movement.')
                                 else:
                                     task_node.get_logger().warn('⚠️ Tool orientation correction failed.')
                             else:
