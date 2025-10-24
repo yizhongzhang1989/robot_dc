@@ -904,19 +904,11 @@ class URLocationTask(Node):
         Estimate 3D position of a keypoint in base frame.
         """
         try:
-            # Step 1: Undistort the pixel coordinates
+            # Step 1: Undistort the pixel coordinates and get normalized image coordinates
+            # Note: When P=None, cv2.undistortPoints returns normalized coordinates directly
             pixel_point = np.array([[[pixel_u, pixel_v]]], dtype=np.float32)
-            undistorted_point = cv2.undistortPoints(pixel_point, camera_matrix, dist_coeffs, P=camera_matrix)
-            u_undist, v_undist = undistorted_point[0, 0]
-            
-            # Step 2: Convert to normalized image coordinates
-            fx = camera_matrix[0, 0]
-            fy = camera_matrix[1, 1]
-            cx = camera_matrix[0, 2]
-            cy = camera_matrix[1, 2]
-            
-            x_norm = (u_undist - cx) / fx
-            y_norm = (v_undist - cy) / fy
+            undistorted_point = cv2.undistortPoints(pixel_point, camera_matrix, dist_coeffs, P=None)
+            x_norm, y_norm = undistorted_point[0, 0]
             
             # Ray direction in camera frame (normalized)
             ray_cam = np.array([x_norm, y_norm, 1.0])
