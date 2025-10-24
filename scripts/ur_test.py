@@ -228,8 +228,13 @@ def main():
         #     print(f"Actual joint positions (rad): {actual_joints}")
         #     print(f"Actual joint positions (deg): {[j*180/3.1415926 for j in actual_joints]}")
 
+        # # # 5.1 Test movel function
+        # actual_pose = robot.get_actual_tcp_pose()
+        # actual_pose[0] -= 0.05  # Move 5 cm in X direction
+        # res = robot.movel(actual_pose, a=0.2, v=0.1)
+
         # # 6. move tcp
-        # res = robot.move_tcp([0, 0.1, 0.25, 0, 0, 0], a=0.5, v=0.2)
+        # res = robot.move_tcp([0.05, 0.0, 0.0, 0.0, 0.0, 0.0], a=0.2, v=0.1)
         # print(f"Move TCP result: {res}")
         # time.sleep(1)
 

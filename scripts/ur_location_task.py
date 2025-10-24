@@ -15,13 +15,7 @@ Features:
 - Precise triangulation using 5 viewpoints (x±5cm, y±5cm, z-5cm)
 - Multi-view 3D reconstruction for improved accuracy
 
-Start position:
-- -1.9282409153380335
-- -0.7752679586410522
-- -2.0096360645689906
-- 1.5786821842193604
-- 0.7375568747520447
-- -0.822796646748678
+Start position: -0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822
 
 Directories:
 - Data: ../temp/ur15_location_task_data/ (coarse estimation)
@@ -45,17 +39,26 @@ import cv2
 import time
 import threading
 import math
-import requests
 import traceback
 
+# Import the FFPPWebAPIKeypointTracker
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vision'))
+from core.ffpp_webapi_keypoint_tracker import FFPPWebAPIKeypointTracker
+
 class URLocationTask(Node):
-    def __init__(self, robot_ip="192.168.1.15", robot_port=30002):
+    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, api_url="http://10.172.151.12:8001"):
         super().__init__('ur_location_task')
         
         # UR15 Robot connection for reading actual pose and joints
         self.robot_ip = robot_ip
         self.robot_port = robot_port
         self.ur_robot = None
+        
+        # FlowFormer++ API tracker
+        self.api_url = api_url
+        self.tracker = None
+        self._initialize_tracker()
         
         # Current camera image
         self.latest_image = None
@@ -77,6 +80,21 @@ class URLocationTask(Node):
         
         # Connect to UR robot for reading actual data
         self._connect_to_robot()
+    
+    def _initialize_tracker(self):
+        """Initialize the FlowFormer++ Web API tracker"""
+        try:
+            self.get_logger().info(f'Initializing FlowFormer++ API tracker at {self.api_url}...')
+            self.tracker = FFPPWebAPIKeypointTracker(
+                service_url=self.api_url,
+                timeout=60,
+                image_format="jpg",
+                jpeg_quality=95
+            )
+            self.get_logger().info('✓ FlowFormer++ API tracker initialized successfully')
+        except Exception as e:
+            self.get_logger().error(f'Failed to initialize tracker: {e}')
+            self.tracker = None
     
     def _connect_to_robot(self):
         """Connect to UR robot for reading actual pose and joint data"""
@@ -269,9 +287,15 @@ class URLocationTask(Node):
             return False
     
     def cleanup(self):
-        """Clean up robot connection"""
+        """Clean up robot connection and tracker"""
         if self.ur_robot is not None:
             self.ur_robot.close()
+        if self.tracker is not None:
+            # Clean up any remaining references
+            try:
+                self.tracker.remove_reference_image()
+            except:
+                pass
     
     def estimate_handles_xy_coordinates(self, 
                                         ref_img,
@@ -284,12 +308,15 @@ class URLocationTask(Node):
                                         retry_shift=0.01,
                                         max_attempts=2):
         """
-        Estimate handles xy coordinates (keypoints 3 and 4) using FlowFormer++ API.
+        Estimate handles xy coordinates (keypoints 3 and 4) using FlowFormer++ API tracker.
         """
         try:
+            # Check if tracker is available
+            if self.tracker is None:
+                self.get_logger().error('FlowFormer++ tracker not available')
+                return None
                         
             # Fixed parameters
-            api_url = "http://msraig-ubuntu-2:8001"
             camera_params_dir = "../temp/ur15_cam_calibration_result/ur15_camera_parameters"
             
             # Retry tracking
@@ -366,31 +393,27 @@ class URLocationTask(Node):
             ref_end2base = np.array(ref_pose_data['end2base'])
             self.get_logger().info("✓ Loaded reference pose")
             
-            # Setup FlowFormer++ API session
-            self.get_logger().info(f"\n🌐 Connecting to FlowFormer++ API at {api_url}...")
-            session = requests.Session()
-            session.timeout = 60
-            
-            # Encode images to base64
-            def encode_image_to_base64(image_path):
-                with open(image_path, 'rb') as f:
-                    image_data = f.read()
-                    return __import__('base64').b64encode(image_data).decode('utf-8')
-            
-            # Set reference image (only once, outside the retry loop)
+            # Set reference image using tracker (only once, outside the retry loop)
             self.get_logger().info("\n📤 Setting reference image with keypoints...")
-            ref_img_base64 = encode_image_to_base64(ref_img_path)
             
-            ref_data = {
-                'image_base64': ref_img_base64,
-                'keypoints': ref_keypoints_list,
-                'image_name': 'ur_location_task_reference'
-            }
+            # Load reference image
+            ref_img_bgr = cv2.imread(ref_img_path)
+            if ref_img_bgr is None:
+                self.get_logger().error(f"Failed to load reference image: {ref_img_path}")
+                return None
             
-            response = session.post(f"{api_url}/set_reference_image", json=ref_data)
+            # Convert BGR to RGB for tracker
+            ref_img_rgb = cv2.cvtColor(ref_img_bgr, cv2.COLOR_BGR2RGB)
             
-            if response.status_code != 200 or not response.json().get('success', False):
-                self.get_logger().error(f"Failed to set reference image: {response.text}")
+            # Set reference image using tracker
+            set_result = self.tracker.set_reference_image(
+                image=ref_img_rgb,
+                keypoints=ref_keypoints_list,
+                image_name='ur_location_task_reference'
+            )
+            
+            if not set_result.get('success', False):
+                self.get_logger().error(f"Failed to set reference image: {set_result.get('error', 'Unknown error')}")
                 return None
             
             self.get_logger().info("✓ Reference image set successfully")
@@ -423,26 +446,36 @@ class URLocationTask(Node):
                 
                 # Track keypoints in test image
                 self.get_logger().info("\n📤 Tracking keypoints in test image...")
-                test_img_base64 = encode_image_to_base64(test_img_path)
                 
-                track_data = {
-                    'image_base64': test_img_base64,
-                    'reference_name': 'ur_location_task_reference',
-                    'bidirectional': True,
-                    'return_flow': False
-                }
-                
-                response = session.post(f"{api_url}/track_keypoints", json=track_data)
-                
-                if response.status_code != 200 or not response.json().get('success', False):
-                    self.get_logger().error(f"Failed to track keypoints: {response.text}")
+                # Load test image
+                test_img_bgr = cv2.imread(test_img_path)
+                if test_img_bgr is None:
+                    self.get_logger().error(f"Failed to load test image: {test_img_path}")
                     attempt_info["status"] = "failed"
-                    attempt_info["failure_reason"] = "API call failed: track_keypoints"
+                    attempt_info["failure_reason"] = "Failed to load test image"
                     retry_log["attempts"].append(attempt_info)
                     self._save_retry_log(result_dir, retry_log)
                     return None
                 
-                tracking_result = response.json().get('result', {})
+                # Convert BGR to RGB for tracker
+                test_img_rgb = cv2.cvtColor(test_img_bgr, cv2.COLOR_BGR2RGB)
+                
+                # Track keypoints using tracker
+                tracking_result = self.tracker.track_keypoints(
+                    target_image=test_img_rgb,
+                    reference_name='ur_location_task_reference',
+                    bidirectional=True,
+                    return_flow=False
+                )
+                
+                if not tracking_result.get('success', False):
+                    self.get_logger().error(f"Failed to track keypoints: {tracking_result.get('error', 'Unknown error')}")
+                    attempt_info["status"] = "failed"
+                    attempt_info["failure_reason"] = "Tracker call failed: track_keypoints"
+                    retry_log["attempts"].append(attempt_info)
+                    self._save_retry_log(result_dir, retry_log)
+                    return None
+                
                 tracked_keypoints = tracking_result.get('tracked_keypoints', [])
                 
                 self.get_logger().info(f"✓ Tracked {len(tracked_keypoints)} keypoints")
@@ -828,12 +861,25 @@ class URLocationTask(Node):
             
             self.get_logger().info(f"\n💾 Saved estimation result to: {output_path}")
             
+            # Clean up: remove reference image from tracker
+            try:
+                cleanup_result = self.tracker.remove_reference_image('ur_location_task_reference')
+                if cleanup_result.get('success', False):
+                    self.get_logger().info("✓ Reference image cleaned up successfully")
+            except Exception as e:
+                self.get_logger().warn(f"Failed to cleanup reference image: {e}")
+            
             return result
             
         except Exception as e:
             self.get_logger().error(f"Error estimating handles xy coordinates: {str(e)}")
             
             self.get_logger().error(traceback.format_exc())
+            # Clean up: remove reference image from tracker even on error
+            try:
+                self.tracker.remove_reference_image('ur_location_task_reference')
+            except:
+                pass
             return None
     
     def _save_retry_log(self, result_dir, retry_log):
@@ -1029,91 +1075,21 @@ class URLocationTask(Node):
             # Format: (description, [dx, dy, dz, drx, dry, drz])
             capture_positions = [
                 ("x+5cm", [0.05, 0, 0, 0, 0, 0]),
-                ("x-5cm", [-0.05, 0, 0, 0, 0, 0]),
+                ("z+2cm", [0, 0, 0.02, 0, 0, 0]),
                 ("y+5cm", [0, 0.05, 0, 0, 0, 0]),
                 ("y-5cm", [0, -0.05, 0, 0, 0, 0]),
                 ("z-5cm", [0, 0, -0.05, 0, 0, 0])
             ]
             
-            # Capture images and poses at each position
-            captured_data = []
-            
-            for idx, (desc, offset) in enumerate(capture_positions):
-                self.get_logger().info(f"\n📸 Capturing position {idx}: {desc}")
+            # Check tracker availability and setup
+            if self.tracker is None:
+                self.get_logger().error('FlowFormer++ tracker not available')
+                return None
                 
-                # Calculate target pose
-                target_pose = [
-                    base_pose[0] + offset[0],
-                    base_pose[1] + offset[1],
-                    base_pose[2] + offset[2],
-                    base_pose[3] + offset[3],
-                    base_pose[4] + offset[4],
-                    base_pose[5] + offset[5]
-                ]
-                
-                # Move to target position
-                self.get_logger().info(f"Moving to {desc}: {[f'{p:.4f}' for p in target_pose]}")
-                result = self.ur_robot.movel(target_pose, a=0.5, v=0.2)
-                
-                if result != 0:
-                    self.get_logger().error(f"Failed to move to position {idx} ({desc})")
-                    # Try to return to base position
-                    self.ur_robot.movel(base_pose, a=0.5, v=0.2)
-                    return None
-                
-                # Wait for robot to settle
-                time.sleep(2.0)
-                
-                # Capture image and pose using the unified function
-                metadata = {
-                    "description": desc,
-                    "offset": offset
-                }
-                
-                capture_success = self.capture_image_and_pose(
-                    save_dir=data_dir,
-                    img_filename=f"{idx}.jpg",
-                    pose_filename=f"{idx}.json",
-                    metadata=metadata
-                )
-                
-                if not capture_success:
-                    self.get_logger().error(f"Failed to capture data at position {idx} ({desc})")
-                    # Try to return to base position
-                    self.ur_robot.movel(base_pose, a=0.5, v=0.2)
-                    return None
-                
-                # Wait for image stabilization
-                time.sleep(2)
-                
-                # Store captured file paths
-                image_path = os.path.join(data_dir, f"{idx}.jpg")
-                pose_path = os.path.join(data_dir, f"{idx}.json")
-                
-                captured_data.append({
-                    "index": idx,
-                    "description": desc,
-                    "image_path": image_path,
-                    "pose_path": pose_path,
-                    "offset": offset
-                })
-            
-            # Return to base position
-            self.get_logger().info("\n↩️  Returning to base position...")
-            self.ur_robot.movel(base_pose, a=0.5, v=0.2)
-            time.sleep(1.0)
-            
-            self.get_logger().info(f"\n✅ Successfully captured {len(captured_data)} images")
-            
-            # Now perform triangulation estimation using the captured data
-            self.get_logger().info("\n📐 Performing triangulation estimation...")
-            
-            # Call triangulation API for each captured image
-            api_url = "http://msraig-ubuntu-2:8001"
             camera_params_dir = "../temp/ur15_cam_calibration_result/ur15_camera_parameters"
             
             # Load reference keypoints
-            self.get_logger().info("Loading reference keypoints...")
+            self.get_logger().info("\n📖 Loading reference keypoints...")
             with open(ref_keypoints, 'r') as f:
                 ref_keypoints_data = json.load(f)
             
@@ -1141,28 +1117,28 @@ class URLocationTask(Node):
             
             self.get_logger().info(f"✓ Loaded {len(ref_keypoints_list)} reference keypoints")
             
-            # Helper function to encode image to base64
-            def encode_image_to_base64(image_path):
-                with open(image_path, 'rb') as f:
-                    image_data = f.read()
-                    return __import__('base64').b64encode(image_data).decode('utf-8')
-            
-            # Set reference image
+            # Set reference image using tracker (before capture loop)
             try:
-                # Set the reference image with keypoints
                 self.get_logger().info("Setting reference image with keypoints...")
-                ref_img_base64 = encode_image_to_base64(ref_img)
                 
-                ref_data = {
-                    'image_base64': ref_img_base64,
-                    'keypoints': ref_keypoints_list,
-                    'image_name': 'ur_precise_location_reference'
-                }
+                # Load reference image
+                ref_img_bgr = cv2.imread(ref_img)
+                if ref_img_bgr is None:
+                    self.get_logger().error(f"Failed to load reference image: {ref_img}")
+                    return None
                 
-                response = requests.post(f"{api_url}/set_reference_image", json=ref_data, timeout=30)
+                # Convert BGR to RGB for tracker
+                ref_img_rgb = cv2.cvtColor(ref_img_bgr, cv2.COLOR_BGR2RGB)
                 
-                if response.status_code != 200 or not response.json().get('success', False):
-                    self.get_logger().error(f"Failed to set reference image: {response.text}")
+                # Set reference image using tracker
+                set_result = self.tracker.set_reference_image(
+                    image=ref_img_rgb,
+                    keypoints=ref_keypoints_list,
+                    image_name='ur_precise_location_reference'
+                )
+                
+                if not set_result.get('success', False):
+                    self.get_logger().error(f"Failed to set reference image: {set_result.get('error', 'Unknown error')}")
                     return None
                 
                 self.get_logger().info("✓ Reference image set successfully")
@@ -1172,56 +1148,117 @@ class URLocationTask(Node):
                 self.get_logger().error(traceback.format_exc())
                 return None
             
-            # Track keypoints across all images
+            # Capture images, poses and track keypoints (integrated loop)
             triangulation_data = []
             
-            for capture_info in captured_data:
-                idx = capture_info["index"]
-                img_path = capture_info["image_path"]
+            for idx, (desc, offset) in enumerate(capture_positions):
+                self.get_logger().info(f"\n📸 Position {idx}: {desc}")
                 
-                self.get_logger().info(f"\nTracking keypoints in image {idx}...")
+                # Calculate target pose
+                target_pose = [
+                    base_pose[0] + offset[0],
+                    base_pose[1] + offset[1],
+                    base_pose[2] + offset[2],
+                    base_pose[3] + offset[3],
+                    base_pose[4] + offset[4],
+                    base_pose[5] + offset[5]
+                ]
+                
+                # Move to target position
+                self.get_logger().info(f"  Moving to {desc}: {[f'{p:.4f}' for p in target_pose]}")
+                result = self.ur_robot.movel(target_pose, a=0.5, v=0.2)
+                
+                if result != 0:
+                    self.get_logger().error(f"  Failed to move to position {idx} ({desc})")
+                    # Try to return to base position
+                    self.ur_robot.movel(base_pose, a=0.5, v=0.2)
+                    return None
+                
+                # Wait for robot to settle
+                time.sleep(2.0)
+                
+                # Capture image and pose
+                metadata = {
+                    "description": desc,
+                    "offset": offset
+                }
+                
+                capture_success = self.capture_image_and_pose(
+                    save_dir=data_dir,
+                    img_filename=f"{idx}.jpg",
+                    pose_filename=f"{idx}.json",
+                    metadata=metadata
+                )
+                
+                if not capture_success:
+                    self.get_logger().error(f"  Failed to capture data at position {idx} ({desc})")
+                    # Try to return to base position
+                    self.ur_robot.movel(base_pose, a=0.5, v=0.2)
+                    return None
+                
+                # Wait for image stabilization
+                time.sleep(1.0)
+                
+                # Immediately track keypoints in the captured image
+                self.get_logger().info(f"  Tracking keypoints in image {idx}...")
                 
                 try:
-                    # Encode image to base64
-                    img_base64 = encode_image_to_base64(img_path)
-                    
-                    track_data = {
-                        'image_base64': img_base64,
-                        'reference_name': 'ur_precise_location_reference',
-                        'bidirectional': False,  # No need for bidirectional check here
-                        'return_flow': False
-                    }
-                    
-                    response = requests.post(f"{api_url}/track_keypoints", json=track_data, timeout=30)
-                    
-                    if response.status_code != 200 or not response.json().get('success', False):
-                        self.get_logger().error(f"Failed to track keypoints in image {idx}: {response.text if response.status_code == 200 else response.status_code}")
+                    # Read the just-captured image
+                    image_path = os.path.join(data_dir, f"{idx}.jpg")
+                    img_bgr = cv2.imread(image_path)
+                    if img_bgr is None:
+                        self.get_logger().error(f"  Failed to load captured image: {image_path}")
+                        self.get_logger().warn(f"  Skipping this viewpoint...")
                         continue
                     
-                    tracking_result = response.json().get('result', {})
+                    # Convert BGR to RGB for tracker
+                    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                    
+                    # Track keypoints using tracker
+                    tracking_result = self.tracker.track_keypoints(
+                        target_image=img_rgb,
+                        reference_name='ur_precise_location_reference',
+                        bidirectional=False,  # No need for bidirectional check here
+                        return_flow=False
+                    )
+                    
+                    if not tracking_result.get('success', False):
+                        self.get_logger().error(f"  Failed to track keypoints in image {idx}: {tracking_result.get('error', 'Unknown error')}")
+                        self.get_logger().warn(f"  Skipping this viewpoint...")
+                        continue
+                    
                     tracked_keypoints = tracking_result.get('tracked_keypoints', [])
                     
                     if len(tracked_keypoints) < 4:
-                        self.get_logger().error(f"Not enough keypoints tracked in image {idx}")
+                        self.get_logger().error(f"  Not enough keypoints tracked in image {idx}")
+                        self.get_logger().warn(f"  Skipping this viewpoint...")
                         continue
                     
                     # Extract KP3 and KP4 (indices 2 and 3)
                     kp3 = tracked_keypoints[2]
                     kp4 = tracked_keypoints[3]
                     
+                    # Store successful tracking result
+                    pose_path = os.path.join(data_dir, f"{idx}.json")
                     triangulation_data.append({
                         "index": idx,
-                        "description": capture_info["description"],
-                        "pose_path": capture_info["pose_path"],
+                        "description": desc,
+                        "pose_path": pose_path,
                         "kp3": kp3,
                         "kp4": kp4
                     })
                     
-                    self.get_logger().info(f"✓ Image {idx}: KP3=({kp3['x']:.1f}, {kp3['y']:.1f}), KP4=({kp4['x']:.1f}, {kp4['y']:.1f})")
+                    self.get_logger().info(f"  ✓ Tracked: KP3=({kp3['x']:.1f}, {kp3['y']:.1f}), KP4=({kp4['x']:.1f}, {kp4['y']:.1f})")
                     
                 except Exception as e:
-                    self.get_logger().error(f"Error tracking keypoints in image {idx}: {e}")
+                    self.get_logger().error(f"  Error tracking keypoints in image {idx}: {e}")
+                    self.get_logger().warn(f"  Skipping this viewpoint...")
                     continue
+            
+            # Return to base position
+            self.get_logger().info("\n↩️  Returning to base position...")
+            self.ur_robot.movel(base_pose, a=0.5, v=0.2)
+            time.sleep(1.0)
             
             if len(triangulation_data) < 2:
                 self.get_logger().error("Not enough valid views for triangulation (need at least 2)")
@@ -1338,11 +1375,24 @@ class URLocationTask(Node):
             self.get_logger().info("✅ Precise Triangulation Estimation Complete")
             self.get_logger().info("=" * 80)
             
+            # Clean up: remove reference image from tracker
+            try:
+                cleanup_result = self.tracker.remove_reference_image('ur_precise_location_reference')
+                if cleanup_result.get('success', False):
+                    self.get_logger().info("✓ Reference image cleaned up successfully")
+            except Exception as e:
+                self.get_logger().warn(f"Failed to cleanup reference image: {e}")
+            
             return result
             
         except Exception as e:
             self.get_logger().error(f"Error in precise triangulation estimation: {e}")
             self.get_logger().error(traceback.format_exc())
+            # Clean up: remove reference image from tracker even on error
+            try:
+                self.tracker.remove_reference_image('ur_precise_location_reference')
+            except:
+                pass
             return None
 
     def tcp_normalize(self, x_axis=[1, 0, 0], y_axis=[0, -1, 0], z_axis=[0, 0, -1], a=0.5, v=0.2):
@@ -1682,11 +1732,13 @@ def main(args=None):
     # You can customize these parameters
     robot_ip = "192.168.1.15"  # UR robot IP address
     robot_port = 30002          # UR robot port
+    api_url = "http://10.172.151.12:8001"  # FlowFormer++ API URL
     
     try:
         task_node = URLocationTask(
             robot_ip=robot_ip,
-            robot_port=robot_port
+            robot_port=robot_port,
+            api_url=api_url
         )
         
         # Use multi-threaded executor to handle callbacks
@@ -1809,6 +1861,51 @@ def main(args=None):
                                 
                                 if correction_success:
                                     task_node.get_logger().info('✅ Tool orientation correction completed!')
+                                    
+                                    # Perform Z-axis movement to estimated 3D position Z
+                                    task_node.get_logger().info('\n📏 Moving to estimated Z position...')
+                                    
+                                    # Get current TCP pose
+                                    current_tcp_pose = task_node.ur_robot.get_actual_tcp_pose()
+                                    if current_tcp_pose is not None:
+                                        current_z = current_tcp_pose[2]  # Adjust for tool length if needed
+                                        estimated_z = precise_result['estimated_position']['z']
+                                        target_z = estimated_z+0.2265-0.015
+                                        
+                                        task_node.get_logger().info(f'Current TCP Z: {current_z:.6f} m')
+                                        task_node.get_logger().info(f'Target Z (estimated): {target_z:.6f} m')
+                                        task_node.get_logger().info(f'Z displacement: {target_z - current_z:.6f} m')
+                                        
+                                        # Create target pose with only Z changed
+                                        target_pose_z = [
+                                            current_tcp_pose[0],  # X: keep current
+                                            current_tcp_pose[1],  # Y: keep current
+                                            target_z,             # Z: interpolated value
+                                            current_tcp_pose[3],  # Rx: keep current orientation
+                                            current_tcp_pose[4],  # Ry: keep current orientation
+                                            current_tcp_pose[5]   # Rz: keep current orientation
+                                        ]
+                                        
+                                        task_node.get_logger().info(f'Moving in Z direction to: {[f"{p:.4f}" for p in target_pose_z]}')
+                                        z_move_result = task_node.ur_robot.movel(target_pose_z, a=0.2, v=0.05)
+                                        time.sleep(2)
+                                        
+                                        if z_move_result == 0:
+                                            task_node.get_logger().info('✅ Z-axis movement completed successfully!')
+                                            
+                                            # Verify final position
+                                            final_tcp_pose = task_node.ur_robot.get_actual_tcp_pose()
+                                            if final_tcp_pose is not None:
+                                                task_node.get_logger().info(f'Final TCP pose: {[f"{p:.4f}" for p in final_tcp_pose]}')
+                                                task_node.get_logger().info(f'Final Z position: {final_tcp_pose[2]:.6f} m')
+                                                task_node.get_logger().info(f'Distance to estimated position: '
+                                                                          f'X={abs(final_tcp_pose[0] - precise_x):.6f} m, '
+                                                                          f'Y={abs(final_tcp_pose[1] - precise_y):.6f} m, '
+                                                                          f'Z={abs(final_tcp_pose[2] - estimated_z):.6f} m')
+                                        else:
+                                            task_node.get_logger().warn(f'⚠️ Z-axis movement failed with result code: {z_move_result}')
+                                    else:
+                                        task_node.get_logger().warn('⚠️ Failed to get current TCP pose for Z-axis movement.')
                                 else:
                                     task_node.get_logger().warn('⚠️ Tool orientation correction failed.')
                             else:
