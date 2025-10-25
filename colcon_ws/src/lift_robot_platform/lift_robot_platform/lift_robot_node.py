@@ -2,6 +2,7 @@
 """
 Lift Robot Platform ROS2 Node
 Controls the lift using relay pulse (flash) commands.
+Includes high-frequency closed-loop control for smooth height tracking.
 """
 import rclpy
 from rclpy.node import Node
@@ -13,6 +14,17 @@ import logging
 
 # Configure root logging level
 logging.basicConfig(level=logging.INFO)
+
+# ═══════════════════════════════════════════════════════════════
+# Control Loop Parameters
+# ═══════════════════════════════════════════════════════════════
+CONTROL_RATE = 0.1              # Control loop runs at 10 Hz (every 0.1s)
+COMMAND_INTERVAL = 1.0          # Send Modbus command at most every 1.0s (reduced frequency)
+POSITION_TOLERANCE = 2.0        # Consider target reached within ±2mm
+CHANGE_THRESHOLD = 3.0          # Send command if target changed by >3mm
+MAX_STEP = 10.0                 # Limit each position step to ±10mm
+LONG_ERROR_THRESHOLD = 20.0     # Errors >20mm = far from target, reduce commands
+CONTROL_ENABLED = True          # Master enable for closed-loop control
 
 
 class LiftRobotNode(Node):
@@ -33,6 +45,16 @@ class LiftRobotNode(Node):
             f"Initialize lift platform controller - device_id: {self.device_id} (serial handled by modbus_driver)"
         )
         
+        # ═══════════════════════════════════════════════════════════════
+        # Control Loop State Variables
+        # ═══════════════════════════════════════════════════════════════
+        self.current_height = 0.0           # Current height from sensor (mm)
+        self.target_height = 0.0            # Target height setpoint (mm)
+        self.last_sent_height = 0.0         # Last commanded height (mm)
+        self.last_command_time = self.get_clock().now()  # Time of last Modbus command
+        self.control_enabled = False        # Enable/disable closed-loop control
+        self.control_mode = 'manual'        # 'manual' or 'auto' (height control)
+        
         # Create controller
         self.controller = LiftRobotController(
             device_id=self.device_id,
@@ -48,6 +70,14 @@ class LiftRobotNode(Node):
             10
         )
         
+        # Subscribe to draw-wire sensor for closed-loop height control
+        self.sensor_subscription = self.create_subscription(
+            String,
+            '/draw_wire_sensor/data',
+            self.sensor_callback,
+            10
+        )
+        
         # Publish status topic
         self.status_publisher = self.create_publisher(
             String,
@@ -57,6 +87,9 @@ class LiftRobotNode(Node):
         
         # Status publish timer
         self.status_timer = self.create_timer(1.0, self.publish_status)
+        
+        # High-frequency control loop timer
+        self.control_timer = self.create_timer(CONTROL_RATE, self.control_loop)
         
         # Initialize lift platform
         self.controller.initialize()
@@ -76,6 +109,11 @@ class LiftRobotNode(Node):
             
             if command == 'stop':
                 self.controller.stop(seq_id=seq_id)
+                # Also disable auto control if active
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual stop - auto control disabled")
                 
             elif command == 'up':
                 self.controller.up(seq_id=seq_id)
@@ -94,6 +132,20 @@ class LiftRobotNode(Node):
             elif command == 'stop_timed':
                 self.controller.stop_timed(seq_id=seq_id)
                 
+            elif command == 'goto_height':
+                # New command: go to specific height with closed-loop control
+                target = command_data.get('target_height')
+                if target is not None:
+                    self.target_height = float(target)
+                    self.control_mode = 'auto'
+                    self.control_enabled = True
+                    # Reset tracking to allow immediate first command
+                    self.last_sent_height = self.current_height
+                    self.last_command_time = self.get_clock().now() - rclpy.duration.Duration(seconds=COMMAND_INTERVAL)
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Auto mode: target height = {self.target_height:.2f} mm")
+                else:
+                    self.get_logger().warning(f"[SEQ {seq_id_str}] goto_height requires target_height field")
+                
             else:
                 self.get_logger().warning(f"Unknown command: {command}")
                 
@@ -102,12 +154,101 @@ class LiftRobotNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error handling command: {e}")
 
+    def sensor_callback(self, msg):
+        """Handle draw-wire sensor feedback for closed-loop control"""
+        try:
+            sensor_data = json.loads(msg.data)
+            # Use adjusted height (includes pushrod offset)
+            height = sensor_data.get('height')
+            if height is not None:
+                self.current_height = float(height)
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            self.get_logger().debug(f"Failed to parse sensor data: {e}")
+
+    def control_loop(self):
+        """
+        High-frequency control loop (10 Hz) with low-frequency command sending (1 Hz).
+        
+        Strategy:
+        1. Loop runs at 10 Hz for smooth calculation
+        2. Modbus commands sent at most every 1.0s to avoid serial port congestion
+        3. Far distance (>20mm) + correct direction → skip command entirely
+        4. Within tolerance → stop immediately
+        
+        This keeps CPU load low and Web UI responsive.
+        """
+        if not self.control_enabled or self.control_mode != 'auto':
+            return
+            
+        # Calculate position error and timing
+        now = self.get_clock().now()
+        dt = (now - self.last_command_time).nanoseconds * 1e-9
+        error = self.target_height - self.current_height
+        
+        # Priority 1: If within tolerance, STOP (only if enough time passed)
+        if abs(error) <= POSITION_TOLERANCE:
+            if dt >= COMMAND_INTERVAL and self.control_enabled:
+                self.controller.stop()
+                self.control_enabled = False
+                self.get_logger().info(
+                    f"[Control] ✅ TARGET REACHED: current={self.current_height:.2f}mm, "
+                    f"target={self.target_height:.2f}mm"
+                )
+                self.last_command_time = now
+            return
+        
+        # Priority 2: Far from target AND moving in correct direction → skip command
+        if abs(error) > LONG_ERROR_THRESHOLD:
+            # Determine if movement direction is correct
+            # Only check direction if we've sent at least one command and position has changed
+            if self.last_sent_height != 0 and abs(self.current_height - self.last_sent_height) > 0.5:
+                moving_up = self.current_height > self.last_sent_height
+                moving_down = self.current_height < self.last_sent_height
+                
+                target_is_above = error > 0
+                target_is_below = error < 0
+                
+                # If direction is correct, don't send command (let platform continue)
+                if (target_is_above and moving_up) or (target_is_below and moving_down):
+                    self.get_logger().debug(
+                        f"[Control] 🚀 Coasting: error={error:.2f}mm, direction OK"
+                    )
+                    return
+        
+        # Priority 3: Check time interval to throttle Modbus commands
+        if dt < COMMAND_INTERVAL:
+            return  # Too soon, wait for next interval
+        
+        # Priority 4: Send command (low frequency: ~1 Hz)
+        step = max(-MAX_STEP, min(MAX_STEP, error))
+        
+        if step > 0:  # Moving up
+            self.controller.up()
+            self.get_logger().info(
+                f"[Control] ⬆️  UP: current={self.current_height:.2f}mm, "
+                f"target={self.target_height:.2f}mm, error={error:.2f}mm"
+            )
+        elif step < 0:  # Moving down
+            self.controller.down()
+            self.get_logger().info(
+                f"[Control] ⬇️  DOWN: current={self.current_height:.2f}mm, "
+                f"target={self.target_height:.2f}mm, error={error:.2f}mm"
+            )
+        
+        # Update tracking variables
+        self.last_sent_height = self.current_height + step
+        self.last_command_time = now
+
     def publish_status(self):
         """Publish periodic status info"""
         status = {
             'node': 'lift_robot_platform',
             'device_id': self.device_id,
             'active_timers': len(self.controller.active_timers),
+            'control_enabled': self.control_enabled,
+            'control_mode': self.control_mode,
+            'current_height': self.current_height,
+            'target_height': self.target_height,
             'status': 'online'
         }
         

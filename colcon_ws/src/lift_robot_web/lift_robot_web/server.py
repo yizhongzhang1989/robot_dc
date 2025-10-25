@@ -107,7 +107,7 @@ class LiftRobotWeb(Node):
                 cmd = payload.get('command')
                 target = payload.get('target','platform')
                 duration = payload.get('duration')
-                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point'}
+                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height'}
                 if cmd not in allowed:
                     return JSONResponse({'error':'invalid command'}, status_code=400)
                 # Timed commands only meaningful for pushrod target currently
@@ -119,6 +119,12 @@ class LiftRobotWeb(Node):
                     point = payload.get('point')
                     if not point:
                         return JSONResponse({'error':'point field required for goto_point'}, status_code=400)
+                if cmd == 'goto_height':
+                    if target != 'platform':
+                        return JSONResponse({'error':'goto_height only valid for platform target'}, status_code=400)
+                    target_height = payload.get('target_height')
+                    if target_height is None:
+                        return JSONResponse({'error':'target_height field required for goto_height'}, status_code=400)
                 # Auto inject 5s for timed_up if not provided
                 if cmd == 'timed_up' and (duration is None):
                     duration = 3.5
@@ -135,6 +141,8 @@ class LiftRobotWeb(Node):
                 body = {'command': cmd}
                 if cmd == 'goto_point':
                     body['point'] = payload.get('point')
+                if cmd == 'goto_height':
+                    body['target_height'] = payload.get('target_height')
                 if duration is not None:
                     body['duration'] = duration
                 msg = String(); msg.data = json.dumps(body)
