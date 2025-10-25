@@ -68,12 +68,12 @@ class LiftRobotController(ModbusDevice):
         self.flash_relay(relay_address=0, duration_ms=100, seq_id=seq_id)
 
     def up(self, seq_id=None):
-        """Move up (pulse relay 1)."""
+        """Move up (pulse relay 1). Pulse width is fixed, velocity is hardware-defined."""
         self.node.get_logger().info(f"[SEQ {seq_id}] Up command (relay 1 pulse)")
         self.flash_relay(relay_address=1, duration_ms=100, seq_id=seq_id)
 
     def down(self, seq_id=None):
-        """Move down (pulse relay 2)."""
+        """Move down (pulse relay 2). Pulse width is fixed, velocity is hardware-defined."""
         self.node.get_logger().info(f"[SEQ {seq_id}] Down command (relay 2 pulse)")
         self.flash_relay(relay_address=2, duration_ms=100, seq_id=seq_id)
 

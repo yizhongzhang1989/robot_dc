@@ -19,11 +19,15 @@ logging.basicConfig(level=logging.INFO)
 # Control Loop Parameters
 # ═══════════════════════════════════════════════════════════════
 CONTROL_RATE = 0.1              # Control loop runs at 10 Hz (every 0.1s)
-COMMAND_INTERVAL = 1.0          # Send Modbus command at most every 1.0s (reduced frequency)
-POSITION_TOLERANCE = 2.0        # Consider target reached within ±2mm
-CHANGE_THRESHOLD = 3.0          # Send command if target changed by >3mm
+COMMAND_INTERVAL = 1.0          # Coarse control: 1.0s interval
+POSITION_TOLERANCE = 0.1        # Target reached within ±0.1mm (high precision)
+CHANGE_THRESHOLD = 0.5          # Send command if target changed by >0.5mm
 MAX_STEP = 10.0                 # Limit each position step to ±10mm
-LONG_ERROR_THRESHOLD = 20.0     # Errors >20mm = far from target, reduce commands
+LONG_ERROR_THRESHOLD = 20.0     # Errors >20mm = far from target
+APPROACH_THRESHOLD = 5.0        # Errors <5mm = near target, increase command frequency
+FINE_COMMAND_INTERVAL = 0.2     # Fine control: 0.2s interval (5Hz)
+PLATFORM_VELOCITY = 15.0        # Platform velocity: ~15mm/s (constant, hardware-defined)
+STOPPING_DISTANCE = 5.0         # Pre-stop distance: compensate for sensor+comm delay (~0.3s × 15mm/s)
 CONTROL_ENABLED = True          # Master enable for closed-loop control
 
 
@@ -167,15 +171,14 @@ class LiftRobotNode(Node):
 
     def control_loop(self):
         """
-        High-frequency control loop (10 Hz) with low-frequency command sending (1 Hz).
+        High-frequency control loop (10 Hz) with adaptive precision control.
         
-        Strategy:
-        1. Loop runs at 10 Hz for smooth calculation
-        2. Modbus commands sent at most every 1.0s to avoid serial port congestion
-        3. Far distance (>20mm) + correct direction → skip command entirely
-        4. Within tolerance → stop immediately
+        Three-stage control strategy:
+        1. Far (>20mm): Coarse control, 1Hz commands, allow coasting
+        2. Approaching (5-20mm): Medium control, 3Hz commands
+        3. Fine (<5mm): Precise control, 3Hz commands, small steps
         
-        This keeps CPU load low and Web UI responsive.
+        Target precision: ±0.1mm
         """
         if not self.control_enabled or self.control_mode != 'auto':
             return
@@ -184,55 +187,78 @@ class LiftRobotNode(Node):
         now = self.get_clock().now()
         dt = (now - self.last_command_time).nanoseconds * 1e-9
         error = self.target_height - self.current_height
+        abs_error = abs(error)
         
         # Priority 1: If within tolerance, STOP (only if enough time passed)
-        if abs(error) <= POSITION_TOLERANCE:
-            if dt >= COMMAND_INTERVAL and self.control_enabled:
+        if abs_error <= POSITION_TOLERANCE:
+            if dt >= FINE_COMMAND_INTERVAL and self.control_enabled:
                 self.controller.stop()
                 self.control_enabled = False
                 self.get_logger().info(
                     f"[Control] ✅ TARGET REACHED: current={self.current_height:.2f}mm, "
-                    f"target={self.target_height:.2f}mm"
+                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
                 )
                 self.last_command_time = now
             return
         
-        # Priority 2: Far from target AND moving in correct direction → skip command
-        if abs(error) > LONG_ERROR_THRESHOLD:
-            # Determine if movement direction is correct
-            # Only check direction if we've sent at least one command and position has changed
+        # Determine control stage and command interval
+        if abs_error > LONG_ERROR_THRESHOLD:
+            # Stage 1: Far from target - coarse control
+            command_interval = COMMAND_INTERVAL  # 1Hz
+            max_step = MAX_STEP
+            stage = "COARSE"
+            
+            # Skip command if moving in correct direction
             if self.last_sent_height != 0 and abs(self.current_height - self.last_sent_height) > 0.5:
                 moving_up = self.current_height > self.last_sent_height
                 moving_down = self.current_height < self.last_sent_height
                 
-                target_is_above = error > 0
-                target_is_below = error < 0
-                
-                # If direction is correct, don't send command (let platform continue)
-                if (target_is_above and moving_up) or (target_is_below and moving_down):
+                if (error > 0 and moving_up) or (error < 0 and moving_down):
                     self.get_logger().debug(
-                        f"[Control] 🚀 Coasting: error={error:.2f}mm, direction OK"
+                        f"[Control] 🚀 Coasting: error={error:.2f}mm, stage={stage}"
                     )
                     return
+                    
+        elif abs_error > APPROACH_THRESHOLD:
+            # Stage 2: Approaching target - medium control
+            command_interval = FINE_COMMAND_INTERVAL  # 5Hz
+            max_step = 5.0
+            stage = "APPROACH"
+        else:
+            # Stage 3: Near target - fine control with predictive stopping
+            command_interval = FINE_COMMAND_INTERVAL  # 5Hz
+            max_step = 2.0
+            stage = "FINE"
+            
+            # Predictive stop: if within stopping distance, send stop instead of move
+            if abs_error <= STOPPING_DISTANCE:
+                self.controller.stop()
+                self.control_enabled = False
+                self.get_logger().info(
+                    f"[Control] 🎯 PREDICTIVE STOP: current={self.current_height:.2f}mm, "
+                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
+                )
+                self.last_command_time = now
+                return
         
-        # Priority 3: Check time interval to throttle Modbus commands
-        if dt < COMMAND_INTERVAL:
+        # Priority 2: Check time interval to throttle commands
+        if dt < command_interval:
             return  # Too soon, wait for next interval
         
-        # Priority 4: Send command (low frequency: ~1 Hz)
-        step = max(-MAX_STEP, min(MAX_STEP, error))
+        # Priority 3: Send movement command (pulse width doesn't affect velocity)
+        step = max(-max_step, min(max_step, error))
         
-        if step > 0:  # Moving up
-            self.controller.up()
+        if step > 0.05:  # Moving up (threshold lowered for precision)
+            self.controller.up()  # Pulse width is constant (100ms), velocity is hardware-defined
             self.get_logger().info(
-                f"[Control] ⬆️  UP: current={self.current_height:.2f}mm, "
-                f"target={self.target_height:.2f}mm, error={error:.2f}mm"
+                f"[Control] ⬆️  {stage}: current={self.current_height:.2f}mm, "
+                f"target={self.target_height:.2f}mm, error={error:.3f}mm"
             )
-        elif step < 0:  # Moving down
-            self.controller.down()
+        elif step < -0.05:  # Moving down
+            self.controller.down()  # Pulse width is constant (100ms), velocity is hardware-defined
             self.get_logger().info(
-                f"[Control] ⬇️  DOWN: current={self.current_height:.2f}mm, "
-                f"target={self.target_height:.2f}mm, error={error:.2f}mm"
+                f"[Control] ⬇️  {stage}: current={self.current_height:.2f}mm, "
+                f"target={self.target_height:.2f}mm, error={error:.3f}mm"
             )
         
         # Update tracking variables
