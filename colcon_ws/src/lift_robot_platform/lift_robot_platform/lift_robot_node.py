@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 # ═══════════════════════════════════════════════════════════════
 CONTROL_RATE = 0.1              # Control loop runs at 10 Hz (every 0.1s)
 COMMAND_INTERVAL = 1.0          # Coarse control: 1.0s interval
-POSITION_TOLERANCE = 0.1        # Target reached within ±0.1mm (high precision)
+POSITION_TOLERANCE = 0.1        # Target reached within ±0.1mm (high precision) *actually 3.0
 CHANGE_THRESHOLD = 0.5          # Send command if target changed by >0.5mm
 MAX_STEP = 10.0                 # Limit each position step to ±10mm
 LONG_ERROR_THRESHOLD = 20.0     # Errors >20mm = far from target
@@ -207,17 +207,6 @@ class LiftRobotNode(Node):
             command_interval = COMMAND_INTERVAL  # 1Hz
             max_step = MAX_STEP
             stage = "COARSE"
-            
-            # Skip command if moving in correct direction
-            if self.last_sent_height != 0 and abs(self.current_height - self.last_sent_height) > 0.5:
-                moving_up = self.current_height > self.last_sent_height
-                moving_down = self.current_height < self.last_sent_height
-                
-                if (error > 0 and moving_up) or (error < 0 and moving_down):
-                    self.get_logger().debug(
-                        f"[Control] 🚀 Coasting: error={error:.2f}mm, stage={stage}"
-                    )
-                    return
                     
         elif abs_error > APPROACH_THRESHOLD:
             # Stage 2: Approaching target - medium control
@@ -239,6 +228,18 @@ class LiftRobotNode(Node):
                     f"target={self.target_height:.2f}mm, error={error:.3f}mm"
                 )
                 self.last_command_time = now
+                return
+
+        # Check if platform is moving in correct direction (coasting logic for ALL stages)
+        if self.last_sent_height != 0 and abs(self.current_height - self.last_sent_height) > 0.5:
+            moving_up = self.current_height > self.last_sent_height
+            moving_down = self.current_height < self.last_sent_height
+            
+            # Skip command if moving in correct direction
+            if (error > 0 and moving_up) or (error < 0 and moving_down):
+                self.get_logger().debug(
+                    f"[Control] 🚀 Coasting {stage}: error={error:.2f}mm, moving correctly"
+                )
                 return
         
         # Priority 2: Check time interval to throttle commands
