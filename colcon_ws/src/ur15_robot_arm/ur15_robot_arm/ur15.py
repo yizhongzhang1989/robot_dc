@@ -8,6 +8,26 @@ import socket
 import time
 import sys
 
+
+def safe_callback(func):
+    """
+    Decorator to make any callback function crash-proof.
+    Errors become warnings instead of system crashes.
+    
+    Usage:
+        @safe_callback
+        def my_callback():
+            return 1 / 0  # This would crash, but now prints warning
+    """
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as error:
+            print(f"⚠️  Warning: {func.__name__} failed - {error}")
+            return None
+    return wrapper
+
+
 class UR15Robot:
     def __init__(self, ip, port):
         """Initialize UR15 connection parameters"""
@@ -280,6 +300,320 @@ class UR15Robot:
         Stop freedrive mode
         """
         return self._send_command("end_freedrive_mode()")
+
+    # ------------------------------------------------------------
+    # Blocking Motion Commands (NEW)
+    # ------------------------------------------------------------
+    
+    def _wait_for_joint_motion(self, target_joints, threshold=0.01, timeout=30, 
+                               on_start=None, on_progress=None, on_done=None, on_error=None):
+        """
+        Internal helper: Wait for joint motion to complete with safe callbacks.
+        
+        Args:
+            target_joints: Target joint positions [j1, j2, j3, j4, j5, j6]
+            threshold: Position tolerance in radians (default: 0.01)
+            timeout: Maximum wait time in seconds
+            on_start: Callback when waiting starts - on_start(target_joints)
+            on_progress: Callback during motion - on_progress(current_joints, target_joints, distance)
+            on_done: Callback when motion completes - on_done(target_joints, final_joints)
+            on_error: Callback when motion fails - on_error(error_message)
+            
+        Returns:
+            True if motion completed successfully, False otherwise
+        """
+        # Make all callbacks safe (won't crash system)
+        if on_start:
+            on_start = safe_callback(on_start)
+        if on_progress:
+            on_progress = safe_callback(on_progress)
+        if on_done:
+            on_done = safe_callback(on_done)
+        if on_error:
+            on_error = safe_callback(on_error)
+        
+        # Call start callback
+        if on_start:
+            on_start(target_joints)
+        
+        start_time = time.time()
+        
+        while True:
+            # Check timeout
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                error_msg = f"Joint motion timeout after {timeout}s"
+                print(f"⏰ {error_msg}")
+                if on_error:
+                    on_error(error_msg)
+                return False
+            
+            # Get current joint positions
+            try:
+                current_joints = self.get_actual_joint_positions()
+                if current_joints is None:
+                    print("⚠️  Warning: Cannot read joint positions")
+                    time.sleep(0.1)
+                    continue
+                
+                # Calculate distance to target
+                distance = sum(abs(current_joints[i] - target_joints[i]) for i in range(6))
+                
+                # Call progress callback
+                if on_progress:
+                    on_progress(current_joints, target_joints, distance)
+                
+                # Check if reached target
+                if distance < threshold:
+                    if on_done:
+                        on_done(target_joints, current_joints)
+                    return True
+                    
+            except Exception as error:
+                print(f"⚠️  Warning: Position check failed - {error}")
+            
+            time.sleep(0.1)  # Check every 100ms
+    
+    def _wait_for_pose_motion(self, target_pose, threshold=0.01, timeout=30,
+                              on_start=None, on_progress=None, on_done=None, on_error=None):
+        """
+        Internal helper: Wait for TCP pose motion to complete with safe callbacks.
+        
+        Args:
+            target_pose: Target TCP pose [x, y, z, rx, ry, rz]
+            threshold: Position+orientation tolerance (combined metric)
+            timeout: Maximum wait time in seconds
+            on_start: Callback when waiting starts - on_start(target_pose)
+            on_progress: Callback during motion - on_progress(current_pose, target_pose, distance)
+            on_done: Callback when motion completes - on_done(target_pose, final_pose)
+            on_error: Callback when motion fails - on_error(error_message)
+            
+        Returns:
+            True if motion completed successfully, False otherwise
+        """
+        # Make all callbacks safe (won't crash system)
+        if on_start:
+            on_start = safe_callback(on_start)
+        if on_progress:
+            on_progress = safe_callback(on_progress)
+        if on_done:
+            on_done = safe_callback(on_done)
+        if on_error:
+            on_error = safe_callback(on_error)
+        
+        # Call start callback
+        if on_start:
+            on_start(target_pose)
+        
+        start_time = time.time()
+        
+        while True:
+            # Check timeout
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                error_msg = f"TCP motion timeout after {timeout}s"
+                print(f"⏰ {error_msg}")
+                if on_error:
+                    on_error(error_msg)
+                return False
+            
+            # Get current TCP pose
+            try:
+                current_pose = self.get_actual_tcp_pose()
+                if current_pose is None:
+                    print("⚠️  Warning: Cannot read TCP pose")
+                    time.sleep(0.1)
+                    continue
+                
+                # Calculate distance to target (position + orientation)
+                pos_distance = sum(abs(current_pose[i] - target_pose[i]) for i in range(3))
+                ori_distance = sum(abs(current_pose[i] - target_pose[i]) for i in range(3, 6))
+                total_distance = pos_distance + ori_distance
+                
+                # Call progress callback
+                if on_progress:
+                    on_progress(current_pose, target_pose, total_distance)
+                
+                # Check if reached target
+                if total_distance < threshold:
+                    if on_done:
+                        on_done(target_pose, current_pose)
+                    return True
+                    
+            except Exception as error:
+                print(f"⚠️  Warning: Pose check failed - {error}")
+            
+            time.sleep(0.1)  # Check every 100ms
+
+    def movej_blocking(self, q, a=1.4, v=1.05, t=0, r=0, timeout=30, threshold=0.01,
+                       on_start=None, on_progress=None, on_done=None, on_error=None):
+        """
+        BLOCKING version of movej - waits for movement to complete.
+        
+        Args:
+            q: Joint positions [j1, j2, j3, j4, j5, j6] in radians
+            a: Joint acceleration (rad/s²)
+            v: Joint speed (rad/s)
+            t: Time (seconds) - if >0, overrides a and v
+            r: Blend radius (meters)
+            timeout: Maximum wait time (seconds)
+            threshold: Position tolerance (radians)
+            on_start: Callback when movement starts - on_start(target_joints)
+            on_progress: Callback during motion - on_progress(current, target, distance)
+            on_done: Callback when completed - on_done(target_joints, final_joints)
+            on_error: Callback when failed - on_error(error_message)
+            
+        Returns:
+            True if successful, False if failed
+        """
+        # Format joint positions for display (degrees)
+        q_degrees = [round(j*180/3.14159, 1) for j in q]
+        print(f"🤖 Moving to joints: {q_degrees}° (v={v:.2f}, a={a:.2f})")
+        
+        # Start the non-blocking movement
+        result = self.movej(q, a, v, t, r)
+        if result != 0:
+            error_msg = f"❌ Joint movement failed - command returned {result}"
+            print(error_msg)
+            if on_error:
+                safe_callback(on_error)(error_msg)
+            return False
+        
+        # Wait for completion with callbacks
+        success = self._wait_for_joint_motion(
+            target_joints=q,
+            threshold=threshold,
+            timeout=timeout,
+            on_start=on_start,
+            on_progress=on_progress,
+            on_done=on_done,
+            on_error=on_error
+        )
+        
+        if success:
+            print(f"✅ Joint movement completed successfully!")
+        else:
+            print(f"❌ Joint movement failed or timeout after {timeout}s")
+        
+        return success
+
+    def movel_blocking(self, pose, a=1.2, v=0.25, t=0, r=0, timeout=30, threshold=0.01,
+                       on_start=None, on_progress=None, on_done=None, on_error=None):
+        """
+        BLOCKING version of movel - waits for movement to complete.
+        
+        Args:
+            pose: TCP pose [x, y, z, rx, ry, rz] (meters, radians)
+            a: TCP acceleration (m/s²)
+            v: TCP speed (m/s)
+            t: Time (seconds) - if >0, overrides a and v
+            r: Blend radius (meters)
+            timeout: Maximum wait time (seconds)
+            threshold: Position+orientation tolerance
+            on_start: Callback when movement starts - on_start(target_pose)
+            on_progress: Callback during motion - on_progress(current, target, distance)
+            on_done: Callback when completed - on_done(target_pose, final_pose)
+            on_error: Callback when failed - on_error(error_message)
+            
+        Returns:
+            True if successful, False if failed
+        """
+        # Format pose for display
+        pos_mm = [round(pose[i]*1000, 1) for i in range(3)]  # Convert to mm
+        ori_deg = [round(pose[i]*180/3.14159, 1) for i in range(3, 6)]  # Convert to degrees
+        print(f"🤖 Moving TCP to: pos={pos_mm}mm, ori={ori_deg}° (v={v:.3f}m/s, a={a:.2f}m/s²)")
+        
+        # Start the non-blocking movement
+        result = self.movel(pose, a, v, t, r)
+        if result != 0:
+            error_msg = f"❌ TCP movement failed - command returned {result}"
+            print(error_msg)
+            if on_error:
+                safe_callback(on_error)(error_msg)
+            return False
+        
+        # Wait for completion with callbacks
+        success = self._wait_for_pose_motion(
+            target_pose=pose,
+            threshold=threshold,
+            timeout=timeout,
+            on_start=on_start,
+            on_progress=on_progress,
+            on_done=on_done,
+            on_error=on_error
+        )
+        
+        if success:
+            print(f"✅ TCP movement completed successfully!")
+        else:
+            print(f"❌ TCP movement failed or timeout after {timeout}s")
+        
+        return success
+
+    def add_blocking_support(self, func_name, wait_type="joint"):
+        """
+        EXTENSIBLE: Add blocking support to any motion function.
+        
+        Args:
+            func_name: Name of the function to make blocking (e.g., "servoj")
+            wait_type: "joint" or "pose" - determines how to wait for completion
+            
+        Usage:
+            # Make servoj blocking
+            robot.add_blocking_support("servoj", "joint")
+            success = robot.servoj_blocking([0, -1.57, 0, -1.57, 0, 0])
+        """
+        original_func = getattr(self, func_name, None)
+        if original_func is None:
+            print(f"❌ Function '{func_name}' not found")
+            return False
+        
+        def blocking_wrapper(*args, timeout=30, threshold=0.01, 
+                            on_start=None, on_progress=None, on_done=None, on_error=None, **kwargs):
+            """Generated blocking wrapper"""
+            print(f"🤖 Starting blocking {func_name}")
+            
+            # Extract target from first argument
+            target = args[0] if args else None
+            if target is None:
+                error_msg = f"No target provided for {func_name}"
+                print(f"❌ {error_msg}")
+                if on_error:
+                    safe_callback(on_error)(error_msg)
+                return False
+            
+            # Call original function
+            result = original_func(*args, **kwargs)
+            if result != 0:
+                error_msg = f"{func_name} command failed with result {result}"
+                print(f"❌ {error_msg}")
+                if on_error:
+                    safe_callback(on_error)(error_msg)
+                return False
+            
+            # Wait for completion based on type
+            if wait_type == "joint":
+                success = self._wait_for_joint_motion(target, threshold, timeout, 
+                                                    on_start, on_progress, on_done, on_error)
+            elif wait_type == "pose":
+                success = self._wait_for_pose_motion(target, threshold, timeout,
+                                                   on_start, on_progress, on_done, on_error)
+            else:
+                print(f"❌ Unknown wait_type: {wait_type}")
+                return False
+            
+            if success:
+                print(f"✅ Blocking {func_name} completed successfully")
+            else:
+                print(f"❌ Blocking {func_name} failed")
+            
+            return success
+        
+        # Add the blocking version to the class
+        blocking_name = f"{func_name}_blocking"
+        setattr(self, blocking_name, blocking_wrapper)
+        print(f"✅ Added {blocking_name}() method")
+        return True
 
     # ------------------------------------------------------------
     # Tool control commands

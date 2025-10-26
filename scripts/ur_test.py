@@ -1,8 +1,13 @@
-from ur15_robot_arm.ur15 import UR15Robot
+from ur15_robot_arm.ur15 import UR15Robot, safe_callback
 import time
 import socket
 import math
 import numpy as np
+
+
+# ============================================================================
+# 简单阻塞移动测试 - 只需要基本的命令
+# ============================================================================
 
 
 def rotvec_to_matrix(rx, ry, rz):
@@ -165,7 +170,6 @@ def tcp_normalize(robot, x_axis=[0, -1, 0], y_axis=[-1, 0, 0], z_axis=[0, 0, -1]
     result = robot.movel(target_pose, a=a, v=v)
     
     if result == 0:
-        print("✅ TCP normalized successfully")
         return 0
     else:
         print(f"❌ Failed to normalize TCP (result: {result})")
@@ -199,10 +203,28 @@ def main():
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
-        #  2.1 move to task pose
-        res = robot.movej([-0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822], a=0.8, v=1.05)
-        print(f"MoveJ result: {res}")
-        time.sleep(1)
+        # ============================================================================
+        # BLOCKING MOVEMENT TESTS
+        # ============================================================================
+        
+        # ============================================================================
+        # 简单的阻塞移动命令测试
+        # ============================================================================
+        
+        # 移动序列 - 每个命令都会自动打印状态信息
+        robot.movej_blocking([0, -1.57, 0, -1.57, 0, 0])
+        robot.movej_blocking([0.3, -1.57, 0, -1.57, 0, 0])
+        robot.movej_blocking([0.6, -1.57, 0, -1.57, 0, 0])
+        robot.movej_blocking([0, -1.57, 0, -1.57, 0, 0])
+        
+        # ============================================================================
+        # ORIGINAL TESTS (commented out during blocking tests)
+        # ============================================================================
+        
+        # #  2.1 move to task pose
+        # res = robot.movej([-0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822], a=0.8, v=1.05)
+        # print(f"MoveJ result: {res}")
+        # time.sleep(1)
 
         # # 3. enter freedrive mode f
         # freedrive_duration = 20 #seconds
