@@ -14,6 +14,7 @@ import sys
 import time
 import os
 import math
+import requests
 
 # AMR
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,6 +45,8 @@ duco_cobot = None
 duco_ip = '192.168.1.10'
 duco_port = 7003
 
+# Lift Robot Web API
+LIFT_WEB_BASE = "http://192.168.1.3:8090"
 
 
 def init():
@@ -359,6 +362,214 @@ def duco_jspf_Return_rotate_tool():
     return res
 
 
+# ========================================================================
+# Lift Robot Platform and Pushrod Control Functions
+# ========================================================================
+
+def lift_platform_up():
+    """
+    Move the lift platform upward (pulse relay).
+    
+    Sends a POST request to the lift web service to trigger upward motion.
+    """
+    print("\n⬆️  Lift Platform Up")
+    print("   Sending UP command to lift platform...")
+    
+    url = f"{LIFT_WEB_BASE}/api/cmd"
+    payload = {"command": "up", "target": "platform"}
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        if response.ok:
+            print("✅ Lift platform UP command sent successfully")
+            return response.json()
+        else:
+            print(f"❌ Lift platform UP command failed: HTTP {response.status_code}")
+            return {"success": False, "status_code": response.status_code}
+    except requests.exceptions.ConnectionError:
+        print("❌ Cannot connect to lift platform web service")
+        return {"success": False, "error": "Connection failed"}
+    except requests.exceptions.Timeout:
+        print("❌ Timeout sending lift platform UP command")
+        return {"success": False, "error": "Timeout"}
+    except Exception as e:
+        print(f"❌ Error sending lift platform UP command: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def lift_platform_down():
+    """
+    Move the lift platform downward (pulse relay).
+    
+    Sends a POST request to the lift web service to trigger downward motion.
+    """
+    print("\n⬇️  Lift Platform Down")
+    print("   Sending DOWN command to lift platform...")
+    
+    url = f"{LIFT_WEB_BASE}/api/cmd"
+    payload = {"command": "down", "target": "platform"}
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        if response.ok:
+            print("✅ Lift platform DOWN command sent successfully")
+            return response.json()
+        else:
+            print(f"❌ Lift platform DOWN command failed: HTTP {response.status_code}")
+            return {"success": False, "status_code": response.status_code}
+    except requests.exceptions.ConnectionError:
+        print("❌ Cannot connect to lift platform web service")
+        return {"success": False, "error": "Connection failed"}
+    except requests.exceptions.Timeout:
+        print("❌ Timeout sending lift platform DOWN command")
+        return {"success": False, "error": "Timeout"}
+    except Exception as e:
+        print(f"❌ Error sending lift platform DOWN command: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def lift_platform_stop():
+    """
+    Stop the lift platform motion (pulse stop relay).
+    
+    Sends a POST request to halt vertical motion immediately.
+    """
+    print("\n🛑 Lift Platform Stop")
+    print("   Sending STOP command to lift platform...")
+    
+    url = f"{LIFT_WEB_BASE}/api/cmd"
+    payload = {"command": "stop", "target": "platform"}
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        if response.ok:
+            print("✅ Lift platform STOP command sent successfully")
+            return response.json()
+        else:
+            print(f"❌ Lift platform STOP command failed: HTTP {response.status_code}")
+            return {"success": False, "status_code": response.status_code}
+    except requests.exceptions.ConnectionError:
+        print("❌ Cannot connect to lift platform web service")
+        return {"success": False, "error": "Connection failed"}
+    except requests.exceptions.Timeout:
+        print("❌ Timeout sending lift platform STOP command")
+        return {"success": False, "error": "Timeout"}
+    except Exception as e:
+        print(f"❌ Error sending lift platform STOP command: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def pushrod_goto_only_forward():
+    """
+    Move pushrod to 'only forward' position (preset point).
+    
+    Sends goto_point command with point='only forward' (3.5s movement).
+    """
+    print("\n🔧 Pushrod Go to 'Only Forward'")
+    print("   Moving pushrod to 'only forward' position...")
+    
+    url = f"{LIFT_WEB_BASE}/api/cmd"
+    payload = {"command": "goto_point", "target": "pushrod", "point": "only forward"}
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.ok:
+            print("✅ Pushrod 'only forward' command sent successfully")
+            print("   (Movement will take ~3.5 seconds)")
+            return response.json()
+        else:
+            print(f"❌ Pushrod goto 'only forward' failed: HTTP {response.status_code}")
+            return {"success": False, "status_code": response.status_code}
+    except requests.exceptions.ConnectionError:
+        print("❌ Cannot connect to pushrod web service")
+        return {"success": False, "error": "Connection failed"}
+    except requests.exceptions.Timeout:
+        print("❌ Timeout sending pushrod goto command")
+        return {"success": False, "error": "Timeout"}
+    except Exception as e:
+        print(f"❌ Error sending pushrod goto command: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def pushrod_goto_base():
+    """
+    Move pushrod to 'base' position (home/retracted position).
+    
+    Sends goto_point command with point='base'.
+    """
+    print("\n🏠 Pushrod Go to Base")
+    print("   Moving pushrod to base position...")
+    
+    url = f"{LIFT_WEB_BASE}/api/cmd"
+    payload = {"command": "goto_point", "target": "pushrod", "point": "base"}
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.ok:
+            print("✅ Pushrod 'base' command sent successfully")
+            return response.json()
+        else:
+            print(f"❌ Pushrod goto 'base' failed: HTTP {response.status_code}")
+            return {"success": False, "status_code": response.status_code}
+    except requests.exceptions.ConnectionError:
+        print("❌ Cannot connect to pushrod web service")
+        return {"success": False, "error": "Connection failed"}
+    except requests.exceptions.Timeout:
+        print("❌ Timeout sending pushrod goto command")
+        return {"success": False, "error": "Timeout"}
+    except Exception as e:
+        print(f"❌ Error sending pushrod goto command: {e}")
+        return {"success": False, "error": str(e)}
+    
+def lift_platform_goto_height(target_height=900.0):
+    """
+    Move lift platform to a specific height using automatic control.
+    
+    Args:
+        target_height: Target height in millimeters (default: 900.0mm)
+    
+    This function uses the closed-loop height control feature that:
+    - Automatically moves the platform toward the target
+    - Stops within ±3mm precision
+    - Uses predictive stopping to compensate for system delays
+    """
+    print(f"\n🎯 Lift Platform Go to Height: {target_height}mm")
+    print(f"   Sending goto_height command (target: {target_height}mm)...")
+    
+    url = f"{LIFT_WEB_BASE}/api/cmd"
+    payload = {
+        "command": "goto_height",
+        "target": "platform",
+        "target_height": target_height
+    }
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        if response.ok:
+            print(f"✅ Goto height {target_height}mm command sent successfully")
+            print("   Platform will automatically move to target and stop")
+            print("   Precision: ±3mm")
+            return response.json()
+        else:
+            print(f"❌ Goto height command failed: HTTP {response.status_code}")
+            return {"success": False, "status_code": response.status_code}
+    except requests.exceptions.ConnectionError:
+        print("❌ Cannot connect to lift platform web service")
+        return {"success": False, "error": "Connection failed"}
+    except requests.exceptions.Timeout:
+        print("❌ Timeout sending goto height command")
+        return {"success": False, "error": "Timeout"}
+    except Exception as e:
+        print(f"❌ Error sending goto height command: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def run():
     """
     Main execution function.
@@ -372,22 +583,36 @@ def run():
     print("="*60)
     
     try:
+        # AMR Navigation Tests
         # amr_home()
-        
         # amr_smalltest()
 
-        duco_jspf_Fold()
+        # DUCO Robot Arm Tests
+        # duco_jspf_Fold()
+        # duco_jspf_Unfold()
 
-        duco_jspf_Unfold()
+        # Lift Platform Tests (uncomment to use)
+        # lift_platform_up()
+        # time.sleep(2)  # Wait for platform to move
+        # lift_platform_stop()
+        
+        # lift_platform_down()
+        # time.sleep(2)
+        # lift_platform_stop()
 
+        # Pushrod Tests (uncomment to use)
+        # pushrod_goto_only_forward()
+        # time.sleep(4)  # Wait for pushrod movement (~3.5s)
+        
+        # pushrod_goto_base()
+        # time.sleep(3)
+
+        # DUCO Tool Change Tests (uncomment to use)
         # duco_jspf_Get_pushbutton_tool()
-
         # duco_jspf_Return_pushbutton_tool()
-
         # duco_jspf_Get_rotate_tool()
-
         # duco_jspf_Return_rotate_tool()
-
+        lift_platform_goto_height(target_height=900.0)
 
         print("\n" + "="*60)
         print("✅ All tasks completed successfully")
