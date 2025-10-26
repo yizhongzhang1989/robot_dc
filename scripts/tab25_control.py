@@ -612,11 +612,12 @@ def run():
         # duco_jspf_Return_pushbutton_tool()
         # duco_jspf_Get_rotate_tool()
         # duco_jspf_Return_rotate_tool()
-        lift_platform_goto_height(target_height=900.0)
+        # lift_platform_goto_height(target_height=900.0)
 
-        print("\n" + "="*60)
-        print("✅ All tasks completed successfully")
-        print("="*60)
+        # print("\n" + "="*60)
+        # print("✅ All tasks completed successfully")
+        # print("="*60)
+        amr_courier_rack2dock()
     
     except Exception as e:
         print(f"\n❌ Error during execution: {e}")
