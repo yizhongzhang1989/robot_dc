@@ -212,10 +212,17 @@ def main():
         # ============================================================================
         
         # 移动序列 - 每个命令都会自动打印状态信息
-        robot.movej_blocking([0, -1.57, 0, -1.57, 0, 0])
-        robot.movej_blocking([0.3, -1.57, 0, -1.57, 0, 0])
-        robot.movej_blocking([0.6, -1.57, 0, -1.57, 0, 0])
-        robot.movej_blocking([0, -1.57, 0, -1.57, 0, 0])
+        # Position order: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3
+        # Original order from topic: shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, shoulder_pan
+        robot.movej_blocking([-5.041802231465475, -1.1728989642909546, 0.7841227690326136, -1.3259332937053223, -0.3949468771563929, 3.143082857131958], a=0.1, v=0.1)
+        time.sleep(1)  # Wait 1 second after movement completes
+        
+        robot.movej_blocking([-5.041795913373129, -1.149646059875824, 0.9319852034198206, -1.3259395223907013, -0.39494496980776006, 3.1430823802948], a=0.1, v=0.1)
+        time.sleep(1)  # Wait 1 second after movement completes
+        
+        robot.movej_blocking([-5.041794482861654, -1.1485870641520997, 1.1808584372149866, -1.3259599965861817, -0.3949525992022913, 3.1430914402008057], a=0.1, v=0.1)
+        time.sleep(1)  # Wait 1 second after movement completes
+
         
         # ============================================================================
         # ORIGINAL TESTS (commented out during blocking tests)
