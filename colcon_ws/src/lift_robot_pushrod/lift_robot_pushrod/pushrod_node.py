@@ -100,17 +100,21 @@ class PushrodNode(Node):
             self.get_logger().error(f"Error handling pushrod command: {e}")
 
     def publish_status(self):
-        status = {
-            'node': 'lift_robot_pushrod',
-            'device_id': self.device_id,
-            'has_stop_timer': bool(self.controller.stop_timer),
-            'current_position_seconds': self.controller.current_position,
-            'current_point': self.controller.current_point,
-            'status': 'online'
-        }
-        status_msg = String()
-        status_msg.data = json.dumps(status)
-        self.status_publisher.publish(status_msg)
+        try:
+            status = {
+                'node': 'lift_robot_pushrod',
+                'device_id': self.device_id,
+                'has_stop_timer': bool(self.controller.stop_timer) if hasattr(self.controller, 'stop_timer') else False,
+                'current_position_seconds': self.controller.current_position if hasattr(self.controller, 'current_position') else 0.0,
+                'current_point': self.controller.current_point if hasattr(self.controller, 'current_point') else 'unknown',
+                'status': 'online'
+            }
+            status_msg = String()
+            status_msg.data = json.dumps(status)
+            self.status_publisher.publish(status_msg)
+        except Exception as e:
+            self.get_logger().error(f"Pushrod status publish error: {e}")
+            # Continue operation
 
     def destroy_node(self):
         self.get_logger().info("Stopping pushrod control node ...")

@@ -89,48 +89,59 @@ class DrawWireSensorNode(Node):
             self.get_logger().warn(f'Failed to parse pushrod status JSON: {e}')
 
     def periodic_read_callback(self):
-        seq = self.next_seq()
-        self.controller.read_sensor_data(seq_id=seq)
-        def delayed():
-            time.sleep(0.05)
-            self.publish_sensor_data(seq_id=seq)
-        threading.Timer(0.05, delayed).start()
+        try:
+            seq = self.next_seq()
+            self.controller.read_sensor_data(seq_id=seq)
+            def delayed():
+                try:
+                    time.sleep(0.05)
+                    self.publish_sensor_data(seq_id=seq)
+                except Exception as e:
+                    self.get_logger().error(f"Delayed publish error: {e}")
+            threading.Timer(0.05, delayed).start()
+        except Exception as e:
+            self.get_logger().error(f"Periodic read callback error: {e}")
+            # Continue with next cycle
 
     def publish_sensor_data(self, seq_id=None):
-        reg0, reg1, ts = self.controller.get_sensor_data()
-        
-        # Calculate raw height from calibration
-        raw_height_val = None
-        if self.cal_enable and reg1 is not None:
-            try:
-                raw_height_val = reg1 * self.cal_scale + self.cal_offset
-            except Exception:
-                raw_height_val = None
-        
-        # Calculate adjusted height with pushrod offset
-        adjusted_height_val = None
-        if raw_height_val is not None:
-            try:
-                adjusted_height_val = raw_height_val + self.pushrod_offset_mm
-            except Exception:
-                adjusted_height_val = None
-        
-        msg_obj = {
-            'timestamp': ts,
-            'register_0': reg0,
-            'register_1': reg1,
-            'device_id': self.device_id,
-            'seq_id': seq_id,
-            'read_interval': self.read_interval,
-            'raw_height': raw_height_val,
-            'pushrod_offset_mm': self.pushrod_offset_mm,
-            'pushrod_point': self.pushrod_point,
-            'pushrod_position_seconds': self.pushrod_position_seconds,
-            'height': adjusted_height_val
-        }
-        m = String(); m.data = json.dumps(msg_obj)
-        self.pub.publish(m)
-        self.get_logger().debug(f"[SEQ {seq_id}] Publish: reg0={reg0} reg1={reg1} raw_height={raw_height_val} adjusted_height={adjusted_height_val}")
+        try:
+            reg0, reg1, ts = self.controller.get_sensor_data()
+            
+            # Calculate raw height from calibration
+            raw_height_val = None
+            if self.cal_enable and reg1 is not None:
+                try:
+                    raw_height_val = reg1 * self.cal_scale + self.cal_offset
+                except Exception:
+                    raw_height_val = None
+            
+            # Calculate adjusted height with pushrod offset
+            adjusted_height_val = None
+            if raw_height_val is not None:
+                try:
+                    adjusted_height_val = raw_height_val + self.pushrod_offset_mm
+                except Exception:
+                    adjusted_height_val = None
+            
+            msg_obj = {
+                'timestamp': ts,
+                'register_0': reg0,
+                'register_1': reg1,
+                'device_id': self.device_id,
+                'seq_id': seq_id,
+                'read_interval': self.read_interval,
+                'raw_height': raw_height_val,
+                'pushrod_offset_mm': self.pushrod_offset_mm,
+                'pushrod_point': self.pushrod_point,
+                'pushrod_position_seconds': self.pushrod_position_seconds,
+                'height': adjusted_height_val
+            }
+            m = String(); m.data = json.dumps(msg_obj)
+            self.pub.publish(m)
+            self.get_logger().debug(f"[SEQ {seq_id}] Publish: reg0={reg0} reg1={reg1} raw_height={raw_height_val} adjusted_height={adjusted_height_val}")
+        except Exception as e:
+            self.get_logger().error(f"[SEQ {seq_id}] Sensor data publish error: {e}")
+            # Continue operation, publish what we can or skip this cycle
 
     def destroy_node(self):
         self.get_logger().info("Shutting down draw-wire sensor node...")

@@ -35,22 +35,32 @@ class LiftRobotController(ModbusDevice):
 
     def initialize(self):
         """Initialize lift platform: reset all relays once Modbus service is ready."""
-        self.node.get_logger().info("Waiting for Modbus service ready ...")
+        try:
+            self.node.get_logger().info("Waiting for Modbus service ready ...")
 
-        def retry_reset():
+            def retry_reset():
+                try:
+                    if hasattr(self, 'cli') and self.cli.service_is_ready():
+                        self.reset_all_relays()
+                        self.node.get_logger().info("Initialization done, all relays reset")
+                    else:
+                        self.node.get_logger().warn("Modbus service not ready, retry in 1s ...")
+                        timer = threading.Timer(1.0, retry_reset)
+                        timer.start()
+                except Exception as e:
+                    self.node.get_logger().error(f"Retry reset error: {e}")
+                    # Try again in 2 seconds
+                    timer = threading.Timer(2.0, retry_reset)
+                    timer.start()
+
             if hasattr(self, 'cli') and self.cli.service_is_ready():
                 self.reset_all_relays()
                 self.node.get_logger().info("Initialization done, all relays reset")
             else:
-                self.node.get_logger().warn("Modbus service not ready, retry in 1s ...")
-                timer = threading.Timer(1.0, retry_reset)
-                timer.start()
-
-        if hasattr(self, 'cli') and self.cli.service_is_ready():
-            self.reset_all_relays()
-            self.node.get_logger().info("Initialization done, all relays reset")
-        else:
-            retry_reset()
+                retry_reset()
+        except Exception as e:
+            self.node.get_logger().error(f"Controller initialization error: {e}")
+            # Continue without initialization - commands may fail but node won't crash
 
     def reset_all_relays(self, seq_id=None):
         """Reset all relays (example Modbus frame: 01 05 00 FF 00 00 FD FA)."""
@@ -117,18 +127,22 @@ class LiftRobotController(ModbusDevice):
             duration_ms: pulse width in ms
             seq_id: sequence id
         """
-        self.node.get_logger().info(
-            f"[SEQ {seq_id}] Relay {relay_address} pulse: {duration_ms}ms"
-        )
-        self.open_relay(relay_address, seq_id=seq_id)
-        flash_timer = threading.Timer(duration_ms / 1000.0, self.close_relay,
-                                       args=[relay_address], kwargs={'seq_id': seq_id})
-        flash_timer.start()
-        with self.timer_lock:
-            timer_name = f'flash_relay_{relay_address}'
-            if timer_name in self.active_timers:
-                self.active_timers[timer_name].cancel()
-            self.active_timers[timer_name] = flash_timer
+        try:
+            self.node.get_logger().info(
+                f"[SEQ {seq_id}] Relay {relay_address} pulse: {duration_ms}ms"
+            )
+            self.open_relay(relay_address, seq_id=seq_id)
+            flash_timer = threading.Timer(duration_ms / 1000.0, self.close_relay,
+                                           args=[relay_address], kwargs={'seq_id': seq_id})
+            flash_timer.start()
+            with self.timer_lock:
+                timer_name = f'flash_relay_{relay_address}'
+                if timer_name in self.active_timers:
+                    self.active_timers[timer_name].cancel()
+                self.active_timers[timer_name] = flash_timer
+        except Exception as e:
+            self.node.get_logger().error(f"[SEQ {seq_id}] Flash relay {relay_address} error: {e}")
+            # Continue operation - this specific command failed but system should stay up
 
     def timed_up(self, duration, seq_id=None):
         """Timed up movement.

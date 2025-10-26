@@ -180,14 +180,18 @@ class LiftRobotNode(Node):
         
         Target precision: ±0.1mm
         """
-        if not self.control_enabled or self.control_mode != 'auto':
+        try:
+            if not self.control_enabled or self.control_mode != 'auto':
+                return
+                
+            # Calculate position error and timing
+            now = self.get_clock().now()
+            dt = (now - self.last_command_time).nanoseconds * 1e-9
+            error = self.target_height - self.current_height
+            abs_error = abs(error)
+        except Exception as e:
+            self.get_logger().error(f"[Control] Loop error (calculation): {e}")
             return
-            
-        # Calculate position error and timing
-        now = self.get_clock().now()
-        dt = (now - self.last_command_time).nanoseconds * 1e-9
-        error = self.target_height - self.current_height
-        abs_error = abs(error)
         
         # Priority 1: If within tolerance, STOP (only if enough time passed)
         if abs_error <= POSITION_TOLERANCE:
@@ -242,46 +246,54 @@ class LiftRobotNode(Node):
                 )
                 return
         
-        # Priority 2: Check time interval to throttle commands
-        if dt < command_interval:
-            return  # Too soon, wait for next interval
-        
-        # Priority 3: Send movement command (pulse width doesn't affect velocity)
-        step = max(-max_step, min(max_step, error))
-        
-        if step > 0.05:  # Moving up (threshold lowered for precision)
-            self.controller.up()  # Pulse width is constant (100ms), velocity is hardware-defined
-            self.get_logger().info(
-                f"[Control] ⬆️  {stage}: current={self.current_height:.2f}mm, "
-                f"target={self.target_height:.2f}mm, error={error:.3f}mm"
-            )
-        elif step < -0.05:  # Moving down
-            self.controller.down()  # Pulse width is constant (100ms), velocity is hardware-defined
-            self.get_logger().info(
-                f"[Control] ⬇️  {stage}: current={self.current_height:.2f}mm, "
-                f"target={self.target_height:.2f}mm, error={error:.3f}mm"
-            )
-        
-        # Update tracking variables
-        self.last_sent_height = self.current_height + step
-        self.last_command_time = now
+        try:
+            # Priority 2: Check time interval to throttle commands
+            if dt < command_interval:
+                return  # Too soon, wait for next interval
+            
+            # Priority 3: Send movement command (pulse width doesn't affect velocity)
+            step = max(-max_step, min(max_step, error))
+            
+            if step > 0.05:  # Moving up (threshold lowered for precision)
+                self.controller.up()  # Pulse width is constant (100ms), velocity is hardware-defined
+                self.get_logger().info(
+                    f"[Control] ⬆️  {stage}: current={self.current_height:.2f}mm, "
+                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
+                )
+            elif step < -0.05:  # Moving down
+                self.controller.down()  # Pulse width is constant (100ms), velocity is hardware-defined
+                self.get_logger().info(
+                    f"[Control] ⬇️  {stage}: current={self.current_height:.2f}mm, "
+                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
+                )
+            
+            # Update tracking variables
+            self.last_sent_height = self.current_height + step
+            self.last_command_time = now
+        except Exception as e:
+            self.get_logger().error(f"[Control] Command execution error: {e}")
+            # Don't disable control on command errors, just skip this cycle
 
     def publish_status(self):
         """Publish periodic status info"""
-        status = {
-            'node': 'lift_robot_platform',
-            'device_id': self.device_id,
-            'active_timers': len(self.controller.active_timers),
-            'control_enabled': self.control_enabled,
-            'control_mode': self.control_mode,
-            'current_height': self.current_height,
-            'target_height': self.target_height,
-            'status': 'online'
-        }
-        
-        status_msg = String()
-        status_msg.data = json.dumps(status)
-        self.status_publisher.publish(status_msg)
+        try:
+            status = {
+                'node': 'lift_robot_platform',
+                'device_id': self.device_id,
+                'active_timers': len(self.controller.active_timers) if hasattr(self.controller, 'active_timers') else 0,
+                'control_enabled': self.control_enabled,
+                'control_mode': self.control_mode,
+                'current_height': self.current_height,
+                'target_height': self.target_height,
+                'status': 'online'
+            }
+            
+            status_msg = String()
+            status_msg.data = json.dumps(status)
+            self.status_publisher.publish(status_msg)
+        except Exception as e:
+            self.get_logger().error(f"Status publish error: {e}")
+            # Continue operation, status is not critical
 
     def destroy_node(self):
         """Cleanup resources"""

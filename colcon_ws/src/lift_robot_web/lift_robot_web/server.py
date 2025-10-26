@@ -46,28 +46,42 @@ class LiftRobotWeb(Node):
         self.start_server()
 
     def sensor_cb(self, msg: String):
-        self.latest_raw = msg.data
         try:
-            self.latest_obj = json.loads(msg.data)
-        except Exception:
-            self.latest_obj = None
-        if self.loop and self.connections:
-            # Merge force values if available
-            outbound = msg.data
-            if self.latest_obj is not None:
-                merged = dict(self.latest_obj)
-                if self.right_force is not None:
-                    merged['right_force_sensor'] = self.right_force
-                if self.left_force is not None:
-                    merged['left_force_sensor'] = self.left_force
-                outbound = json.dumps(merged)
-            asyncio.run_coroutine_threadsafe(self.broadcast(outbound), self.loop)
+            self.latest_raw = msg.data
+            try:
+                self.latest_obj = json.loads(msg.data)
+            except Exception:
+                self.latest_obj = None
+            if self.loop and self.connections:
+                # Merge force values if available
+                outbound = msg.data
+                if self.latest_obj is not None:
+                    try:
+                        merged = dict(self.latest_obj)
+                        if self.right_force is not None:
+                            merged['right_force_sensor'] = self.right_force
+                        if self.left_force is not None:
+                            merged['left_force_sensor'] = self.left_force
+                        outbound = json.dumps(merged)
+                    except Exception as e:
+                        self.get_logger().warn(f"Sensor data merge error: {e}")
+                        outbound = msg.data  # Fallback to raw data
+                asyncio.run_coroutine_threadsafe(self.broadcast(outbound), self.loop)
+        except Exception as e:
+            self.get_logger().error(f"Sensor callback error: {e}")
+            # Continue operation
 
     def right_cb(self, msg):
-        self.right_force = msg.data
+        try:
+            self.right_force = msg.data
+        except Exception as e:
+            self.get_logger().warn(f"Right force callback error: {e}")
 
     def left_cb(self, msg):
-        self.left_force = msg.data
+        try:
+            self.left_force = msg.data
+        except Exception as e:
+            self.get_logger().warn(f"Left force callback error: {e}")
 
     async def broadcast(self, text):
         drop = []
@@ -180,14 +194,22 @@ class LiftRobotWeb(Node):
             server = uvicorn.Server(config)
 
             async def serve():
-                self.get_logger().info(f"Web server started on 0.0.0.0:{self.port}")
-                await server.serve()
+                try:
+                    self.get_logger().info(f"Web server started on 0.0.0.0:{self.port}")
+                    await server.serve()
+                except Exception as e:
+                    self.get_logger().error(f"Web server serve error: {e}")
 
             self.loop.create_task(serve())
             try:
                 self.loop.run_forever()
+            except Exception as e:
+                self.get_logger().error(f"Web server loop error: {e}")
             finally:
-                self.loop.close()
+                try:
+                    self.loop.close()
+                except Exception as e:
+                    self.get_logger().error(f"Web server loop close error: {e}")
 
         threading.Thread(target=run, daemon=True).start()
 

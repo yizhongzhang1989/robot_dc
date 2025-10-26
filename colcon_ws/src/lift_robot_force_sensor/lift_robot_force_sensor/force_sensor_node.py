@@ -42,17 +42,21 @@ class LiftRobotForceSensorNode(Node):
         return self.seq_id
 
     def periodic_read(self):
-        seq = self.next_seq()
-        self.controller.read_ch2_ch3(seq_id=seq)
-        # After asynchronous callbacks complete, publish last known values (race acceptable for simple UI display)
-        last = self.controller.get_last()
-        from std_msgs.msg import Float32
-        if last['right_value'] is not None:
-            m = Float32(); m.data = float(last['right_value'])
-            self.right_pub.publish(m)
-        if last['left_value'] is not None:
-            m2 = Float32(); m2.data = float(last['left_value'])
-            self.left_pub.publish(m2)
+        try:
+            seq = self.next_seq()
+            self.controller.read_ch2_ch3(seq_id=seq)
+            # After asynchronous callbacks complete, publish last known values (race acceptable for simple UI display)
+            last = self.controller.get_last()
+            from std_msgs.msg import Float32
+            if last['right_value'] is not None:
+                m = Float32(); m.data = float(last['right_value'])
+                self.right_pub.publish(m)
+            if last['left_value'] is not None:
+                m2 = Float32(); m2.data = float(last['left_value'])
+                self.left_pub.publish(m2)
+        except Exception as e:
+            self.get_logger().error(f"Force sensor periodic read error: {e}")
+            # Continue with next cycle
 
     def destroy_node(self):
         self.get_logger().info("Shutting down force sensor node...")
