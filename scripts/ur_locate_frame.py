@@ -137,6 +137,17 @@ def main():
                         print("="*60)
                         if ur_frame.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
+
+                            # move to position to get the frame
+                            pose2 = [-4.6480483452426355, -0.9079412978938599, 1.5085294882403772, 0.0630008417316894, 1.43977689743042, -1.2330697218524378]
+                            ur_frame.robot.movej(pose2, a=0.5, v=0.3)
+                            time.sleep(0.5)
+
+                            pose1 = [-4.648319784794943,-1.5912381611266078, -0.06179070472717285,  0.06347481786694331, 1.439825415611267, -1.2331050078021448]
+
+                            ur_frame.robot.movej(pose1, a=0.5, v=0.3)
+                            time.sleep(0.5)
+
                         else:
                             print("⚠ Coordinate system validation failed!")
                     else:

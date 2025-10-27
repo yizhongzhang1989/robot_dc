@@ -131,6 +131,7 @@ def main():
                         print("="*60)
                         if ur_locate_get.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
+
                         else:
                             print("⚠ Coordinate system validation failed!")
                     else:

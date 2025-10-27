@@ -349,17 +349,17 @@ if __name__ == "__main__":
     print("Moving to reference position...")
     print("="*50)
     ur_get.movej_to_reference_joint_positions()
-    time.sleep(10)
+    time.sleep(0.5)
         
     # align tool TCP with local coordinate system
     print("\n" + "="*50)
     ur_get.movel_to_correct_tool_tcp()
-    time.sleep(5)
+    time.sleep(0.5)
     
     # move to target position using linear movement
     print("\n" + "="*50)
     ur_get.movel_to_target_position()
-    time.sleep(20)
+    time.sleep(0.5)
 
     # lock quick changer
     print("\n" + "="*50)
@@ -369,9 +369,9 @@ if __name__ == "__main__":
     # move to exit position
     print("\n" + "="*50)
     ur_get.movel_to_exit_target_position()
-    time.sleep(5)
+    time.sleep(0.5)
 
     print("\n" + "="*50)
     ur_get.movej_to_reference_joint_positions()
-    time.sleep(10)
+    time.sleep(0.5)
 

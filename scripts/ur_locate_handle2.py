@@ -56,11 +56,11 @@ class URLocateHandle2(URLocateBase):
         # Override movement offsets for handle2 task (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [0.03, 0, 0, 0, 0, 0],
+            "movement1": [-0.05, 0, 0, 0, 0, 0],
             "movement2": [-0.03, 0, 0, 0, 0, 0],
             "movement3": [0, 0, 0.05, 0, 0, 0],
             "movement4": [-0.03, 0, -0.05, 0, 0, 0],
-            "movement5": [0, 0, -0.05, 0, 0, 0]
+            "movement5": [-0.02, 0, -0.05, 0, 0, 0]
         }
         
         self.local_x_kp_index = [0, 2]

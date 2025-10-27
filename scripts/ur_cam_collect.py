@@ -248,7 +248,7 @@ def main(args=None):
     # You can customize these parameters
     robot_ip = "192.168.1.15"  # UR robot IP address
     robot_port = 30002          # UR robot port
-    save_dir = "../temp/ur15_handles_location_data"  # Directory to save pose files
+    save_dir = "../temp/test"  # Directory to save pose files
     
     # Save terminal settings
     old_settings = termios.tcgetattr(sys.stdin)

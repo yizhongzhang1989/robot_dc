@@ -1,7 +1,6 @@
 import os
 import time
 import numpy as np
-import requests
 from scipy.spatial.transform import Rotation as R
 from ur_execute_base import URExecuteBase
 
@@ -9,23 +8,10 @@ from ur_execute_base import URExecuteBase
 
 class URExecuteHandle1(URExecuteBase):
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002, rs485_port=54321):
-        # Call parent class constructor first, but we'll override the directories
-        # We need to set the directories before calling parent __init__
-        # So we'll do a custom initialization
+        # Call parent class initialization first
+        super().__init__(robot_ip, robot_port, rs485_port)
         
-        # Robot connection parameters
-        self.robot_ip = robot_ip
-        self.robot_port = robot_port
-        self.robot = None
-        
-        # Lift platform web service base URL
-        self.lift_web_base = "http://192.168.1.3:8090"
-        
-        # RS485 connection parameters
-        self.rs485_port = rs485_port
-        self.rs485_socket = None
-        
-        # Define the path to camera parameters
+        # Override camera parameters path (if needed)
         self.camera_params_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
@@ -65,15 +51,7 @@ class URExecuteHandle1(URExecuteBase):
         # Task position information storage
         self.task_position_offset = None
 
-        # Initialize the robot connection
-        self._initialize_robot()
-        
-        # Initialize RS485 socket connection
-        self._init_rs485_socket()
-        
-        # Automatically load all parameters
-        self._load_camera_intrinsic()
-        self._load_camera_extrinsic()
+        # Reload parameters from handle1-specific directories
         self._load_estimated_kp_coordinates()
         self._load_local_coordinate_system()
         self._load_ref_joint_angles()
@@ -330,7 +308,7 @@ class URExecuteHandle1(URExecuteBase):
         exit_pose = [
             current_pose[0],  
             current_pose[1],        # y (unchanged)
-            current_pose[2] + 0.5,  # z (unchanged)
+            current_pose[2] + 0.3,  # z (unchanged)
             current_pose[3],        # rx (keep orientation)
             current_pose[4],        # ry
             current_pose[5]         # rz
@@ -349,165 +327,6 @@ class URExecuteHandle1(URExecuteBase):
         
         return res
     
-    def lift_platform_goto_height(self, target_height=900.0):
-        """
-        Move lift platform to a specific height using automatic control.
-        
-        Args:
-            target_height: Target height in millimeters (default: 900.0mm)
-        """
-        print(f"\n🎯 Lift Platform Go to Height: {target_height}mm")
-        
-        url = f"{self.lift_web_base}/api/cmd"
-        payload = {
-            "command": "goto_height",
-            "target": "platform",
-            "target_height": target_height
-        }
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=5)
-            if response.ok:
-                print(f"✅ Goto height {target_height}mm command sent successfully")
-                return response.json()
-            else:
-                print(f"❌ Goto height command failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to lift platform web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending goto height command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending goto height command: {e}")
-            return {"success": False, "error": str(e)}
-
-    def lift_platform_to_init(self):
-        """
-        Move the lift platform downward (pulse relay).
-        
-        Sends a POST request to the lift web service to trigger downward motion.
-        """
-        print("\n⬇️  Lift Platform Down")
-        print("   Sending DOWN command to lift platform...")
-        
-        url = f"{self.lift_web_base}/api/cmd"
-        payload = {"command": "down", "target": "platform"}
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=5)
-            if response.ok:
-                print("✅ Lift platform DOWN command sent successfully")
-                return response.json()
-            else:
-                print(f"❌ Lift platform DOWN command failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to lift platform web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending lift platform DOWN command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending lift platform DOWN command: {e}")
-            return {"success": False, "error": str(e)}
-
-
-    def lift_platform_emergency_stop(self):
-        """
-        Stop the lift platform motion (pulse stop relay).
-        
-        Sends a POST request to halt vertical motion immediately.
-        """
-        print("\n🛑 Lift Platform Stop")
-        print("   Sending STOP command to lift platform...")
-
-        url = f"{self.lift_web_base}/api/cmd"
-        payload = {"command": "stop", "target": "platform"}
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=5)
-            if response.ok:
-                print("✅ Lift platform STOP command sent successfully")
-                return response.json()
-            else:
-                print(f"❌ Lift platform STOP command failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to lift platform web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending lift platform STOP command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending lift platform STOP command: {e}")
-            return {"success": False, "error": str(e)}
-
-    def pushrod_to_base(self):
-        """
-        Move pushrod to 'base' position (home/retracted position).
-        
-        Sends goto_point command with point='base'.
-        """
-        print("\n🏠 Pushrod Go to Base")
-        print("   Moving pushrod to base position...")
-        
-        url = f"{self.lift_web_base}/api/cmd"
-        payload = {"command": "goto_point", "target": "pushrod", "point": "base"}
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-            if response.ok:
-                print("✅ Pushrod 'base' command sent successfully")
-                return response.json()
-            else:
-                print(f"❌ Pushrod goto 'base' failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to pushrod web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending pushrod goto command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending pushrod goto command: {e}")
-            return {"success": False, "error": str(e)}
-
-    def pushrod_to_execution_position(self):
-        """
-        Move pushrod to 'only forward' position (preset point).
-        Sends goto_point command with point='only forward' (3.5s movement).
-        """
-        print("\n🔧 Pushrod Go to 'Only Forward'")
-        print("   Moving pushrod to 'only forward' position...")
-        
-        url = f"{self.lift_web_base}/api/cmd"
-        payload = {"command": "goto_point", "target": "pushrod", "point": "only forward"}
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-            if response.ok:
-                print("✅ Pushrod 'only forward' command sent successfully")
-                print("   (Movement will take ~3.5 seconds)")
-                return response.json()
-            else:
-                print(f"❌ Pushrod goto 'only forward' failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to pushrod web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending pushrod goto command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending pushrod goto command: {e}")
-            return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
     # Example usage
@@ -580,7 +399,6 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     
     # initialize platform height
-
     print("\n" + "="*50)
     ur_handle1.pushrod_to_base()
     time.sleep(5)
@@ -588,10 +406,8 @@ if __name__ == "__main__":
     time.sleep(5)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_goto_height(target_height=789.0)
-    time.sleep(5)
-
-    
+    ur_handle1.lift_platform_to_height(target_height=789.0)
+    time.sleep(5)   
 
     # move to reference joint positions
     print("\n" + "="*60)
@@ -616,7 +432,7 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_goto_height(target_height=799.0)
+    ur_handle1.lift_platform_to_height(target_height=799.0)
     time.sleep(3)
 
     # step2: extract to 0.5m
@@ -625,11 +441,11 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_goto_height(target_height=789.0)
+    ur_handle1.lift_platform_to_height(target_height=789.0)
     time.sleep(3)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_goto_height(target_height=794.0)
+    ur_handle1.lift_platform_to_height(target_height=794.0)
     time.sleep(3)
 
     # step3: extract to 0.7m
@@ -638,7 +454,7 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_goto_height(target_height=799.0)
+    ur_handle1.lift_platform_to_height(target_height=799.0)
     time.sleep(3)
 
     # step4: extract to 1.20m

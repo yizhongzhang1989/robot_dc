@@ -257,6 +257,47 @@ class URExecuteFrame(URExecuteBase):
         
         return res
 
+    def movej_to_get_tool_start(self):
+        """
+        Move robot to get tool start position using joint movements
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        # Move to position to get the frame
+        pose2 = [-4.6480483452426355, -0.9079412978938599, 1.5085294882403772, 0.0630008417316894, 1.43977689743042, -1.2330697218524378]
+        
+        print("\nMoving to intermediate position (pose2)...")
+        print(f"Target joint angles: {pose2}")
+        
+        res = self.robot.movej(pose2, a=0.5, v=0.3)
+        
+        if res != 0:
+            print(f"Failed to move to pose2 (error code: {res})")
+            return res
+        
+        print("Moved to pose2 successfully")
+        time.sleep(0.5)
+        
+        # Move to final get tool position
+        pose1 = [-4.648319784794943, -1.5912381611266078, -0.06179070472717285, 0.06347481786694331, 1.439825415611267, -1.2331050078021448]
+        
+        print("\nMoving to get tool position (pose1)...")
+        print(f"Target joint angles: {pose1}")
+        
+        res = self.robot.movej(pose1, a=0.5, v=0.3)
+        
+        if res == 0:
+            print("Robot moved to get tool start position successfully")
+        else:
+            print(f"Failed to move to pose1 (error code: {res})")
+        
+        time.sleep(0.5)
+        
+        return res
+
 
 if __name__ == "__main__":
     # Create URExecuteFrame instance
@@ -304,17 +345,17 @@ if __name__ == "__main__":
     # move to reference joint positions (commented out for safety)
     print("\n" + "="*50)
     ur_frame.movej_to_reference_joint_positions()
-    time.sleep(10)
+    time.sleep(0.5)
     
     # align tool TCP with local coordinate system
     print("\n" + "="*50)
     ur_frame.movel_to_correct_tool_tcp()
-    time.sleep(5)
+    time.sleep(0.5)
     
     # move to target position using linear movement
     print("\n" + "="*50)
     ur_frame.movel_to_target_position()
-    time.sleep(15)
+    time.sleep(0.5)
 
     # unlock quick changer
     print("\n" + "="*50)
@@ -324,9 +365,12 @@ if __name__ == "__main__":
     # move to exit position
     print("\n" + "="*50)
     ur_frame.movel_to_exit_target_position()
-    time.sleep(5)
+    time.sleep(0.5)
 
     print("\n" + "="*50)
     ur_frame.movej_to_reference_joint_positions()
-    time.sleep(10)
+    time.sleep(0.5)
+
+    ur_frame.movej_to_get_tool_start()
+    time.sleep(0.5)
 
