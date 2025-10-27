@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 # ═══════════════════════════════════════════════════════════════
 CONTROL_RATE = 0.1              # Control loop runs at 10 Hz (every 0.1s)
 COMMAND_INTERVAL = 1.0          # Coarse control: 1.0s interval
-POSITION_TOLERANCE = 2.0        # Target reached within ±2.0mm
+POSITION_TOLERANCE = 0.1        # Target reached within ±1.0mm
 CHANGE_THRESHOLD = 0.5          # Send command if target changed by >0.5mm
 MAX_STEP = 10.0                 # Limit each position step to ±10mm
 LONG_ERROR_THRESHOLD = 20.0     # Errors >20mm = far from target
