@@ -32,7 +32,7 @@ class DrawWireSensorNode(Node):
             'only forward': 5.5,
             'safe mode': 1.0,
             'fwd&back': 9.8,
-            'all direction': 20.1,
+            'all direction': 14.8,
         }
         self.pushrod_offset_mm = 0.0
 

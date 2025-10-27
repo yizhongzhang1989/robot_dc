@@ -20,14 +20,14 @@ logging.basicConfig(level=logging.INFO)
 # ═══════════════════════════════════════════════════════════════
 CONTROL_RATE = 0.1              # Control loop runs at 10 Hz (every 0.1s)
 COMMAND_INTERVAL = 1.0          # Coarse control: 1.0s interval
-POSITION_TOLERANCE = 0.1        # Target reached within ±0.1mm (high precision) *actually 3.0
+POSITION_TOLERANCE = 2.0        # Target reached within ±2.0mm
 CHANGE_THRESHOLD = 0.5          # Send command if target changed by >0.5mm
 MAX_STEP = 10.0                 # Limit each position step to ±10mm
 LONG_ERROR_THRESHOLD = 20.0     # Errors >20mm = far from target
 APPROACH_THRESHOLD = 5.0        # Errors <5mm = near target, increase command frequency
 FINE_COMMAND_INTERVAL = 0.2     # Fine control: 0.2s interval (5Hz)
 PLATFORM_VELOCITY = 15.0        # Platform velocity: ~15mm/s (constant, hardware-defined)
-STOPPING_DISTANCE = 5.0         # Pre-stop distance: compensate for sensor+comm delay (~0.3s × 15mm/s)
+STOPPING_DISTANCE = 2.5         # Pre-stop distance: reduced to allow smaller movements
 CONTROL_ENABLED = True          # Master enable for closed-loop control
 
 
@@ -175,10 +175,10 @@ class LiftRobotNode(Node):
         
         Three-stage control strategy:
         1. Far (>20mm): Coarse control, 1Hz commands, allow coasting
-        2. Approaching (5-20mm): Medium control, 3Hz commands
-        3. Fine (<5mm): Precise control, 3Hz commands, small steps
+        2. Approaching (5-20mm): Medium control, 5Hz commands
+        3. Fine (<5mm): Precise control, 5Hz commands, small steps
         
-        Target precision: ±0.1mm
+        Target precision: ±2.0mm
         """
         try:
             if not self.control_enabled or self.control_mode != 'auto':

@@ -48,7 +48,7 @@ class PushrodController(ModbusDevice):
             'only forward': 3.5,
             'safe mode': 2.7,
             'fwd&back': 4.5,
-            'all direction': 6.8,
+            'all direction': 5.0,
         }
         # Track current position in seconds from base (approx). Starts at base.
         self.current_position = 0.0

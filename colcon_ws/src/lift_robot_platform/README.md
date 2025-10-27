@@ -71,17 +71,18 @@ The controller implements a sophisticated control strategy:
 
 ```python
 CONTROL_RATE = 0.1              # Control loop: 10 Hz
-COMMAND_INTERVAL = 0.5          # Modbus throttle: max 2 Hz
+COMMAND_INTERVAL = 1.0          # Modbus throttle (coarse): max 1 Hz
 POSITION_TOLERANCE = 2.0        # Target reached within ±2mm
-CHANGE_THRESHOLD = 3.0          # Command sent if target changes >3mm
+CHANGE_THRESHOLD = 0.5          # Command sent if target changes >0.5mm
 MAX_STEP = 10.0                 # Movement limited to ±10mm per command
+STOPPING_DISTANCE = 2.5         # Pre-stop distance for predictive stopping
 ```
 
 ### Behavior
 
 Modbus commands are sent **only** when:
-1. ✅ Sufficient time passed (≥0.5s since last command)
-2. ✅ Target changed significantly (>3mm) **OR**
+1. ✅ Sufficient time passed (≥0.2-1.0s since last command, depending on distance)
+2. ✅ Target changed significantly (>0.5mm) **OR**
 3. ✅ Position error is large (>2mm tolerance)
 
 **Benefits:**

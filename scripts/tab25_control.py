@@ -495,12 +495,46 @@ def pushrod_goto_only_forward():
         return {"success": False, "error": str(e)}
 
 
+def pushrod_goto_all_direction():
+    """
+    Move pushrod to 'all direction' position (preset point).
+    
+    Sends goto_point command with point='all direction' (5.0s movement).
+    """
+    print("\n🔧 Pushrod Go to 'All Direction'")
+    print("   Moving pushrod to 'all direction' position...")
+    
+    url = f"{LIFT_WEB_BASE}/api/cmd"
+    payload = {"command": "goto_point", "target": "pushrod", "point": "all direction"}
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.ok:
+            print("✅ Pushrod 'all direction' command sent successfully")
+            print("   (Movement will take ~5.0 seconds)")
+            return response.json()
+        else:
+            print(f"❌ Pushrod goto 'all direction' failed: HTTP {response.status_code}")
+            return {"success": False, "status_code": response.status_code}
+    except requests.exceptions.ConnectionError:
+        print("❌ Cannot connect to pushrod web service")
+        return {"success": False, "error": "Connection failed"}
+    except requests.exceptions.Timeout:
+        print("❌ Timeout sending pushrod goto command")
+        return {"success": False, "error": "Timeout"}
+    except Exception as e:
+        print(f"❌ Error sending pushrod goto command: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def pushrod_goto_base():
     """
     Move pushrod to 'base' position (home/retracted position).
     
     Sends goto_point command with point='base'.
     """
+    /* Lines 504-527 omitted */
     print("\n🏠 Pushrod Go to Base")
     print("   Moving pushrod to base position...")
     
