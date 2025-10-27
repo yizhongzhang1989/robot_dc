@@ -199,10 +199,10 @@ def main():
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
-        #  2.1 move to task pose
-        res = robot.movej([-0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822], a=0.8, v=1.05)
-        print(f"MoveJ result: {res}")
-        time.sleep(1)
+        # #  2.1 move to task pose
+        # res = robot.movej([-0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822], a=0.5, v=0.3)
+        # print(f"MoveJ result: {res}")
+        # time.sleep(1)
 
         # # 3. enter freedrive mode f
         # freedrive_duration = 20 #seconds
@@ -316,7 +316,7 @@ def main():
         # time.sleep(0.5)
         
         # # 10. set active tool offset, it will not be affected by the configuration in installation-TCP
-        # toolPullPush_offset = [0.0, 0.0, 0.2265, 0.0, 0.0, 0.0] 
+        # toolPullPush_offset = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
         # res = robot.set_tcp(toolPullPush_offset,tcp_name="toolPullPush")
         # time.sleep(1)
 
@@ -326,8 +326,6 @@ def main():
         # res = robot.move_tcp([0, 0, 0, -0.5236/2, 0, 0], a=0.2, v=0.2)
         # time.sleep(1)
         # print(f"Move TCP with tool offset result: {res}")
-
-
     else:
         print(f"Failed to connect to robot at {ur15_ip}:{ur15_port}")
     

@@ -168,29 +168,87 @@ class UR15Robot:
     # ------------------------------------------------------------
     # Motion commands
     # ------------------------------------------------------------
-    def movej(self, q, a=1.4, v=1.05, t=0, r=0):
+    def movej(self, q, a=1.4, v=1.05, t=0, r=0, blocking=True, threshold=0.01):
         """
         Move to position (linear in joint-space)
         
         Note that the zero position of UR15 is [0, -1.57, 0, -1.57, 0, 0]
+        
+        Args:
+            q: Target joint positions [j0, j1, j2, j3, j4, j5] in radians
+            a: Joint acceleration [rad/s^2]
+            v: Joint velocity [rad/s]
+            t: Time [s]
+            r: Blend radius [m]
+            blocking: If True, wait until motion completes (default: True)
+            threshold: Joint position threshold in radians to consider motion complete (default: 0.01)
         """
         # Format joint positions as URScript list
         if isinstance(q, (list, tuple)):
             q_str = "[" + ",".join([str(val) for val in q]) + "]"
+            target_q = list(q)
         else:
             q_str = str(q)
+            target_q = None
         
         # Build URScript command
         cmd = f"movej({q_str}, a={a}, v={v}, t={t}, r={r})"
-        return self._send_command(cmd)
+        result = self._send_command(cmd)
+        
+        if result != 0:
+            return result
+        
+        # If blocking mode and we have target positions, wait for completion
+        if blocking and target_q is not None:
+            import math
+            time.sleep(0.1)  # Initial delay to let motion start
+            
+            max_wait_time = 60  # Maximum wait time in seconds
+            start_time = time.time()
+            
+            while time.time() - start_time < max_wait_time:
+                actual_q = self.get_actual_joint_positions()
+                if actual_q is None:
+                    print("[WARN] Failed to read joint positions during blocking wait")
+                    time.sleep(0.1)
+                    continue
+                
+                # Check if all joints are within threshold
+                all_close = True
+                for i in range(6):
+                    if abs(actual_q[i] - target_q[i]) > threshold:
+                        all_close = False
+                        break
+                
+                if all_close:
+                    # Motion complete
+                    return 0
+                
+                time.sleep(0.05)  # Check every 50ms
+            
+            print(f"[WARN] movej blocking timeout after {max_wait_time}s")
+            return -1
+        
+        return result
 
-    def movel(self, pose, a=1.2, v=0.25, t=0, r=0):
+    def movel(self, pose, a=1.2, v=0.25, t=0, r=0, blocking=True, threshold=0.001):
         """
         Move to position (linear in tool-space)
+        
+        Args:
+            pose: Target TCP pose [x,y,z,rx,ry,rz] in meters and radians
+            a: Tool acceleration [m/s^2]
+            v: Tool velocity [m/s]
+            t: Time [s]
+            r: Blend radius [m]
+            blocking: If True, wait until motion completes (default: True)
+            threshold: Position threshold in meters for xyz and radians for rotation (default: 0.001)
         """
         # Format pose
+        target_pose = None
         if isinstance(pose, (list, tuple)):
             pose_str = "p[" + ",".join([str(val) for val in pose]) + "]"
+            target_pose = list(pose)
         elif isinstance(pose, str):
             pose_str = pose
         else:
@@ -198,7 +256,43 @@ class UR15Robot:
         
         # Build URScript command
         cmd = f"movel({pose_str}, a={a}, v={v}, t={t}, r={r})"
-        return self._send_command(cmd)
+        result = self._send_command(cmd)
+        
+        if result != 0:
+            return result
+        
+        # If blocking mode and we have target pose, wait for completion
+        if blocking and target_pose is not None:
+            import math
+            time.sleep(0.1)  # Initial delay to let motion start
+            
+            max_wait_time = 60  # Maximum wait time in seconds
+            start_time = time.time()
+            
+            while time.time() - start_time < max_wait_time:
+                actual_pose = self.get_actual_tcp_pose()
+                if actual_pose is None:
+                    print("[WARN] Failed to read TCP pose during blocking wait")
+                    time.sleep(0.1)
+                    continue
+                
+                # Check if all pose elements are within threshold
+                all_close = True
+                for i in range(6):
+                    if abs(actual_pose[i] - target_pose[i]) > threshold:
+                        all_close = False
+                        break
+                
+                if all_close:
+                    # Motion complete
+                    return 0
+                
+                time.sleep(0.05)  # Check every 50ms
+            
+            print(f"[WARN] movel blocking timeout after {max_wait_time}s")
+            return -1
+        
+        return result
 
     def move_tcp(self, offset, a=1.2, v=0.25, t=0, r=0):
         """
