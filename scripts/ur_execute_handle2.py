@@ -300,7 +300,7 @@ class URExecuteHandle2(URExecuteBase):
         
         return res
 
-    def movej_to_get_tool_start(self):
+    def movej_to_execute_start(self):
         """
         Move robot to the get tool start position using joint movement
         Returns: 0 if successful, error code otherwise
@@ -317,7 +317,32 @@ class URExecuteHandle2(URExecuteBase):
         print(f"Target joint angles: {target_joint_angles}")
         
         res = self.robot.movej(target_joint_angles, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
+                               0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
         
+        print(f"Target joint angles: {target_joint_angles}")
+        
+        res = self.robot.movej(target_joint_angles, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
+                               -1.3431838166764756, 1.4398412704467773, -1.2330482641803187]
+        
+        print(f"Target joint angles: {target_joint_angles}")
+        
+        res = self.robot.movej(target_joint_angles, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
+                               -1.3431838166764756,  1.5084102153778076, 1.6445358991622925]
+        
+        print(f"Target joint angles: {target_joint_angles}")
+        
+        res = self.robot.movej(target_joint_angles, a=0.5, v=0.3)
+        time.sleep(0.5)
+
         if res == 0:
             print("Robot moved to get tool start position successfully")
         else:
@@ -414,24 +439,8 @@ if __name__ == "__main__":
     print("="*70)
 
     print("\n" + "="*50)
-    ur_handle2.movej_to_get_tool_start()
+    ur_handle2.movej_to_execute_start()
     time.sleep(0.5)
-
-    print("\n" + "="*50)
-    ur_handle2.lift_platform_to_init()
-    time.sleep(10)
-    
-    # initialize platform height
-    print("\n" + "="*50)
-    ur_handle2.pushrod_to_base()
-    time.sleep(5)
-
-    ur_handle2.pushrod_to_heighest()
-    time.sleep(5)
-
-    print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=795.0)
-    time.sleep(5)
 
     print("\n" + "="*70)
     print("Moving robot to reference joint positions...")
@@ -454,7 +463,7 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=802.0)
+    ur_handle2.lift_platform_to_height(target_height=800.0)
     time.sleep(5)   
 
     # step2: move to positon 2
@@ -463,11 +472,11 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=795.0)
+    ur_handle2.lift_platform_to_height(target_height=791.0)
     time.sleep(5)  
 
     print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=805.0)
+    ur_handle2.lift_platform_to_height(target_height=802.0)
     time.sleep(5)  
 
     # step3: move to positon 3
@@ -476,11 +485,11 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=795.0)
+    ur_handle2.lift_platform_to_height(target_height=792.0)
     time.sleep(5)  
 
     print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=800.0)
+    ur_handle2.lift_platform_to_height(target_height=797.0)
     time.sleep(5)  
 
     # step4: move to positon 4

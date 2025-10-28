@@ -72,6 +72,50 @@ class URLocateFrame(URLocateBase):
         print(f"  Collect position: {[f'{j:.4f}' for j in self.collect_start_position]}")
         print(f"  Number of movements: {len(self.movements)}")
 
+    def movej_to_safe_position_before_execution(self):
+        """
+        Move robot to get tool start position after process
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+
+        pose = [-1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 
+                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-4.628224555646078, -1.5912000141539515, -0.061849094927310944, 
+                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202, 
+                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202, 
+                 -1.9046393833556117, 1.4398412704467773, -1.2330482641803187]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202,
+                -1.9046393833556117, 0.1272939145565033, 3.737786054611206]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+        
+        if res == 0:
+            print("Robot moved to zero state successfully")
+        else:
+            print(f"Failed to move robot to zero state (error code: {res})")
+        
+        return res
 
 def main():
     """
@@ -107,7 +151,10 @@ def main():
         if not ur_frame.load_camera_parameters():
             print("Failed to load camera parameters!")
             return
-        
+
+        ur_frame.movej_to_safe_position_before_execution()
+        time.sleep(0.5)
+
         try:
             # Perform auto data collection (includes moving to collect position)
             if ur_frame.auto_collect_data():

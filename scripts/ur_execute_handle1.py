@@ -326,6 +326,33 @@ class URExecuteHandle1(URExecuteBase):
             print(f"Failed to move to exit position (error code: {res})")
         
         return res
+
+    def movej_to_get_start_position_after_process(self):
+        """
+        Move robot to get tool start position after process
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        pose = [-0.7685130278216761, -1.5912000141539515, -0.061849094927310944, 
+                 -0.962276355629303, 1.8501255512237549, -0.6623795668231409]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 
+                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+        
+        if res == 0:
+            print("Robot moved to zero state successfully")
+        else:
+            print(f"Failed to move robot to zero state (error code: {res})")
+        
+        return res
     
 
 if __name__ == "__main__":
@@ -471,6 +498,10 @@ if __name__ == "__main__":
     ur_handle1.movej_to_reference_joint_positions()
     time.sleep(0.5)
 
+    # print("\n" + "="*50)
+    ur_handle1.movej_to_get_start_position_after_process()
+    time.sleep(0.5)
+
     print("\n" + "="*50)
     ur_handle1.pushrod_to_base()
     time.sleep(3)
@@ -478,5 +509,4 @@ if __name__ == "__main__":
     print("\n" + "="*50)
     ur_handle1.lift_platform_to_init()
     time.sleep(10)
-
-
+    

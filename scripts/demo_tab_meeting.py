@@ -9,6 +9,7 @@ import os
 import math
 import requests
 import socket
+import subprocess
 
 # AMR
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -39,8 +40,6 @@ duco_cobot = None
 duco_ip = '192.168.1.10'
 duco_port = 7003
 
-# UR15 Robot - using standalone scripts
-import subprocess
 
 # Lift Robot Web API
 LIFT_WEB_BASE = "http://192.168.1.3:8090"
@@ -311,7 +310,7 @@ def amr_courier_rack2dock():
     return result
 
 
-def duco_jspf_Fold():
+def duco_jspf_fold():
     program_name = "Fold.jspf"
     res = duco_cobot.run_program(program_name, True)
     print(f"Run program \"{program_name}\" result: {res}")
@@ -319,7 +318,7 @@ def duco_jspf_Fold():
     return res
 
 
-def duco_jspf_Unfold():
+def duco_jspf_unfold():
     program_name = "Unfold.jspf"
     res = duco_cobot.run_program(program_name, True)
     print(f"Run program \"{program_name}\" result: {res}")
@@ -327,7 +326,7 @@ def duco_jspf_Unfold():
     return res
 
 
-def duco_jspf_Get_pushbutton_tool():
+def duco_jspf_get_pushbutton_tool():
     program_name = "Get_pushbutton_tool.jspf"
     res = duco_cobot.run_program(program_name, True)
     print(f"Run program \"{program_name}\" result: {res}")
@@ -335,7 +334,7 @@ def duco_jspf_Get_pushbutton_tool():
     return res
 
 
-def duco_jspf_Return_pushbutton_tool():
+def duco_jspf_return_pushbutton_tool():
     program_name = "Return_pushbutton_tool.jspf"
     res = duco_cobot.run_program(program_name, True)
     print(f"Run program \"{program_name}\" result: {res}")
@@ -343,7 +342,7 @@ def duco_jspf_Return_pushbutton_tool():
     return res
 
 
-def duco_jspf_Get_rotate_tool():
+def duco_jspf_get_rotate_tool():
     program_name = "Get_rotate_tool.jspf"
     res = duco_cobot.run_program(program_name, True)
     print(f"Run program \"{program_name}\" result: {res}")
@@ -351,7 +350,7 @@ def duco_jspf_Get_rotate_tool():
     return res
 
 
-def duco_jspf_Return_rotate_tool():
+def duco_jspf_return_rotate_tool():
     program_name = "Return_rotate_tool.jspf"
     res = duco_cobot.run_program(program_name, True)
     print(f"Run program \"{program_name}\" result: {res}")
@@ -370,8 +369,8 @@ def ur15_fold():
     print("\n📦 UR15 Fold")
     print("   Running Fold.py script...")
     
-    script_path = os.path.join(script_dir, "Fold.py")
-    result = subprocess.run(["python", script_path], capture_output=True, text=True)
+    script_path = os.path.join(script_dir, "ur_state_fold.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
     if result.returncode == 0:
         print("✅ UR15 fold completed successfully")
@@ -390,8 +389,8 @@ def ur15_unfold():
     print("\n📦 UR15 Unfold")
     print("   Running Unfold.py script...")
     
-    script_path = os.path.join(script_dir, "Unfold.py")
-    result = subprocess.run(["python", script_path], capture_output=True, text=True)
+    script_path = os.path.join(script_dir, "ur_state_unfold.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
     if result.returncode == 0:
         print("✅ UR15 unfold completed successfully")
@@ -403,15 +402,15 @@ def ur15_unfold():
         return -1
 
 
-def ur15_get_push_tool():
+def ur15_get_pptool():
     """
     Pick up the push tool from storage location by running Get_push_tool.py script.
     """
     print("\n🔧 UR15 Get Push Tool")
     print("   Running Get_push_tool.py script...")
     
-    script_path = os.path.join(script_dir, "Get_push_tool.py")
-    result = subprocess.run(["python", script_path], capture_output=True, text=True)
+    script_path = os.path.join(script_dir, "ur_get_pptool.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
     if result.returncode == 0:
         print("✅ UR15 get push tool completed successfully")
@@ -423,15 +422,15 @@ def ur15_get_push_tool():
         return -1
 
 
-def ur15_return_push_tool():
+def ur15_return_pptool():
     """
     Return the push tool to storage location by running Return_push_tool.py script.
     """
     print("\n🔧 UR15 Return Push Tool")
     print("   Running Return_push_tool.py script...")
     
-    script_path = os.path.join(script_dir, "Return_push_tool.py")
-    result = subprocess.run(["python", script_path], capture_output=True, text=True)
+    script_path = os.path.join(script_dir, "ur_return_pptool.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
     if result.returncode == 0:
         print("✅ UR15 return push tool completed successfully")
@@ -450,8 +449,8 @@ def ur15_get_frame():
     print("\n🖼️  UR15 Get Frame")
     print("   Running Get_frame.py script...")
     
-    script_path = os.path.join(script_dir, "Get_frame.py")
-    result = subprocess.run(["python", script_path], capture_output=True, text=True)
+    script_path = os.path.join(script_dir, "ur_get_frame.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
     if result.returncode == 0:
         print("✅ UR15 get frame completed successfully")
@@ -463,265 +462,195 @@ def ur15_get_frame():
         return -1
 
 
-# ========================================================================
-# Lift Robot Platform and Pushrod Control Functions
-# ========================================================================
+def ur15_locate_handle1():
+    """
+    Locate handle 1 by running ur_locate_handle1.py script.
+    """
+    print("\n🔍 UR Locate Handle 1")
+    print("   Running ur_locate_handle1.py script...")
+    
+    script_path = os.path.join(script_dir, "ur_locate_handle1.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
+    
+    if result.returncode == 0:
+        print("✅ UR locate handle 1 completed successfully")
+        return 0
+    else:
+        print(f"❌ UR locate handle 1 failed")
+        if result.stderr:
+            print(f"   Error: {result.stderr}")
+        return -1
 
-def lift_platform_up():
+def ur15_locate_handle2():
     """
-    Move the lift platform upward (pulse relay).
-    
-    Sends a POST request to the lift web service to trigger upward motion.
+    Locate handle 2 by running ur_locate_handle2.py script.
     """
-    print("\n⬆️  Lift Platform Up")
-    print("   Sending UP command to lift platform...")
+    print("\n🔍 UR Locate Handle 2")
+    print("   Running ur_locate_handle2.py script...")
     
-    url = f"{LIFT_WEB_BASE}/api/cmd"
-    payload = {"command": "up", "target": "platform"}
-    headers = {"Content-Type": "application/json"}
+    script_path = os.path.join(script_dir, "ur_locate_handle2.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
-        if response.ok:
-            print("✅ Lift platform UP command sent successfully")
-            return response.json()
-        else:
-            print(f"❌ Lift platform UP command failed: HTTP {response.status_code}")
-            return {"success": False, "status_code": response.status_code}
-    except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to lift platform web service")
-        return {"success": False, "error": "Connection failed"}
-    except requests.exceptions.Timeout:
-        print("❌ Timeout sending lift platform UP command")
-        return {"success": False, "error": "Timeout"}
-    except Exception as e:
-        print(f"❌ Error sending lift platform UP command: {e}")
-        return {"success": False, "error": str(e)}
+    if result.returncode == 0:
+        print("✅ UR locate handle 2 completed successfully")
+        return 0
+    else:
+        print(f"❌ UR locate handle 2 failed")
+        if result.stderr:
+            print(f"   Error: {result.stderr}")
+        return -1
 
+def ur15_locate_frame():
+    """
+    Locate frame by running ur_locate_frame.py script.
+    """
+    print("\n🔍 UR Locate Frame")
+    print("   Running ur_locate_frame.py script...")
+    
+    script_path = os.path.join(script_dir, "ur_locate_frame.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
+    
+    if result.returncode == 0:
+        print("✅ UR locate frame completed successfully")
+        return 0
+    else:
+        print(f"❌ UR locate frame failed")
+        if result.stderr:
+            print(f"   Error: {result.stderr}")
+        return -1
 
-def lift_platform_down():
+def ur15_execute_handle1():
     """
-    Move the lift platform downward (pulse relay).
-    
-    Sends a POST request to the lift web service to trigger downward motion.
+    Execute handle 1 by running ur_execute_handle1.py script.
     """
-    print("\n⬇️  Lift Platform Down")
-    print("   Sending DOWN command to lift platform...")
+    print("\n🔍 UR Execute Handle 1")
+    print("   Running ur_execute_handle1.py script...")
     
-    url = f"{LIFT_WEB_BASE}/api/cmd"
-    payload = {"command": "down", "target": "platform"}
-    headers = {"Content-Type": "application/json"}
+    script_path = os.path.join(script_dir, "ur_execute_handle1.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
-        if response.ok:
-            print("✅ Lift platform DOWN command sent successfully")
-            return response.json()
-        else:
-            print(f"❌ Lift platform DOWN command failed: HTTP {response.status_code}")
-            return {"success": False, "status_code": response.status_code}
-    except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to lift platform web service")
-        return {"success": False, "error": "Connection failed"}
-    except requests.exceptions.Timeout:
-        print("❌ Timeout sending lift platform DOWN command")
-        return {"success": False, "error": "Timeout"}
-    except Exception as e:
-        print(f"❌ Error sending lift platform DOWN command: {e}")
-        return {"success": False, "error": str(e)}
+    if result.returncode == 0:
+        print("✅ UR execute handle 1 completed successfully")
+        return 0
+    else:
+        print(f"❌ UR execute handle 1 failed")
+        if result.stderr:
+            print(f"   Error: {result.stderr}")
+        return -1
 
+def ur15_execute_handle2():
+    """
+    Execute handle 2 by running ur_execute_handle2.py script.
+    """
+    print("\n🔍 UR Execute Handle 2")
+    print("   Running ur_execute_handle1.py script...")
+    
+    script_path = os.path.join(script_dir, "ur_execute_handle2.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
+    
+    if result.returncode == 0:
+        print("✅ UR execute handle 2 completed successfully")
+        return 0
+    else:
+        print(f"❌ UR execute handle 2 failed")
+        if result.stderr:
+            print(f"   Error: {result.stderr}")
+        return -1
 
-def lift_platform_stop():
+def ur15_execute_frame():
     """
-    Stop the lift platform motion (pulse stop relay).
-    
-    Sends a POST request to halt vertical motion immediately.
+    Execute frame by running ur_execute_frame.py script.
     """
-    print("\n🛑 Lift Platform Stop")
-    print("   Sending STOP command to lift platform...")
+    print("\n🔍 UR Execute Frame")
+    print("   Running ur_execute_frame.py script...")
     
-    url = f"{LIFT_WEB_BASE}/api/cmd"
-    payload = {"command": "stop", "target": "platform"}
-    headers = {"Content-Type": "application/json"}
+    script_path = os.path.join(script_dir, "ur_execute_frame.py")
+    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
-        if response.ok:
-            print("✅ Lift platform STOP command sent successfully")
-            return response.json()
-        else:
-            print(f"❌ Lift platform STOP command failed: HTTP {response.status_code}")
-            return {"success": False, "status_code": response.status_code}
-    except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to lift platform web service")
-        return {"success": False, "error": "Connection failed"}
-    except requests.exceptions.Timeout:
-        print("❌ Timeout sending lift platform STOP command")
-        return {"success": False, "error": "Timeout"}
-    except Exception as e:
-        print(f"❌ Error sending lift platform STOP command: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def pushrod_goto_only_forward():
-    """
-    Move pushrod to 'only forward' position (preset point).
-    
-    Sends goto_point command with point='only forward' (3.5s movement).
-    """
-    print("\n🔧 Pushrod Go to 'Only Forward'")
-    print("   Moving pushrod to 'only forward' position...")
-    
-    url = f"{LIFT_WEB_BASE}/api/cmd"
-    payload = {"command": "goto_point", "target": "pushrod", "point": "only forward"}
-    headers = {"Content-Type": "application/json"}
-    
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
-        if response.ok:
-            print("✅ Pushrod 'only forward' command sent successfully")
-            print("   (Movement will take ~3.5 seconds)")
-            return response.json()
-        else:
-            print(f"❌ Pushrod goto 'only forward' failed: HTTP {response.status_code}")
-            return {"success": False, "status_code": response.status_code}
-    except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to pushrod web service")
-        return {"success": False, "error": "Connection failed"}
-    except requests.exceptions.Timeout:
-        print("❌ Timeout sending pushrod goto command")
-        return {"success": False, "error": "Timeout"}
-    except Exception as e:
-        print(f"❌ Error sending pushrod goto command: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def pushrod_goto_base():
-    """
-    Move pushrod to 'base' position (home/retracted position).
-    
-    Sends goto_point command with point='base'.
-    """
-    print("\n🏠 Pushrod Go to Base")
-    print("   Moving pushrod to base position...")
-    
-    url = f"{LIFT_WEB_BASE}/api/cmd"
-    payload = {"command": "goto_point", "target": "pushrod", "point": "base"}
-    headers = {"Content-Type": "application/json"}
-    
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
-        if response.ok:
-            print("✅ Pushrod 'base' command sent successfully")
-            return response.json()
-        else:
-            print(f"❌ Pushrod goto 'base' failed: HTTP {response.status_code}")
-            return {"success": False, "status_code": response.status_code}
-    except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to pushrod web service")
-        return {"success": False, "error": "Connection failed"}
-    except requests.exceptions.Timeout:
-        print("❌ Timeout sending pushrod goto command")
-        return {"success": False, "error": "Timeout"}
-    except Exception as e:
-        print(f"❌ Error sending pushrod goto command: {e}")
-        return {"success": False, "error": str(e)}
-    
-def lift_platform_goto_height(target_height=900.0):
-    """
-    Move lift platform to a specific height using automatic control.
-    
-    Args:
-        target_height: Target height in millimeters (default: 900.0mm)
-    
-    This function uses the closed-loop height control feature that:
-    - Automatically moves the platform toward the target
-    - Stops within ±3mm precision
-    - Uses predictive stopping to compensate for system delays
-    """
-    print(f"\n🎯 Lift Platform Go to Height: {target_height}mm")
-    print(f"   Sending goto_height command (target: {target_height}mm)...")
-    
-    url = f"{LIFT_WEB_BASE}/api/cmd"
-    payload = {
-        "command": "goto_height",
-        "target": "platform",
-        "target_height": target_height
-    }
-    headers = {"Content-Type": "application/json"}
-    
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
-        if response.ok:
-            print(f"✅ Goto height {target_height}mm command sent successfully")
-            print("   Platform will automatically move to target and stop")
-            print("   Precision: ±3mm")
-            return response.json()
-        else:
-            print(f"❌ Goto height command failed: HTTP {response.status_code}")
-            return {"success": False, "status_code": response.status_code}
-    except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to lift platform web service")
-        return {"success": False, "error": "Connection failed"}
-    except requests.exceptions.Timeout:
-        print("❌ Timeout sending goto height command")
-        return {"success": False, "error": "Timeout"}
-    except Exception as e:
-        print(f"❌ Error sending goto height command: {e}")
-        return {"success": False, "error": str(e)}
-
+    if result.returncode == 0:
+        print("✅ UR execute frame completed successfully")
+        return 0
+    else:
+        print(f"❌ UR execute frame failed")
+        if result.stderr:
+            print(f"   Error: {result.stderr}")
+        return -1
 
 def run():
     """
     Main execution function.
-    
-    Calls all functions in sequence:
-    1. amr_home() - Move to home position
-    2. amr_smalltest() - Execute small test trajectory
     """
     print("\n" + "="*60)
     print("🏃 Starting Sequential Task Execution")
     print("="*60)
     
     try:
-        # AMR Navigation Tests
-        # amr_home()
-        # amr_smalltest()
+        #===========================AMR Navigation Tests==================================
+        # # step1 : unfold arms
+        # duco_jspf_unfold()
+        # time.sleep(0.5)
 
-        # DUCO Robot Arm Tests
-        # duco_jspf_Fold()
-        
+        # ur15_unfold()        
+        # time.sleep(0.5)
 
-        # Lift Platform Tests (uncomment to use)
-        # lift_platform_up()
-        # time.sleep(2)  # Wait for platform to move
-        # lift_platform_stop()
-        
-        # lift_platform_down()
-        # time.sleep(2)
-        # lift_platform_stop()
+        # # step2 : locate handle1 
+        # ur15_locate_handle1()
+        # time.sleep(0.5)
 
-        # Pushrod Tests (uncomment to use)
-        # pushrod_goto_only_forward()
-        # time.sleep(4)  # Wait for pushrod movement (~3.5s)
-        
-        # pushrod_goto_base()
-        # time.sleep(3)
 
-        # DUCO Tool Change Tests (uncomment to use)
-        # duco_jspf_Get_pushbutton_tool()
-        # duco_jspf_Return_pushbutton_tool()
-        # duco_jspf_Get_rotate_tool()
-        # duco_jspf_Return_rotate_tool()
-        # lift_platform_goto_height(target_height=900.0)
+        # # step3 : amr courier dock2rack
+        # amr_courier_dock2rack()
+        # time.sleep(0.5)
 
-        # print("\n" + "="*60)
-        # print("✅ All tasks completed successfully")
-        # print("="*60)
+        # # step4 : ur get pp tool based on position capturing handle1
+        # ur15_get_pptool()
+        # time.sleep(0.5)
+
+        # # step5 : execute handle1 to extract server
+        # ur15_execute_handle1()
+        # time.sleep(0.5)
+
+        # # step6 : execute amr courier rack2dock
+        # amr_courier_rack2dock()
+        # time.sleep(0.5)
+
+        # # step7 : ur return pptool to home
+        # ur15_return_pptool()
+        # time.sleep(0.5)
+
+        # # step8 : execute frame
+        # ur15_locate_frame()
+        # time.sleep(0.5)
+
+        # # step9 : ur get frame
+        # ur15_get_frame()
+        # time.sleep(0.5)
+
+        # # step10 : ur execute frame to place frame
+        # ur15_execute_frame()
+        # time.sleep(0.5)
+
+        # # step11 : amr courier dock2rack
+        # amr_courier_dock2rack()
+        # time.sleep(0.5)
+
+        # # step12 : ur locate handle2
+        # ur15_locate_handle2()
+        # time.sleep(0.5)
+
+        # # step13 : ur get pp tool
+        # ur15_get_pptool()
+        # time.sleep(0.5)
+
+        # # step14: ur execute handle2
+        # ur15_execute_handle2()
+        # time.sleep(0.5)
+
+        # step15: amr courier rack to dock
         amr_courier_rack2dock()
-        #pull detect
-        duco_jspf_Unfold()
+        time.sleep(0.5)
 
+                
     
     except Exception as e:
         print(f"\n❌ Error during execution: {e}")
@@ -734,7 +663,7 @@ def cleanup():
     """
     Cleanup function to properly close connections.
     """
-    global duco_cobot, ur15_robot
+    global duco_cobot
     print("\n" + "="*60)
     print("🧹 Cleaning up...")
     print("="*60)
@@ -747,19 +676,6 @@ def cleanup():
                 print("✅ DUCO Cobot connection closed")
             else:
                 print("⚠️  DUCO Cobot close returned non-zero")
-        except Exception as e:
-            print(f"❌ Error closing DUCO Cobot: {e}")
-    
-    if ur15_robot is not None:
-        try:
-            rlt = ur15_robot.close()
-            print(f"UR15 Robot close result: {rlt}")
-            if rlt == 0:
-                print("✅ UR15 Robot connection closed")
-            else:
-                print("⚠️  UR15 Robot close returned non-zero")
-        except Exception as e:
-            print(f"❌ Error closing UR15 Robot: {e}")
         except Exception as e:
             print(f"❌ Error closing DUCO Cobot: {e}")
     

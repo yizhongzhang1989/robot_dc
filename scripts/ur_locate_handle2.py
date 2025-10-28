@@ -56,11 +56,11 @@ class URLocateHandle2(URLocateBase):
         # Override movement offsets for handle2 task (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [-0.05, 0, 0, 0, 0, 0],
-            "movement2": [-0.03, 0, 0, 0, 0, 0],
-            "movement3": [0, 0, 0.05, 0, 0, 0],
-            "movement4": [-0.03, 0, -0.05, 0, 0, 0],
-            "movement5": [-0.02, 0, -0.05, 0, 0, 0]
+            "movement1": [-0.03, 0, 0, 0, 0, 0],
+            "movement2": [-0.02, 0, 0, 0, 0, 0],
+            "movement3": [0, 0, 0.02, 0, 0, 0],
+            "movement4": [-0.03, 0, -0.02, 0, 0, 0],
+            "movement5": [-0.02, 0, -0.02, 0, 0, 0]
         }
         
         self.local_x_kp_index = [0, 2]
@@ -73,6 +73,91 @@ class URLocateHandle2(URLocateBase):
         print(f"Collect start position: {self.collect_start_position}")
         print(f"Number of movements: {len(self.movements)}")
         print(f"{'='*60}\n")
+
+    def movej_to_start_position_after_execute_frame(self):
+        """
+        Move robot to get tool start position after process
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        pose = [-4.648319784794943, -1.5912381611266078, -0.06179070472717285, 
+                 0.06347481786694331, 1.439825415611267, -1.2331050078021448]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-1.4736245314227503, -1.5912381611266078, -0.06179070472717285, 
+                 0.06347481786694331, 1.439825415611267, -1.2331050078021448]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-1.4736245314227503, -1.5912381611266078, -1.7203681468963623, 
+                 0.06347481786694331, 1.439825415611267, -1.2331050078021448]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-1.4736245314227503, -1.5912381611266078, -1.7203681468963623, 
+                 -1.3410038512996216, 1.439825415611267, -1.2331050078021448]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-1.4736245314227503, -1.6785484753050746, -1.7203681468963623, 
+                -1.3410038512996216, 1.5090150833129883, 1.6812989711761475]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+        
+        if res == 0:
+            print("Robot moved to zero state successfully")
+        else:
+            print(f"Failed to move robot to zero state (error code: {res})")
+        
+        return res
+    
+    def movej_to_get_position_after_process(self):
+        """
+        Move robot to get tool start position after process
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        pose = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
+                -1.3431838166764756, 1.5084102153778076,  1.6445358991622925]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-1.5103414694415491, -1.712231775323385, -0.061849094927310944,
+                -1.3431838166764756, 1.5084102153778076,  1.6445358991622925]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [-1.5103414694415491, -1.712231775323385, -0.061849094927310944,
+                0.06347672521557612, 1.5084102153778076,  1.6445358991622925]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+
+        pose = [ -1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 
+                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
+        print("Moving robot to zero state position...")
+        res = self.robot.movej(pose, a=0.5, v=0.3)
+        time.sleep(0.5)
+        
+        if res == 0:
+            print("Robot moved to zero state successfully")
+        else:
+            print(f"Failed to move robot to zero state (error code: {res})")
+        
+        return res
+
 
 
 def main():
@@ -112,6 +197,25 @@ def main():
             print("Failed to load camera parameters!")
             return
         
+        print("\n" + "="*50)
+        ur_handle2.lift_platform_to_init()
+        time.sleep(10)
+        
+        # initialize platform height
+        print("\n" + "="*50)
+        ur_handle2.pushrod_to_base()
+        time.sleep(5)
+
+        ur_handle2.pushrod_to_heighest()
+        time.sleep(5)
+
+        print("\n" + "="*50)
+        ur_handle2.lift_platform_to_height(target_height=790.0)
+        time.sleep(5)
+        
+        ur_handle2.movej_to_start_position_after_execute_frame()
+        time.sleep(0.5)
+
         try:
             # Perform auto data collection (includes moving to collect position)
             if ur_handle2.auto_collect_data():
@@ -135,6 +239,10 @@ def main():
                         # Validate and visualize coordinate system
                         if ur_handle2.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
+
+                            ur_handle2.movej_to_get_position_after_process()
+                            time.sleep(0.5)
+                            
                         else:
                             print("⚠ Coordinate system validation failed!")
                     else:

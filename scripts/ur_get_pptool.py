@@ -64,7 +64,7 @@ def main():
     # Lock command
     lock_command = [0x53, 0x26, 0x01, 0x01, 0x01, 0x3A, 0xD4]
     rs485_socket.sendall(bytes(lock_command))
-    time.sleep(2)
+    time.sleep(3)
     
     robot.movel([0.49266283295781915, 0.637514409856154, 0.39179186546027234, 
                  3.0335983095124393, -0.8106332417773685, 0.04026824667349679], a=0.2, v=0.1)
