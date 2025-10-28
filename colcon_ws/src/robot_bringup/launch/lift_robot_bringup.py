@@ -70,7 +70,7 @@ def generate_launch_description():
     # Start cable sensor after modbus driver is ready
     cable_sensor_launch = TimerAction(
         period=4.0,
-        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cable_sensor_path), launch_arguments={'device_id': '51', 'read_interval': '0.1'}.items())]
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cable_sensor_path), launch_arguments={'device_id': '51', 'read_interval': '0.02'}.items())]
     )
 
     # Start force sensor after cable sensor (stagger to avoid simultaneous Modbus reads)

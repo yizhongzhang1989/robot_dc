@@ -61,11 +61,11 @@ class ModbusDevice(ABC):
             result = fut.result()
             # Log ack if received
             if hasattr(result, 'ack') and result.ack == 1:
-                self.node.get_logger().info("Manager ACK received: 1")
+                self.node.get_logger().debug("Manager ACK received: 1")
 
             # Log result status
             if result is not None and result.success:
-                self.node.get_logger().info(
+                self.node.get_logger().debug(
                     f"[SEQ {req.seq_id}] ✅ Modbus write OK: fc={func_code} addr={hex(addr)} → {values} => {result.response}"
                 )
             else:
@@ -106,9 +106,9 @@ class ModbusDevice(ABC):
         def handle_recv_response(fut):
             result = fut.result()
             if hasattr(result, 'ack') and result.ack == 1:
-                self.node.get_logger().info("Manager ACK received: 1")
+                self.node.get_logger().debug("Manager ACK received: 1")
             resp = result.response if result and result.success else []
-            self.node.get_logger().info(f"[SEQ {req.seq_id}] ✅ Modbus read OK: fc={func_code} addr={hex(addr)} count={count} => {resp}")
+            self.node.get_logger().debug(f"[SEQ {req.seq_id}] ✅ Modbus read OK: fc={func_code} addr={hex(addr)} count={count} => {resp}")
             if callback:
                 callback(resp)
 

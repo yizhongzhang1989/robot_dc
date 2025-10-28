@@ -13,16 +13,14 @@ class DrawWireSensorController(ModbusDevice):
 
     def read_sensor_data(self, seq_id=None):
         try:
-            self.node.get_logger().info(f"[SEQ {seq_id}] Reading draw-wire sensor registers")
+            # Removed info log to reduce output
             def handle_sensor_response(response):
                 try:
                     if response and len(response) >= 2:
                         self.sensor_data = response[:2]
                         import time
                         self.last_read_time = time.time()
-                        self.node.get_logger().info(
-                            f"[SEQ {seq_id}] Read OK: reg0={self.sensor_data[0]}, reg1={self.sensor_data[1]}"
-                        )
+                        # Removed info log - data published via topic
                     else:
                         self.node.get_logger().error(f"[SEQ {seq_id}] Read failed / invalid format")
                 except Exception as e:

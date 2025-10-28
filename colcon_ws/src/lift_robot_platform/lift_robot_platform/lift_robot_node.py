@@ -18,16 +18,16 @@ logging.basicConfig(level=logging.INFO)
 # ═══════════════════════════════════════════════════════════════
 # Control Loop Parameters
 # ═══════════════════════════════════════════════════════════════
-CONTROL_RATE = 0.1              # Control loop runs at 10 Hz (every 0.1s)
+CONTROL_RATE = 0.02             # Control loop runs at 50 Hz (every 0.02s)
 COMMAND_INTERVAL = 1.0          # Coarse control: 1.0s interval
-POSITION_TOLERANCE = 0.1        # Target reached within ±1.0mm
+POSITION_TOLERANCE = 0.5        # Target reached within ±0.5mm
 CHANGE_THRESHOLD = 0.5          # Send command if target changed by >0.5mm
 MAX_STEP = 10.0                 # Limit each position step to ±10mm
 LONG_ERROR_THRESHOLD = 20.0     # Errors >20mm = far from target
 APPROACH_THRESHOLD = 5.0        # Errors <5mm = near target, increase command frequency
 FINE_COMMAND_INTERVAL = 0.2     # Fine control: 0.2s interval (5Hz)
 PLATFORM_VELOCITY = 15.0        # Platform velocity: ~15mm/s (constant, hardware-defined)
-STOPPING_DISTANCE = 2.5         # Pre-stop distance: reduced to allow smaller movements
+STOPPING_DISTANCE = 2.5         # Pre-stop distance: increased to compensate for 2mm overshoot
 CONTROL_ENABLED = True          # Master enable for closed-loop control
 
 
@@ -58,6 +58,7 @@ class LiftRobotNode(Node):
         self.last_command_time = self.get_clock().now()  # Time of last Modbus command
         self.control_enabled = False        # Enable/disable closed-loop control
         self.control_mode = 'manual'        # 'manual' or 'auto' (height control)
+        self.dynamic_stopping_distance = STOPPING_DISTANCE  # Dynamic stopping distance (adjusted each cycle)
         
         # Create controller
         self.controller = LiftRobotController(
@@ -200,9 +201,12 @@ class LiftRobotNode(Node):
                 self.control_enabled = False
                 self.get_logger().info(
                     f"[Control] ✅ TARGET REACHED: current={self.current_height:.2f}mm, "
-                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
+                    f"target={self.target_height:.2f}mm, error={error:.3f}mm, "
+                    f"final_stop_distance={self.dynamic_stopping_distance:.2f}mm"
                 )
                 self.last_command_time = now
+                # Reset dynamic stopping distance to initial value for next movement
+                self.dynamic_stopping_distance = STOPPING_DISTANCE
             return
         
         # Determine control stage and command interval
@@ -218,21 +222,40 @@ class LiftRobotNode(Node):
             max_step = 5.0
             stage = "APPROACH"
         else:
-            # Stage 3: Near target - fine control with predictive stopping
+            # Stage 3: Near target - fine control with dynamic predictive stopping
             command_interval = FINE_COMMAND_INTERVAL  # 5Hz
             max_step = 2.0
             stage = "FINE"
             
-            # Predictive stop: if within stopping distance, send stop instead of move
-            if abs_error <= STOPPING_DISTANCE:
-                self.controller.stop()
-                self.control_enabled = False
-                self.get_logger().info(
-                    f"[Control] 🎯 PREDICTIVE STOP: current={self.current_height:.2f}mm, "
-                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
-                )
-                self.last_command_time = now
+            # Dynamic predictive stop: adjust stopping distance based on overshoot
+            # If we previously overshot, reduce the stopping distance for next time
+            if abs_error <= self.dynamic_stopping_distance:
+                if dt >= FINE_COMMAND_INTERVAL:
+                    self.controller.stop()
+                    self.get_logger().info(
+                        f"[Control] 🎯 PREDICTIVE STOP: current={self.current_height:.2f}mm, "
+                        f"target={self.target_height:.2f}mm, error={error:.3f}mm, "
+                        f"stop_distance={self.dynamic_stopping_distance:.2f}mm"
+                    )
+                    self.last_command_time = now
+                    
+                    # After stopping, reduce stopping distance slightly for next adjustment
+                    # This compensates for any overshoot that occurred
+                    reduction = 0.1  # Reduce by 0.1mm each cycle
+                    self.dynamic_stopping_distance = max(POSITION_TOLERANCE + 0.2, 
+                                                         self.dynamic_stopping_distance - reduction)
+                    self.get_logger().info(
+                        f"[Control] 📉 Adjusted stop_distance: {self.dynamic_stopping_distance:.2f}mm"
+                    )
+                else:
+                    self.get_logger().debug(
+                        f"[Control] ⏱️  Waiting for interval: dt={dt:.3f}s < {FINE_COMMAND_INTERVAL}s"
+                    )
                 return
+            else:
+                self.get_logger().debug(
+                    f"[Control] ✋ FINE stage: error={abs_error:.2f}mm > stop_dist={self.dynamic_stopping_distance:.2f}mm, will send movement command"
+                )
 
         # Check if platform is moving in correct direction (coasting logic for ALL stages)
         if self.last_sent_height != 0 and abs(self.current_height - self.last_sent_height) > 0.5:
@@ -241,10 +264,14 @@ class LiftRobotNode(Node):
             
             # Skip command if moving in correct direction
             if (error > 0 and moving_up) or (error < 0 and moving_down):
-                self.get_logger().debug(
-                    f"[Control] 🚀 Coasting {stage}: error={error:.2f}mm, moving correctly"
+                self.get_logger().info(
+                    f"[Control] 🚀 Coasting {stage}: error={error:.2f}mm, current={self.current_height:.2f}, last_sent={self.last_sent_height:.2f}, moving {'UP' if moving_up else 'DOWN'}"
                 )
                 return
+        else:
+            self.get_logger().debug(
+                f"[Control] 🛑 Not coasting: last_sent={self.last_sent_height:.2f}, current={self.current_height:.2f}, diff={abs(self.current_height - self.last_sent_height):.2f}"
+            )
         
         try:
             # Priority 2: Check time interval to throttle commands
