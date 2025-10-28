@@ -134,8 +134,7 @@ class LiftRobotWeb(Node):
                     if not point:
                         return JSONResponse({'error':'point field required for goto_point'}, status_code=400)
                 if cmd == 'goto_height':
-                    if target != 'platform':
-                        return JSONResponse({'error':'goto_height only valid for platform target'}, status_code=400)
+                    # goto_height now supports both platform and pushrod targets
                     target_height = payload.get('target_height')
                     if target_height is None:
                         return JSONResponse({'error':'target_height field required for goto_height'}, status_code=400)

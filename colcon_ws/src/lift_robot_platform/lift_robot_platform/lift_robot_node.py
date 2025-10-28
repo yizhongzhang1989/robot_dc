@@ -19,16 +19,9 @@ logging.basicConfig(level=logging.INFO)
 # Control Loop Parameters
 # ═══════════════════════════════════════════════════════════════
 CONTROL_RATE = 0.02             # Control loop runs at 50 Hz (every 0.02s)
-COMMAND_INTERVAL = 1.0          # Coarse control: 1.0s interval
-POSITION_TOLERANCE = 0.5        # Target reached within ±0.5mm
-CHANGE_THRESHOLD = 0.5          # Send command if target changed by >0.5mm
-MAX_STEP = 10.0                 # Limit each position step to ±10mm
-LONG_ERROR_THRESHOLD = 20.0     # Errors >20mm = far from target
-APPROACH_THRESHOLD = 5.0        # Errors <5mm = near target, increase command frequency
-FINE_COMMAND_INTERVAL = 0.2     # Fine control: 0.2s interval (5Hz)
-PLATFORM_VELOCITY = 15.0        # Platform velocity: ~15mm/s (constant, hardware-defined)
-STOPPING_DISTANCE = 2.5         # Pre-stop distance: increased to compensate for 2mm overshoot
-CONTROL_ENABLED = True          # Master enable for closed-loop control
+POSITION_TOLERANCE = 0.5        # Target reached within ±1.0mm
+COMMAND_INTERVAL = 0.3          # Command send interval: 0.3s (prevent too frequent commands)
+HISTORY_SIZE = 4                # Number of height readings to keep for filtering
 
 
 class LiftRobotNode(Node):
@@ -52,13 +45,13 @@ class LiftRobotNode(Node):
         # ═══════════════════════════════════════════════════════════════
         # Control Loop State Variables
         # ═══════════════════════════════════════════════════════════════
-        self.current_height = 0.0           # Current height from sensor (mm)
+        self.current_height = 0.0           # Current filtered height (mm)
         self.target_height = 0.0            # Target height setpoint (mm)
-        self.last_sent_height = 0.0         # Last commanded height (mm)
+        self.height_history = []            # History of height readings for filtering
         self.last_command_time = self.get_clock().now()  # Time of last Modbus command
         self.control_enabled = False        # Enable/disable closed-loop control
         self.control_mode = 'manual'        # 'manual' or 'auto' (height control)
-        self.dynamic_stopping_distance = STOPPING_DISTANCE  # Dynamic stopping distance (adjusted each cycle)
+        self.movement_state = 'stop'        # Current movement state: 'up', 'down', or 'stop'
         
         # Create controller
         self.controller = LiftRobotController(
@@ -119,12 +112,15 @@ class LiftRobotNode(Node):
                     self.control_enabled = False
                     self.control_mode = 'manual'
                     self.get_logger().info(f"[SEQ {seq_id_str}] Manual stop - auto control disabled")
+                self.movement_state = 'stop'
                 
             elif command == 'up':
                 self.controller.up(seq_id=seq_id)
+                self.movement_state = 'up'
                 
             elif command == 'down':
                 self.controller.down(seq_id=seq_id)
+                self.movement_state = 'down'
                 
             elif command == 'timed_up':
                 duration = command_data.get('duration', 1.0)
@@ -145,7 +141,8 @@ class LiftRobotNode(Node):
                     self.control_mode = 'auto'
                     self.control_enabled = True
                     # Reset tracking to allow immediate first command
-                    self.last_sent_height = self.current_height
+                    self.height_history.clear()
+                    self.movement_state = 'stop'  # Reset movement state
                     self.last_command_time = self.get_clock().now() - rclpy.duration.Duration(seconds=COMMAND_INTERVAL)
                     self.get_logger().info(f"[SEQ {seq_id_str}] Auto mode: target height = {self.target_height:.2f} mm")
                 else:
@@ -166,137 +163,119 @@ class LiftRobotNode(Node):
             # Use adjusted height (includes pushrod offset)
             height = sensor_data.get('height')
             if height is not None:
-                self.current_height = float(height)
+                raw_height = float(height)
+                
+                # Add to history
+                self.height_history.append(raw_height)
+                
+                # Keep only the most recent HISTORY_SIZE readings
+                if len(self.height_history) > HISTORY_SIZE:
+                    self.height_history.pop(0)
+                
+                # Calculate filtered height (remove min/max, average the rest)
+                self.current_height = self._calculate_filtered_height()
+                
         except (json.JSONDecodeError, ValueError, KeyError) as e:
             self.get_logger().debug(f"Failed to parse sensor data: {e}")
+    
+    def _calculate_filtered_height(self):
+        """
+        Calculate filtered height by removing min/max values and averaging the rest.
+        If less than 4 samples, return the average of available samples.
+        """
+        if len(self.height_history) == 0:
+            return self.current_height  # No new data, keep old value
+        
+        if len(self.height_history) < 4:
+            # Not enough samples, return simple average
+            return sum(self.height_history) / len(self.height_history)
+        
+        # Remove min and max, average the rest
+        sorted_heights = sorted(self.height_history)
+        middle_values = sorted_heights[1:-1]  # Remove first (min) and last (max)
+        return sum(middle_values) / len(middle_values)
 
     def control_loop(self):
         """
-        High-frequency control loop (10 Hz) with adaptive precision control.
+        Simplified closed-loop control with filtered height measurement.
         
-        Three-stage control strategy:
-        1. Far (>20mm): Coarse control, 1Hz commands, allow coasting
-        2. Approaching (5-20mm): Medium control, 5Hz commands
-        3. Fine (<5mm): Precise control, 5Hz commands, small steps
-        
-        Target precision: ±2.0mm
+        Control strategy:
+        1. Use filtered height (remove min/max from last 4 readings)
+        2. Calculate error = target - current
+        3. Send up/down/stop command based on error
+        4. Limit command frequency to prevent excessive Modbus traffic
         """
         try:
             if not self.control_enabled or self.control_mode != 'auto':
                 return
+            
+            # Need at least some readings to start control
+            if len(self.height_history) == 0:
+                return
                 
-            # Calculate position error and timing
-            now = self.get_clock().now()
-            dt = (now - self.last_command_time).nanoseconds * 1e-9
+            # Calculate position error
             error = self.target_height - self.current_height
             abs_error = abs(error)
+            
+            # Calculate time since last command
+            now = self.get_clock().now()
+            dt = (now - self.last_command_time).nanoseconds * 1e-9
+            
         except Exception as e:
             self.get_logger().error(f"[Control] Loop error (calculation): {e}")
             return
         
-        # Priority 1: If within tolerance, STOP (only if enough time passed)
+        # Priority 1: Check if target reached
         if abs_error <= POSITION_TOLERANCE:
-            if dt >= FINE_COMMAND_INTERVAL and self.control_enabled:
+            if self.control_enabled:
                 self.controller.stop()
                 self.control_enabled = False
+                self.movement_state = 'stop'
                 self.get_logger().info(
                     f"[Control] ✅ TARGET REACHED: current={self.current_height:.2f}mm, "
-                    f"target={self.target_height:.2f}mm, error={error:.3f}mm, "
-                    f"final_stop_distance={self.dynamic_stopping_distance:.2f}mm"
+                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
                 )
                 self.last_command_time = now
-                # Reset dynamic stopping distance to initial value for next movement
-                self.dynamic_stopping_distance = STOPPING_DISTANCE
             return
         
-        # Determine control stage and command interval
-        if abs_error > LONG_ERROR_THRESHOLD:
-            # Stage 1: Far from target - coarse control
-            command_interval = COMMAND_INTERVAL  # 1Hz
-            max_step = MAX_STEP
-            stage = "COARSE"
-                    
-        elif abs_error > APPROACH_THRESHOLD:
-            # Stage 2: Approaching target - medium control
-            command_interval = FINE_COMMAND_INTERVAL  # 5Hz
-            max_step = 5.0
-            stage = "APPROACH"
-        else:
-            # Stage 3: Near target - fine control with dynamic predictive stopping
-            command_interval = FINE_COMMAND_INTERVAL  # 5Hz
-            max_step = 2.0
-            stage = "FINE"
-            
-            # Dynamic predictive stop: adjust stopping distance based on overshoot
-            # If we previously overshot, reduce the stopping distance for next time
-            if abs_error <= self.dynamic_stopping_distance:
-                if dt >= FINE_COMMAND_INTERVAL:
-                    self.controller.stop()
+        # Priority 2: Check command interval (throttling)
+        if dt < COMMAND_INTERVAL:
+            return  # Too soon, wait for next interval
+        
+        # Priority 3: Send movement command based on error direction
+        try:
+            if error > POSITION_TOLERANCE:
+                # Need to move up - only send command if not already moving up
+                if self.movement_state != 'up':
+                    self.controller.up()
+                    self.movement_state = 'up'
                     self.get_logger().info(
-                        f"[Control] 🎯 PREDICTIVE STOP: current={self.current_height:.2f}mm, "
-                        f"target={self.target_height:.2f}mm, error={error:.3f}mm, "
-                        f"stop_distance={self.dynamic_stopping_distance:.2f}mm"
+                        f"[Control] ⬆️  UP: current={self.current_height:.2f}mm, "
+                        f"target={self.target_height:.2f}mm, error={error:.2f}mm"
                     )
                     self.last_command_time = now
-                    
-                    # After stopping, reduce stopping distance slightly for next adjustment
-                    # This compensates for any overshoot that occurred
-                    reduction = 0.1  # Reduce by 0.1mm each cycle
-                    self.dynamic_stopping_distance = max(POSITION_TOLERANCE + 0.2, 
-                                                         self.dynamic_stopping_distance - reduction)
-                    self.get_logger().info(
-                        f"[Control] 📉 Adjusted stop_distance: {self.dynamic_stopping_distance:.2f}mm"
-                    )
                 else:
                     self.get_logger().debug(
-                        f"[Control] ⏱️  Waiting for interval: dt={dt:.3f}s < {FINE_COMMAND_INTERVAL}s"
+                        f"[Control] ⏫ Already moving UP: current={self.current_height:.2f}mm, "
+                        f"target={self.target_height:.2f}mm, error={error:.2f}mm"
                     )
-                return
-            else:
-                self.get_logger().debug(
-                    f"[Control] ✋ FINE stage: error={abs_error:.2f}mm > stop_dist={self.dynamic_stopping_distance:.2f}mm, will send movement command"
-                )
-
-        # Check if platform is moving in correct direction (coasting logic for ALL stages)
-        if self.last_sent_height != 0 and abs(self.current_height - self.last_sent_height) > 0.5:
-            moving_up = self.current_height > self.last_sent_height
-            moving_down = self.current_height < self.last_sent_height
-            
-            # Skip command if moving in correct direction
-            if (error > 0 and moving_up) or (error < 0 and moving_down):
-                self.get_logger().info(
-                    f"[Control] 🚀 Coasting {stage}: error={error:.2f}mm, current={self.current_height:.2f}, last_sent={self.last_sent_height:.2f}, moving {'UP' if moving_up else 'DOWN'}"
-                )
-                return
-        else:
-            self.get_logger().debug(
-                f"[Control] 🛑 Not coasting: last_sent={self.last_sent_height:.2f}, current={self.current_height:.2f}, diff={abs(self.current_height - self.last_sent_height):.2f}"
-            )
-        
-        try:
-            # Priority 2: Check time interval to throttle commands
-            if dt < command_interval:
-                return  # Too soon, wait for next interval
-            
-            # Priority 3: Send movement command (pulse width doesn't affect velocity)
-            step = max(-max_step, min(max_step, error))
-            
-            if step > 0.05:  # Moving up (threshold lowered for precision)
-                self.controller.up()  # Pulse width is constant (100ms), velocity is hardware-defined
-                self.get_logger().info(
-                    f"[Control] ⬆️  {stage}: current={self.current_height:.2f}mm, "
-                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
-                )
-            elif step < -0.05:  # Moving down
-                self.controller.down()  # Pulse width is constant (100ms), velocity is hardware-defined
-                self.get_logger().info(
-                    f"[Control] ⬇️  {stage}: current={self.current_height:.2f}mm, "
-                    f"target={self.target_height:.2f}mm, error={error:.3f}mm"
-                )
-            
-            # Update tracking variables
-            self.last_sent_height = self.current_height + step
-            self.last_command_time = now
+                
+            elif error < -POSITION_TOLERANCE:
+                # Need to move down - only send command if not already moving down
+                if self.movement_state != 'down':
+                    self.controller.down()
+                    self.movement_state = 'down'
+                    self.get_logger().info(
+                        f"[Control] ⬇️  DOWN: current={self.current_height:.2f}mm, "
+                        f"target={self.target_height:.2f}mm, error={error:.2f}mm"
+                    )
+                    self.last_command_time = now
+                else:
+                    self.get_logger().debug(
+                        f"[Control] ⏬ Already moving DOWN: current={self.current_height:.2f}mm, "
+                        f"target={self.target_height:.2f}mm, error={error:.2f}mm"
+                    )
+                
         except Exception as e:
             self.get_logger().error(f"[Control] Command execution error: {e}")
             # Don't disable control on command errors, just skip this cycle
@@ -312,6 +291,7 @@ class LiftRobotNode(Node):
                 'control_mode': self.control_mode,
                 'current_height': self.current_height,
                 'target_height': self.target_height,
+                'movement_state': self.movement_state,
                 'status': 'online'
             }
             

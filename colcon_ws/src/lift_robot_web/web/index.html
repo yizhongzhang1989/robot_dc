@@ -33,10 +33,16 @@
           <button data-cmd="stop" data-target="platform" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded">Stop</button>
         </div>
         <div class="flex gap-2 items-center mb-1">
-          <span class="text-xs font-semibold text-slate-600 pr-2">Auto Height:</span>
-          <input id="targetHeight" type="number" placeholder="mm" class="px-2 py-1 border border-slate-300 rounded text-sm w-20" value="750">
-          <button id="gotoHeightBtn" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded">Go to Height</button>
+          <span class="text-xs font-semibold text-slate-600 pr-2">Platform 粗调:</span>
+          <input id="targetHeightPlatform" type="number" placeholder="mm" class="px-2 py-1 border border-slate-300 rounded text-sm w-20" value="750">
+          <button id="gotoHeightPlatformBtn" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded">Go to Height</button>
           <span class="text-xs text-slate-500">(use Stop button to cancel)</span>
+        </div>
+        <div class="flex gap-2 items-center mb-1">
+          <span class="text-xs font-semibold text-slate-600 pr-2">Pushrod 微调:</span>
+          <input id="targetHeightPushrod" type="number" placeholder="mm" class="px-2 py-1 border border-slate-300 rounded text-sm w-20" value="750">
+          <button id="gotoHeightPushrodBtn" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded">Go to Height</button>
+          <span class="text-xs text-slate-500">(fine adjustment)</span>
         </div>
         <div class="flex flex-wrap gap-2 items-center mb-1">
           <span class="text-xs font-semibold text-slate-600 pr-2">Pushrod Points:</span>
@@ -130,20 +136,39 @@ document.querySelectorAll('button[data-cmd]').forEach(btn=>{
 });
 
 // Go to Height button (special handler with input field)
-$('gotoHeightBtn').addEventListener('click', async ()=>{
-  const targetHeight = parseFloat($('targetHeight').value);
+$('gotoHeightPlatformBtn').addEventListener('click', async ()=>{
+  const targetHeight = parseFloat($('targetHeightPlatform').value);
   if(isNaN(targetHeight)){
     $('cmdStatus').textContent='Invalid height value';
     setTimeout(()=>$('cmdStatus').textContent='',2000);
     return;
   }
-  $('cmdStatus').textContent='Going to '+targetHeight+'mm ...';
+  $('cmdStatus').textContent='Platform going to '+targetHeight+'mm ...';
   const payload={command:'goto_height',target:'platform',target_height:targetHeight};
   try {
     const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(!r.ok){ $('cmdStatus').textContent='Failed goto_height'; return; }
+    if(!r.ok){ $('cmdStatus').textContent='Failed goto_height (platform)'; return; }
     const resp=await r.json();
-    $('cmdStatus').textContent='Moving to '+targetHeight+'mm';
+    $('cmdStatus').textContent='Platform moving to '+targetHeight+'mm';
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+  } catch(e){ $('cmdStatus').textContent='Error'; }
+});
+
+// Pushrod fine adjustment button
+$('gotoHeightPushrodBtn').addEventListener('click', async ()=>{
+  const targetHeight = parseFloat($('targetHeightPushrod').value);
+  if(isNaN(targetHeight)){
+    $('cmdStatus').textContent='Invalid height value';
+    setTimeout(()=>$('cmdStatus').textContent='',2000);
+    return;
+  }
+  $('cmdStatus').textContent='Pushrod fine-tuning to '+targetHeight+'mm ...';
+  const payload={command:'goto_height',target:'pushrod',target_height:targetHeight};
+  try {
+    const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){ $('cmdStatus').textContent='Failed goto_height (pushrod)'; return; }
+    const resp=await r.json();
+    $('cmdStatus').textContent='Pushrod fine-tuning to '+targetHeight+'mm';
     setTimeout(()=>$('cmdStatus').textContent='',3000);
   } catch(e){ $('cmdStatus').textContent='Error'; }
 });
