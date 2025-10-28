@@ -53,6 +53,11 @@ class PushrodNode(Node):
         self.control_enabled = False        # Enable/disable closed-loop control
         self.control_mode = 'manual'        # 'manual' or 'auto' (height control)
         self.movement_state = 'stop'        # Current movement state: 'up', 'down', or 'stop'
+        
+        # Pushrod offset tracking
+        self.pushrod_offset = 0.0           # Current pushrod offset in mm
+        self.height_before_movement = None  # Height before starting movement
+        self.is_tracking_offset = False     # Flag to track if we should measure offset
 
         # Controller
         self.controller = PushrodController(
@@ -60,6 +65,9 @@ class PushrodNode(Node):
             node=self,
             use_ack_patch=self.use_ack_patch
         )
+        
+        # Set callback for auto-stop completion (for offset tracking)
+        self.controller.on_auto_stop_callback = self._on_auto_stop_complete
 
         # Command subscription
         self.subscription = self.create_subscription(
@@ -106,6 +114,13 @@ class PushrodNode(Node):
 
             if command == 'stop':
                 self.controller.stop(seq_id=seq_id)
+                # Calculate offset if we were tracking
+                if self.is_tracking_offset and self.height_before_movement is not None:
+                    height_change = self.current_height - self.height_before_movement
+                    self.pushrod_offset += height_change
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Pushrod offset updated: {height_change:.2f}mm, total offset: {self.pushrod_offset:.2f}mm")
+                    self.is_tracking_offset = False
+                    self.height_before_movement = None
                 # Also disable auto control if active
                 if self.control_enabled:
                     self.control_enabled = False
@@ -114,18 +129,30 @@ class PushrodNode(Node):
                 self.movement_state = 'stop'
                     
             elif command == 'up':
+                # Start tracking offset
+                self.height_before_movement = self.current_height
+                self.is_tracking_offset = True
                 self.controller.up(seq_id=seq_id)
                 self.movement_state = 'up'
                 
             elif command == 'down':
+                # Start tracking offset
+                self.height_before_movement = self.current_height
+                self.is_tracking_offset = True
                 self.controller.down(seq_id=seq_id)
                 self.movement_state = 'down'
                 
             elif command == 'timed_up':
+                # Start tracking offset
+                self.height_before_movement = self.current_height
+                self.is_tracking_offset = True
                 duration = command_data.get('duration', 1.0)
                 self.controller.timed_up(duration, seq_id=seq_id)
                 
             elif command == 'timed_down':
+                # Start tracking offset
+                self.height_before_movement = self.current_height
+                self.is_tracking_offset = True
                 duration = command_data.get('duration', 1.0)
                 self.controller.timed_down(duration, seq_id=seq_id)
                 
@@ -137,12 +164,25 @@ class PushrodNode(Node):
                 if not point:
                     self.get_logger().warning("goto_point command missing 'point' field")
                 else:
+                    # Reset offset when going to base
+                    if point == 'base':
+                        self.pushrod_offset = 0.0
+                        self.is_tracking_offset = False
+                        self.height_before_movement = None
+                        self.get_logger().info(f"[SEQ {seq_id_str}] Going to base - pushrod offset reset to 0")
+                    else:
+                        # For other points, start tracking offset
+                        self.height_before_movement = self.current_height
+                        self.is_tracking_offset = True
                     self.controller.goto_point(point, seq_id=seq_id)
                     
             elif command == 'goto_height':
                 # New command: go to specific height with closed-loop control
                 target = command_data.get('target_height')
                 if target is not None:
+                    # Start tracking offset for fine adjustment
+                    self.height_before_movement = self.current_height
+                    self.is_tracking_offset = True
                     self.target_height = float(target)
                     self.control_mode = 'auto'
                     self.control_enabled = True
@@ -199,6 +239,15 @@ class PushrodNode(Node):
         sorted_heights = sorted(self.height_history)
         middle_values = sorted_heights[1:-1]  # Remove first (min) and last (max)
         return sum(middle_values) / len(middle_values)
+    
+    def _on_auto_stop_complete(self):
+        """Callback when auto-stop timer completes (for offset tracking)."""
+        if self.is_tracking_offset and self.height_before_movement is not None:
+            height_change = self.current_height - self.height_before_movement
+            self.pushrod_offset += height_change
+            self.get_logger().info(f"Auto-stop complete. Offset updated: {height_change:.2f}mm, total: {self.pushrod_offset:.2f}mm")
+            self.is_tracking_offset = False
+            self.height_before_movement = None
 
     def control_loop(self):
         """
@@ -234,6 +283,13 @@ class PushrodNode(Node):
         if abs_error <= POSITION_TOLERANCE:
             if self.control_enabled:
                 self.controller.stop()
+                # Calculate offset after automatic movement
+                if self.is_tracking_offset and self.height_before_movement is not None:
+                    height_change = self.current_height - self.height_before_movement
+                    self.pushrod_offset += height_change
+                    self.get_logger().info(f"[Pushrod Control] Offset updated: {height_change:.2f}mm, total: {self.pushrod_offset:.2f}mm")
+                    self.is_tracking_offset = False
+                    self.height_before_movement = None
                 self.control_enabled = False
                 self.movement_state = 'stop'
                 self.get_logger().info(
@@ -298,6 +354,8 @@ class PushrodNode(Node):
                 'current_height': self.current_height,
                 'target_height': self.target_height,
                 'movement_state': self.movement_state,
+                'pushrod_offset': self.pushrod_offset,
+                'is_tracking_offset': self.is_tracking_offset,
                 'status': 'online'
             }
             status_msg = String()

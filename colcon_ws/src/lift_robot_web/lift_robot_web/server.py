@@ -29,6 +29,8 @@ class LiftRobotWeb(Node):
         self.loop = None
         self.right_force = None
         self.left_force = None
+        self.platform_status = None
+        self.pushrod_status = None
 
         # ROS interfaces
         self.sub = self.create_subscription(String, self.sensor_topic, self.sensor_cb, 10)
@@ -39,6 +41,10 @@ class LiftRobotWeb(Node):
             self.left_sub = self.create_subscription(Float32, '/left_force_sensor', self.left_cb, 10)
         except Exception as e:
             self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
+        # Status subscriptions
+        self.platform_status_sub = self.create_subscription(String, '/lift_robot_platform/status', self.platform_status_cb, 10)
+        self.pushrod_status_sub = self.create_subscription(String, '/lift_robot_pushrod/status', self.pushrod_status_cb, 10)
+        
         self.cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
         self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
 
@@ -53,7 +59,7 @@ class LiftRobotWeb(Node):
             except Exception:
                 self.latest_obj = None
             if self.loop and self.connections:
-                # Merge force values if available
+                # Merge force values and status if available
                 outbound = msg.data
                 if self.latest_obj is not None:
                     try:
@@ -62,6 +68,10 @@ class LiftRobotWeb(Node):
                             merged['right_force_sensor'] = self.right_force
                         if self.left_force is not None:
                             merged['left_force_sensor'] = self.left_force
+                        if self.platform_status is not None:
+                            merged['platform_status'] = self.platform_status
+                        if self.pushrod_status is not None:
+                            merged['pushrod_status'] = self.pushrod_status
                         outbound = json.dumps(merged)
                     except Exception as e:
                         self.get_logger().warn(f"Sensor data merge error: {e}")
@@ -82,6 +92,18 @@ class LiftRobotWeb(Node):
             self.left_force = msg.data
         except Exception as e:
             self.get_logger().warn(f"Left force callback error: {e}")
+    
+    def platform_status_cb(self, msg: String):
+        try:
+            self.platform_status = json.loads(msg.data)
+        except Exception as e:
+            self.get_logger().warn(f"Platform status parse error: {e}")
+    
+    def pushrod_status_cb(self, msg: String):
+        try:
+            self.pushrod_status = json.loads(msg.data)
+        except Exception as e:
+            self.get_logger().warn(f"Pushrod status parse error: {e}")
 
     async def broadcast(self, text):
         drop = []

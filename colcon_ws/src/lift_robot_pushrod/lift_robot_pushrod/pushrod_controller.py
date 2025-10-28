@@ -36,19 +36,12 @@ class PushrodController(ModbusDevice):
         self.stop_timer = None
         # Track the timer identity for callback race prevention
         self._stop_timer_id = 0
+        # Callback for when auto-stop completes (for offset tracking)
+        self.on_auto_stop_callback = None
         # Discrete named points (seconds up from base). Base assumed 0.
-        # User definitions:
-        # base: 0
-        # only forward: 3.5
-        # safe move: 3.0
-        # only forward and backward: 4.0
-        # all direction: 4.5
+        # Only 'base' is supported now
         self.points = {
             'base': 0.0,
-            'only forward': 3.5,
-            'safe mode': 2.7,
-            'fwd&back': 4.5,
-            'all direction': 5.0,
         }
         # Track current position in seconds from base (approx). Starts at base.
         self.current_position = 0.0
@@ -205,50 +198,40 @@ class PushrodController(ModbusDevice):
             self._move_direction = None
             self._move_timer_duration = None
             self._move_target_seconds = None
+        
+        # Call the callback to notify node (for offset tracking)
+        if self.on_auto_stop_callback:
+            try:
+                self.on_auto_stop_callback()
+            except Exception as e:
+                self.node.get_logger().error(f"Auto-stop callback error: {e}")
 
     def goto_point(self, point_name, seq_id=None):
-        """Move from current_point to target named point using timed up/down pulses.
-        point_name: one of points keys.
-        Computes difference in seconds and calls timed_up or timed_down.
+        """Move from current_point to target named point.
+        Only 'base' is supported - goes to hardware bottom limit.
         """
-        if point_name not in self.points:
-            self.node.get_logger().warning(f"[SEQ {seq_id}] Unknown point '{point_name}'")
+        if point_name != 'base':
+            self.node.get_logger().warning(f"[SEQ {seq_id}] Only 'base' point is supported, got '{point_name}'")
             return
-        target_seconds = self.points[point_name]
-        # Special-case: 'base' uses hardware limit switch stop (no timing). Always send DOWN pulse.
-        if point_name == 'base':
-            self.node.get_logger().info(f"[SEQ {seq_id}] Goto 'base' -> DOWN until hardware bottom")
-            # Cancel any existing auto-stop timer; then issue a down pulse only
-            with self.timer_lock:
-                self._cancel_stop_timer()
-                # Mark movement as downward to bottom; we don't know time, will reset when external event recognized
-                self._move_direction = 'down'
-                self._move_timer_duration = None
-                self._move_target_seconds = 0.0
-            self.down(seq_id=seq_id)
-            # Assume hardware will stop itself; optimistic position update
-            with self.timer_lock:
-                self.current_position = 0.0
-                self.current_point = 'base'
-                # Clear tracking (since stop not timed)
-                self._move_direction = None
-                self._move_timer_duration = None
-                self._move_target_seconds = None
-            return
+        
+        # Go to base: DOWN until hardware limit switch stop
+        self.node.get_logger().info(f"[SEQ {seq_id}] Goto 'base' -> DOWN until hardware bottom")
+        # Cancel any existing auto-stop timer; then issue a down pulse only
         with self.timer_lock:
-            delta = target_seconds - self.current_position
-        if abs(delta) < 0.05:
-            self.node.get_logger().info(f"[SEQ {seq_id}] Already at point '{point_name}'")
-            return
-        if delta > 0:
-            self.node.get_logger().info(f"[SEQ {seq_id}] Goto point '{point_name}' -> UP {delta:.3f}s")
-            self.timed_up(delta, seq_id=seq_id)
-        else:
-            self.node.get_logger().info(f"[SEQ {seq_id}] Goto point '{point_name}' -> DOWN {abs(delta):.3f}s")
-            self.timed_down(abs(delta), seq_id=seq_id)
-        # Pre-set target point (will finalize on auto-stop)
+            self._cancel_stop_timer()
+            # Mark movement as downward to bottom
+            self._move_direction = 'down'
+            self._move_timer_duration = None
+            self._move_target_seconds = 0.0
+        self.down(seq_id=seq_id)
+        # Assume hardware will stop itself; optimistic position update
         with self.timer_lock:
-            self.current_point = 'moving'
+            self.current_position = 0.0
+            self.current_point = 'base'
+            # Clear tracking (since stop not timed)
+            self._move_direction = None
+            self._move_timer_duration = None
+            self._move_target_seconds = None
 
 
     def cleanup(self):
