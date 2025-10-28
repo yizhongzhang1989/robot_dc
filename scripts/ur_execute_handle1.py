@@ -233,7 +233,7 @@ class URExecuteHandle1(URExecuteBase):
         final_pose = [
             target_position[0],  # x (already at target X)
             target_position[1],       # y (already at target Y)
-            target_position[2] + 0.2265 - 0.02,       # z (move to target Z)
+            target_position[2] + 0.2265 - 0.01,       # z (move to target Z)
             current_pose[3],          # rx (keep current orientation)
             current_pose[4],          # ry
             current_pose[5]           # rz
@@ -288,7 +288,45 @@ class URExecuteHandle1(URExecuteBase):
             print(f"Failed to extract server (error code: {res})")
         
         return res
-    
+
+    def movel_to_move_in_z(self, distance):
+        """
+        Move robot along X negative direction by distance to extract server
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Calculate target pose: move 0.2m in X negative direction
+        target_pose = [
+            current_pose[0] + 0.01,  # x (move distance m in x direction)
+            current_pose[1],         # y (keep unchanged)
+            current_pose[2] + distance,         # z (keep unchanged)
+            current_pose[3],         # rx (keep current orientation)
+            current_pose[4],         # ry
+            current_pose[5]          # rz
+        ]
+        
+        print("\nExtracting server: Moving 0.85m along X negative direction...")
+        print(f"Current pose: {current_pose}")
+        print(f"Target pose: {target_pose}")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.05)
+        
+        if res == 0:
+            print("Server extraction completed successfully")
+        else:
+            print(f"Failed to extract server (error code: {res})")
+        
+        return res
+
     def movel_to_exit(self):
         """
         Move robot along negative X direction by 0.2m from current position
@@ -428,13 +466,10 @@ if __name__ == "__main__":
     # initialize platform height
     print("\n" + "="*50)
     ur_handle1.pushrod_to_base()
-    time.sleep(5)
-    ur_handle1.pushrod_to_execution_position()
-    time.sleep(5)
+    time.sleep(3)
 
-    print("\n" + "="*50)
-    ur_handle1.lift_platform_to_height(target_height=789.0)
-    time.sleep(5)   
+    ur_handle1.lift_platform_to_base()
+    time.sleep(3)
 
     # move to reference joint positions
     print("\n" + "="*60)
@@ -453,40 +488,47 @@ if __name__ == "__main__":
     ur_handle1.movel_to_target_position()
     time.sleep(0.5)
 
+    print("\n" + "="*50)
+    ur_handle1.lift_platform_coarse_adjust(900)
+    time.sleep(5)   
+
+    print("\n" + "="*50)
+    ur_handle1.pushrod_fine_adjust(920)
+    time.sleep(5)
+
     # step1: extract to 0.2m
     print("\n" + "="*50)
-    ur_handle1.movel_to_extract_server(-0.2)
+    ur_handle1.movel_to_extract_server(-0.5)
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_to_height(target_height=799.0)
-    time.sleep(3)
+    ur_handle1.movel_to_move_in_z(0.01)
+    time.sleep(0.5)
+
+    print("\n" + "="*50)
+    ur_handle1.lift_platform_coarse_adjust(925)
+    time.sleep(5)   
+
+    print("\n" + "="*50)
+    ur_handle1.pushrod_fine_adjust(930)
+    time.sleep(5)
 
     # step2: extract to 0.5m
     print("\n" + "="*50)
-    ur_handle1.movel_to_extract_server(-0.25)
+    ur_handle1.movel_to_extract_server(-0.05)
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_to_height(target_height=789.0)
-    time.sleep(3)
+    ur_handle1.movel_to_move_in_z(0.01)
+    time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_to_height(target_height=794.0)
-    time.sleep(3)
+    ur_handle1.pushrod_fine_adjust(935)
+    time.sleep(5)
 
     # step3: extract to 0.7m
     print("\n" + "="*50)
-    ur_handle1.movel_to_extract_server(-0.25)
-    time.sleep(0.5)
-
-    print("\n" + "="*50)
-    ur_handle1.lift_platform_to_height(target_height=799.0)
-    time.sleep(3)
-
-    # step4: extract to 1.20m
-    print("\n" + "="*50)
-    ur_handle1.movel_to_extract_server(-0.5)
+    ur_handle1.movel_to_extract_server(-0.55)
     time.sleep(0.5)
 
     # move to exit position
@@ -504,9 +546,9 @@ if __name__ == "__main__":
 
     print("\n" + "="*50)
     ur_handle1.pushrod_to_base()
-    time.sleep(3)
+    time.sleep(8)
 
     print("\n" + "="*50)
-    ur_handle1.lift_platform_to_init()
-    time.sleep(10)
+    ur_handle1.lift_platform_to_base()
+    time.sleep(8)
     

@@ -207,7 +207,7 @@ class URExecuteHandle2(URExecuteBase):
         final_pose = [
             target_position[0],  # x (already at target X)
             target_position[1],       # y (already at target Y)
-            target_position[2] + 0.2265 + 0.015,       # z (move to target Z)
+            target_position[2] + 0.2265 + 0.02,       # z (move to target Z)
             current_pose[3],          # rx (keep current orientation)
             current_pose[4],          # ry
             current_pose[5]           # rz
@@ -350,6 +350,43 @@ class URExecuteHandle2(URExecuteBase):
         
         return res
 
+    def movel_to_move_in_z(self, distance):
+        """
+        Move robot along X negative direction by distance to extract server
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Calculate target pose: move 0.2m in X negative direction
+        target_pose = [
+            current_pose[0] - 0.01,  # x (move distance m in x direction)
+            current_pose[1],         # y (keep unchanged)
+            current_pose[2] + distance,         # z (keep unchanged)
+            current_pose[3],         # rx (keep current orientation)
+            current_pose[4],         # ry
+            current_pose[5]          # rz
+        ]
+        
+        print("\nExtracting server: Moving 0.85m along X negative direction...")
+        print(f"Current pose: {current_pose}")
+        print(f"Target pose: {target_pose}")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.05)
+        
+        if res == 0:
+            print("Server extraction completed successfully")
+        else:
+            print(f"Failed to extract server (error code: {res})")
+        
+        return res
         
 
 if __name__ == "__main__":
@@ -438,6 +475,23 @@ if __name__ == "__main__":
     print("Parameter loading complete!")
     print("="*70)
 
+    # initialize platform height
+    print("\n" + "="*50)
+    ur_handle2.pushrod_to_base()
+    time.sleep(6)
+
+    print("\n" + "="*50)
+    ur_handle2.lift_platform_to_base()
+    time.sleep(6)
+
+    print("\n" + "="*50)
+    ur_handle2.lift_platform_coarse_adjust(910)
+    time.sleep(5)   
+
+    print("\n" + "="*50)
+    ur_handle2.pushrod_fine_adjust(935)
+    time.sleep(5)
+
     print("\n" + "="*50)
     ur_handle2.movej_to_execute_start()
     time.sleep(0.5)
@@ -459,42 +513,20 @@ if __name__ == "__main__":
 
     # step1: move to positon 1
     print("\n" + "="*50)
-    ur_handle2.movel_to_insert_server(distance=0.45)
+    ur_handle2.movel_to_insert_server(distance=0.60)
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=800.0)
+    ur_handle2.pushrod_fine_adjust(925)
     time.sleep(5)   
+
+    print("\n" + "="*50)
+    ur_handle2.movel_to_move_in_z(-0.01)
+    time.sleep(0.5)
 
     # step2: move to positon 2
     print("\n" + "="*50)
-    ur_handle2.movel_to_insert_server(distance=0.05)
-    time.sleep(0.5)
-
-    print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=791.0)
-    time.sleep(5)  
-
-    print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=802.0)
-    time.sleep(5)  
-
-    # step3: move to positon 3
-    print("\n" + "="*50)
-    ur_handle2.movel_to_insert_server(distance=0.33)
-    time.sleep(0.5)
-
-    print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=792.0)
-    time.sleep(5)  
-
-    print("\n" + "="*50)
-    ur_handle2.lift_platform_to_height(target_height=797.0)
-    time.sleep(5)  
-
-    # step4: move to positon 4
-    print("\n" + "="*50)
-    ur_handle2.movel_to_insert_server(distance=0.42)
+    ur_handle2.movel_to_insert_server(distance=0.60)
     time.sleep(0.5)
 
     # move to exit position
@@ -511,7 +543,7 @@ if __name__ == "__main__":
     time.sleep(3)
 
     print("\n" + "="*50)
-    ur_handle2.lift_platform_to_init()
+    ur_handle2.lift_platform_to_base()
     time.sleep(10)
 
     print("\n" + "="*50)

@@ -63,8 +63,8 @@ class URLocateFrame(URLocateBase):
         self.ref_pose_path = os.path.join(self.data_dir, 'ref_pose.json')
         
         # Override local coordinate system X-axis keypoint indices
-        # For frame location, use keypoint 0 to keypoint 2 to define X-axis
-        self.local_x_kp_index = [0, 2]
+        # For frame location, use keypoint 0 to keypoint 1 to define X-axis
+        self.local_x_kp_index = [0, 1]
         
         print(f"URLocateFrame initialized with custom settings:")
         print(f"  Data directory: {self.data_dir}")
@@ -185,16 +185,6 @@ def main():
                         if ur_frame.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
 
-                            # move to position to get the frame
-                            pose2 = [-4.6480483452426355, -0.9079412978938599, 1.5085294882403772, 0.0630008417316894, 1.43977689743042, -1.2330697218524378]
-                            ur_frame.robot.movej(pose2, a=0.5, v=0.3)
-                            time.sleep(0.5)
-
-                            pose1 = [-4.648319784794943,-1.5912381611266078, -0.06179070472717285,  0.06347481786694331, 1.439825415611267, -1.2331050078021448]
-
-                            ur_frame.robot.movej(pose1, a=0.5, v=0.3)
-                            time.sleep(0.5)
-
                         else:
                             print("⚠ Coordinate system validation failed!")
                     else:
@@ -208,6 +198,17 @@ def main():
             print(f"Error during execution: {e}")
         
         finally:
+            
+            # move to position to get the frame
+            pose2 = [-4.6480483452426355, -0.9079412978938599, 1.5085294882403772, 0.0630008417316894, 1.43977689743042, -1.2330697218524378]
+            ur_frame.robot.movej(pose2, a=0.5, v=0.3)
+            time.sleep(0.5)
+
+            pose1 = [-4.648319784794943,-1.5912381611266078, -0.06179070472717285,  0.06347481786694331, 1.439825415611267, -1.2331050078021448]
+
+            ur_frame.robot.movej(pose1, a=0.5, v=0.3)
+            time.sleep(0.5)
+
             # Always disconnect robot in finally block
             if ur_frame.robot is not None:
                 try:

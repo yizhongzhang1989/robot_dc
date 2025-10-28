@@ -268,7 +268,7 @@ def amr_arm_side2dock():
     return result
 
 
-def amr_courier_dock2rack():
+def amr_courier_dock2rack1():
     """
     Execute courier dock to rack trajectory.
     
@@ -277,7 +277,27 @@ def amr_courier_dock2rack():
     print("\n📮 AMR Courier Dock to Rack")
     print("   Executing 'courier_dock2rack' trajectory...")
     
-    result = amr_controller.navigate(trajectory="courier_dock2rack", wait=True)
+    result = amr_controller.navigate(trajectory="courier_dock2rack1", wait=True)
+    
+    if result.get('success', False):
+        print("✅ Successfully completed courier_dock2rack1 trajectory")
+        if 'task_id' in result:
+            print(f"   Task ID: {result['task_id']}")
+    else:
+        print(f"❌ Failed to complete courier_dock2rack trajectory: {result.get('message', 'Unknown error')}")
+    
+    return result
+
+def amr_courier_dock2rack2():
+    """
+    Execute courier dock to rack trajectory.
+    
+    Calls navigate(trajectory="courier_dock2rack") with wait=True (blocking).
+    """
+    print("\n📮 AMR Courier Dock to Rack")
+    print("   Executing 'courier_dock2rack2' trajectory...")
+    
+    result = amr_controller.navigate(trajectory="courier_dock2rack2", wait=True)
     
     if result.get('success', False):
         print("✅ Successfully completed courier_dock2rack trajectory")
@@ -289,19 +309,39 @@ def amr_courier_dock2rack():
     return result
 
 
-def amr_courier_rack2dock():
+def amr_courier_rack2dock1():
     """
     Execute courier rack to dock trajectory.
     
     Calls navigate(trajectory="courier_rack2dock") with wait=True (blocking).
     """
     print("\n📮 AMR Courier Rack to Dock")
-    print("   Executing 'courier_rack2dock' trajectory...")
+    print("   Executing 'courier_rack2dock1' trajectory...")
     
-    result = amr_controller.navigate(trajectory="courier_rack2dock", wait=True)
+    result = amr_controller.navigate(trajectory="courier_rack2dock1", wait=True)
     
     if result.get('success', False):
-        print("✅ Successfully completed courier_rack2dock trajectory")
+        print("✅ Successfully completed courier_rack2dock1 trajectory")
+        if 'task_id' in result:
+            print(f"   Task ID: {result['task_id']}")
+    else:
+        print(f"❌ Failed to complete courier_rack2dock trajectory: {result.get('message', 'Unknown error')}")
+    
+    return result
+
+def amr_courier_rack2dock2():
+    """
+    Execute courier rack to dock trajectory.
+
+    Calls navigate(trajectory="courier_rack2dock2") with wait=True (blocking).
+    """
+    print("\n📮 AMR Courier Rack to Dock")
+    print("   Executing 'courier_rack2dock2' trajectory...")
+    
+    result = amr_controller.navigate(trajectory="courier_rack2dock2", wait=True)
+    
+    if result.get('success', False):
+        print("✅ Successfully completed courier_rack2dock2 trajectory")
         if 'task_id' in result:
             print(f"   Task ID: {result['task_id']}")
     else:
@@ -597,9 +637,8 @@ def run():
         # ur15_locate_handle1()
         # time.sleep(0.5)
 
-
         # # step3 : amr courier dock2rack
-        # amr_courier_dock2rack()
+        # amr_courier_dock2rack1()
         # time.sleep(0.5)
 
         # # step4 : ur get pp tool based on position capturing handle1
@@ -611,7 +650,7 @@ def run():
         # time.sleep(0.5)
 
         # # step6 : execute amr courier rack2dock
-        # amr_courier_rack2dock()
+        # amr_courier_rack2dock1()
         # time.sleep(0.5)
 
         # # step7 : ur return pptool to home
@@ -631,7 +670,7 @@ def run():
         # time.sleep(0.5)
 
         # # step11 : amr courier dock2rack
-        # amr_courier_dock2rack()
+        # amr_courier_dock2rack2()
         # time.sleep(0.5)
 
         # # step12 : ur locate handle2
@@ -642,13 +681,13 @@ def run():
         # ur15_get_pptool()
         # time.sleep(0.5)
 
-        # # step14: ur execute handle2
+        # step14: ur execute handle2
         # ur15_execute_handle2()
         # time.sleep(0.5)
 
-        # step15: amr courier rack to dock
-        amr_courier_rack2dock()
-        time.sleep(0.5)
+        # # step15: amr courier rack to dock
+        # amr_courier_rack2dock2()
+        # time.sleep(0.5)
 
                 
     

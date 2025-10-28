@@ -1762,42 +1762,8 @@ class URLocateBase(Node):
             traceback.print_exc()
             return False
     
-    def lift_platform_to_height(self, target_height=900.0):
-        """
-        Move lift platform to a specific height using automatic control.
-        
-        Args:
-            target_height: Target height in millimeters (default: 900.0mm)
-        """
-        print(f"\n🎯 Lift Platform Go to Height: {target_height}mm")
-        
-        url = f"{self.lift_web_base}/api/cmd"
-        payload = {
-            "command": "goto_height",
-            "target": "platform",
-            "target_height": target_height
-        }
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=5)
-            if response.ok:
-                print(f"✅ Goto height {target_height}mm command sent successfully")
-                return response.json()
-            else:
-                print(f"❌ Goto height command failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to lift platform web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending goto height command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending goto height command: {e}")
-            return {"success": False, "error": str(e)}
 
-    def lift_platform_to_init(self):
+    def lift_platform_to_base(self):
         """
         Move the lift platform downward (pulse relay).
         
@@ -1826,37 +1792,6 @@ class URLocateBase(Node):
             return {"success": False, "error": "Timeout"}
         except Exception as e:
             print(f"❌ Error sending lift platform DOWN command: {e}")
-            return {"success": False, "error": str(e)}
-
-    def lift_platform_emergency_stop(self):
-        """
-        Stop the lift platform motion (pulse stop relay).
-        
-        Sends a POST request to halt vertical motion immediately.
-        """
-        print("\n🛑 Lift Platform Stop")
-        print("   Sending STOP command to lift platform...")
-
-        url = f"{self.lift_web_base}/api/cmd"
-        payload = {"command": "stop", "target": "platform"}
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=5)
-            if response.ok:
-                print("✅ Lift platform STOP command sent successfully")
-                return response.json()
-            else:
-                print(f"❌ Lift platform STOP command failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to lift platform web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending lift platform STOP command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending lift platform STOP command: {e}")
             return {"success": False, "error": str(e)}
 
     def pushrod_to_base(self):
@@ -1890,69 +1825,76 @@ class URLocateBase(Node):
             print(f"❌ Error sending pushrod goto command: {e}")
             return {"success": False, "error": str(e)}
 
-    def pushrod_to_execution_position(self):
+    def lift_platform_coarse_adjust(self, target_height=900.0):
         """
-        Move pushrod to 'only forward' position (preset point).
-        Sends goto_point command with point='only forward' (3.5s movement).
+        Platform coarse adjustment - Move lift platform to a specific height.
+        
+        Args:
+            target_height: Target height in millimeters (default: 900.0mm)
         """
-        print("\n🔧 Pushrod Go to 'Only Forward'")
-        print("   Moving pushrod to 'only forward' position...")
+        print(f"\n🎯 Platform Coarse Adjustment: {target_height}mm")
         
         url = f"{self.lift_web_base}/api/cmd"
-        payload = {"command": "goto_point", "target": "pushrod", "point": "only forward"}
+        payload = {
+            "command": "goto_height",
+            "target": "platform",
+            "target_height": target_height
+        }
         headers = {"Content-Type": "application/json"}
         
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response = requests.post(url, json=payload, headers=headers, timeout=5)
             if response.ok:
-                print("✅ Pushrod 'only forward' command sent successfully")
-                print("   (Movement will take ~3.5 seconds)")
+                print(f"✅ Platform coarse adjustment command sent successfully: {target_height}mm")
                 return response.json()
             else:
-                print(f"❌ Pushrod goto 'only forward' failed: HTTP {response.status_code}")
+                print(f"❌ Platform coarse adjustment command failed: HTTP {response.status_code}")
                 return {"success": False, "status_code": response.status_code}
         except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to pushrod web service")
+            print("❌ Cannot connect to lift platform web service")
             return {"success": False, "error": "Connection failed"}
         except requests.exceptions.Timeout:
-            print("❌ Timeout sending pushrod goto command")
+            print("❌ Platform coarse adjustment command timeout")
             return {"success": False, "error": "Timeout"}
         except Exception as e:
-            print(f"❌ Error sending pushrod goto command: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def pushrod_to_heighest(self):
-        """
-        Move pushrod to 'all direction' position (preset point).
-        
-        Sends goto_point command with point='all direction' (6.8s movement).
-        """
-        print("\n🔧 Pushrod Go to 'All Direction'")
-        print("   Moving pushrod to 'all direction' position...")
-        
-        url = f"{self.lift_web_base}/api/cmd"
-        payload = {"command": "goto_point", "target": "pushrod", "point": "all direction"}
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-            if response.ok:
-                print("✅ Pushrod 'all direction' command sent successfully")
-                print("   (Movement will take ~6.8 seconds)")
-                return response.json()
-            else:
-                print(f"❌ Pushrod goto 'all direction' failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to pushrod web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending pushrod goto command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending pushrod goto command: {e}")
+            print(f"❌ Platform coarse adjustment command error: {e}")
             return {"success": False, "error": str(e)}
 
+
+    def pushrod_fine_adjust(self, target_height=900.0):
+        """
+        Pushrod fine adjustment - Precise height control using pushrod.
+        
+        Args:
+            target_height: Target height in millimeters (default: 900.0mm)
+        """
+        print(f"\n🔧 Pushrod Fine Adjustment: {target_height}mm")
+        
+        url = f"{self.lift_web_base}/api/cmd"
+        payload = {
+            "command": "goto_height",
+            "target": "pushrod",
+            "target_height": target_height
+        }
+        headers = {"Content-Type": "application/json"}
+        
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=5)
+            if response.ok:
+                print(f"✅ Pushrod fine adjustment command sent successfully: {target_height}mm")
+                return response.json()
+            else:
+                print(f"❌ Pushrod fine adjustment command failed: HTTP {response.status_code}")
+                return {"success": False, "status_code": response.status_code}
+        except requests.exceptions.ConnectionError:
+            print("❌ Cannot connect to lift platform web service")
+            return {"success": False, "error": "Connection failed"}
+        except requests.exceptions.Timeout:
+            print("❌ Pushrod fine adjustment command timeout")
+            return {"success": False, "error": "Timeout"}
+        except Exception as e:
+            print(f"❌ Pushrod fine adjustment command error: {e}")
+            return {"success": False, "error": str(e)}
 
 def main():
     """

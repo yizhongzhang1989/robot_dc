@@ -204,11 +204,11 @@ def main():
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
-        # # 3. enter freedrive mode f
-        # freedrive_duration = 20 #seconds
-        # robot.freedrive_mode(duration=freedrive_duration)
-        # # wait for freedrive_duration seconds to end freedrive mode
-        # robot.end_freedrive_mode()
+        # 3. enter freedrive mode f
+        freedrive_duration = 20 #seconds
+        robot.freedrive_mode(duration=freedrive_duration)
+        # wait for freedrive_duration seconds to end freedrive mode
+        robot.end_freedrive_mode()
 
         # # 4. get target TCP pose and joint positions
         # pose = robot.get_target_tcp_pose()

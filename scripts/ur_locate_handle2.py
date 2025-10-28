@@ -198,21 +198,22 @@ def main():
             return
         
         print("\n" + "="*50)
-        ur_handle2.lift_platform_to_init()
-        time.sleep(10)
+        ur_handle2.lift_platform_to_base()
+        time.sleep(6)
         
         # initialize platform height
         print("\n" + "="*50)
         ur_handle2.pushrod_to_base()
-        time.sleep(5)
+        time.sleep(6)
 
-        ur_handle2.pushrod_to_heighest()
+        print("\n" + "="*50)
+        ur_handle2.lift_platform_coarse_adjust(target_height=910.0)
         time.sleep(5)
 
         print("\n" + "="*50)
-        ur_handle2.lift_platform_to_height(target_height=790.0)
+        ur_handle2.pushrod_fine_adjust(target_height=935.0)
         time.sleep(5)
-        
+
         ur_handle2.movej_to_start_position_after_execute_frame()
         time.sleep(0.5)
 
