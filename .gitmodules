@@ -7,3 +7,6 @@
 [submodule "scripts/ThirdParty/robot_vision"]
 	path = scripts/ThirdParty/robot_vision
 	url = https://github.com/yizhongzhang1989/robot_vision.git
+[submodule "scripts/ThirdParty/seer_control"]
+	path = scripts/ThirdParty/seer_control
+	url = https://github.com/yizhongzhang1989/seer_control.git
