@@ -376,13 +376,13 @@ class URExecuteHandle1(URExecuteBase):
         pose = [-0.7685130278216761, -1.5912000141539515, -0.061849094927310944, 
                  -0.962276355629303, 1.8501255512237549, -0.6623795668231409]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 
                  0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
         
         if res == 0:
@@ -510,25 +510,12 @@ if __name__ == "__main__":
     time.sleep(5)   
 
     print("\n" + "="*50)
-    ur_handle1.pushrod_fine_adjust(930)
-    time.sleep(5)
-
-    # step2: extract to 0.5m
-    print("\n" + "="*50)
-    ur_handle1.movel_to_extract_server(-0.05)
-    time.sleep(0.5)
-
-    print("\n" + "="*50)
-    ur_handle1.movel_to_move_in_z(0.01)
-    time.sleep(0.5)
-
-    print("\n" + "="*50)
-    ur_handle1.pushrod_fine_adjust(935)
+    ur_handle1.pushrod_fine_adjust(932)
     time.sleep(5)
 
     # step3: extract to 0.7m
     print("\n" + "="*50)
-    ur_handle1.movel_to_extract_server(-0.55)
+    ur_handle1.movel_to_extract_server(-0.60)
     time.sleep(0.5)
 
     # move to exit position

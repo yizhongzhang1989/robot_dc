@@ -272,7 +272,7 @@ class URExecuteFrame(URExecuteBase):
         print("\nMoving to intermediate position (pose2)...")
         print(f"Target joint angles: {pose2}")
         
-        res = self.robot.movej(pose2, a=0.5, v=0.3)
+        res = self.robot.movej(pose2, a=0.5, v=0.5)
         
         if res != 0:
             print(f"Failed to move to pose2 (error code: {res})")
@@ -287,7 +287,7 @@ class URExecuteFrame(URExecuteBase):
         print("\nMoving to get tool position (pose1)...")
         print(f"Target joint angles: {pose1}")
         
-        res = self.robot.movej(pose1, a=0.5, v=0.3)
+        res = self.robot.movej(pose1, a=0.5, v=0.5)
         
         if res == 0:
             print("Robot moved to get tool start position successfully")

@@ -85,31 +85,31 @@ class URLocateHandle2(URLocateBase):
         pose = [-4.648319784794943, -1.5912381611266078, -0.06179070472717285, 
                  0.06347481786694331, 1.439825415611267, -1.2331050078021448]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-1.4736245314227503, -1.5912381611266078, -0.06179070472717285, 
                  0.06347481786694331, 1.439825415611267, -1.2331050078021448]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-1.4736245314227503, -1.5912381611266078, -1.7203681468963623, 
                  0.06347481786694331, 1.439825415611267, -1.2331050078021448]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-1.4736245314227503, -1.5912381611266078, -1.7203681468963623, 
                  -1.3410038512996216, 1.439825415611267, -1.2331050078021448]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-1.4736245314227503, -1.6785484753050746, -1.7203681468963623, 
                 -1.3410038512996216, 1.5090150833129883, 1.6812989711761475]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
         
         if res == 0:
@@ -130,25 +130,25 @@ class URLocateHandle2(URLocateBase):
         pose = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
                 -1.3431838166764756, 1.5084102153778076,  1.6445358991622925]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-1.5103414694415491, -1.712231775323385, -0.061849094927310944,
                 -1.3431838166764756, 1.5084102153778076,  1.6445358991622925]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-1.5103414694415491, -1.712231775323385, -0.061849094927310944,
                 0.06347672521557612, 1.5084102153778076,  1.6445358991622925]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [ -1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 
                  0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
         
         if res == 0:

@@ -316,7 +316,7 @@ class URExecuteHandle2(URExecuteBase):
         print("\nMoving to get tool start position...")
         print(f"Target joint angles: {target_joint_angles}")
         
-        res = self.robot.movej(target_joint_angles, a=0.5, v=0.3)
+        res = self.robot.movej(target_joint_angles, a=0.5, v=0.5)
         time.sleep(0.5)
 
         target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
@@ -324,7 +324,7 @@ class URExecuteHandle2(URExecuteBase):
         
         print(f"Target joint angles: {target_joint_angles}")
         
-        res = self.robot.movej(target_joint_angles, a=0.5, v=0.3)
+        res = self.robot.movej(target_joint_angles, a=0.5, v=0.5)
         time.sleep(0.5)
 
         target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
@@ -332,7 +332,7 @@ class URExecuteHandle2(URExecuteBase):
         
         print(f"Target joint angles: {target_joint_angles}")
         
-        res = self.robot.movej(target_joint_angles, a=0.5, v=0.3)
+        res = self.robot.movej(target_joint_angles, a=0.5, v=0.5)
         time.sleep(0.5)
 
         target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
@@ -340,7 +340,7 @@ class URExecuteHandle2(URExecuteBase):
         
         print(f"Target joint angles: {target_joint_angles}")
         
-        res = self.robot.movej(target_joint_angles, a=0.5, v=0.3)
+        res = self.robot.movej(target_joint_angles, a=0.5, v=0.5)
         time.sleep(0.5)
 
         if res == 0:

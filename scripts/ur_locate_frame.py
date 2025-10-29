@@ -83,31 +83,31 @@ class URLocateFrame(URLocateBase):
         pose = [-1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 
                  0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-4.628224555646078, -1.5912000141539515, -0.061849094927310944, 
                  0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202, 
                  0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202, 
                  -1.9046393833556117, 1.4398412704467773, -1.2330482641803187]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
 
         pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202,
                 -1.9046393833556117, 0.1272939145565033, 3.737786054611206]
         print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.3)
+        res = self.robot.movej(pose, a=0.5, v=0.5)
         time.sleep(0.5)
         
         if res == 0:
@@ -201,12 +201,12 @@ def main():
             
             # move to position to get the frame
             pose2 = [-4.6480483452426355, -0.9079412978938599, 1.5085294882403772, 0.0630008417316894, 1.43977689743042, -1.2330697218524378]
-            ur_frame.robot.movej(pose2, a=0.5, v=0.3)
+            ur_frame.robot.movej(pose2, a=0.5, v=0.5)
             time.sleep(0.5)
 
             pose1 = [-4.648319784794943,-1.5912381611266078, -0.06179070472717285,  0.06347481786694331, 1.439825415611267, -1.2331050078021448]
 
-            ur_frame.robot.movej(pose1, a=0.5, v=0.3)
+            ur_frame.robot.movej(pose1, a=0.5, v=0.5)
             time.sleep(0.5)
 
             # Always disconnect robot in finally block

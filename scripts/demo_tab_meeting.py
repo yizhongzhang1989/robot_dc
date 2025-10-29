@@ -637,7 +637,7 @@ def run():
         # ur15_locate_handle1()
         # time.sleep(0.5)
 
-        # # step3 : amr courier dock2rack
+        # # # step3 : amr courier dock2rack
         # amr_courier_dock2rack1()
         # time.sleep(0.5)
 
@@ -681,13 +681,17 @@ def run():
         # ur15_get_pptool()
         # time.sleep(0.5)
 
-        # step14: ur execute handle2
+        # # step14: ur execute handle2
         # ur15_execute_handle2()
         # time.sleep(0.5)
 
-        # # step15: amr courier rack to dock
-        # amr_courier_rack2dock2()
+        # # step15: ur return pptool
+        # ur15_return_pptool()
         # time.sleep(0.5)
+
+        # step16: amr courier rack to dock
+        amr_courier_rack2dock2()
+        time.sleep(0.5)
 
                 
     
