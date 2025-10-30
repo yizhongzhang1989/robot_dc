@@ -36,6 +36,8 @@ class DrawWireSensorNode(Node):
 
     def next_seq(self):
         self.seq_id += 1
+        if self.seq_id > 65535:
+            self.seq_id = 1  # Reset to 1 to avoid 0 (which might have special meaning)
         return self.seq_id
 
     def command_callback(self, msg):
