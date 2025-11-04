@@ -625,7 +625,7 @@ def run():
     print("="*60)
     
     try:
-        #===========================AMR Navigation Tests==================================
+        # # ===========================AMR Navigation Tests==================================
         # # step1 : unfold arms
         # duco_jspf_unfold()
         # time.sleep(0.5)
@@ -657,7 +657,7 @@ def run():
         # ur15_return_pptool()
         # time.sleep(0.5)
 
-        # # step8 : execute frame
+        # # step8 : locate frame
         # ur15_locate_frame()
         # time.sleep(0.5)
 
@@ -689,9 +689,9 @@ def run():
         # ur15_return_pptool()
         # time.sleep(0.5)
 
-        # step16: amr courier rack to dock
-        amr_courier_rack2dock2()
-        time.sleep(0.5)
+        # # step16: amr courier rack to dock
+        # amr_courier_rack2dock2()
+        # time.sleep(0.5)
 
                 
     
