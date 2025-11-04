@@ -7,6 +7,66 @@ Establishes connection to UR robot and provides common URScript control function
 import socket
 import time
 import sys
+import math
+import numpy as np
+
+
+# ------------------------------------------------------------
+# Helper functions for rotation calculations
+# ------------------------------------------------------------
+def rotvec_to_matrix(rx, ry, rz):
+    """Convert rotation vector to rotation matrix using Rodrigues' formula"""
+    angle = math.sqrt(rx**2 + ry**2 + rz**2)
+    if angle < 1e-10:
+        return np.eye(3)
+    
+    # Normalize axis
+    kx, ky, kz = rx/angle, ry/angle, rz/angle
+    
+    # Rodrigues' rotation formula
+    c = math.cos(angle)
+    s = math.sin(angle)
+    v = 1 - c
+    
+    R = np.array([
+        [kx*kx*v + c,    kx*ky*v - kz*s, kx*kz*v + ky*s],
+        [ky*kx*v + kz*s, ky*ky*v + c,    ky*kz*v - kx*s],
+        [kz*kx*v - ky*s, kz*ky*v + kx*s, kz*kz*v + c]
+    ])
+    return R
+
+
+def matrix_to_rotvec(R):
+    """Convert rotation matrix to rotation vector"""
+    angle = math.acos(np.clip((np.trace(R) - 1) / 2, -1, 1))
+    
+    if angle < 1e-10:
+        return np.array([0, 0, 0])
+    
+    if abs(angle - math.pi) < 1e-10:
+        # Special case: 180 degree rotation
+        # Find the axis from the diagonal elements
+        if R[0,0] >= R[1,1] and R[0,0] >= R[2,2]:
+            kx = math.sqrt((R[0,0] + 1) / 2)
+            ky = R[0,1] / (2 * kx) if kx > 1e-10 else 0
+            kz = R[0,2] / (2 * kx) if kx > 1e-10 else 0
+        elif R[1,1] >= R[2,2]:
+            ky = math.sqrt((R[1,1] + 1) / 2)
+            kx = R[0,1] / (2 * ky) if ky > 1e-10 else 0
+            kz = R[1,2] / (2 * ky) if ky > 1e-10 else 0
+        else:
+            kz = math.sqrt((R[2,2] + 1) / 2)
+            kx = R[0,2] / (2 * kz) if kz > 1e-10 else 0
+            ky = R[1,2] / (2 * kz) if kz > 1e-10 else 0
+        return np.array([kx * angle, ky * angle, kz * angle])
+    else:
+        # General case
+        denom = 2 * math.sin(angle)
+        kx = (R[2,1] - R[1,2]) / denom
+        ky = (R[0,2] - R[2,0]) / denom
+        kz = (R[1,0] - R[0,1]) / denom
+        return np.array([kx * angle, ky * angle, kz * angle])
+
 
 class UR15Robot:
     def __init__(self, ip, port):
@@ -375,6 +435,479 @@ class UR15Robot:
         """
         return self._send_command("end_freedrive_mode()")
 
+    def force_mode(self, task_frame, selection_vector, wrench, type=2, limits=None):
+        """
+        Set robot to be controlled in force mode
+        """
+        # Set default limits if not provided
+        if limits is None:
+            limits = [2, 2, 1.5, 1, 1, 1]
+        
+        # Validate type parameter
+        if not isinstance(type, int) or type < 1 or type > 3:
+            print(f"[ERROR] Invalid type: {type}. Must be an integer between 1 and 3.")
+            return -1
+        
+        # Format task_frame
+        if isinstance(task_frame, (list, tuple)):
+            if len(task_frame) != 6:
+                print(f"[ERROR] Invalid task_frame: {task_frame}. Must have 6 elements [x,y,z,rx,ry,rz].")
+                return -1
+            task_frame_str = "p[" + ",".join([str(val) for val in task_frame]) + "]"
+        elif isinstance(task_frame, str):
+            task_frame_str = task_frame
+        else:
+            print(f"[ERROR] Invalid task_frame type: {type(task_frame)}. Must be list, tuple, or string.")
+            return -1
+        
+        # Format selection_vector
+        if isinstance(selection_vector, (list, tuple)):
+            if len(selection_vector) != 6:
+                print(f"[ERROR] Invalid selection_vector: {selection_vector}. Must have 6 elements.")
+                return -1
+            # Validate values are 0 or 1
+            for i, val in enumerate(selection_vector):
+                if val not in [0, 1]:
+                    print(f"[ERROR] Invalid selection_vector value at index {i}: {val}. Must be 0 or 1.")
+                    return -1
+            selection_vector_str = "[" + ",".join([str(val) for val in selection_vector]) + "]"
+        else:
+            print(f"[ERROR] Invalid selection_vector type: {type(selection_vector)}. Must be list or tuple.")
+            return -1
+        
+        # Format wrench
+        if isinstance(wrench, (list, tuple)):
+            if len(wrench) != 6:
+                print(f"[ERROR] Invalid wrench: {wrench}. Must have 6 elements [fx,fy,fz,tx,ty,tz].")
+                return -1
+            wrench_str = "[" + ",".join([str(val) for val in wrench]) + "]"
+        else:
+            print(f"[ERROR] Invalid wrench type: {type(wrench)}. Must be list or tuple.")
+            return -1
+        
+        # Format limits
+        if isinstance(limits, (list, tuple)):
+            if len(limits) != 6:
+                print(f"[ERROR] Invalid limits: {limits}. Must have 6 elements.")
+                return -1
+            limits_str = "[" + ",".join([str(val) for val in limits]) + "]"
+        else:
+            print(f"[ERROR] Invalid limits type: {type(limits)}. Must be list or tuple.")
+            return -1
+        
+        # Build complete URScript program to keep force_mode running
+        # Force mode needs to be called continuously to remain active
+        script = "def myProg():\n"
+        script += "  while (True):\n"
+        script += f"    force_mode({task_frame_str}, {selection_vector_str}, {wrench_str}, {type}, {limits_str})\n"
+        script += "    sync()\n"
+        script += "  end\n"
+        script += "end\n"
+        
+        # Send directly without using _send_command to avoid double wrapping
+        if not self.connected:
+            print("[WARN] Robot not connected.")
+            return -1
+        
+        try:
+            self.socket.sendall(script.encode('utf-8'))
+            time.sleep(0.1)
+            print(f"[INFO] Force mode activated with type={type}")
+            return 0
+        except Exception as e:
+            print(f"[ERROR] Failed to send force_mode command: {e}")
+            return -1
+
+    def end_force_mode(self):
+        """
+        Stop force mode and return to normal operation
+        
+        Returns:
+            0 on success, -1 on failure
+        """
+        result = self._send_command("end_force_mode()")
+        
+        if result == 0:
+            print("\n[INFO] Force mode deactivated")
+        
+        return result
+
+    def force_mode_set_gain_scaling(self, scaling=1.0):
+        """
+        Scales the gain in force mode.
+        """
+        # Validate scaling parameter
+        if not isinstance(scaling, (int, float)):
+            print(f"[ERROR] Invalid scaling type: {type(scaling)}. Must be a number.")
+            return -1
+        
+        if scaling < 0 or scaling > 2:
+            print(f"[ERROR] Invalid scaling value: {scaling}. Must be between 0 and 2.")
+            return -1
+        
+        # Build URScript command
+        cmd = f"force_mode_set_gain_scaling({scaling})"
+        
+        result = self._send_command(cmd)
+        
+        if result == 0:
+            print(f"[INFO] Force mode gain scaling set to {scaling}")
+        
+        return result
+
+    def force_mode_set_damping(self, damping=0.005):
+        """
+        Sets the damping parameter in force mode.
+        """
+        # Validate damping parameter
+        if not isinstance(damping, (int, float)):
+            print(f"[ERROR] Invalid damping type: {type(damping)}. Must be a number.")
+            return -1
+        
+        if damping < 0 or damping > 1:
+            print(f"[ERROR] Invalid damping value: {damping}. Must be between 0 and 1.")
+            return -1
+        
+        # Build URScript command
+        cmd = f"force_mode_set_damping({damping})"
+        
+        result = self._send_command(cmd)
+        
+        if result == 0:
+            print(f"[INFO] Force mode damping set to {damping}")
+        
+        return result
+
+    def force_control_task(self, task_frame, selection_vector, wrench, type=2, limits=None, 
+                            scaling=1.0, damping=0.005, end_type=0, end_time=None, end_force=None, end_distance=None, end_angle=None):
+        """
+        High-level force control task that combines force mode configuration and execution.
+        
+        Args:
+            task_frame: A pose vector that defines the force frame relative to the base frame
+            selection_vector: A 6d vector of 0s and 1s. 1 means that the robot will be 
+                            compliant in the corresponding axis of the task frame
+            wrench: The forces/torques the robot will apply to its environment [fx,fy,fz,tx,ty,tz]
+            type: An integer [1;3] specifying how the robot interprets the force frame
+            limits: A 6d vector with float values that are interpreted differently for 
+                   compliant/non-compliant axes
+            scaling: Gain scaling factor for force mode (0.0 to 2.0)
+            damping: Damping parameter for force mode (0.0 to 1.0)
+            end_type: Termination condition type
+                     0 = manual termination (user must call end_force_mode() externally)
+                     1 = time-based termination using end_time parameter (end_time is required)
+                     2 = force/torque-based termination using end_force parameter (end_force is required)
+                     3 = displacement-based termination using end_distance parameter (end_distance is required)
+                     4 = rotation angle-based termination using end_angle parameter (end_angle is required)
+            end_time: Time duration in seconds for force control (required when end_type=1, ignored otherwise)
+            end_force: Maximum force/torque thresholds [fx,fy,fz,tx,ty,tz] for termination 
+                      (required when end_type=2, only checked for axes where selection_vector=1)
+            end_distance: Maximum TCP displacement [dx,dy,dz,drx,dry,drz] for termination in meters/radians
+                         (required when end_type=3, only xyz displacement is checked for axes where selection_vector=1)
+            end_angle: Maximum rotation angle around TCP z-axis for termination in degrees
+                      (required when end_type=4)
+        
+        Returns:
+            0 on success, -1 on failure
+        """
+        # Validate end_type
+        if end_type not in [0, 1, 2, 3, 4]:
+            print(f"[ERROR] Invalid end_type: {end_type}. Must be 0 (manual), 1 (time-based), 2 (force-based), 3 (displacement-based), or 4 (rotation-based).")
+            return -1
+        
+        # Validate end_time for time-based termination
+        if end_type == 1:
+            if end_time is None:
+                print(f"[ERROR] end_time is required when end_type=1 (time-based termination).")
+                return -1
+            if not isinstance(end_time, (int, float)) or end_time <= 0:
+                print(f"[ERROR] Invalid end_time: {end_time}. Must be a positive number.")
+                return -1
+        
+        # Validate end_force for force-based termination
+        if end_type == 2:
+            if end_force is None:
+                print(f"[ERROR] end_force is required when end_type=2 (force-based termination).")
+                return -1
+            if not isinstance(end_force, (list, tuple)) or len(end_force) != 6:
+                print(f"[ERROR] Invalid end_force: {end_force}. Must be a 6-element list/tuple [fx,fy,fz,tx,ty,tz].")
+                return -1
+            # Validate that end_force values are numbers
+            for i, val in enumerate(end_force):
+                if not isinstance(val, (int, float)):
+                    print(f"[ERROR] Invalid end_force value at index {i}: {val}. Must be a number.")
+                    return -1
+        
+        # Validate end_distance for displacement-based termination
+        if end_type == 3:
+            if end_distance is None:
+                print(f"[ERROR] end_distance is required when end_type=3 (displacement-based termination).")
+                return -1
+            if not isinstance(end_distance, (list, tuple)) or len(end_distance) != 6:
+                print(f"[ERROR] Invalid end_distance: {end_distance}. Must be a 6-element list/tuple [dx,dy,dz,drx,dry,drz].")
+                return -1
+            # Validate that end_distance values are numbers
+            for i, val in enumerate(end_distance):
+                if not isinstance(val, (int, float)):
+                    print(f"[ERROR] Invalid end_distance value at index {i}: {val}. Must be a number.")
+                    return -1
+        
+        # Validate end_angle for rotation-based termination
+        if end_type == 4:
+            if end_angle is None:
+                print(f"[ERROR] end_angle is required when end_type=4 (rotation-based termination).")
+                return -1
+            if not isinstance(end_angle, (int, float)):
+                print(f"[ERROR] Invalid end_angle: {end_angle}. Must be a number (in degrees).")
+                return -1
+        
+        # Step 0: Zero the force/torque sensor
+        print("[INFO] Zeroing force/torque sensor...")
+        result = self.zero_ftsensor()
+        if result != 0:
+            print("[ERROR] Failed to zero force/torque sensor")
+            return -1
+        time.sleep(0.5)  # Wait for sensor to stabilize
+        
+        # Step 1: Set gain scaling
+        print(f"[INFO] Setting force mode gain scaling to {scaling}...")
+        result = self.force_mode_set_gain_scaling(scaling)
+        if result != 0:
+            print("[ERROR] Failed to set gain scaling")
+            return -1
+        
+        # Step 2: Set damping
+        print(f"[INFO] Setting force mode damping to {damping}...")
+        result = self.force_mode_set_damping(damping)
+        if result != 0:
+            print("[ERROR] Failed to set damping")
+            return -1
+        
+        # Step 3: Activate force mode
+        if end_type == 0:
+            print("[INFO] Activating force mode (manual termination mode)...")
+            print("[INFO] Call end_force_mode() to stop force control")
+        elif end_type == 1:
+            print(f"[INFO] Activating force mode for {end_time} seconds...")
+        elif end_type == 2:
+            print("[INFO] Activating force mode (force-based termination mode)...")
+            print(f"[INFO] Will terminate when force thresholds are reached: {end_force}")
+        elif end_type == 3:
+            print("[INFO] Activating force mode (displacement-based termination mode)...")
+            print(f"[INFO] Will terminate when displacement thresholds are reached: {end_distance}")
+        elif end_type == 4:
+            print("[INFO] Activating force mode (rotation angle-based termination mode)...")
+            print(f"[INFO] Will terminate when rotation angle around TCP z-axis reaches: {end_angle} deg")
+        
+        result = self.force_mode(task_frame, selection_vector, wrench, type, limits)
+        if result != 0:
+            print("[ERROR] Failed to activate force mode")
+            return -1
+        
+        # Step 4: Handle termination based on end_type
+        if end_type == 0:
+            # Manual termination - force mode remains active
+            print("[INFO] Force mode activated. Waiting for external end_force_mode() call...")
+            return 0
+        
+        elif end_type == 1:
+            # Time-based termination
+            print(f"[INFO] Force control running for {end_time} seconds...")
+            time.sleep(end_time)
+            
+            # End force mode
+            print("[INFO] Time elapsed, stopping force mode...")
+            result = self.end_force_mode()
+            if result != 0:
+                print("[ERROR] Failed to end force mode")
+                return -1
+        
+        elif end_type == 2:
+            # Force-based termination
+            print("[INFO] Monitoring force/torque for threshold detection...")
+            print("[INFO] Call end_force_mode() externally to stop before threshold is reached")
+            check_interval = 0.05  # Check every 50ms
+            
+            while True:
+                # Read current TCP force
+                current_force = self.get_tcp_force()
+                if current_force is None:
+                    print("[WARN] Failed to read TCP force during monitoring")
+                    time.sleep(check_interval)
+                    continue
+                
+                # Check each axis that has selection_vector=1
+                threshold_reached = False
+                for i in range(6):
+                    if selection_vector[i] == 1:
+                        # Check if force/torque exceeds threshold (absolute value)
+                        if abs(current_force[i]) >= abs(end_force[i]):
+                            axis_names = ['Fx', 'Fy', 'Fz', 'Tx', 'Ty', 'Tz']
+                            print(f"\n[INFO] Force threshold reached on {axis_names[i]}: "
+                                  f"{current_force[i]:.2f} >= {end_force[i]:.2f}")
+                            threshold_reached = True
+                            break
+                
+                if threshold_reached:
+                    # End force mode
+                    print("[INFO] Force threshold reached, stopping force mode...")
+                    result = self.end_force_mode()
+                    if result != 0:
+                        print("[ERROR] Failed to end force mode")
+                        return -1
+                    break
+                
+                time.sleep(check_interval)
+        
+        elif end_type == 3:
+            # Displacement-based termination
+            print("[INFO] Monitoring TCP displacement for threshold detection...")
+            print("[INFO] Call end_force_mode() externally to stop before threshold is reached")
+            
+            # Record initial TCP pose
+            initial_pose = self.get_actual_tcp_pose()
+            if initial_pose is None:
+                print("[ERROR] Failed to read initial TCP pose")
+                self.end_force_mode()
+                return -1
+            
+            # Extract task_frame rotation to transform displacement to task_frame coordinate system
+            # Parse task_frame if it's a string
+            if isinstance(task_frame, str):
+                # Parse string like "p[x,y,z,rx,ry,rz]"
+                import re
+                match = re.search(r'p\[(.*?)\]', task_frame)
+                if match:
+                    task_frame_list = [float(x.strip()) for x in match.group(1).split(',')]
+                else:
+                    task_frame_list = [0, 0, 0, 0, 0, 0]
+            else:
+                task_frame_list = list(task_frame)
+            
+            # Build rotation matrix from task_frame orientation
+            R_task = rotvec_to_matrix(task_frame_list[3], task_frame_list[4], task_frame_list[5])
+            
+            check_interval = 0.05  # Check every 50ms
+            
+            while True:
+                # Read current TCP pose
+                current_pose = self.get_actual_tcp_pose()
+                if current_pose is None:
+                    print("[WARN] Failed to read TCP pose during monitoring")
+                    time.sleep(check_interval)
+                    continue
+                
+                # Calculate displacement from initial pose in base frame
+                displacement_base = np.array([current_pose[i] - initial_pose[i] for i in range(3)])
+                
+                # Transform displacement to task_frame coordinate system
+                # displacement_task = R_task^T * displacement_base
+                displacement_task = R_task.T @ displacement_base
+                
+                # Check each xyz axis that has selection_vector=1
+                threshold_reached = False
+                for i in range(3):
+                    if selection_vector[i] == 1:
+                        # Check if displacement exceeds threshold (absolute value)
+                        if abs(displacement_task[i]) >= abs(end_distance[i]):
+                            axis_names = ['X', 'Y', 'Z']
+                            print(f"\n[INFO] Displacement threshold reached on task_frame {axis_names[i]}: "
+                                  f"{displacement_task[i]:.4f}m >= {end_distance[i]:.4f}m")
+                            threshold_reached = True
+                            break
+                
+                if threshold_reached:
+                    # End force mode
+                    print("[INFO] Displacement threshold reached, stopping force mode...")
+                    result = self.end_force_mode()
+                    if result != 0:
+                        print("[ERROR] Failed to end force mode")
+                        return -1
+                    break
+                
+                time.sleep(check_interval)
+        
+        elif end_type == 4:
+            # Rotation angle-based termination
+            print("[INFO] Monitoring TCP rotation angle around task_frame z-axis for threshold detection...")
+            print("[INFO] Call end_force_mode() externally to stop before threshold is reached")
+            
+            # Record initial TCP pose
+            initial_pose = self.get_actual_tcp_pose()
+            if initial_pose is None:
+                print("[ERROR] Failed to read initial TCP pose")
+                self.end_force_mode()
+                return -1
+            
+            # Extract task_frame rotation
+            # Parse task_frame if it's a string
+            if isinstance(task_frame, str):
+                # Parse string like "p[x,y,z,rx,ry,rz]"
+                import re
+                match = re.search(r'p\[(.*?)\]', task_frame)
+                if match:
+                    task_frame_list = [float(x.strip()) for x in match.group(1).split(',')]
+                else:
+                    task_frame_list = [0, 0, 0, 0, 0, 0]
+            else:
+                task_frame_list = list(task_frame)
+            
+            # Build rotation matrix from task_frame orientation
+            R_task = rotvec_to_matrix(task_frame_list[3], task_frame_list[4], task_frame_list[5])
+            
+            check_interval = 0.05  # Check every 50ms
+            
+            import math
+            
+            while True:
+                # Read current TCP pose
+                current_pose = self.get_actual_tcp_pose()
+                if current_pose is None:
+                    print("[WARN] Failed to read TCP pose during monitoring")
+                    time.sleep(check_interval)
+                    continue
+                
+                # Convert initial and current rotation vectors to rotation matrices (in base frame)
+                R_initial = rotvec_to_matrix(initial_pose[3], initial_pose[4], initial_pose[5])
+                R_current = rotvec_to_matrix(current_pose[3], current_pose[4], current_pose[5])
+                
+                # Calculate relative rotation in base frame: R_relative_base = R_initial^T * R_current
+                R_relative_base = R_initial.T @ R_current
+                
+                # Transform relative rotation to task_frame coordinate system
+                # R_relative_task = R_task^T * R_relative_base * R_task
+                R_relative_task = R_task.T @ R_relative_base @ R_task
+                
+                # Convert relative rotation matrix back to rotation vector (in task_frame)
+                rotvec_relative_task = matrix_to_rotvec(R_relative_task)
+                
+                # The z-component of this rotation vector is the rotation around task_frame z-axis
+                rotation_around_task_z = rotvec_relative_task[2]
+                
+                rotation_angle_rad = abs(rotation_around_task_z)
+                rotation_angle_deg = math.degrees(rotation_angle_rad)
+                
+                # Convert end_angle from degrees to radians for comparison
+                end_angle_rad = math.radians(abs(end_angle))
+                
+                # Check if rotation angle exceeds threshold
+                if rotation_angle_rad >= end_angle_rad:
+                    print(f"\n[INFO] Rotation angle threshold reached around task_frame z-axis: "
+                          f"{rotation_angle_deg:.2f} deg >= {abs(end_angle):.2f} deg")
+                    
+                    # End force mode
+                    print("[INFO] Rotation threshold reached, stopping force mode...")
+                    result = self.end_force_mode()
+                    if result != 0:
+                        print("[ERROR] Failed to end force mode")
+                        return -1
+                    break
+                
+                time.sleep(check_interval)
+        
+        print("[INFO] Force control task completed successfully")
+        return 0
+
     # ------------------------------------------------------------
     # Tool control commands
     # ------------------------------------------------------------
@@ -586,6 +1119,38 @@ class UR15Robot:
         """
         return self._read_realtime_data("tcp_force")
 
+    def zero_ftsensor(self):
+        """
+        Zeroes the TCP force/torque measurement from the builtin force/torque sensor by subtracting 
+        the current measurement from the subsequent measurements.
+        
+        Returns:
+            0 on success, -1 on failure
+        """
+        return self._send_command("zero_ftsensor()")
+
+    def high_holding_torque_disable(self):
+        """
+        Disable high holding torque mode. This allows the robot to be more compliant and reduces power consumption when holding position.
+        """
+        result = self._send_command("high_holding_torque_disable()")
+        
+        if result == 0:
+            print("[INFO] High holding torque disabled")
+        
+        return result
+
+    def high_holding_torque_enable(self):
+        """
+        Enable high holding torque mode. This increases the robot's stiffness when holding position, providing better positional accuracy under load.
+        """
+        result = self._send_command("high_holding_torque_enable()")
+        
+        if result == 0:
+            print("[INFO] High holding torque enabled")
+        
+        return result
+
     # ------------------------------------------------------------
     # Transformation functions
     # ------------------------------------------------------------
@@ -593,61 +1158,6 @@ class UR15Robot:
         """
         Pose transformation: transform p_from_to (in frame of p_from) to base frame
         """
-        import math
-        import numpy as np
-        
-        def rotvec_to_matrix(rx, ry, rz):
-            """Convert rotation vector to rotation matrix"""
-            angle = math.sqrt(rx**2 + ry**2 + rz**2)
-            if angle < 1e-10:
-                return np.eye(3)
-            
-            # Normalize axis
-            kx, ky, kz = rx/angle, ry/angle, rz/angle
-            
-            # Rodrigues' rotation formula
-            c = math.cos(angle)
-            s = math.sin(angle)
-            v = 1 - c
-            
-            R = np.array([
-                [kx*kx*v + c,    kx*ky*v - kz*s, kx*kz*v + ky*s],
-                [ky*kx*v + kz*s, ky*ky*v + c,    ky*kz*v - kx*s],
-                [kz*kx*v - ky*s, kz*ky*v + kx*s, kz*kz*v + c]
-            ])
-            return R
-        
-        def matrix_to_rotvec(R):
-            """Convert rotation matrix to rotation vector"""
-            angle = math.acos((np.trace(R) - 1) / 2)
-            
-            if angle < 1e-10:
-                return 0, 0, 0
-            
-            if abs(angle - math.pi) < 1e-10:
-                # Special case: 180 degree rotation
-                # Find the axis from the diagonal elements
-                if R[0,0] >= R[1,1] and R[0,0] >= R[2,2]:
-                    kx = math.sqrt((R[0,0] + 1) / 2)
-                    ky = R[0,1] / (2 * kx)
-                    kz = R[0,2] / (2 * kx)
-                elif R[1,1] >= R[2,2]:
-                    ky = math.sqrt((R[1,1] + 1) / 2)
-                    kx = R[0,1] / (2 * ky)
-                    kz = R[1,2] / (2 * ky)
-                else:
-                    kz = math.sqrt((R[2,2] + 1) / 2)
-                    kx = R[0,2] / (2 * kz)
-                    ky = R[1,2] / (2 * kz)
-            else:
-                # General case
-                denom = 2 * math.sin(angle)
-                kx = (R[2,1] - R[1,2]) / denom
-                ky = (R[0,2] - R[2,0]) / denom
-                kz = (R[1,0] - R[0,1]) / denom
-            
-            return kx * angle, ky * angle, kz * angle
-        
         def pose_to_matrix(pose):
             """Convert pose [X,Y,Z,Rx,Ry,Rz] to 4x4 homogeneous transformation matrix"""
             T = np.eye(4)
@@ -658,8 +1168,8 @@ class UR15Robot:
         def matrix_to_pose(T):
             """Convert 4x4 homogeneous transformation matrix to pose [X,Y,Z,Rx,Ry,Rz]"""
             x, y, z = T[0:3, 3]
-            rx, ry, rz = matrix_to_rotvec(T[0:3, 0:3])
-            return [x, y, z, rx, ry, rz]
+            rotvec = matrix_to_rotvec(T[0:3, 0:3])
+            return [x, y, z, rotvec[0], rotvec[1], rotvec[2]]
         
         # Convert poses to transformation matrices
         T_from = pose_to_matrix(p_from)
