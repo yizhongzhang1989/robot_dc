@@ -36,7 +36,7 @@ def main():
             # Set force mode parameters
             task_frame = tcp_pose  # Use TCP coordinate system instead of base
             selection_vector = [0, 0, 0, 0, 0, 1]  # Enable force control in Z direction (now relative to TCP)
-            wrench = [0, 0, 0, 0, 0, -0.5]  # Desired force/torque in each direction
+            wrench = [0, 0, 0, 0, 0, 1.0]  # Desired force/torque in each direction
             limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
             
             print("[INFO] Press 'q' to stop force mode, or Ctrl+C")
@@ -50,7 +50,7 @@ def main():
                 limits=limits,
                 damping=0.1,
                 end_type=4,
-                end_angle=90
+                end_angle=180
             )
             
             if result == 0:

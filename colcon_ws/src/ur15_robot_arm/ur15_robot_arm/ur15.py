@@ -9,63 +9,21 @@ import time
 import sys
 import math
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 
 # ------------------------------------------------------------
 # Helper functions for rotation calculations
 # ------------------------------------------------------------
 def rotvec_to_matrix(rx, ry, rz):
-    """Convert rotation vector to rotation matrix using Rodrigues' formula"""
-    angle = math.sqrt(rx**2 + ry**2 + rz**2)
-    if angle < 1e-10:
-        return np.eye(3)
-    
-    # Normalize axis
-    kx, ky, kz = rx/angle, ry/angle, rz/angle
-    
-    # Rodrigues' rotation formula
-    c = math.cos(angle)
-    s = math.sin(angle)
-    v = 1 - c
-    
-    R = np.array([
-        [kx*kx*v + c,    kx*ky*v - kz*s, kx*kz*v + ky*s],
-        [ky*kx*v + kz*s, ky*ky*v + c,    ky*kz*v - kx*s],
-        [kz*kx*v - ky*s, kz*ky*v + kx*s, kz*kz*v + c]
-    ])
-    return R
+    """Convert rotation vector to rotation matrix using scipy"""
+    rotvec = np.array([rx, ry, rz])
+    return R.from_rotvec(rotvec).as_matrix()
 
 
-def matrix_to_rotvec(R):
-    """Convert rotation matrix to rotation vector"""
-    angle = math.acos(np.clip((np.trace(R) - 1) / 2, -1, 1))
-    
-    if angle < 1e-10:
-        return np.array([0, 0, 0])
-    
-    if abs(angle - math.pi) < 1e-10:
-        # Special case: 180 degree rotation
-        # Find the axis from the diagonal elements
-        if R[0,0] >= R[1,1] and R[0,0] >= R[2,2]:
-            kx = math.sqrt((R[0,0] + 1) / 2)
-            ky = R[0,1] / (2 * kx) if kx > 1e-10 else 0
-            kz = R[0,2] / (2 * kx) if kx > 1e-10 else 0
-        elif R[1,1] >= R[2,2]:
-            ky = math.sqrt((R[1,1] + 1) / 2)
-            kx = R[0,1] / (2 * ky) if ky > 1e-10 else 0
-            kz = R[1,2] / (2 * ky) if ky > 1e-10 else 0
-        else:
-            kz = math.sqrt((R[2,2] + 1) / 2)
-            kx = R[0,2] / (2 * kz) if kz > 1e-10 else 0
-            ky = R[1,2] / (2 * kz) if kz > 1e-10 else 0
-        return np.array([kx * angle, ky * angle, kz * angle])
-    else:
-        # General case
-        denom = 2 * math.sin(angle)
-        kx = (R[2,1] - R[1,2]) / denom
-        ky = (R[0,2] - R[2,0]) / denom
-        kz = (R[1,0] - R[0,1]) / denom
-        return np.array([kx * angle, ky * angle, kz * angle])
+def matrix_to_rotvec(rotation_matrix):
+    """Convert rotation matrix to rotation vector using scipy"""
+    return R.from_matrix(rotation_matrix).as_rotvec()
 
 
 class UR15Robot:
@@ -829,71 +787,42 @@ class UR15Robot:
         
         elif end_type == 4:
             # Rotation angle-based termination
-            print("[INFO] Monitoring TCP rotation angle around task_frame z-axis for threshold detection...")
+            print("[INFO] Monitoring TCP rotation angle around z-axis for threshold detection...")
             print("[INFO] Call end_force_mode() externally to stop before threshold is reached")
             
-            # Record initial TCP pose
-            initial_pose = self.get_actual_tcp_pose()
-            if initial_pose is None:
-                print("[ERROR] Failed to read initial TCP pose")
+            # Record initial joint positions (use joint 6 for TCP z-axis rotation)
+            initial_joints = self.get_actual_joint_positions()
+            if initial_joints is None:
+                print("[ERROR] Failed to read initial joint positions")
                 self.end_force_mode()
                 return -1
             
-            # Extract task_frame rotation
-            # Parse task_frame if it's a string
-            if isinstance(task_frame, str):
-                # Parse string like "p[x,y,z,rx,ry,rz]"
-                import re
-                match = re.search(r'p\[(.*?)\]', task_frame)
-                if match:
-                    task_frame_list = [float(x.strip()) for x in match.group(1).split(',')]
-                else:
-                    task_frame_list = [0, 0, 0, 0, 0, 0]
-            else:
-                task_frame_list = list(task_frame)
-            
-            # Build rotation matrix from task_frame orientation
-            R_task = rotvec_to_matrix(task_frame_list[3], task_frame_list[4], task_frame_list[5])
+            initial_joint6 = initial_joints[5]  # Joint 6 (index 5) controls TCP z-axis rotation
             
             check_interval = 0.05  # Check every 50ms
             
-            import math
-            
             while True:
-                # Read current TCP pose
-                current_pose = self.get_actual_tcp_pose()
-                if current_pose is None:
-                    print("[WARN] Failed to read TCP pose during monitoring")
+                # Read current joint positions
+                current_joints = self.get_actual_joint_positions()
+                if current_joints is None:
+                    print("[WARN] Failed to read joint positions during monitoring")
                     time.sleep(check_interval)
                     continue
                 
-                # Convert initial and current rotation vectors to rotation matrices (in base frame)
-                R_initial = rotvec_to_matrix(initial_pose[3], initial_pose[4], initial_pose[5])
-                R_current = rotvec_to_matrix(current_pose[3], current_pose[4], current_pose[5])
+                current_joint6 = current_joints[5]
                 
-                # Calculate relative rotation in base frame: R_relative_base = R_initial^T * R_current
-                R_relative_base = R_initial.T @ R_current
-                
-                # Transform relative rotation to task_frame coordinate system
-                # R_relative_task = R_task^T * R_relative_base * R_task
-                R_relative_task = R_task.T @ R_relative_base @ R_task
-                
-                # Convert relative rotation matrix back to rotation vector (in task_frame)
-                rotvec_relative_task = matrix_to_rotvec(R_relative_task)
-                
-                # The z-component of this rotation vector is the rotation around task_frame z-axis
-                rotation_around_task_z = rotvec_relative_task[2]
-                
-                rotation_angle_rad = abs(rotation_around_task_z)
-                rotation_angle_deg = math.degrees(rotation_angle_rad)
+                # Calculate total rotation from initial position (joint angles are continuous)
+                total_rotation = current_joint6 - initial_joint6
                 
                 # Convert end_angle from degrees to radians for comparison
                 end_angle_rad = math.radians(abs(end_angle))
                 
-                # Check if rotation angle exceeds threshold
-                if rotation_angle_rad >= end_angle_rad:
-                    print(f"\n[INFO] Rotation angle threshold reached around task_frame z-axis: "
-                          f"{rotation_angle_deg:.2f} deg >= {abs(end_angle):.2f} deg")
+                # Check if total rotation angle exceeds threshold
+                if abs(total_rotation) >= end_angle_rad:
+                    total_rotation_deg = math.degrees(abs(total_rotation))
+                    print(f"\n[INFO] Rotation angle threshold reached around TCP z-axis: "
+                          f"{total_rotation_deg:.2f} deg >= {abs(end_angle):.2f} deg")
+                    print(f"[INFO] Joint 6 rotation: {math.degrees(total_rotation):.2f} deg")
                     
                     # End force mode
                     print("[INFO] Rotation threshold reached, stopping force mode...")

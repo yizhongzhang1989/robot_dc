@@ -66,13 +66,13 @@ class URExecuteFrame(URExecuteBase):
         print(f"Intermediate pose: {intermediate_pose}")
         
         res = self.robot.movel(intermediate_pose, a=0.1, v=0.05)
-        
+        time.sleep(0.5)
+
         if res != 0:
             print(f"Failed to move along Y and Z (error code: {res})")
             return res
         
         print("Step 1 completed successfully")
-        time.sleep(5)
         
         # Step 2: Move along X direction to final target
         final_pose = [
@@ -88,7 +88,8 @@ class URExecuteFrame(URExecuteBase):
         print(f"Final pose: {final_pose}")
         
         res = self.robot.movel(final_pose, a=0.1, v=0.05)
-        
+        time.sleep(0.5)
+
         if res == 0:
             print("Robot moved to target position successfully")
         else:
@@ -180,7 +181,7 @@ class URExecuteFrame(URExecuteBase):
             return res
         
         print("Step 1 completed successfully")
-        time.sleep(5)
+        time.sleep(0.5)
         
         # Step 2: Rotate 30 degrees around TCP Z axis
         # Create rotation around Z axis (30 degrees = pi/6 radians)
