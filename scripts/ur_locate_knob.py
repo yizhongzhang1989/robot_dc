@@ -33,22 +33,22 @@ class URLocateKnob(URLocateBase):
         
         # Override collect position joint angles (radians)
         self.collect_start_position = [
-            1.7843583822250366,
-            -0.5837817353061219,
-            1.7311351935016077,
-            -1.2094109815410157,
-            0.27201223373413086,
-            -3.0829160849200647
+            1.8137017488479614,
+            -0.6513427060893555,
+            2.0265024344073694,
+            -1.4090824586204072,
+            0.2720147371292114,
+            -3.082879368458883
         ]
         
         # Override movement offsets (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [0.03, 0, 0, 0, 0, 0],
-            "movement2": [0.05, 0.03, 0, 0, 0, 0],
-            "movement3": [0.05, -0.03, 0, 0, 0, 0],
-            "movement4": [0.05, 0, -0.03, 0, 0, 0],
-            "movement5": [0.05, 0, -0.03, 0, 0, 0]
+            "movement1": [0.01, 0, 0, 0, 0, 0],
+            "movement2": [0.03, 0.01, 0, 0, 0, 0],
+            "movement3": [0.03, -0.01, 0, 0, 0, 0],
+            "movement4": [0.03, 0, -0.01, 0, 0, 0],
+            "movement5": [0.03, 0, -0.01, 0, 0, 0]
         }
         
         # Override data directory path (for storing collected data)
