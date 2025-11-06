@@ -21,7 +21,7 @@ class URLocateHandle1(URLocateBase):
     Inherits from URLocateBase and overrides specific configurations
     """
     
-    def __init__(self, api_url="http://10.172.151.12:8001", robot_ip="192.168.1.15", robot_port=30002):
+    def __init__(self, api_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
         """
         Initialize URLocateHandle1 class
         

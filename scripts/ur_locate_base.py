@@ -27,7 +27,7 @@ from core.ffpp_webapi_keypoint_tracker import FFPPWebAPIKeypointTracker
 
 
 class URLocateBase(Node):
-    def __init__(self, api_url="http://10.172.151.12:8001", robot_ip="192.168.1.15", robot_port=30002):
+    def __init__(self, api_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
         """
         Initialize URLocateBase class for UR robot location test tasks
         
