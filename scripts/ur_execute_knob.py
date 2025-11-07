@@ -31,13 +31,14 @@ class URExecuteKnob(URExecuteBase):
     
     def movel_to_target_position(self):
         """
-        Move robot to target position using linear movement (movel) in two steps:
-        1. Move along Y and Z directions
-        2. Move along X direction
-        Returns: 0 if successful, error code otherwise
+        Move robot to target position using linear movement based on local coordinate system.
         """
         if self.robot is None:
             print("Robot is not initialized")
+            return -1
+        
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
             return -1
         
         # Get target position in base coordinate system
@@ -52,39 +53,65 @@ class URExecuteKnob(URExecuteBase):
             print("Failed to get current robot pose")
             return -1
         
-        # Step 1: Move along Y and Z directions (keep X unchanged)
+        # Extract local coordinate system axes from transformation matrix
+        local_rotation = self.local_transformation_matrix[:3, :3]
+        local_x = local_rotation[:, 0]  # Local X+ direction in base coordinates
+        local_y = local_rotation[:, 1]  # Local Y+ direction in base coordinates
+        local_z = local_rotation[:, 2]  # Local Z+ direction in base coordinates
+
+        # Calculate movement vector from current position to target
+        current_position = np.array(current_pose[:3])
+        target_position_array = np.array(target_position)
+        movement_vector = target_position_array - current_position
+        print(f"\nMovement vector in base coordinates: {movement_vector}")
+        
+        # Project movement vector onto local coordinate system axes
+        movement_local_x = np.dot(movement_vector, local_x)
+        movement_local_y = np.dot(movement_vector, local_y) 
+        movement_local_z = np.dot(movement_vector, local_z)
+
+        # Step 1: Move along local X and Z directions (keep local Y unchanged)
+        # Calculate intermediate position by adding local X and Z movements
+        intermediate_movement_x = movement_local_x * local_x
+        intermediate_movement_z = movement_local_z * local_z
+        intermediate_movement = intermediate_movement_x + intermediate_movement_z
+        intermediate_position = current_position + intermediate_movement
+        
         intermediate_pose = [
-            current_pose[0],      # x (keep current X)
-            target_position[1],   # y (move to target Y)
-            target_position[2],   # z (move to target Z)
-            current_pose[3],      # rx (keep current orientation)
-            current_pose[4],      # ry
-            current_pose[5]       # rz
+            intermediate_position[0], # x
+            intermediate_position[1], # y
+            intermediate_position[2], # z
+            current_pose[3],          # rx (keep current orientation)
+            current_pose[4],          # ry
+            current_pose[5]           # rz
         ]
         
-        print("\nStep 1: Moving along Y and Z directions...")
+        print(f"\nStep 1: Moving along local X and Z directions...")
         print(f"Intermediate pose: {intermediate_pose}")
         
         res = self.robot.movel(intermediate_pose, a=0.1, v=0.05)
         time.sleep(0.5)
 
         if res != 0:
-            print(f"Failed to move along Y and Z (error code: {res})")
+            print(f"Failed to move along local X and Z (error code: {res})")
             return res
         
         print("Step 1 completed successfully")
         
-        # Step 2: Move along X direction to final target
+        # Step 2: Move along local Y direction to final target
+        final_movement_y = (movement_local_y - 0.4) * local_y
+        final_position = intermediate_position + final_movement_y
+        
         final_pose = [
-            target_position[0]-0.4,  # x (move to target X with tool offset)
-            target_position[1],       # y (already at target Y)
-            target_position[2],       # z (already at target Z)
+            final_position[0],        # x
+            final_position[1],        # y
+            final_position[2],        # z
             current_pose[3],          # rx (keep current orientation)
             current_pose[4],          # ry
             current_pose[5]           # rz
         ]
         
-        print("\nStep 2: Moving along X direction...")
+        print(f"\nStep 2: Moving along local Y direction...")
         print(f"Final pose: {final_pose}")
         
         res = self.robot.movel(final_pose, a=0.1, v=0.05)
@@ -93,19 +120,20 @@ class URExecuteKnob(URExecuteBase):
         if res == 0:
             print("Robot moved to target position successfully")
         else:
-            print(f"Failed to move along X (error code: {res})")
+            print(f"Failed to move along local Y (error code: {res})")
         
         return res
     
     def movel_to_right_knob(self):
         """
-        Move robot to right knob position using linear movement (movel) in two steps:
-        1. Move along Y and Z directions (with -0.21m Y offset for right knob)
-        2. Move along X direction
-        Returns: 0 if successful, error code otherwise
+        Move robot to right knob position using linear movement based on local coordinate system.
         """
         if self.robot is None:
             print("Robot is not initialized")
+            return -1
+        
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
             return -1
         
         # Get target position in base coordinate system
@@ -120,42 +148,67 @@ class URExecuteKnob(URExecuteBase):
             print("Failed to get current robot pose")
             return -1
         
-        # Apply -0.21m offset in Y direction for right knob
-        right_knob_y = target_position[1] - 0.21
+        # Extract local coordinate system axes from transformation matrix
+        local_rotation = self.local_transformation_matrix[:3, :3]
+        local_x = local_rotation[:, 0]  # Local X+ direction in base coordinates
+        local_y = local_rotation[:, 1]  # Local Y+ direction in base coordinates
+        local_z = local_rotation[:, 2]  # Local Z+ direction in base coordinates
         
-        # Step 1: Move along Y and Z directions (keep X unchanged)
+        # Calculate movement vector from current position to target
+        current_position = np.array(current_pose[:3])
+        target_position_array = np.array(target_position)
+        movement_vector = target_position_array - current_position
+        
+        print(f"\n[Right Knob] Movement vector in base coordinates: {movement_vector}")
+        
+        # Project movement vector onto local coordinate system axes
+        movement_local_x = np.dot(movement_vector, local_x)
+        movement_local_y = np.dot(movement_vector, local_y)
+        movement_local_z = np.dot(movement_vector, local_z)
+        
+        # Step 1: Move along local X and Z directions (keep local Y unchanged)
+        # Calculate intermediate position by adding local X and Z movements
+        intermediate_movement_x = (movement_local_x + 0.21) * local_x
+        intermediate_movement_z = movement_local_z * local_z
+        intermediate_movement = intermediate_movement_x + intermediate_movement_z
+        intermediate_position = current_position + intermediate_movement
+        
         intermediate_pose = [
-            current_pose[0],      # x (keep current X)
-            right_knob_y,         # y (move to target Y with -0.21m offset)
-            target_position[2],   # z (move to target Z)
-            current_pose[3],      # rx (keep current orientation)
-            current_pose[4],      # ry
-            current_pose[5]       # rz
+            intermediate_position[0], # x
+            intermediate_position[1], # y
+            intermediate_position[2], # z
+            current_pose[3],          # rx (keep current orientation)
+            current_pose[4],          # ry
+            current_pose[5]           # rz
         ]
         
-        print("\n[Right Knob] Step 1: Moving along Y and Z directions...")
+        print(f"\n[Right Knob] Step 1: Moving along local X and Z directions...")
         print(f"Intermediate pose: {intermediate_pose}")
         
         res = self.robot.movel(intermediate_pose, a=0.1, v=0.05)
         time.sleep(0.5)
 
         if res != 0:
-            print(f"Failed to move along Y and Z (error code: {res})")
+            print(f"Failed to move along local X and Z (error code: {res})")
             return res
         
         print("Step 1 completed successfully")
         
-        # Step 2: Move along X direction to final target
+        # Step 2: Move along local Y direction to final target (with right knob offset)
+        # Apply -0.21m offset in local Y direction for right knob, plus tool offset (-0.4m)
+        final_movement_y = (movement_local_y - 0.4) * local_y
+        final_position = intermediate_position + final_movement_y
+        
         final_pose = [
-            target_position[0]-0.4,  # x (move to target X with tool offset)
-            right_knob_y,             # y (already at right knob Y position)
-            target_position[2],       # z (already at target Z)
+            final_position[0],        # x
+            final_position[1],        # y
+            final_position[2],        # z
             current_pose[3],          # rx (keep current orientation)
             current_pose[4],          # ry
             current_pose[5]           # rz
         ]
         
-        print("\n[Right Knob] Step 2: Moving along X direction...")
+        print(f"\n[Right Knob] Step 2: Moving along local Y direction...")
         print(f"Final pose: {final_pose}")
         
         res = self.robot.movel(final_pose, a=0.1, v=0.05)
@@ -164,19 +217,13 @@ class URExecuteKnob(URExecuteBase):
         if res == 0:
             print("Robot moved to right knob position successfully")
         else:
-            print(f"Failed to move along X (error code: {res})")
+            print(f"Failed to move along local Y (error code: {res})")
         
         return res
     
     def movel_to_correct_tool_tcp(self):
         """
-        Align tool TCP orientation with local coordinate system in two steps:
-        Step 1: Align tool axes with local coordinate system
-        - Tool X+ aligns with Local X+
-        - Tool Y+ aligns with Local Z-
-        - Tool Z+ aligns with Local Y+
-        Step 2: Rotate 30 degrees around TCP Z axis
-        Returns: 0 if successful, error code otherwise
+        Align tool TCP orientation with local coordinate system.
         """
         if self.robot is None:
             print("Robot is not initialized")
@@ -221,8 +268,7 @@ class URExecuteKnob(URExecuteBase):
         ])
         
         # Convert rotation matrix to rotation vector (axis-angle representation)
-        # UR uses rotation vector [rx, ry, rz] where the direction is the axis
-        # and the magnitude is the angle in radians
+        # UR uses rotation vector [rx, ry, rz] where the direction is the axis and the magnitude is the angle in radians
         rotation_obj = R.from_matrix(target_tool_rotation)
         rotation_vector = rotation_obj.as_rotvec()
         
@@ -237,12 +283,6 @@ class URExecuteKnob(URExecuteBase):
         ]
         
         print("\nStep 1: Aligning tool TCP with local coordinate system...")
-        print(f"Local X+ direction: {local_x}")
-        print(f"Local Y+ direction: {local_y}")
-        print(f"Local Z+ direction: {local_z}")
-        print(f"Tool Z+ direction (parallel to base XOY): {tool_z_direction}")
-        print(f"Tool Y+ direction: {tool_y_direction}")
-        print(f"Target rotation vector: {rotation_vector}")
         print(f"Target pose: {target_pose}")
         
         res = self.robot.movel(target_pose, a=0.1, v=0.05)
@@ -254,14 +294,11 @@ class URExecuteKnob(URExecuteBase):
         
         print("Step 1 completed successfully")
         
-        # Step 2: Rotate 30 degrees around TCP Z axis
-        # Create rotation around Z axis (30 degrees = pi/6 radians)
+        # Step 2: Rotate 31 degrees around TCP Z axis
         angle_deg = 31
-
         angle_rad = np.deg2rad(angle_deg)
         
         # The Z axis in tool knob corresponds to local_y in base knob
-        # We need to rotate around this axis
         rotation_axis = local_y / np.linalg.norm(local_y)  # Normalize (should already be normalized)
         additional_rotation = R.from_rotvec(angle_rad * rotation_axis)
         
@@ -279,11 +316,11 @@ class URExecuteKnob(URExecuteBase):
         ]
         
         print(f"\nStep 2: Rotating {angle_deg} degrees around TCP Z axis...")
-        print(f"Combined rotation vector: {combined_rotation_vector}")
         print(f"Final pose: {final_pose}")
         
         res = self.robot.movel(final_pose, a=0.1, v=0.05)
-        
+        time.sleep(0.5)
+
         if res == 0:
             print("Tool TCP aligned and rotated successfully")
         else:
@@ -380,7 +417,7 @@ class URExecuteKnob(URExecuteBase):
         # Set force mode parameters for unlocking
         task_frame = tcp_pose
         selection_vector = [0, 0, 1, 0, 0, 0]  # Enable torque control in Z direction only
-        wrench = [0, 0, -20.0, 0, 0, 0]
+        wrench = [0, 0, -25.0, 0, 0, 0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - unlocking...")
@@ -393,7 +430,7 @@ class URExecuteKnob(URExecuteBase):
             limits=limits,
             damping=0.002,
             end_type=3,
-            end_distance=[0,0,0.005,0,0,0]
+            end_distance=[0,0,0.003,0,0,0]
         )
         
         if result1 != 0:
@@ -493,7 +530,7 @@ class URExecuteKnob(URExecuteBase):
         # Set force mode parameters for unlocking
         task_frame = tcp_pose
         selection_vector = [0, 0, 1, 0, 0, 0]  # Enable torque control in Z direction only
-        wrench = [0, 0, -20.0, 0, 0, 0]
+        wrench = [0, 0, -25.0, 0, 0, 0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - unlocking...")
@@ -506,7 +543,7 @@ class URExecuteKnob(URExecuteBase):
             limits=limits,
             damping=0.002,
             end_type=3,
-            end_distance=[0,0,0.005,0,0,0]
+            end_distance=[0,0,0.003,0,0,0]
         )
         
         if result1 != 0:
@@ -554,11 +591,14 @@ class URExecuteKnob(URExecuteBase):
 
     def movel_to_leave_the_knob(self, distance):
         """
-        Move the robot away from the knob by moving 0.2m in the negative X direction.
-        Returns: 0 if successful, error code otherwise
+        Move robot based on "distance" (dx, dy, dz) in local coordinate system to leave the knob.
         """
         if self.robot is None:
             print("Robot is not initialized")
+            return -1
+        
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
             return -1
         
         # Get current TCP pose
@@ -567,19 +607,33 @@ class URExecuteKnob(URExecuteBase):
             print("Failed to get current robot pose")
             return -1
         
-        # Move 0.2m in negative X direction
+        # Parse distance parameter - must be a 3D array
+        if isinstance(distance, (list, tuple)) and len(distance) == 3:
+            local_displacement = np.array(distance)
+        else:
+            print("Invalid distance parameter. Must be [dx, dy, dz] in local coordinate system")
+            return -1
+        
+        # Extract rotation matrix from local transformation matrix (3x3)
+        local_rotation = self.local_transformation_matrix[:3, :3]
+        
+        # Transform displacement from local coordinate system to base coordinate system
+        # displacement_base = R_local_to_base * displacement_local
+        base_displacement = local_rotation @ local_displacement
+        
+        # Calculate target pose in base coordinate system
         target_pose = [
-            current_pose[0] + distance,   # x: move -0.2m
-            current_pose[1],         # y: keep unchanged
-            current_pose[2],         # z: keep unchanged
-            current_pose[3],         # rx: keep orientation unchanged
-            current_pose[4],         # ry
-            current_pose[5]          # rz
+            current_pose[0] + base_displacement[0],  # x
+            current_pose[1] + base_displacement[1],  # y
+            current_pose[2] + base_displacement[2],  # z
+            current_pose[3],                         # rx (keep current orientation)
+            current_pose[4],                         # ry
+            current_pose[5]                          # rz
         ]
         
-        print("\n[INFO] Moving away from knob (X- direction, 0.2m)...")
-        print(f"Current pose: {current_pose}")
-        print(f"Target pose: {target_pose}")
+        print(f"\n[INFO] Moving away from knob: {local_displacement} in local frame...")
+        print(f"Local displacement (local frame): {local_displacement}")
+        print(f"Base displacement (base frame): {base_displacement}")
         
         res = self.robot.movel(target_pose, a=0.1, v=0.05)
         time.sleep(0.5)
@@ -659,7 +713,7 @@ if __name__ == "__main__":
 
     # move away from the knob
     print("\n" + "="*50)
-    ur_knob.movel_to_leave_the_knob(-0.001)
+    ur_knob.movel_to_leave_the_knob([0, -0.001, 0])
     time.sleep(0.5)
 
     # force control to unlock the left knob
@@ -669,7 +723,7 @@ if __name__ == "__main__":
 
     # move away from the knob
     print("\n" + "="*50)
-    ur_knob.movel_to_leave_the_knob(-0.2)
+    ur_knob.movel_to_leave_the_knob([0, -0.2, 0])
     time.sleep(0.5)
 
     # move back to reference joint positions
@@ -695,7 +749,7 @@ if __name__ == "__main__":
 
     # move away from the right knob
     print("\n" + "="*50)
-    ur_knob.movel_to_leave_the_knob(-0.001)
+    ur_knob.movel_to_leave_the_knob([0, -0.001, 0])
     time.sleep(0.5)
 
     # force control to unlock the right knob
@@ -705,7 +759,7 @@ if __name__ == "__main__":
 
     # move away from the right knob
     print("\n" + "="*50)
-    ur_knob.movel_to_leave_the_knob(-0.2)
+    ur_knob.movel_to_leave_the_knob([0, -0.2, 0])
     time.sleep(0.5)
 
     # move back to reference joint positions

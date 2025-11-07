@@ -646,13 +646,3 @@ if __name__ == "__main__":
     if target_position is not None:
         print("\nTarget Position in Base Coordinate System:")
         print(target_position)
-    
-    # Move robot to zero state first
-    # print("\n" + "="*50)
-    # ur_base.movej_to_zero_state()
-    # time.sleep(10)
-    
-    # # Then move to reference joint positions
-    # print("\n" + "="*50)
-    # ur_base.movej_to_reference_joint_positions()
-    # time.sleep(10)

@@ -32,11 +32,7 @@ class URExecuteHandle2(URExecuteBase):
     
     def movel_to_correct_tool_tcp(self):
         """
-        Align tool TCP orientation with base and local coordinate systems:
-        - Tool Z+ aligns with Base Z- (pointing downward)
-        - Tool Y+ aligns with Local Y-
-        - Tool X+ aligns with Local X+
-        Returns: 0 if successful, error code otherwise
+        Align tool TCP orientation with base and local coordinate systems, then rotate 30 degrees around TCP Z axis
         """
         if self.robot is None:
             print("Robot is not initialized")
@@ -68,6 +64,7 @@ class URExecuteHandle2(URExecuteBase):
         # Priority 2: Tool X+ -> Local X+
         # Priority 3: Tool Y+ -> Calculated by right-hand rule: Y = Z × X
         tool_z = base_z_negative  # Base Z-
+
         tool_x = local_x  # Local X+
         
         # Normalize to ensure unit vectors
@@ -84,12 +81,6 @@ class URExecuteHandle2(URExecuteBase):
             tool_z   # Tool Z+ = Base Z-
         ])
         
-        # Verify determinant is +1 (right-handed coordinate system)
-        det = np.linalg.det(target_tool_rotation)
-        if abs(det - 1.0) > 0.01:
-            print(f"Warning: Rotation matrix determinant is {det:.6f}, not 1.0")
-            print("This may indicate a left-handed coordinate system")
-        
         # Convert rotation matrix to rotation vector (axis-angle representation)
         rotation_obj = R.from_matrix(target_tool_rotation)
         rotation_vector = rotation_obj.as_rotvec()
@@ -105,28 +96,22 @@ class URExecuteHandle2(URExecuteBase):
         ]
         
         print("\nStep 1: Aligning tool TCP with base and local coordinate systems...")
-        print(f"Tool Z+ (Base Z-): {tool_z}")
-        print(f"Tool X+ (Local X+): {tool_x}")
-        print(f"Tool Y+ (Z × X, right-hand rule): {tool_y}")
-        print(f"Target rotation matrix determinant: {det:.6f}")
-        print(f"Target rotation vector: {rotation_vector}")
         print(f"Target pose: {target_pose}")
         
         res = self.robot.movel(target_pose, a=0.1, v=0.05)
-        
+        time.sleep(0.5)
+
         if res != 0:
             print(f"Failed to align tool TCP (error code: {res})")
             return res
         
         print("Step 1 completed successfully")
-        time.sleep(0.5)
-
+        
         # Step 2: Rotate 30 degrees around TCP Z axis
         angle_deg = 30
         angle_rad = np.deg2rad(angle_deg)
         
         # The Z axis in tool frame corresponds to base_z_negative in base frame
-        # We need to rotate around this axis
         rotation_axis = base_z_negative / np.linalg.norm(base_z_negative)  # Normalize
         additional_rotation = R.from_rotvec(angle_rad * rotation_axis)
         
@@ -144,7 +129,6 @@ class URExecuteHandle2(URExecuteBase):
         ]
         
         print(f"\nStep 2: Rotating {angle_deg} degrees around TCP Z axis...")
-        print(f"Combined rotation vector: {combined_rotation_vector}")
         print(f"Final pose: {final_pose}")
         
         res = self.robot.movel(final_pose, a=0.1, v=0.05)
@@ -160,10 +144,7 @@ class URExecuteHandle2(URExecuteBase):
 
     def movel_to_target_position(self):
         """
-        Move robot to target position using linear movement (movel) in two steps:
-        1. Move along X and Y directions
-        2. Move along Z direction
-        Returns: 0 if successful, error code otherwise
+        Move robot to target position using linear movement.
         """
         if self.robot is None:
             print("Robot is not initialized")
@@ -195,19 +176,21 @@ class URExecuteHandle2(URExecuteBase):
         print(f"Intermediate pose: {intermediate_pose}")
         
         res = self.robot.movel(intermediate_pose, a=0.1, v=0.05)
-        
+        time.sleep(0.5)
+
         if res != 0:
             print(f"Failed to move along X and Y (error code: {res})")
             return res
         
         print("Step 1 completed successfully")
-        time.sleep(0.5)
         
         # Step 2: Move along Z direction to final target
+        tool_offset_z = 0.2265  # Tool offset in Z direction (meters)
+        correct_offset = 0.02   # Additional offset to avoid collision (meters)
         final_pose = [
-            target_position[0],  # x (already at target X)
-            target_position[1],       # y (already at target Y)
-            target_position[2] + 0.2265 + 0.02,       # z (move to target Z)
+            target_position[0],
+            target_position[1],
+            target_position[2] + tool_offset_z + correct_offset,
             current_pose[3],          # rx (keep current orientation)
             current_pose[4],          # ry
             current_pose[5]           # rz
@@ -217,7 +200,8 @@ class URExecuteHandle2(URExecuteBase):
         print(f"Final pose: {final_pose}")
         
         res = self.robot.movel(final_pose, a=0.1, v=0.05)
-        
+        time.sleep(0.5)
+
         if res == 0:
             print("Robot moved to target position successfully")
         else:
@@ -227,11 +211,14 @@ class URExecuteHandle2(URExecuteBase):
 
     def movel_to_insert_server(self, distance):
         """
-        Move robot along X negative direction by distance to insert server
-        Returns: 0 if successful, error code otherwise
+        Move robot based on "distance" (dx, dy, dz) in local frame to insert server
         """
         if self.robot is None:
             print("Robot is not initialized")
+            return -1
+        
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
             return -1
         
         # Get current TCP pose
@@ -240,26 +227,41 @@ class URExecuteHandle2(URExecuteBase):
             print("Failed to get current robot pose")
             return -1
         
-        # Calculate target pose: move a distance meters in X direction
+        # Parse distance parameter - must be a 3D array
+        if isinstance(distance, (list, tuple)) and len(distance) == 3:
+            local_displacement = np.array(distance)
+        else:
+            print("Invalid distance parameter. Must be [dx, dy, dz] in local coordinate system")
+            return -1
+        
+        # Extract rotation matrix from local transformation matrix (3x3)
+        local_rotation = self.local_transformation_matrix[:3, :3]
+        
+        # Transform displacement from local coordinate system to base coordinate system
+        # displacement_base = R_local_to_base * displacement_local
+        base_displacement = local_rotation @ local_displacement
+        
+        # Calculate target pose in base coordinate system
         target_pose = [
-            current_pose[0] + distance,  # x (move distance m in x direction)
-            current_pose[1],         # y (keep unchanged)
-            current_pose[2],         # z (keep unchanged)
-            current_pose[3],         # rx (keep current orientation)
-            current_pose[4],         # ry
-            current_pose[5]          # rz
+            current_pose[0] + base_displacement[0],  # x
+            current_pose[1] + base_displacement[1],  # y
+            current_pose[2] + base_displacement[2],  # z
+            current_pose[3],                          # rx (keep current orientation)
+            current_pose[4],                          # ry
+            current_pose[5]                           # rz
         ]
         
-        print("\nExtracting server: Moving 0.85m along X negative direction...")
-        print(f"Current pose: {current_pose}")
-        print(f"Target pose: {target_pose}")
+        print(f"\nInserting server: Moving {local_displacement} in local frame...")
+        print(f"Local displacement (local frame): {local_displacement}")
+        print(f"Base displacement (base frame): {base_displacement}")
         
         res = self.robot.movel(target_pose, a=0.1, v=0.05)
-        
+        time.sleep(0.5)
+
         if res == 0:
-            print("Server extraction completed successfully")
+            print("Server insertion completed successfully")
         else:
-            print(f"Failed to extract server (error code: {res})")
+            print(f"Failed to insert server (error code: {res})")
         
         return res
 
@@ -308,38 +310,26 @@ class URExecuteHandle2(URExecuteBase):
         if self.robot is None:
             print("Robot is not initialized")
             return -1
-        
-        # Target joint angles
-        target_joint_angles = [-1.5214632193194788, -1.5912000141539515, -0.061849094927310944,
-                               0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
-        
+
         print("\nMoving to get tool start position...")
+        # Target joint angles
+        target_joint_angles = [-1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]       
         print(f"Target joint angles: {target_joint_angles}")
-        
         res = self.robot.movej(target_joint_angles, a=0.5, v=0.5)
         time.sleep(0.5)
 
-        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
-                               0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
-        
+        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396, 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
         print(f"Target joint angles: {target_joint_angles}")
-        
         res = self.robot.movej(target_joint_angles, a=0.5, v=0.5)
         time.sleep(0.5)
 
-        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
-                               -1.3431838166764756, 1.4398412704467773, -1.2330482641803187]
-        
+        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396, -1.3431838166764756, 1.4398412704467773, -1.2330482641803187]
         print(f"Target joint angles: {target_joint_angles}")
-        
         res = self.robot.movej(target_joint_angles, a=0.5, v=0.5)
         time.sleep(0.5)
 
-        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396,
-                               -1.3431838166764756,  1.5084102153778076, 1.6445358991622925]
-        
+        target_joint_angles = [-1.5103414694415491, -1.712231775323385, -1.6820600032806396, -1.3431838166764756,  1.5084102153778076, 1.6445358991622925]
         print(f"Target joint angles: {target_joint_angles}")
-        
         res = self.robot.movej(target_joint_angles, a=0.5, v=0.5)
         time.sleep(0.5)
 
@@ -513,7 +503,7 @@ if __name__ == "__main__":
 
     # step1: move to positon 1
     print("\n" + "="*50)
-    ur_handle2.movel_to_insert_server(distance=0.60)
+    ur_handle2.movel_to_insert_server(distance=[0,0.60,0])
     time.sleep(0.5)
 
     print("\n" + "="*50)
@@ -526,7 +516,7 @@ if __name__ == "__main__":
 
     # step2: move to positon 2
     print("\n" + "="*50)
-    ur_handle2.movel_to_insert_server(distance=0.60)
+    ur_handle2.movel_to_insert_server(distance=[0,0.60,0])
     time.sleep(0.5)
 
     # move to exit position
