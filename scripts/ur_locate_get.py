@@ -7,6 +7,7 @@ Extends URLocateBase with custom configuration for 'get' task
 import os
 import sys
 import time
+import json
 import threading
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
@@ -57,6 +58,9 @@ class URLocateGet(URLocateBase):
         self.ref_keypoints_path = os.path.join(self.data_dir, 'ref_keypoints.json')
         self.ref_pose_path = os.path.join(self.data_dir, 'ref_pose.json')
         
+        # Try to load collect_start_position from ref_pose.json if it exists
+        self._set_new_collect_start_position()
+        
         print("\n" + "="*60)
         print("URLocateGet Configuration")
         print("="*60)
@@ -65,6 +69,34 @@ class URLocateGet(URLocateBase):
         print(f"Collect position: {self.collect_start_position}")
         print(f"Number of movements: {len(self.movements)}")
         print("="*60 + "\n")
+
+    def _set_new_collect_start_position(self):
+        """
+        Load collect_start_position from ref_pose.json.
+        This function requires the reference pose file to exist and be valid.
+        If the file doesn't exist or is invalid, it will raise an exception to terminate the script.
+        """
+        if not os.path.exists(self.ref_pose_path):
+            raise FileNotFoundError(f'✗ Reference pose file not found: {self.ref_pose_path}\n'
+                                   f'  Please run data collection first to generate reference pose data.')
+        
+        try:
+            with open(self.ref_pose_path, 'r') as f:
+                ref_pose_data = json.load(f)
+            
+            if 'joint_angles' not in ref_pose_data:
+                raise KeyError(f'✗ No "joint_angles" field found in {self.ref_pose_path}\n'
+                              f'  The reference pose file is corrupted or incomplete.')
+            
+            self.collect_start_position = ref_pose_data['joint_angles']
+            self.get_logger().info(f'✓ Loaded collect_start_position from {self.ref_pose_path}')
+            self.get_logger().info(f'  Joint angles: {[f"{j:.4f}" for j in self.collect_start_position]}')
+                
+        except json.JSONDecodeError as e:
+            raise ValueError(f'✗ Invalid JSON format in {self.ref_pose_path}: {e}\n'
+                           f'  The reference pose file is corrupted.')
+        except Exception as e:
+            raise RuntimeError(f'✗ Error loading collect_start_position from {self.ref_pose_path}: {e}')
 
 
 def main():
