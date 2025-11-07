@@ -21,13 +21,12 @@ logging.basicConfig(level=logging.INFO)
 # ═══════════════════════════════════════════════════════════════
 CONTROL_RATE = 0.02             # 控制循环 50 Hz（每 0.02s）
 POSITION_TOLERANCE = 0.05       # 调低误差带：目标高度允许误差 ±0.05 mm，减少过早判定完成
-# 提升频率：取消原 0.3s 节流，改为仅在“需要改变方向或停止”时发送继电器脉冲。
+# 提升频率：取消原 0.3s 节流，改为仅在"需要改变方向或停止"时发送继电器脉冲。
 # 不再使用 COMMAND_INTERVAL（保留变量以兼容旧逻辑但设为 0）。
 COMMAND_INTERVAL = 0.0          # 设为 0 表示不做时间节流，仅靠 movement_state 去重
-HISTORY_SIZE = 4                # 高度过滤窗口大小（仅使用 legacy 过滤，不再支持 adaptive）
 # 预测性提前停参数（用于减少超调）
-OVERSHOOT_INIT_UP = 1.865      # 初始向上超调估计 (mm) 使用最近推荐 median
-OVERSHOOT_INIT_DOWN = 2.135    # 初始向下超调估计 (mm) 使用最近推荐 median
+OVERSHOOT_INIT_UP = 1.178      # 初始向上超调估计 (mm) 使用实验推荐 median (cv=0.111)
+OVERSHOOT_INIT_DOWN = 1.300    # 初始向下超调估计 (mm) 使用实验推荐 median (cv=0.097)
 OVERSHOOT_ALPHA = 0.25         # 指数平均权重 (新值占比)
 OVERSHOOT_SETTLE_DELAY = 0.25  # (s) 停止后等待稳定再测量超调
 OVERSHOOT_MIN_MARGIN = 0.3     # (mm) 低于该值不使用提前停，避免过早停止导致未达目标
@@ -54,9 +53,8 @@ class LiftRobotNode(Node):
         # ═══════════════════════════════════════════════════════════════
         # Control Loop State Variables
         # ═══════════════════════════════════════════════════════════════
-        self.current_height = 0.0           # Current filtered height (mm)
+        self.current_height = 0.0           # Current height from cable sensor (mm) - no filtering needed for digital signal
         self.target_height = 0.0            # Target height setpoint (mm)
-        self.height_history = []            # History of height readings for filtering
         self.last_command_time = self.get_clock().now()  # 兼容旧逻辑（当前不再用于节流）
         self.control_enabled = False        # Enable/disable closed-loop control
         self.control_mode = 'manual'        # 'manual' or 'auto' (height control)
@@ -166,7 +164,6 @@ class LiftRobotNode(Node):
                     self.control_mode = 'auto'
                     self.control_enabled = True
                     # Reset tracking to allow immediate first command
-                    self.height_history.clear()
                     self.movement_state = 'stop'  # Reset movement state
                     # 旧逻辑通过回退 last_command_time 触发首条指令；现在不再依赖时间节流
                     self.last_command_time = self.get_clock().now()
@@ -187,50 +184,26 @@ class LiftRobotNode(Node):
         try:
             sensor_data = json.loads(msg.data)
             # Use adjusted height (includes pushrod offset)
+            # Cable sensor is digital signal, use raw value directly without filtering
             height = sensor_data.get('height')
             if height is not None:
-                raw_height = float(height)
-                
-                # Add to history
-                self.height_history.append(raw_height)
-                
-                # Keep only the most recent HISTORY_SIZE readings
-                if len(self.height_history) > HISTORY_SIZE:
-                    self.height_history.pop(0)
-                
-                # Calculate filtered height (legacy only)
-                self.current_height = self._calculate_filtered_height_legacy()
+                self.current_height = float(height)
                 
         except (json.JSONDecodeError, ValueError, KeyError) as e:
             self.get_logger().debug(f"Failed to parse sensor data: {e}")
-    
-    def _calculate_filtered_height_legacy(self):
-        """原始滤波：4 个样本去掉 min/max 取中间平均。"""
-        if len(self.height_history) == 0:
-            return self.current_height
-        if len(self.height_history) < 4:
-            return sum(self.height_history) / len(self.height_history)
-        s = sorted(self.height_history)
-        mid = s[1:-1]
-        return sum(mid) / len(mid)
-
 
     def control_loop(self):
         """
-        Simplified closed-loop control with filtered height measurement.
+        Closed-loop control using direct cable sensor reading.
         
         Control strategy:
-        1. Use filtered height (remove min/max from last 4 readings)
+        1. Use raw cable sensor height (digital signal, no filtering needed)
         2. Calculate error = target - current
         3. Send up/down/stop command based on error
-        4. Limit command frequency to prevent excessive Modbus traffic
+        4. Commands only sent when direction changes (no time throttling)
         """
         try:
             if not self.control_enabled or self.control_mode != 'auto':
-                return
-            
-            # Need at least some readings to start control
-            if len(self.height_history) == 0:
                 return
                 
             # Calculate position error
