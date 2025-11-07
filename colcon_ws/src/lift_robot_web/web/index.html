@@ -57,11 +57,10 @@
   <span id="cmdStatus" class="text-xs text-slate-500"></span>
       </div>
       <div class="grid grid-cols-2 gap-2 text-sm">
-        <div>register_0: <span id="reg0" class="font-mono">-</span></div>
-        <div>register_1: <span id="reg1" class="font-mono">-</span></div>
-        <div>seq_id: <span id="seq" class="font-mono">-</span></div>
-        <div>device_id: <span id="device" class="font-mono">-</span></div>
-        <div class="col-span-2">height (mm): <span id="heightVal" class="font-mono font-semibold">-</span></div>
+  <div>seq_id: <span id="seq" class="font-mono">-</span></div>
+  <div>height (mm): <span id="heightVal" class="font-mono font-semibold">-</span></div>
+  <div>Height Freq: <span id="heightFreq" class="font-mono">-</span> Hz</div>
+  <div>Height Latency: <span id="heightLatency" class="font-mono">-</span> ms</div>
       </div>
   <div class="text-sm text-slate-600">Last message timestamp: <span id="ts">-</span></div>
     </div>
@@ -86,10 +85,9 @@
       </div>
     </div>
     <div class="p-3 bg-white rounded shadow space-y-2">
-      <h2 class="font-semibold">Force Sensors</h2>
-      <div class="grid grid-cols-2 gap-2 text-sm">
-        <div>Right (CH2): <span id="rightForce" class="font-mono">-</span></div>
-        <div>Left (CH3): <span id="leftForce" class="font-mono">-</span></div>
+      <h2 class="font-semibold">Force Sensor</h2>
+      <div class="grid grid-cols-1 gap-2 text-sm">
+        <div>Force (N): <span id="forceVal" class="font-mono font-semibold">-</span></div>
       </div>
       <div class="text-xs text-slate-500" id="forceTs">-</div>
     </div>
@@ -106,16 +104,23 @@ function connect(){ const proto=location.protocol==='https:'?'wss':'ws'; ws=new 
 function fallback(){ if(usePolling) return; usePolling=true; $('mode').textContent='Polling'; pollTimer=setInterval(async()=>{ try{ const r=await fetch('/api/latest'); if(!r.ok) return; handle(JSON.stringify(await r.json())); }catch(e){} }, 1000); }
 function handle(raw){ lastReceive=Date.now(); $('raw').textContent=raw; try{ const data=JSON.parse(raw); update(data); setState('live','Live'); }catch(e){} }
 function update(d){
-  if(d.register_0!==undefined) $('reg0').textContent=d.register_0;
-  if(d.register_1!==undefined) $('reg1').textContent=d.register_1;
+  // Compact mode fields
   if(d.seq_id!==undefined) $('seq').textContent=d.seq_id;
-  if(d.device_id!==undefined) $('device').textContent=d.device_id;
+  if(d.height!==undefined) $('heightVal').textContent = (d.height===null?'-':(d.height.toFixed?d.height.toFixed(2):d.height));
+  if(d.freq_hz!==undefined) $('heightFreq').textContent = (d.freq_hz && d.freq_hz.toFixed? d.freq_hz.toFixed(2): d.freq_hz);
+  if(d.latency_ms!==undefined && d.latency_ms!==null) $('heightLatency').textContent = (d.latency_ms.toFixed? d.latency_ms.toFixed(1): d.latency_ms);
+  // Legacy fallback (timestamp / read_interval)
   if(d.timestamp){ $('ts').textContent=d.timestamp; }
   if(d.read_interval){ readInterval=d.read_interval*1000; }
-  if(d.height!==undefined){ $('heightVal').textContent = (d.height===null?'-':(d.height.toFixed?d.height.toFixed(2):d.height)); }
-  if(d.right_force_sensor!==undefined){ $('rightForce').textContent=(d.right_force_sensor===null?'-':d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(3):d.right_force_sensor); }
-  if(d.left_force_sensor!==undefined){ $('leftForce').textContent=(d.left_force_sensor===null?'-':d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(3):d.left_force_sensor); }
-  if(d.right_force_sensor!==undefined || d.left_force_sensor!==undefined){ $('forceTs').textContent='Updated at '+new Date().toLocaleTimeString(); }
+  // Single channel force (with backward compatibility fallbacks)
+  let fv = d.force_sensor;
+  if(fv===undefined) {
+    if(d.right_force_sensor!==undefined) fv = d.right_force_sensor; else if(d.left_force_sensor!==undefined) fv = d.left_force_sensor;
+  }
+  if(fv!==undefined) {
+    $('forceVal').textContent = (fv===null?'-':(fv.toFixed?fv.toFixed(2):fv));
+    $('forceTs').textContent='Updated at '+new Date().toLocaleTimeString();
+  }
   
   // Platform status
   if(d.platform_status){

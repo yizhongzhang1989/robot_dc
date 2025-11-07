@@ -5,7 +5,8 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     device_id_arg = DeclareLaunchArgument('device_id', default_value='51', description='Modbus device ID')
-    read_interval_arg = DeclareLaunchArgument('read_interval', default_value='0.1', description='Sensor read interval (s)')
+    # Default changed to 0.02s (50Hz) for system-wide consistency
+    read_interval_arg = DeclareLaunchArgument('read_interval', default_value='0.02', description='Sensor read interval (s, 0.02=50Hz)')
     return LaunchDescription([
         device_id_arg,
         read_interval_arg,

@@ -38,6 +38,12 @@ def generate_launch_description():
         'lift_robot_force_sensor_launch.py'
     )
 
+    force_sensor_test_path = os.path.join(
+        get_package_share_directory('lift_robot_force_sensor_test'),
+        'launch',
+        'lift_robot_force_sensor_test_launch.py'
+    )
+
     pushrod_path = os.path.join(
         get_package_share_directory('lift_robot_pushrod'),
         'launch',
@@ -79,9 +85,18 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(force_sensor_path))]
     )
 
+    # Start force sensor test after force sensor (50Hz, device_id=60, CH2 only)
+    force_sensor_test_launch = TimerAction(
+        period=5.0,
+        actions=[IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(force_sensor_test_path),
+            launch_arguments={'device_id': '60', 'read_interval': '0.02'}.items()
+        )]
+    )
+
     # Start web after sensor (optional)
     web_launch = TimerAction(
-        period=5.0,
+        period=5.5,
         actions=[IncludeLaunchDescription(
             PythonLaunchDescriptionSource(web_path),
             launch_arguments={
@@ -97,8 +112,9 @@ def generate_launch_description():
         web_port_arg,
         modbus_launch,
         lift_robot_launch,
-    pushrod_launch,
-    cable_sensor_launch,
-    force_sensor_launch,
+        pushrod_launch,
+        cable_sensor_launch,
+        force_sensor_launch,
+        force_sensor_test_launch,
         web_launch,
     ])

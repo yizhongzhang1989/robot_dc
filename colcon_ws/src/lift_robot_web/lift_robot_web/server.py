@@ -27,8 +27,8 @@ class LiftRobotWeb(Node):
         self.latest_obj = None
         self.connections = []
         self.loop = None
-        self.right_force = None
-        self.left_force = None
+        # 单通道力值，仅保留 force_sensor 字段
+        self.force_value = None
         self.platform_status = None
         self.pushrod_status = None
 
@@ -37,10 +37,10 @@ class LiftRobotWeb(Node):
         # Force sensor subscriptions (Float32)
         try:
             from std_msgs.msg import Float32
-            self.right_sub = self.create_subscription(Float32, '/right_force_sensor', self.right_cb, 10)
-            self.left_sub = self.create_subscription(Float32, '/left_force_sensor', self.left_cb, 10)
+            # 仅订阅单通道力话题 /force_sensor
+            self.force_sub = self.create_subscription(Float32, '/force_sensor', self.force_cb, 10)
         except Exception as e:
-            self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
+            self.get_logger().warn(f"Failed to create force sensor subscription: {e}")
         # Status subscriptions
         self.platform_status_sub = self.create_subscription(String, '/lift_robot_platform/status', self.platform_status_cb, 10)
         self.pushrod_status_sub = self.create_subscription(String, '/lift_robot_pushrod/status', self.pushrod_status_cb, 10)
@@ -64,10 +64,9 @@ class LiftRobotWeb(Node):
                 if self.latest_obj is not None:
                     try:
                         merged = dict(self.latest_obj)
-                        if self.right_force is not None:
-                            merged['right_force_sensor'] = self.right_force
-                        if self.left_force is not None:
-                            merged['left_force_sensor'] = self.left_force
+                        if self.force_value is not None:
+                            # 仅保留单通道字段
+                            merged['force_sensor'] = self.force_value
                         if self.platform_status is not None:
                             merged['platform_status'] = self.platform_status
                         if self.pushrod_status is not None:
@@ -81,17 +80,11 @@ class LiftRobotWeb(Node):
             self.get_logger().error(f"Sensor callback error: {e}")
             # Continue operation
 
-    def right_cb(self, msg):
+    def force_cb(self, msg):
         try:
-            self.right_force = msg.data
+            self.force_value = msg.data
         except Exception as e:
-            self.get_logger().warn(f"Right force callback error: {e}")
-
-    def left_cb(self, msg):
-        try:
-            self.left_force = msg.data
-        except Exception as e:
-            self.get_logger().warn(f"Left force callback error: {e}")
+            self.get_logger().warn(f"Force callback error: {e}")
     
     def platform_status_cb(self, msg: String):
         try:
