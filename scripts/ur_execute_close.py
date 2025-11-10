@@ -582,7 +582,6 @@ class URExecuteClose(URExecuteBase):
         
         # Reconstruct the task frame BEFORE the 31-degree Z-axis rotation
 
-        
         # Extract rotation matrix from local transformation matrix
         local_rotation = self.local_transformation_matrix[:3, :3]
         local_x = local_rotation[:, 0]  # Local X+ direction

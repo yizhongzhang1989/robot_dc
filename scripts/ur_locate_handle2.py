@@ -43,17 +43,7 @@ class URLocateHandle2(URLocateBase):
         self.ref_img_path = os.path.join(self.data_dir, 'ref_img.jpg')
         self.ref_keypoints_path = os.path.join(self.data_dir, 'ref_keypoints.json')
         self.ref_pose_path = os.path.join(self.data_dir, 'ref_pose.json')
-        
-        # Override collect start position for handle2 task (radians)
-        self.collect_start_position = [
-            -1.4736245314227503,
-            -1.6785484753050746,
-            -1.7203681468963623,
-            -1.3410038512996216,
-            1.5090150833129883,
-            1.6812989711761475
-        ]
-        
+            
         # Override movement offsets for handle2 task (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {

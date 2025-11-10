@@ -32,16 +32,6 @@ class URLocateKnob(URLocateBase):
         # Override ROS node name
         self.get_logger().info('URLocateKnob initialized')
         
-        # Override collect position joint angles (radians)
-        self.collect_start_position = [
-            1.6890438795089722,
-            -0.2552970212749024,
-            1.7320945898639124,
-            -4.616926094094747,
-            -0.28294688860048467,
-            0.029746543616056442
-        ]
-        
         # Override movement offsets (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {

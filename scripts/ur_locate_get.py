@@ -27,16 +27,6 @@ class URLocateGet(URLocateBase):
         # Call parent constructor
         super().__init__(api_url=api_url, robot_ip=robot_ip, robot_port=robot_port)
         
-        # Override collect position for 'get' task
-        self.collect_start_position = [
-                -5.160782996808187,
-                -0.5216825765422364,
-                1.861910645161764,
-                -1.326285646562912,
-                -0.39485055605043584,
-                3.143115758895874
-        ]
-        
         # Override movements for 'get' task
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {

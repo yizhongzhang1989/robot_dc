@@ -31,17 +31,7 @@ class URLocateFrame(URLocateBase):
         
         # Override ROS node name
         self.get_logger().info('URLocateFrame initialized')
-        
-        # Override collect position joint angles (radians)
-        self.collect_start_position = [
-            -4.628224555646078,
-            -0.5939362210086365,
-            1.9152935186969202,
-            -1.9046393833556117,
-            0.1272939145565033,
-            3.737786054611206
-        ]
-        
+              
         # Override movement offsets (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {

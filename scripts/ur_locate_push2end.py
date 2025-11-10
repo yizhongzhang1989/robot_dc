@@ -32,16 +32,6 @@ class URLocatePush2End(URLocateBase):
         # Override ROS node name
         self.get_logger().info('URLocatePush2End initialized')
         
-        # Override collect position joint angles (radians)
-        self.collect_start_position = [
-            1.6157532930374146,
-            -0.6971209806254883,
-            2.0771897474872034,
-            -1.51478514940057,
-            0.24884912371635437,
-            -2.985495392476217
-        ]
-        
         # Override movement offsets (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {

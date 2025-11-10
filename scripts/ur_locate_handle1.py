@@ -33,18 +33,7 @@ class URLocateHandle1(URLocateBase):
         """
         # Call parent class constructor
         super().__init__(api_url=api_url, robot_ip=robot_ip, robot_port=robot_port)
-        
-        # Override collect start position
-        # Joint angles in radians for handle1 task
-        self.collect_start_position = [
-            -0.7684944311725062,
-            -1.872650762597555,
-            -1.5162721872329712,
-            -0.962266282444336,
-            1.8500767946243286,
-            -0.6623833815204065
-        ]
-        
+            
         # Override movements with custom offsets
         # Format: movement name -> [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]
         self.movements = {
