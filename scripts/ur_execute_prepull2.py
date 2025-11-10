@@ -6,22 +6,22 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from ur15_robot_arm.ur15 import UR15Robot
 
-class URExecutePrePull(URExecuteBase):
+class URExecutePrePull2(URExecuteBase):
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002):
         # Call parent class constructor first
         super().__init__(robot_ip, robot_port)
         
-        # Override data_dir and result_dir with prepull-specific paths
+        # Override data_dir and result_dir with prepull2-specific paths
         self.data_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
-            "ur_locate_prepull_data"
+            "ur_locate_prepull2_data"
         )
         
         self.result_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
-            "ur_locate_prepull_result"
+            "ur_locate_prepull2_result"
         )
         
         # Reload parameters from the new directories
@@ -149,12 +149,12 @@ class URExecutePrePull(URExecuteBase):
         # Extract rotation matrix from local transformation matrix (3x3)
         local_rotation = self.local_transformation_matrix[:3, :3]
         
-        # Local coordinate system axes in base prepull
+        # Local coordinate system axes in base prepull2
         local_x = local_rotation[:, 0]  # Local X+ direction
         local_y = local_rotation[:, 1]  # Local Y+ direction
         local_z = local_rotation[:, 2]  # Local Z+ direction
         
-        # Construct target rotation matrix for tool prepull:
+        # Construct target rotation matrix for tool prepull2:
         # Tool X+ -> Local X+
         # Tool Y+ -> Local Z- (negative Z)
         # Tool Z+ -> projection of Local Y+ onto base XOY plane (parallel to base XOY)
@@ -205,7 +205,7 @@ class URExecutePrePull(URExecuteBase):
         angle_deg = 31
         angle_rad = np.deg2rad(angle_deg)
         
-        # The Z axis in tool prepull corresponds to local_y in base prepull
+        # The Z axis in tool prepull2 corresponds to local_y in base prepull2
         rotation_axis = local_y / np.linalg.norm(local_y)  # Normalize (should already be normalized)
         additional_rotation = R.from_rotvec(angle_rad * rotation_axis)
         
@@ -291,9 +291,9 @@ class URExecutePrePull(URExecuteBase):
         
         return res
 
-    def force_task_touch_left_handle_before_prepull(self):
+    def force_task_touch_server(self):
         """
-        Execute force control task to touch the left handle before prepull using TCP coordinate system.
+        Execute force control task to touch the left handle before prepull2 using TCP coordinate system.
         """
         if self.robot is None:
             print("Robot is not initialized")
@@ -361,249 +361,170 @@ class URExecutePrePull(URExecuteBase):
             wrench=wrench,
             limits=limits,
             damping=0.1,
-            end_type=3,
-            end_distance=[0,0.03,0,0,0,0]
-        )
-        time.sleep(0.5)
-        return result
-
-    def force_task_prepull_left_handle(self):
-        """
-        Execute force control task to prepull the left handle using TCP coordinate system.
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-        
-        if self.local_transformation_matrix is None:
-            print("Local coordinate system transformation matrix not loaded")
-            return -1
-        
-        # Get current TCP pose
-        tcp_pose = self.robot.get_actual_tcp_pose()
-        print(f"[INFO] Current TCP pose: {tcp_pose}")
-        
-        # Reconstruct the task frame BEFORE the 31-degree Z-axis rotation
-        # This is the frame after Step 1 of movel_to_correct_tool_tcp (aligned with local coordinate system)
-        
-        # Extract rotation matrix from local transformation matrix
-        local_rotation = self.local_transformation_matrix[:3, :3]
-        local_x = local_rotation[:, 0]  # Local X+ direction
-        local_y = local_rotation[:, 1]  # Local Y+ direction
-        
-        # Reconstruct the tool rotation before the 31-degree rotation
-        # Tool Z+ is projection of Local Y+ onto base XOY plane
-        tool_z_direction = np.array([local_y[0], local_y[1], 0.0])
-        tool_z_direction = tool_z_direction / np.linalg.norm(tool_z_direction)
-        
-        # Tool Y+ = Tool Z+ × Tool X+
-        tool_y_direction = np.cross(tool_z_direction, local_x)
-        tool_y_direction = tool_y_direction / np.linalg.norm(tool_y_direction)
-        
-        # Construct rotation matrix before Z-axis rotation
-        pre_rotation_matrix = np.column_stack([
-            local_x,           # Tool X+ = Local X+
-            tool_y_direction,  # Tool Y+ 
-            tool_z_direction   # Tool Z+
-        ])
-        
-        # Convert to rotation vector
-        rotation_obj = R.from_matrix(pre_rotation_matrix)
-        rotation_vector = rotation_obj.as_rotvec()
-        
-        # Create task frame with current position but pre-rotation orientation
-        task_frame = [
-            tcp_pose[0],        # x (current position)
-            tcp_pose[1],        # y
-            tcp_pose[2],        # z
-            rotation_vector[0], # rx (orientation before Z-rotation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
-        ]
-        
-        print(f"[INFO] Task frame (before Z-rotation): {task_frame}")
-        
-        # Set force mode parameters
-        selection_vector = [1, 0, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
-        wrench = [-15, 0, -15, 0, 0, 0]  # Desired force/torque in each direction
-        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
-        
-        print("[INFO] Starting force control task...")
-        
-        # Execute force control task with force-based termination
-        result = self.robot.force_control_task(
-            task_frame=task_frame,
-            selection_vector=selection_vector,
-            wrench=wrench,
-            limits=limits,
-            damping=0.1,
-            end_type=3,
-            end_distance=[0.08,0,0.10,0,0,0]
-        )
-        time.sleep(0.5)
-        return result
-
-    def force_task_open_left_handle_after_prepull(self):
-        """
-        Execute force control task to open the left handle after prepull using TCP coordinate system.
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-        
-        if self.local_transformation_matrix is None:
-            print("Local coordinate system transformation matrix not loaded")
-            return -1
-        
-        # Get current TCP pose
-        tcp_pose = self.robot.get_actual_tcp_pose()
-        print(f"[INFO] Current TCP pose: {tcp_pose}")
-        
-        # Reconstruct the task frame BEFORE the 31-degree Z-axis rotation
-        # This is the frame after Step 1 of movel_to_correct_tool_tcp (aligned with local coordinate system)
-        
-        # Extract rotation matrix from local transformation matrix
-        local_rotation = self.local_transformation_matrix[:3, :3]
-        local_x = local_rotation[:, 0]  # Local X+ direction
-        local_y = local_rotation[:, 1]  # Local Y+ direction
-        
-        # Reconstruct the tool rotation before the 31-degree rotation
-        # Tool Z+ is projection of Local Y+ onto base XOY plane
-        tool_z_direction = np.array([local_y[0], local_y[1], 0.0])
-        tool_z_direction = tool_z_direction / np.linalg.norm(tool_z_direction)
-        
-        # Tool Y+ = Tool Z+ × Tool X+
-        tool_y_direction = np.cross(tool_z_direction, local_x)
-        tool_y_direction = tool_y_direction / np.linalg.norm(tool_y_direction)
-        
-        # Construct rotation matrix before Z-axis rotation
-        pre_rotation_matrix = np.column_stack([
-            local_x,           # Tool X+ = Local X+
-            tool_y_direction,  # Tool Y+ 
-            tool_z_direction   # Tool Z+
-        ])
-        
-        # Convert to rotation vector
-        rotation_obj = R.from_matrix(pre_rotation_matrix)
-        rotation_vector = rotation_obj.as_rotvec()
-        
-        # Create task frame with current position but pre-rotation orientation
-        task_frame = [
-            tcp_pose[0],        # x (current position)
-            tcp_pose[1],        # y
-            tcp_pose[2],        # z
-            rotation_vector[0], # rx (orientation before Z-rotation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
-        ]
-        
-        print(f"[INFO] Task frame (before Z-rotation): {task_frame}")
-        
-        # Set force mode parameters
-        selection_vector = [1, 0, 0, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
-        wrench = [-15, 0, 0, 0, 0, 0]  # Desired force/torque in each direction
-        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
-        
-        print("[INFO] Starting force control task...")
-        
-        # Execute force control task with force-based termination
-        result = self.robot.force_control_task(
-            task_frame=task_frame,
-            selection_vector=selection_vector,
-            wrench=wrench,
-            limits=limits,
-            damping=0.1,
             end_type=2,
-            end_force=[3,0,0,0,0,0]
+            end_force=[0,2,0,0,0,0]
         )
         time.sleep(0.5)
         return result
+
+    def force_task_prepull_server(self):
+        """
+        Execute force control task to prepull2 the left handle using TCP coordinate system.
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Reconstruct the task frame BEFORE the 31-degree Z-axis rotation
+        # This is the frame after Step 1 of movel_to_correct_tool_tcp (aligned with local coordinate system)
+        
+        # Extract rotation matrix from local transformation matrix
+        local_rotation = self.local_transformation_matrix[:3, :3]
+        local_x = local_rotation[:, 0]  # Local X+ direction
+        local_y = local_rotation[:, 1]  # Local Y+ direction
+        
+        # Reconstruct the tool rotation before the 31-degree rotation
+        # Tool Z+ is projection of Local Y+ onto base XOY plane
+        tool_z_direction = np.array([local_y[0], local_y[1], 0.0])
+        tool_z_direction = tool_z_direction / np.linalg.norm(tool_z_direction)
+        
+        # Tool Y+ = Tool Z+ × Tool X+
+        tool_y_direction = np.cross(tool_z_direction, local_x)
+        tool_y_direction = tool_y_direction / np.linalg.norm(tool_y_direction)
+        
+        # Construct rotation matrix before Z-axis rotation
+        pre_rotation_matrix = np.column_stack([
+            local_x,           # Tool X+ = Local X+
+            tool_y_direction,  # Tool Y+ 
+            tool_z_direction   # Tool Z+
+        ])
+        
+        # Convert to rotation vector
+        rotation_obj = R.from_matrix(pre_rotation_matrix)
+        rotation_vector = rotation_obj.as_rotvec()
+        
+        # Create task frame with current position but pre-rotation orientation
+        task_frame = [
+            tcp_pose[0],        # x (current position)
+            tcp_pose[1],        # y
+            tcp_pose[2],        # z
+            rotation_vector[0], # rx (orientation before Z-rotation)
+            rotation_vector[1], # ry
+            rotation_vector[2]  # rz
+        ]
+        
+        print(f"[INFO] Task frame (before Z-rotation): {task_frame}")
+        
+        # Set force mode parameters
+        selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
+        wrench = [0, 0, -50, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task...")
+        
+        # Execute force control task with force-based termination
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.1,
+            end_type=3,
+            end_distance=[0,0,0.05,0,0,0]
+        )
+        time.sleep(0.5)
+        return result
+
 
 if __name__ == "__main__":
-    # Create URExecutePrePull instance
-    ur_prepull = URExecutePrePull()
+    # Create URExecutePrePull2 instance
+    ur_prepull2 = URExecutePrePull2()
     
     # All parameters are automatically loaded during initialization
     # Access them directly from instance variables
     
-    if ur_prepull.camera_matrix is not None:
+    if ur_prepull2.camera_matrix is not None:
         print("\nCamera Matrix:")
-        print(ur_prepull.camera_matrix)
+        print(ur_prepull2.camera_matrix)
         print("\nDistortion Coefficients:")
-        print(ur_prepull.distortion_coefficients)
+        print(ur_prepull2.distortion_coefficients)
     
-    if ur_prepull.cam2end_matrix is not None:
+    if ur_prepull2.cam2end_matrix is not None:
         print("\nCamera to End-effector Matrix:")
-        print(ur_prepull.cam2end_matrix)
+        print(ur_prepull2.cam2end_matrix)
     
-    if ur_prepull.estimated_keypoints is not None:
+    if ur_prepull2.estimated_keypoints is not None:
         print("\nEstimated Keypoints:")
-        for kp in ur_prepull.estimated_keypoints:
+        for kp in ur_prepull2.estimated_keypoints:
             print(f"Keypoint {kp['keypoint_index']}: ({kp['x']:.6f}, {kp['y']:.6f}, {kp['z']:.6f})")
     
-    if ur_prepull.local_transformation_matrix is not None:
+    if ur_prepull2.local_transformation_matrix is not None:
         print("\nLocal Coordinate System Transformation Matrix:")
-        print(ur_prepull.local_transformation_matrix)
+        print(ur_prepull2.local_transformation_matrix)
     
-    if ur_prepull.ref_joint_angles is not None:
+    if ur_prepull2.ref_joint_angles is not None:
         print("\nReference Joint Angles (radians):")
-        for i, angle in enumerate(ur_prepull.ref_joint_angles):
+        for i, angle in enumerate(ur_prepull2.ref_joint_angles):
             print(f"Joint {i}: {angle:.6f}")
     
-    if ur_prepull.task_position_offset is not None:
+    if ur_prepull2.task_position_offset is not None:
         print("\nTask Position Offset (in local coordinate system):")
-        print(f"x: {ur_prepull.task_position_offset.get('x', 0):.6f}")
-        print(f"y: {ur_prepull.task_position_offset.get('y', 0):.6f}")
-        print(f"z: {ur_prepull.task_position_offset.get('z', 0):.6f}")
+        print(f"x: {ur_prepull2.task_position_offset.get('x', 0):.6f}")
+        print(f"y: {ur_prepull2.task_position_offset.get('y', 0):.6f}")
+        print(f"z: {ur_prepull2.task_position_offset.get('z', 0):.6f}")
 
     # Calculate target position in base coordinate system
-    target_position = ur_prepull.get_target_position()
+    target_position = ur_prepull2.get_target_position()
     if target_position is not None:
         print("\nTarget Position in Base Coordinate System:")
         print(target_position)
 
     # move to reference joint positions (commented out for safety)
     print("\n" + "="*50)
-    ur_prepull.movej_to_reference_joint_positions()
+    ur_prepull2.movej_to_reference_joint_positions()
     time.sleep(0.5)
     
     # align tool TCP with local coordinate system
     print("\n" + "="*50)
-    ur_prepull.movel_to_correct_tool_tcp()
+    ur_prepull2.movel_to_correct_tool_tcp()
     time.sleep(0.5)
     
     # move to target position using linear movement
     print("\n" + "="*50)
-    ur_prepull.movel_to_target_position()
+    ur_prepull2.movel_to_target_position()
     time.sleep(0.5)
 
     # execute force task to push server to the end
     print("\n" + "="*50)
-    ur_prepull.force_task_touch_left_handle_before_prepull()
+    ur_prepull2.force_task_touch_server()
     time.sleep(0.5)
 
-    # execute force task to prepull the left handle
+    # execute force task to pull server out again
     print("\n" + "="*50)
-    ur_prepull.force_task_prepull_left_handle()
+    ur_prepull2.force_task_prepull_server()
     time.sleep(0.5)
-
-    # execute force task to open the left handle
-    ur_prepull.force_task_open_left_handle_after_prepull()
+    
+    # # move to leave the left handle
+    print("\n" + "="*50)
+    ur_prepull2.movel_to_leave_server([0, 0.005, -0.03])
     time.sleep(0.5)
 
     # # move to leave the left handle
     print("\n" + "="*50)
-    ur_prepull.movel_to_leave_server([0.10, 0, -0.01])
-    time.sleep(0.5)
-
-    # # move to leave the left handle
-    print("\n" + "="*50)
-    ur_prepull.movel_to_leave_server([0, -0.20, 0])
+    ur_prepull2.movel_to_leave_server([0, -0.20, 0])
     time.sleep(0.5)
 
     # move to reference joint positions (commented out for safety)
     print("\n" + "="*50)
-    ur_prepull.movej_to_reference_joint_positions()
+    ur_prepull2.movej_to_reference_joint_positions()
     time.sleep(0.5)
 
 
