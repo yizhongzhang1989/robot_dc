@@ -26,14 +26,22 @@ class LiftRobotForceSensorNode(Node):
         self.declare_parameter('read_interval', 0.02)  # seconds (50 Hz default)
         # Visualization enable flag (can also be overridden via CLI args)
         self.declare_parameter('enable_visualization', False)
+        # Calibration parameters (from calibration: actual_force = sensor_reading × scale)
+        self.declare_parameter('calibration_scale', 0.116125)  # device_id=52 calibration result
+        self.declare_parameter('calibration_offset', 0.0)  # Force zero offset (always 0 after tare)
 
         self.device_id = self.get_parameter('device_id').value
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
         self.read_interval = float(self.get_parameter('read_interval').value)
         self.enable_visualization = bool(self.get_parameter('enable_visualization').value)
+        self.calibration_scale = float(self.get_parameter('calibration_scale').value)
+        self.calibration_offset = float(self.get_parameter('calibration_offset').value)
 
         self.get_logger().info(
             f"Start single force sensor node: device_id={self.device_id}, interval={self.read_interval}s (~{(1.0/self.read_interval) if self.read_interval>0 else '∞'} Hz)"
+        )
+        self.get_logger().info(
+            f"Calibration: actual_force = sensor_reading × {self.calibration_scale:.6f} + {self.calibration_offset:.6f}"
         )
 
         self.controller = ForceSensorController(self.device_id, self, self.use_ack_patch)
@@ -79,12 +87,21 @@ class LiftRobotForceSensorNode(Node):
             last = self.controller.get_last()
             from std_msgs.msg import Float32
             if last['right_value'] is not None:  # 兼容 controller 返回结构
-                msg_force = Float32(); msg_force.data = float(last['right_value'])
+                # Apply calibration: actual_force = sensor_reading × scale + offset
+                raw_value = float(last['right_value'])
+                calibrated_force = raw_value * self.calibration_scale + self.calibration_offset
+                msg_force = Float32()
+                msg_force.data = calibrated_force
                 self.force_pub.publish(msg_force)
-            # Append to history for visualization
+            # Append to history for visualization (use calibrated values)
             if self.enable_visualization and last['right_value'] is not None and last['left_value'] is not None:
                 now = time.time()
-                self.force_history.append((now, float(last['right_value']), float(last['left_value'])))
+                # Store calibrated values for visualization
+                raw_right = float(last['right_value'])
+                raw_left = float(last['left_value'])
+                cal_right = raw_right * self.calibration_scale + self.calibration_offset
+                cal_left = raw_left * self.calibration_scale + self.calibration_offset
+                self.force_history.append((now, cal_right, cal_left))
                 # Trim history older than max_history_seconds
                 cutoff = now - self.max_history_seconds
                 while self.force_history and self.force_history[0][0] < cutoff:

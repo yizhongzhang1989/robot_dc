@@ -16,10 +16,6 @@ logging.basicConfig(level=logging.INFO)
 
 CONTROL_RATE = 0.02             # 50 Hz loop
 POSITION_TOLERANCE = 0.5        # mm tolerance for height
-COMMAND_INTERVAL = 0.3          # Base seconds between relay pulses (height / coarse force)
-FORCE_NEAR_INTERVAL = 0.12      # Faster interval when接近目标力
-HISTORY_SIZE = 4                # filtering window size
-MIN_FORCE_SAMPLES = 3           # min samples before filtered force valid
 
 class PushrodNode(Node):
     def __init__(self):
@@ -33,12 +29,10 @@ class PushrodNode(Node):
         self.get_logger().info(f"Initialize pushrod controller - device_id: {self.device_id}")
 
         # Height control state
-        self.current_height = 0.0
+        self.current_height = 0.0       # Raw height from sensor (no filtering)
         self.target_height = 0.0
-        self.height_history = []
-        self.last_command_time = self.get_clock().now()
         self.control_enabled = False
-        self.control_mode = 'manual'  # manual | auto | force
+        self.control_mode = 'manual'    # manual | auto | force
         self.movement_state = 'stop'
 
         # Offset tracking
@@ -47,19 +41,11 @@ class PushrodNode(Node):
         self.is_tracking_offset = False
 
         # Force control state
-        self.force_value = 0.0
-        self.current_force = 0.0
-        self.force_history = []
+        self.force_value = 0.0          # Raw force from sensor (no filtering)
         self.target_force = 0.0
         self.force_threshold = 0.0
-        self.force_data_valid = False
         self.last_force_update_time = self.get_clock().now()
-        self.force_settle_cycles = 5
-        self.force_in_band_consecutive = 0
-        self.increase_on_up = True  # if True: UP increases force
-        # 新增: 力控保持相关
-        self.force_settle_hold_seconds = 5.0  # 进入稳定区后继续保持时间
-        self.force_hold_start_time = None     # 首次满足稳定循环的时间戳
+        self.increase_on_up = True      # if True: UP increases force
         # 采样速率估计
         self.force_sample_intervals = []
         self.force_sample_rate_hz = 0.0
@@ -165,27 +151,18 @@ class PushrodNode(Node):
                     self.target_height = float(target)
                     self.control_mode = 'auto'
                     self.control_enabled = True
-                    self.height_history.clear()
                     self.movement_state = 'stop'
-                    self.last_command_time = self.get_clock().now() - rclpy.duration.Duration(seconds=COMMAND_INTERVAL)
                     self.get_logger().info(f"[SEQ {seq_id_str}] Auto height target={self.target_height:.2f}mm")
 
             elif command == 'enable_force_control':
-                self.target_force = float(data.get('target_force', 135.0))
-                self.force_threshold = float(data.get('force_threshold', 5.0))
-                self.force_settle_cycles = int(data.get('force_settle_cycles', self.force_settle_cycles))
-                self.increase_on_up = bool(data.get('increase_on_up', self.increase_on_up))
-                self.force_history.clear()
-                initial_sum = self.left_force + self.right_force
-                self.force_history.append(initial_sum)
-                self.current_force = initial_sum
-                self.force_in_band_consecutive = 0
+                self.target_force = float(data.get('target_force', 750.0))
+                self.force_threshold = float(data.get('force_threshold', 10.0))
+                self.increase_on_up = bool(data.get('increase_on_up', True))
                 self.control_enabled = True
                 self.control_mode = 'force'
                 self.movement_state = 'stop'
-                self.last_command_time = self.get_clock().now() - rclpy.duration.Duration(seconds=COMMAND_INTERVAL)
                 self.get_logger().info(
-                    f"[SEQ {seq_id_str}] Force control enabled target={self.target_force:.2f} ±{self.force_threshold:.2f} settle={self.force_settle_cycles}"
+                    f"[SEQ {seq_id_str}] Force control enabled: target={self.target_force:.2f}N ±{self.force_threshold:.2f}N, increase_on_up={self.increase_on_up}"
                 )
 
             elif command == 'disable_force_control':
@@ -206,16 +183,12 @@ class PushrodNode(Node):
     # Sensor callbacks
     # ------------------------------------------------------------------
     def sensor_callback(self, msg: String):
+        """Update height from sensor (no filtering, use raw value)"""
         try:
             data = json.loads(msg.data)
             height = data.get('height')
-            if height is None:
-                return
-            raw = float(height)
-            self.height_history.append(raw)
-            if len(self.height_history) > HISTORY_SIZE:
-                self.height_history.pop(0)
-            self.current_height = self._calculate_filtered_height()
+            if height is not None:
+                self.current_height = float(height)
         except Exception:
             pass
 
@@ -230,12 +203,7 @@ class PushrodNode(Node):
             pass
 
     def _update_force_history(self):
-        # 单通道：直接使用 left_force (与 right_force 相同)
-        summed = self.force_value
-        self.force_history.append(summed)
-        if len(self.force_history) > HISTORY_SIZE:
-            self.force_history.pop(0)
-        self.current_force = self._calculate_filtered_force()
+        """Update force value and estimate sampling rate (no filtering, use raw value)"""
         # 估算采样频率
         now = self.get_clock().now()
         if hasattr(self, 'last_force_update_time') and self.last_force_update_time is not None:
@@ -248,24 +216,6 @@ class PushrodNode(Node):
                 if avg_dt > 0:
                     self.force_sample_rate_hz = 1.0 / avg_dt
         self.last_force_update_time = now
-
-    def _calculate_filtered_height(self):
-        if len(self.height_history) == 0:
-            return self.current_height
-        if len(self.height_history) < 4:
-            return sum(self.height_history) / len(self.height_history)
-        s = sorted(self.height_history)
-        mid = s[1:-1]
-        return sum(mid) / len(mid)
-
-    def _calculate_filtered_force(self):
-        if len(self.force_history) == 0:
-            return self.current_force
-        if len(self.force_history) < 4:
-            return sum(self.force_history) / len(self.force_history)
-        s = sorted(self.force_history)
-        mid = s[1:-1]
-        return sum(mid) / len(mid)
 
     def _on_auto_stop_complete(self):
         if self.is_tracking_offset and self.height_before_movement is not None:
@@ -281,14 +231,13 @@ class PushrodNode(Node):
     def control_loop(self):
         if not self.control_enabled:
             return
-        now = self.get_clock().now()
-        dt = (now - self.last_command_time).nanoseconds * 1e-9
 
-        # Height mode
+        # Height mode - simplified real-time control (50Hz, no interval limit, no filtering)
         if self.control_mode == 'auto':
-            if len(self.height_history) == 0:
-                return
+            # Use raw height value directly (no filtering)
             error = self.target_height - self.current_height
+            
+            # In tolerance band - STOP and exit auto mode
             if abs(error) <= POSITION_TOLERANCE:
                 self.controller.stop()
                 if self.is_tracking_offset and self.height_before_movement is not None:
@@ -299,97 +248,74 @@ class PushrodNode(Node):
                 self.control_enabled = False
                 self.movement_state = 'stop'
                 self.get_logger().info(
-                    f"[Pushrod Control] ✅ Height target reached current={self.current_height:.2f} target={self.target_height:.2f}"
+                    f"[Pushrod Height] ✅ TARGET REACHED current={self.current_height:.2f}mm target={self.target_height:.2f}mm"
                 )
-                self.last_command_time = now
                 return
-            if dt < COMMAND_INTERVAL:
+            
+            # Need to move UP
+            if error > POSITION_TOLERANCE:
+                if self.movement_state != 'up':
+                    self.controller.up()
+                    self.movement_state = 'up'
+                    self.get_logger().info(
+                        f"[Pushrod Height] ⬆️ UP current={self.current_height:.2f}mm target={self.target_height:.2f}mm err={error:.2f}mm"
+                    )
                 return
-            if error > POSITION_TOLERANCE and self.movement_state != 'up':
-                self.controller.up()
-                self.movement_state = 'up'
-                self.last_command_time = now
-                self.get_logger().info(f"[Pushrod Control] UP current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}")
-            elif error < -POSITION_TOLERANCE and self.movement_state != 'down':
-                self.controller.down()
-                self.movement_state = 'down'
-                self.last_command_time = now
-                self.get_logger().info(f"[Pushrod Control] DOWN current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}")
-            return
+            
+            # Need to move DOWN
+            if error < -POSITION_TOLERANCE:
+                if self.movement_state != 'down':
+                    self.controller.down()
+                    self.movement_state = 'down'
+                    self.get_logger().info(
+                        f"[Pushrod Height] ⬇️ DOWN current={self.current_height:.2f}mm target={self.target_height:.2f}mm err={error:.2f}mm"
+                    )
+                return
 
-        # Force mode
+        # Force mode - simplified real-time control (50Hz, no interval limit, no filtering)
         if self.control_mode == 'force':
-            sample_count = len(self.force_history)
-            if sample_count < MIN_FORCE_SAMPLES:
-                filtered_force = self.force_value
-                self.force_data_valid = False
-            else:
-                filtered_force = self.current_force
-                self.force_data_valid = True
+            # Use raw force value directly (no filtering)
+            current_force = self.force_value
             lower = self.target_force - self.force_threshold
             upper = self.target_force + self.force_threshold
-            # 是否在目标区间
-            in_band = lower <= filtered_force <= upper
-
-            if in_band:
-                # 停止运动（如果还在动）
+            
+            # In target band - STOP
+            if lower <= current_force <= upper:
                 if self.movement_state != 'stop':
                     self.controller.stop()
                     self.movement_state = 'stop'
-                    self.last_command_time = now
-                # 计数连续 in-band 循环
-                self.force_in_band_consecutive += 1
-                # 达到最少稳定循环后，开始保持计时
-                if self.force_in_band_consecutive >= self.force_settle_cycles:
-                    if self.force_hold_start_time is None:
-                        self.force_hold_start_time = now
-                        self.get_logger().info(
-                            f"[Pushrod Force Control] 🕒 已进入稳定区，开始保持 {self.force_settle_hold_seconds:.1f}s force={filtered_force:.2f} target={self.target_force:.2f}"
-                        )
-                    else:
-                        hold_dt = (now - self.force_hold_start_time).nanoseconds * 1e-9
-                        if hold_dt >= self.force_settle_hold_seconds:
-                            # 保持时间满足 -> 退出力控
-                            self.control_enabled = False
-                            self.control_mode = 'manual'
-                            self.get_logger().info(
-                                f"[Pushrod Force Control] ✅ 保持完成 force={filtered_force:.2f} target={self.target_force:.2f} 总稳定循环={self.force_in_band_consecutive}"
-                            )
-                            return
-                return  # 仍在观察期
-            else:
-                # 一旦离开区间，重置稳定计数和保持计时
-                if self.force_in_band_consecutive or self.force_hold_start_time is not None:
-                    self.get_logger().debug("[Pushrod Force Control] 离开稳定区，重置保持计时")
-                self.force_in_band_consecutive = 0
-                self.force_hold_start_time = None
-
-            # 动态指令间隔: 接近目标时加快（精细调整）
-            interval = COMMAND_INTERVAL
-            if abs(filtered_force - self.target_force) < (2 * self.force_threshold):
-                interval = FORCE_NEAR_INTERVAL
-            if dt < interval:
+                    self.get_logger().info(
+                        f"[Pushrod Force] ✅ IN BAND force={current_force:.2f}N target={self.target_force:.2f}N ±{self.force_threshold:.2f}N -> STOP"
+                    )
                 return
-
-            if filtered_force < lower:
+            
+            # Below target - need to increase force
+            if current_force < lower:
                 desired = 'up' if self.increase_on_up else 'down'
                 if self.movement_state != desired:
-                    (self.controller.up() if desired == 'up' else self.controller.down())
+                    if desired == 'up':
+                        self.controller.up()
+                    else:
+                        self.controller.down()
                     self.movement_state = desired
-                    self.last_command_time = now
                     self.get_logger().info(
-                        f"[Pushrod Force Control] MOVE {desired.upper()} force={filtered_force:.2f} < {lower:.2f} target={self.target_force:.2f}"
+                        f"[Pushrod Force] ⬆️ INCREASE force={current_force:.2f}N < {lower:.2f}N -> {desired.upper()}"
                     )
-            elif filtered_force > upper:
+                return
+            
+            # Above target - need to decrease force
+            if current_force > upper:
                 desired = 'down' if self.increase_on_up else 'up'
                 if self.movement_state != desired:
-                    (self.controller.up() if desired == 'up' else self.controller.down())
+                    if desired == 'up':
+                        self.controller.up()
+                    else:
+                        self.controller.down()
                     self.movement_state = desired
-                    self.last_command_time = now
                     self.get_logger().info(
-                        f"[Pushrod Force Control] MOVE {desired.upper()} force={filtered_force:.2f} > {upper:.2f} target={self.target_force:.2f}"
+                        f"[Pushrod Force] ⬇️ DECREASE force={current_force:.2f}N > {upper:.2f}N -> {desired.upper()}"
                     )
-            return
+                return
         # 发布调试数据（仅在 force 模式活跃或控制启用时也可发布）
         self._publish_force_debug()
 
@@ -399,17 +325,14 @@ class PushrodNode(Node):
                 'time': self.get_clock().now().nanoseconds,
                 'mode': self.control_mode,
                 'enabled': self.control_enabled,
-                'force_instant': self.force_value,
-                'filtered_force': self.current_force,
+                'force_raw': self.force_value,
                 'target_force': self.target_force,
                 'force_threshold': self.force_threshold,
                 'lower': self.target_force - self.force_threshold,
                 'upper': self.target_force + self.force_threshold,
-                'in_band_consecutive': self.force_in_band_consecutive,
-                'hold_active': self.force_hold_start_time is not None,
                 'movement_state': self.movement_state,
-                'sample_count': len(self.force_history),
                 'sample_rate_hz': round(self.force_sample_rate_hz, 2),
+                'increase_on_up': self.increase_on_up,
             }
             msg = String()
             msg.data = json.dumps(debug, ensure_ascii=False)
@@ -431,15 +354,9 @@ class PushrodNode(Node):
                 'current_height': self.current_height,
                 'target_height': self.target_height,
                 'pushrod_offset': self.pushrod_offset,
-                'current_force': self.current_force,
+                'force_value': self.force_value,
                 'target_force': self.target_force,
                 'force_threshold': self.force_threshold,
-                'force_sample_count': len(self.force_history),
-                'force_data_valid': self.force_data_valid,
-                'force_settle_cycles': self.force_settle_cycles,
-                'force_in_band_consecutive': self.force_in_band_consecutive,
-                'force_settle_hold_seconds': self.force_settle_hold_seconds,
-                'force_hold_active': self.force_hold_start_time is not None,
                 'force_sample_rate_hz': round(self.force_sample_rate_hz, 2),
                 'increase_on_up': self.increase_on_up,
                 'status': 'online'

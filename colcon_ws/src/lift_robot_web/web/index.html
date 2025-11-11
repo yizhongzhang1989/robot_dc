@@ -85,9 +85,14 @@
       </div>
     </div>
     <div class="p-3 bg-white rounded shadow space-y-2">
-      <h2 class="font-semibold">Force Sensor</h2>
-      <div class="grid grid-cols-1 gap-2 text-sm">
-        <div>Force (N): <span id="forceVal" class="font-mono font-semibold">-</span></div>
+      <h2 class="font-semibold">Force Sensors (Calibrated)</h2>
+      <div class="grid grid-cols-2 gap-2 text-sm">
+        <div>Right Force (N): <span id="rightForceVal" class="font-mono font-semibold">-</span></div>
+        <div>Left Force (N): <span id="leftForceVal" class="font-mono font-semibold">-</span></div>
+      </div>
+      <div class="text-xs text-slate-500">
+        <div>Right: device_id=52, /force_sensor</div>
+        <div>Left: device_id=53, /force_sensor_2</div>
       </div>
       <div class="text-xs text-slate-500" id="forceTs">-</div>
     </div>
@@ -112,13 +117,14 @@ function update(d){
   // Legacy fallback (timestamp / read_interval)
   if(d.timestamp){ $('ts').textContent=d.timestamp; }
   if(d.read_interval){ readInterval=d.read_interval*1000; }
-  // Single channel force (with backward compatibility fallbacks)
-  let fv = d.force_sensor;
-  if(fv===undefined) {
-    if(d.right_force_sensor!==undefined) fv = d.right_force_sensor; else if(d.left_force_sensor!==undefined) fv = d.left_force_sensor;
+  
+  // Dual channel force sensors (right=device_id 52, left=device_id 53)
+  if(d.right_force_sensor!==undefined) {
+    $('rightForceVal').textContent = (d.right_force_sensor===null?'-':(d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(2):d.right_force_sensor));
+    $('forceTs').textContent='Updated at '+new Date().toLocaleTimeString();
   }
-  if(fv!==undefined) {
-    $('forceVal').textContent = (fv===null?'-':(fv.toFixed?fv.toFixed(2):fv));
+  if(d.left_force_sensor!==undefined) {
+    $('leftForceVal').textContent = (d.left_force_sensor===null?'-':(d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(2):d.left_force_sensor));
     $('forceTs').textContent='Updated at '+new Date().toLocaleTimeString();
   }
   

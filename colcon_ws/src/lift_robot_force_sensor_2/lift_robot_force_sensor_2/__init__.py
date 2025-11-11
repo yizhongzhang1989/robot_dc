@@ -1,0 +1,1 @@
+# Init for lift_robot_force_sensor_2 Python package

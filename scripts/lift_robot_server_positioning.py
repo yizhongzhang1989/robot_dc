@@ -2,44 +2,41 @@
 """
 Lift Robot Server Positioning Script
 
-Task (Force-threshold mode):
-    1. Initialization: Move platform DOWN for fixed duration, stop, wait for height stabilization (capture initial_height).
-    2. Raise platform continuously (command "up") at 50 Hz control loop; each loop compute filtered force:
-         - Take last 4 raw force samples.
-         - Discard max and min.
-         - Average the remaining 2 -> filtered_force.
-       Stop when filtered_force >= force_threshold (default 750 N) or timeout.
-       (Set --force-threshold -1 to disable force mode and instead goto (initial_height + offset_mm).)
-    3. Output JSON summary.
+Task:
+    Phase 1 - Initialization:
+        1. Platform DOWN for 15 seconds
+        2. Pushrod DOWN for 7 seconds
+        3. Read current height after both stopped
+        4. Use pushrod goto_height to adjust to (current_height + 15mm)
+    
+    Phase 2 - Raise to Server:
+        1. Platform UP continuously
+        2. Monitor force sensor (raw value, no filtering)
+        3. Stop when force >= 750 N (default threshold)
 
 Produces JSON summary on stdout:
 {
     "initial_height": <float>,
-    "target_height": <float>,
-    "reached_height": <float>,
+    "adjusted_height": <float>,
+    "final_height": <float>,
+    "final_force": <float>,
+    "force_threshold": <float>,
     "status": "success"|"error",
     "error": <str or null>
 }
 
 Run after sourcing ROS2 workspace:
-  source install/setup.bash
-    python3 scripts/lift_robot_server_positioning.py --offset-mm 15
+    source install/setup.bash
+    python3 scripts/lift_robot_server_positioning.py
 
 Dry run (no motion, simulates readings):
     python3 scripts/lift_robot_server_positioning.py --dry-run
 
-Assumptions:
-    - Platform 'down' moves toward mechanical base safely within platform_down_duration.
-    - Platform accepts JSON String messages on topic /lift_robot_platform/command:
-                {"command": "down"}
-                {"command": "stop"}
-                {"command": "goto_height", "target_height": 830.0}
-    - Height sensor topic: /draw_wire_sensor/data JSON with 'height'.
-
-Edge Cases Handled:
-  - Missing sensor data -> retries & timeouts.
-    - Height not stabilizing -> uses last known average.
-    - Dry-run mode returns synthetic values.
+Topics used:
+    - /lift_robot_platform/command (String JSON): {"command": "down"/"up"/"stop"}
+    - /lift_robot_pushrod/command (String JSON): {"command": "down"/"stop", "goto_height": target}
+    - /draw_wire_sensor/data (String JSON): {"height": <mm>}
+    - /force_sensor (Float32): raw force value in Newtons
 """
 import rclpy
 from rclpy.node import Node
@@ -50,22 +47,26 @@ class PositioningNode(Node):
     def __init__(self, args):
         super().__init__('lift_robot_server_positioning')
         self.args = args
+        
         # Publisher for platform commands
         self.platform_cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
-        # Height sensor
+        
+        # Publisher for pushrod commands
+        self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
+        
+        # Height sensor subscription
         self.height = None
-        self.height_history = []
         self.height_sub = self.create_subscription(String, '/draw_wire_sensor/data', self.height_cb, 10)
-        # Force sensor
+        
+        # Force sensor subscription (raw value, no filtering)
         self.force = None
-        self.force_history = []  # raw force samples
         self.force_sub = self.create_subscription(Float32, '/force_sensor', self.force_cb, 10)
+        
         # Results
-        self.initial_height = None
-        self.target_height = None  # Only used in height-target mode
-        self.reached_height = None
-        self.final_force = None
-        self.final_force_filtered = None
+        self.initial_height = None      # Height after platform+pushrod down
+        self.adjusted_height = None     # Target height for pushrod adjustment (initial + 15mm)
+        self.final_height = None        # Height when force threshold reached
+        self.final_force = None         # Force when stopped
 
     def height_cb(self, msg: String):
         try:
@@ -73,13 +74,34 @@ class PositioningNode(Node):
             h = data.get('height')
             if h is not None:
                 self.height = float(h)
-                self.height_history.append(self.height)
-                if len(self.height_history) > 50:  # keep last 50 for stability check
-                    self.height_history.pop(0)
         except Exception as e:
             self.get_logger().warn(f"Height parse error: {e}")
 
+    def force_cb(self, msg: Float32):
+        """Store raw force value (no filtering applied)"""
+        try:
+            self.force = float(msg.data)
+            # Track force sampling timestamps for frequency calculation
+            if not hasattr(self, 'force_timestamps'):
+                self.force_timestamps = []
+            self.force_timestamps.append(time.time())
+            # Keep only last 100 timestamps for frequency calculation
+            if len(self.force_timestamps) > 100:
+                self.force_timestamps.pop(0)
+        except Exception as e:
+            self.get_logger().warn(f"Force parse error: {e}")
+    
+    def get_force_sampling_rate(self):
+        """Calculate force sensor sampling rate in Hz"""
+        if not hasattr(self, 'force_timestamps') or len(self.force_timestamps) < 2:
+            return None
+        timestamps = self.force_timestamps
+        intervals = [timestamps[i] - timestamps[i-1] for i in range(1, len(timestamps))]
+        avg_interval = sum(intervals) / len(intervals)
+        return 1.0 / avg_interval if avg_interval > 0 else None
+
     def publish_cmd(self, publisher, payload: dict, label: str):
+        """Publish command to a topic"""
         if self.args.dry_run:
             self.get_logger().info(f"[DRY-RUN] Would publish to {label}: {payload}")
             return
@@ -87,29 +109,13 @@ class PositioningNode(Node):
         msg.data = json.dumps(payload)
         publisher.publish(msg)
         self.get_logger().info(f"Published {label} command: {payload}")
-
-    def force_cb(self, msg: Float32):
-        try:
-            v = float(msg.data)
-            self.force = v
-            self.force_history.append(v)
-            # Keep only last 20 samples (enough for multiple decisions)
-            if len(self.force_history) > 20:
-                self.force_history.pop(0)
-        except Exception as e:
-            self.get_logger().warn(f"Force parse error: {e}")
-
-    def filtered_force(self):
-        """Return filtered force using last 4 samples: discard max & min, average middle two.
-        If fewer than 4 samples, return None."""
-        if len(self.force_history) < 4:
-            return None
-        last4 = self.force_history[-4:]
-        sorted_vals = sorted(last4)
-        mid2 = sorted_vals[1:3]
-        return sum(mid2) / 2.0
+        
+        # Give some time for command to be processed
+        time.sleep(0.1)
+        rclpy.spin_once(self, timeout_sec=0.0)
 
     def wait_for_height(self, timeout):
+        """Wait for height data to be available"""
         start = time.time()
         while rclpy.ok() and time.time() - start < timeout:
             rclpy.spin_once(self, timeout_sec=0.05)
@@ -117,108 +123,181 @@ class PositioningNode(Node):
                 return True
         return False
 
-    def stable_height(self, window=10, tolerance=0.3):
-        if len(self.height_history) < window:
-            return None
-        sample = self.height_history[-window:]
-        avg = sum(sample)/len(sample)
-        max_dev = max(abs(h-avg) for h in sample)
-        if max_dev <= tolerance:
-            return avg
-        return None
+    def wait_for_force(self, timeout):
+        """Wait for force data to be available"""
+        start = time.time()
+        while rclpy.ok() and time.time() - start < timeout:
+            rclpy.spin_once(self, timeout_sec=0.05)
+            if self.force is not None:
+                return True
+        return False
 
     def perform_initialization(self):
-        self.get_logger().info("Phase 1: Initialization - moving platform down to base (pushrod removed)")
+        """
+        Phase 1: Initialization
+        1. Platform DOWN for 15 seconds
+        2. Pushrod DOWN for 7 seconds
+        3. Read current height after stabilization
+        4. Pushrod goto_height to (current_height + 15mm)
+        """
+        self.get_logger().info("=" * 60)
+        self.get_logger().info("Phase 1: Initialization")
+        self.get_logger().info("=" * 60)
+        
+        # Step 1: Platform DOWN for 15 seconds
+        self.get_logger().info("Step 1: Platform DOWN for 15 seconds...")
         self.publish_cmd(self.platform_cmd_pub, {"command": "down"}, 'platform')
-        plat_dur = self.args.platform_down_duration
-        t0 = time.time(); plat_stopped = False
-        while rclpy.ok():
-            elapsed = time.time() - t0
-            rclpy.spin_once(self, timeout_sec=0.05)
-            if not plat_stopped and elapsed >= plat_dur:
-                self.publish_cmd(self.platform_cmd_pub, {"command": "stop"}, 'platform')
-                plat_stopped = True
-                self.get_logger().info(f"Platform down duration {plat_dur:.1f}s elapsed -> STOP")
-            if plat_stopped:
-                break
-        if not plat_stopped:
-            self.publish_cmd(self.platform_cmd_pub, {"command": "stop"}, 'platform')
-        if not self.wait_for_height(timeout=5):
-            raise RuntimeError("No height data received after initialization")
-        # Stability check
-        stab_start = time.time(); stable = None
-        while rclpy.ok() and time.time() - stab_start < self.args.stability_wait:
-            rclpy.spin_once(self, timeout_sec=0.05)
-            c = self.stable_height()
-            if c is not None:
-                stable = c; break
-        if stable is None:
-            stable = self.height
-            self.get_logger().warn("Using last height (not stable) as initial height")
-        self.initial_height = stable
-        self.get_logger().info(f"Initial stable/base height: {self.initial_height:.2f} mm")
-
-    def raise_to_target(self):
-        # Decide motion strategy: force-stop by default per requirement.
-        if self.args.force_threshold is not None and self.args.force_threshold >= 0:
-            thresh = self.args.force_threshold
-            self.get_logger().info(f"Phase 2: Raising platform until filtered force >= {thresh:.1f} N (4-sample middle-average filter)")
-            # Start continuous up motion
-            self.publish_cmd(self.platform_cmd_pub, {"command": "up"}, 'platform')
-            start = time.time()
-            exceeded = False
-            loop_period = 1.0 / 50.0  # 50 Hz control loop
-            while rclpy.ok() and time.time() - start < self.args.adjust_timeout:
-                rclpy.spin_once(self, timeout_sec=loop_period)
-                # Dry-run: synthesize increasing force for demonstration
-                if self.args.dry_run and (self.force is None or len(self.force_history) < 4):
-                    base = 500.0
-                    inc = (time.time() - start) * 80.0  # ~80N per second
-                    synthetic = base + inc
-                    self.force = synthetic
-                    self.force_history.append(synthetic)
-                    if len(self.force_history) > 20:
-                        self.force_history.pop(0)
-                f_filt = self.filtered_force()
-                if f_filt is not None:
-                    if f_filt >= thresh:
-                        exceeded = True
-                        self.get_logger().info(f"Force threshold reached: filtered {f_filt:.2f} >= {thresh:.2f}")
-                        break
-            self.publish_cmd(self.platform_cmd_pub, {"command": "stop"}, 'platform')
-            if not exceeded:
-                self.get_logger().warn("Force threshold not reached before timeout")
-            self.reached_height = self.height
-            self.final_force = self.force
-            self.final_force_filtered = self.filtered_force()
+        
+        if self.args.dry_run:
+            time.sleep(1.0)
         else:
-            # Fallback to height target mode
-            self.target_height = self.initial_height + self.args.offset_mm
-            self.get_logger().info(f"Phase 2: Raising platform to target_height {self.target_height:.2f} mm (height mode fallback)")
-            self.publish_cmd(self.platform_cmd_pub, {"command": "goto_height", "target_height": self.target_height}, 'platform')
-            start = time.time(); reached=False
-            while rclpy.ok() and time.time() - start < self.args.adjust_timeout:
+            time.sleep(15.0)
+        
+        self.publish_cmd(self.platform_cmd_pub, {"command": "stop"}, 'platform')
+        self.get_logger().info("Platform DOWN complete, stopped.")
+        
+        # Step 2: Pushrod DOWN for 7 seconds
+        self.get_logger().info("Step 2: Pushrod DOWN for 7 seconds...")
+        self.publish_cmd(self.pushrod_cmd_pub, {"command": "down"}, 'pushrod')
+        
+        if self.args.dry_run:
+            time.sleep(0.5)
+        else:
+            time.sleep(7.0)
+        
+        self.publish_cmd(self.pushrod_cmd_pub, {"command": "stop"}, 'pushrod')
+        self.get_logger().info("Pushrod DOWN complete, stopped.")
+        
+        # Step 3: Wait for height stabilization and read current height
+        self.get_logger().info("Step 3: Waiting for height stabilization...")
+        time.sleep(2.0)  # Wait for mechanical settling
+        
+        if not self.wait_for_height(timeout=5.0):
+            raise RuntimeError("No height data received after initialization")
+        
+        # Dry-run simulation
+        if self.args.dry_run:
+            self.height = 800.0  # Simulated base height
+        
+        self.initial_height = self.height
+        self.get_logger().info(f"Initial height captured: {self.initial_height:.2f} mm")
+        
+        # Step 4: Pushrod adjustment to (current_height + 15mm)
+        self.adjusted_height = self.initial_height + self.args.pushrod_offset_mm
+        self.get_logger().info(f"Step 4: Adjusting pushrod to {self.adjusted_height:.2f} mm (offset +{self.args.pushrod_offset_mm} mm)...")
+        
+        self.publish_cmd(
+            self.pushrod_cmd_pub,
+            {"command": "goto_height", "target_height": self.adjusted_height},
+            'pushrod'
+        )
+        
+        # Wait for pushrod to reach target (with timeout)
+        if self.args.dry_run:
+            time.sleep(1.0)
+            self.height = self.adjusted_height
+        else:
+            start = time.time()
+            reached = False
+            while rclpy.ok() and time.time() - start < self.args.pushrod_adjust_timeout:
                 rclpy.spin_once(self, timeout_sec=0.05)
-                if self.height is not None and abs(self.height - self.target_height) <= self.args.height_tolerance:
-                    reached=True; break
+                if self.height is not None and abs(self.height - self.adjusted_height) <= self.args.height_tolerance:
+                    reached = True
+                    self.get_logger().info(f"Pushrod reached target: {self.height:.2f} mm")
+                    break
+            
             if not reached:
-                self.get_logger().warn("Raise timeout; using last measured height")
-            self.publish_cmd(self.platform_cmd_pub, {"command": "stop"}, 'platform')
-            self.reached_height = self.height if self.height is not None else self.target_height
-            self.final_force = self.force
-            self.final_force_filtered = self.filtered_force()
-            self.get_logger().info(f"Reached height: {self.reached_height:.2f} mm (target {self.target_height:.2f} mm)")
+                self.get_logger().warn(f"Pushrod adjustment timeout (current: {self.height:.2f} mm, target: {self.adjusted_height:.2f} mm)")
+        
+        self.get_logger().info(f"Initialization complete: initial={self.initial_height:.2f} mm, adjusted={self.adjusted_height:.2f} mm")
+        self.get_logger().info("")
 
-    # detection_phase removed in simplified version
+    def raise_to_server(self):
+        """
+        Phase 2: Raise to Server Position
+        1. Platform UP continuously
+        2. Monitor raw force sensor (no filtering)
+        3. Stop when force >= threshold (default 750 N)
+        """
+        self.get_logger().info("=" * 60)
+        self.get_logger().info("Phase 2: Raising platform to server position")
+        self.get_logger().info("=" * 60)
+        
+        thresh = self.args.force_threshold
+        self.get_logger().info(f"Monitoring force sensor (raw value, no filtering)")
+        self.get_logger().info(f"Stop condition: force >= {thresh:.1f} N")
+        
+        # Wait for initial force reading
+        if not self.wait_for_force(timeout=3.0):
+            self.get_logger().warn("No force data available, proceeding anyway...")
+        
+        # Start continuous UP motion
+        self.publish_cmd(self.platform_cmd_pub, {"command": "up"}, 'platform')
+        
+        start = time.time()
+        threshold_reached = False
+        loop_period = 0.02  # 50 Hz monitoring
+        last_log_time = start
+        sample_count = 0
+        
+        # Dry-run simulation
+        if self.args.dry_run:
+            time.sleep(2.0)
+            self.force = thresh + 10.0
+            self.height = self.adjusted_height + 20.0
+            threshold_reached = True
+            self.get_logger().info(f"[DRY-RUN] Simulated force threshold reached: {self.force:.2f} N")
+        else:
+            while rclpy.ok():
+                rclpy.spin_once(self, timeout_sec=loop_period)
+                sample_count += 1
+                
+                if self.force is not None:
+                    # Check raw force value (no filtering)
+                    if self.force >= thresh:
+                        threshold_reached = True
+                        elapsed = time.time() - start
+                        sampling_rate = self.get_force_sampling_rate()
+                        self.get_logger().info(f"Force threshold reached: {self.force:.2f} N >= {thresh:.2f} N")
+                        self.get_logger().info(f"Time elapsed: {elapsed:.2f}s, Loop samples: {sample_count}")
+                        if sampling_rate:
+                            self.get_logger().info(f"Force sensor sampling rate: {sampling_rate:.1f} Hz")
+                        break
+                    
+                    # Log progress every 2 seconds
+                    elapsed = time.time() - start
+                    if elapsed - last_log_time >= 2.0:
+                        sampling_rate = self.get_force_sampling_rate()
+                        rate_str = f"{sampling_rate:.1f} Hz" if sampling_rate else "N/A"
+                        self.get_logger().info(
+                            f"Progress: force={self.force:.2f} N, height={self.height:.2f} mm, "
+                            f"elapsed={elapsed:.1f}s, sampling_rate={rate_str}"
+                        )
+                        last_log_time = elapsed
+        
+        # Stop platform
+        self.publish_cmd(self.platform_cmd_pub, {"command": "stop"}, 'platform')
+        
+        # Record final values
+        self.final_force = self.force
+        self.final_height = self.height
+        final_sampling_rate = self.get_force_sampling_rate()
+        
+        self.get_logger().info(f"Raise complete: final_force={self.final_force:.2f} N, final_height={self.final_height:.2f} mm")
+        if final_sampling_rate:
+            self.get_logger().info(f"Final force sensor sampling rate: {final_sampling_rate:.1f} Hz")
+        self.get_logger().info("")
+        
+        return threshold_reached
 
     def summary(self, error=None):
+        """Generate JSON summary of positioning results"""
         status = 'success' if error is None else 'error'
         return {
             'initial_height': self.initial_height,
-            'target_height': self.target_height,
-            'reached_height': self.reached_height,
+            'adjusted_height': self.adjusted_height,
+            'final_height': self.final_height,
             'final_force': self.final_force,
-            'final_force_filtered': self.final_force_filtered,
             'force_threshold': self.args.force_threshold,
             'status': status,
             'error': error
@@ -226,31 +305,50 @@ class PositioningNode(Node):
 
 def parse_args():
     p = argparse.ArgumentParser(description='Lift Robot Server Positioning')
-    p.add_argument('--offset-mm', type=float, default=15.0, help='Offset in mm added to initial base height for final target')
-    p.add_argument('--platform-down-duration', type=float, default=15.0, help='Seconds to drive platform down to mechanical base')
-    p.add_argument('--stability-wait', type=float, default=3.0, help='Seconds to attempt height stability detection')
-    p.add_argument('--adjust-timeout', type=float, default=8.0, help='Timeout for raising (force or height mode)')
-    p.add_argument('--height-tolerance', type=float, default=0.5, help='Tolerance (mm) for considering height reached')
-    p.add_argument('--dry-run', action='store_true', help='Do not send motion commands; simulate height readings only')
-    p.add_argument('--force-threshold', type=float, default=750.0, help='Force threshold (N) using 4-sample middle-average filter; platform stops when reached. Set to -1 to disable force mode.')
+    p.add_argument('--pushrod-offset-mm', type=float, default=15.0, 
+                   help='Pushrod offset in mm above initial height (default: 15.0)')
+    p.add_argument('--pushrod-adjust-timeout', type=float, default=10.0, 
+                   help='Timeout for pushrod height adjustment in seconds (default: 10.0)')
+    p.add_argument('--height-tolerance', type=float, default=0.5, 
+                   help='Height tolerance in mm for considering target reached (default: 0.5)')
+    p.add_argument('--force-threshold', type=float, default=750.0, 
+                   help='Force threshold in Newtons for server contact detection (default: 750.0)')
+    p.add_argument('--dry-run', action='store_true', 
+                   help='Simulate without sending motion commands')
     return p.parse_args()
 
 def main():
     args = parse_args()
     rclpy.init()
     node = PositioningNode(args)
+    
+    # Wait for publishers to establish connections
+    node.get_logger().info("Waiting for topic connections...")
+    time.sleep(1.0)
+    
+    # Verify connections
+    platform_pub_count = node.platform_cmd_pub.get_subscription_count()
+    pushrod_pub_count = node.pushrod_cmd_pub.get_subscription_count()
+    node.get_logger().info(f"Platform command subscribers: {platform_pub_count}")
+    node.get_logger().info(f"Pushrod command subscribers: {pushrod_pub_count}")
+    
+    if platform_pub_count == 0:
+        node.get_logger().warn("No subscribers for platform command topic!")
+    if pushrod_pub_count == 0:
+        node.get_logger().warn("No subscribers for pushrod command topic!")
+    
     try:
         node.perform_initialization()
-        node.raise_to_target()
+        success = node.raise_to_server()
+        
         result = node.summary()
         print(json.dumps(result, indent=2))
+        
     except Exception as e:
-        result = {
-            'initial_height': node.initial_height,
-            'status': 'error',
-            'error': str(e)
-        }
+        result = node.summary(error=str(e))
         print(json.dumps(result, indent=2))
+        node.get_logger().error(f"Positioning failed: {e}")
+        
     finally:
         node.destroy_node()
         rclpy.shutdown()

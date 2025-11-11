@@ -38,6 +38,12 @@ def generate_launch_description():
         'lift_robot_force_sensor_launch.py'
     )
 
+    force_sensor_2_path = os.path.join(
+        get_package_share_directory('lift_robot_force_sensor_2'),
+        'launch',
+        'lift_robot_force_sensor_launch.py'
+    )
+
     pushrod_path = os.path.join(
         get_package_share_directory('lift_robot_pushrod'),
         'launch',
@@ -79,9 +85,15 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(force_sensor_path))]
     )
 
-    # Start web after sensor (optional)
-    web_launch = TimerAction(
+    # Start second force sensor after first sensor (stagger to reduce bus load)
+    force_sensor_2_launch = TimerAction(
         period=5.0,
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(force_sensor_2_path))]
+    )
+
+    # Start web after sensors (optional)
+    web_launch = TimerAction(
+        period=5.5,
         actions=[IncludeLaunchDescription(
             PythonLaunchDescriptionSource(web_path),
             launch_arguments={
@@ -100,5 +112,6 @@ def generate_launch_description():
         pushrod_launch,
         cable_sensor_launch,
         force_sensor_launch,
+        force_sensor_2_launch,
         web_launch,
     ])
