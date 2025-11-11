@@ -336,7 +336,7 @@ class URExecuteHandle1(URExecuteBase):
         
         # Set force mode parameters
         selection_vector = [0, 1, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
-        wrench = [0, 60, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 70, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task...")
@@ -509,10 +509,10 @@ if __name__ == "__main__":
     # initialize platform height
     print("\n" + "="*50)
     ur_handle1.pushrod_to_base()
-    time.sleep(3)
+    time.sleep(5)
 
     ur_handle1.lift_platform_to_base()
-    time.sleep(3)
+    time.sleep(5)
 
     # move to reference joint positions
     print("\n" + "="*60)
@@ -545,7 +545,7 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     print("\n" + "="*50)
-    ur_handle1.movel_to_leave_server([0,0,0.015])
+    ur_handle1.movel_to_leave_server([0,0.01,0.015])
     time.sleep(0.5)
 
     print("\n" + "="*50)
@@ -554,7 +554,7 @@ if __name__ == "__main__":
 
     # step3: extract 0.6m
     print("\n" + "="*50)
-    ur_handle1.force_task_extract_server(0.60)
+    ur_handle1.force_task_extract_server(0.55)
     time.sleep(0.5)
 
     # move to exit position
@@ -566,9 +566,9 @@ if __name__ == "__main__":
     ur_handle1.movej_to_reference_joint_positions()
     time.sleep(0.5)
 
-    # # print("\n" + "="*50)
-    # ur_handle1.movej_to_get_start_position_after_process()
-    # time.sleep(0.5)
+    # print("\n" + "="*50)
+    ur_handle1.movej_to_get_start_position_after_process()
+    time.sleep(0.5)
 
     print("\n" + "="*50)
     ur_handle1.pushrod_to_base()

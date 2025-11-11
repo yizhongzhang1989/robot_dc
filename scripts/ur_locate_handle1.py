@@ -39,9 +39,9 @@ class URLocateHandle1(URLocateBase):
         self.movements = {
             "movement1": [-0.01, 0, 0, 0, 0, 0],
             "movement2": [0.01, 0, 0, 0, 0, 0],
-            "movement3": [-0.02, 0, 0.02, 0, 0, 0],
-            "movement4": [0, 0, -0.01, 0, 0, 0],
-            "movement5": [0, 0, 0.01, 0, 0, 0]
+            "movement3": [-0.02, 0.02, 0, 0, 0, 0],
+            "movement4": [0, -0.01, 0, 0, 0, 0],
+            "movement5": [0, 0.01, 0, 0, 0, 0]
         }
         
         # Override data directory

@@ -35,11 +35,11 @@ class URLocateFrame(URLocateBase):
         # Override movement offsets (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [0.03, 0, 0, 0, 0, 0],
-            "movement2": [0.08, 0.03, 0, 0, 0, 0],
-            "movement3": [0.08, -0.03, 0, 0, 0, 0],
-            "movement4": [0.05, 0, -0.03, 0, 0, 0],
-            "movement5": [0.08, 0, -0.03, 0, 0, 0]
+            "movement1": [0.01, 0, 0, 0, 0, 0],
+            "movement2": [0.03, 0.01, 0, 0, 0, 0],
+            "movement3": [0.03, -0.01, 0, 0, 0, 0],
+            "movement4": [0.05, 0, -0.01, 0, 0, 0],
+            "movement5": [0.03, 0, -0.01, 0, 0, 0]
         }
         
         # Override data directory path (for storing collected data)
@@ -174,8 +174,8 @@ def main():
             print("Failed to load camera parameters!")
             return
 
-        ur_frame.movej_to_safe_position_before_execution()
-        time.sleep(0.5)
+        # ur_frame.movej_to_safe_position_before_execution()
+        # time.sleep(0.5)
 
         try:
             # Perform auto data collection (includes moving to collect position)
@@ -221,16 +221,6 @@ def main():
         
         finally:
             
-            # move to position to get the frame
-            pose2 = [-4.6480483452426355, -0.9079412978938599, 1.5085294882403772, 0.0630008417316894, 1.43977689743042, -1.2330697218524378]
-            ur_frame.robot.movej(pose2, a=0.5, v=0.5)
-            time.sleep(0.5)
-
-            pose1 = [-4.648319784794943,-1.5912381611266078, -0.06179070472717285,  0.06347481786694331, 1.439825415611267, -1.2331050078021448]
-
-            ur_frame.robot.movej(pose1, a=0.5, v=0.5)
-            time.sleep(0.5)
-
             # Always disconnect robot in finally block
             if ur_frame.robot is not None:
                 try:

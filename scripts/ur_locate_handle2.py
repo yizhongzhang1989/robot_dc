@@ -48,10 +48,10 @@ class URLocateHandle2(URLocateBase):
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
             "movement1": [-0.03, 0, 0, 0, 0, 0],
-            "movement2": [-0.02, 0, 0, 0, 0, 0],
-            "movement3": [0, 0, 0.02, 0, 0, 0],
-            "movement4": [-0.03, 0, -0.02, 0, 0, 0],
-            "movement5": [-0.02, 0, -0.02, 0, 0, 0]
+            "movement2": [-0.01, 0, 0, 0, 0, 0],
+            "movement3": [0, 0, 0.01, 0, 0, 0],
+            "movement4": [-0.03, 0, -0.01, 0, 0, 0],
+            "movement5": [-0.01, 0, -0.01, 0, 0, 0]
         }
         
         self.local_x_kp_index = [0, 2]
@@ -229,15 +229,12 @@ def main():
         time.sleep(6)
 
         print("\n" + "="*50)
-        ur_handle2.lift_platform_coarse_adjust(target_height=910.0)
-        time.sleep(5)
+        ur_handle2.lift_platform_coarse_adjust(919)
+        time.sleep(10)
 
         print("\n" + "="*50)
-        ur_handle2.pushrod_fine_adjust(target_height=935.0)
+        ur_handle2.pushrod_fine_adjust(937)
         time.sleep(5)
-
-        ur_handle2.movej_to_start_position_after_execute_frame()
-        time.sleep(0.5)
 
         try:
             # Perform auto data collection (includes moving to collect position)
@@ -263,8 +260,8 @@ def main():
                         if ur_handle2.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
 
-                            ur_handle2.movej_to_get_position_after_process()
-                            time.sleep(0.5)
+                            # ur_handle2.movej_to_get_position_after_process()
+                            # time.sleep(0.5)
                             
                         else:
                             print("⚠ Coordinate system validation failed!")

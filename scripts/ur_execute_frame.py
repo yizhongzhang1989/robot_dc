@@ -31,10 +31,14 @@ class URExecuteFrame(URExecuteBase):
     
     def movel_to_target_position(self):
         """
-        Move robot to target position using linear movement.
+        Move robot to target position using linear movement based on local coordinate system.
         """
         if self.robot is None:
             print("Robot is not initialized")
+            return -1
+        
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
             return -1
         
         # Get target position in base coordinate system
@@ -49,39 +53,66 @@ class URExecuteFrame(URExecuteBase):
             print("Failed to get current robot pose")
             return -1
         
-        # Step 1: Move along Y and Z directions (keep X unchanged)
+        # Extract local coordinate system axes from transformation matrix
+        local_rotation = self.local_transformation_matrix[:3, :3]
+        local_x = local_rotation[:, 0]  # Local X+ direction in base coordinates
+        local_y = local_rotation[:, 1]  # Local Y+ direction in base coordinates
+        local_z = local_rotation[:, 2]  # Local Z+ direction in base coordinates
+
+        # Calculate movement vector from current position to target
+        current_position = np.array(current_pose[:3])
+        target_position_array = np.array(target_position)
+        movement_vector = target_position_array - current_position
+        print(f"\nMovement vector in base coordinates: {movement_vector}")
+        
+        # Project movement vector onto local coordinate system axes
+        movement_local_x = np.dot(movement_vector, local_x)
+        movement_local_y = np.dot(movement_vector, local_y) 
+        movement_local_z = np.dot(movement_vector, local_z)
+
+        # Step 1: Move along local X and Z directions (keep local Y unchanged)
+        # Calculate intermediate position by adding local X and Z movements
+        intermediate_movement_x = movement_local_x * local_x
+        intermediate_movement_z = movement_local_z * local_z
+        intermediate_movement = intermediate_movement_x + intermediate_movement_z
+        intermediate_position = current_position + intermediate_movement
+        
         intermediate_pose = [
-            current_pose[0],      # x (keep current X)
-            target_position[1],   # y (move to target Y)
-            target_position[2],   # z (move to target Z)
-            current_pose[3],      # rx (keep current orientation)
-            current_pose[4],      # ry
-            current_pose[5]       # rz
+            intermediate_position[0], # x
+            intermediate_position[1], # y
+            intermediate_position[2], # z
+            current_pose[3],          # rx (keep current orientation)
+            current_pose[4],          # ry
+            current_pose[5]           # rz
         ]
         
-        print("\nStep 1: Moving along Y and Z directions...")
+        print(f"\nStep 1: Moving along local X and Z directions...")
         print(f"Intermediate pose: {intermediate_pose}")
         
         res = self.robot.movel(intermediate_pose, a=0.1, v=0.05)
         time.sleep(0.5)
 
         if res != 0:
-            print(f"Failed to move along Y and Z (error code: {res})")
+            print(f"Failed to move along local X and Z (error code: {res})")
             return res
         
         print("Step 1 completed successfully")
         
-        # Step 2: Move along X direction to final target
+        # Step 2: Move along local Y direction to final target (with tool offset)
+        tool_offset_y = -0.08  # Tool offset along local Y direction (in meters)
+        final_movement_y = (movement_local_y + tool_offset_y) * local_y
+        final_position = intermediate_position + final_movement_y
+        
         final_pose = [
-            target_position[0]-0.08,  # x (move to target X with tool offset)
-            target_position[1],       # y (already at target Y)
-            target_position[2],       # z (already at target Z)
+            final_position[0],        # x
+            final_position[1],        # y
+            final_position[2],        # z
             current_pose[3],          # rx (keep current orientation)
             current_pose[4],          # ry
             current_pose[5]           # rz
         ]
         
-        print("\nStep 2: Moving along X direction...")
+        print(f"\nStep 2: Moving along local Y direction...")
         print(f"Final pose: {final_pose}")
         
         res = self.robot.movel(final_pose, a=0.1, v=0.05)
@@ -90,7 +121,7 @@ class URExecuteFrame(URExecuteBase):
         if res == 0:
             print("Robot moved to target position successfully")
         else:
-            print(f"Failed to move along X (error code: {res})")
+            print(f"Failed to move along local Y (error code: {res})")
         
         return res
     
@@ -170,7 +201,7 @@ class URExecuteFrame(URExecuteBase):
         
         # Step 2: Rotate 30 degrees around TCP Z axis
         # Create rotation around Z axis (30 degrees = pi/6 radians)
-        angle_deg = 31
+        angle_deg = 32
         angle_rad = np.deg2rad(angle_deg)
         
         # The Z axis in tool frame corresponds to local_y in base frame
@@ -241,46 +272,6 @@ class URExecuteFrame(URExecuteBase):
         
         return res
 
-    def movej_to_get_tool_start(self):
-        """
-        Move robot to get tool start position using joint movements
-        Returns: 0 if successful, error code otherwise
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-        
-        # Move to position to get the frame
-        pose2 = [-4.6480483452426355, -0.9079412978938599, 1.5085294882403772, 0.0630008417316894, 1.43977689743042, -1.2330697218524378]
-        
-        print("\nMoving to intermediate position (pose2)...")
-        print(f"Target joint angles: {pose2}")
-        
-        res = self.robot.movej(pose2, a=0.5, v=0.5)
-        
-        if res != 0:
-            print(f"Failed to move to pose2 (error code: {res})")
-            return res
-        
-        print("Moved to pose2 successfully")
-        time.sleep(0.5)
-        
-        # Move to final get tool position
-        pose1 = [-4.648319784794943, -1.5912381611266078, -0.06179070472717285, 0.06347481786694331, 1.439825415611267, -1.2331050078021448]
-        
-        print("\nMoving to get tool position (pose1)...")
-        print(f"Target joint angles: {pose1}")
-        
-        res = self.robot.movej(pose1, a=0.5, v=0.5)
-        
-        if res == 0:
-            print("Robot moved to get tool start position successfully")
-        else:
-            print(f"Failed to move to pose1 (error code: {res})")
-        
-        time.sleep(0.5)
-        
-        return res
 
 
 if __name__ == "__main__":
@@ -355,6 +346,4 @@ if __name__ == "__main__":
     ur_frame.movej_to_reference_joint_positions()
     time.sleep(0.5)
 
-    ur_frame.movej_to_get_tool_start()
-    time.sleep(0.5)
 
