@@ -360,6 +360,132 @@ def main():
         
         # ==== Example using send_modbus_request() ====
         print("\n=== Using send_modbus_request() ===")
+
+
+        # activate
+        response = rs485.send_modbus_request(
+            device_id=9, 
+            function_code=16,  # Write Multiple Registers
+            address=0x03E8,   # Starting address
+            values=[0x0000, 0x0000, 0x0000]
+        )
+        
+        if response:
+            parsed = RS485Client.parse_modbus_response(response, function_code=3)
+            print(f"Read registers response: {parsed}")
+
+        time.sleep(3)      
+
+        # check status
+        response = rs485.send_modbus_request(
+            device_id=9, 
+            function_code=4,  # Read Holding Registers
+            address=0x07D0,   # Starting address
+            values=2          # Number of registers to read
+        )
+        
+        if response:
+            parsed = RS485Client.parse_modbus_response(response, function_code=3)
+            print(f"Read registers response: {parsed}")
+
+        time.sleep(1)      
+
+        # close gripper
+        response = rs485.send_modbus_request(
+            device_id=9, 
+            function_code=16,  # Write Multiple Registers
+            address=0x03E8,   # Starting address
+            values=[0x0900, 0x00FF, 0xFFFF]
+        )
+        
+        if response:
+            parsed = RS485Client.parse_modbus_response(response, function_code=3)
+            print(f"Read registers response: {parsed}")
+
+        time.sleep(3)      
+
+
+        # open gripper
+        response = rs485.send_modbus_request(
+            device_id=9, 
+            function_code=16,  # Write Multiple Registers
+            address=0x03E8,   # Starting address
+            values=[0x0900, 0x0000, 0xFFFF]
+        )
+        
+        if response:
+            parsed = RS485Client.parse_modbus_response(response, function_code=3)
+            print(f"Read registers response: {parsed}")
+
+        time.sleep(3)      
+
+
+        # response = rs485.send_modbus_request(
+        #     device_id=1, 
+        #     function_code=3,  # Read Holding Registers
+        #     address=0x1010,   # Starting address
+        #     values=2          # Number of registers to read
+        # )
+        
+        # if response:
+        #     parsed = RS485Client.parse_modbus_response(response, function_code=3)
+        #     print(f"Read registers response: {parsed}")
+
+
+        # response = rs485.send_modbus_request(
+        #     device_id=1, 
+        #     function_code=0x10,  # write register
+        #     address=0x1004,   # Starting address
+        #     values=[0, 0]
+        # )
+        
+        # if response:
+        #     parsed = RS485Client.parse_modbus_response(response, function_code=3)
+        #     print(f"Read registers response: {parsed}")
+
+        # time.sleep(1)
+
+
+        # Example 2: Write single register (FC06)
+        # response = rs485.send_modbus_request(
+        #     device_id=1,
+        #     function_code=6,  # Write Single Register
+        #     address=0x1000,
+        #     values=1234       # Value to write
+        # )
+        # if response:
+        #     parsed = RS485Client.parse_modbus_response(response, function_code=6)
+        #     print(f"Write register response: {parsed}")
+        
+        # Example 3: Write multiple registers (FC16)
+        # response = rs485.send_modbus_request(
+        #     device_id=1,
+        #     function_code=16,  # Write Multiple Registers
+        #     address=0x1000,
+        #     values=[100, 200, 300]  # List of values
+        # )
+        # if response:
+        #     parsed = RS485Client.parse_modbus_response(response, function_code=16)
+        #     print(f"Write multiple registers response: {parsed}")
+        
+    
+    # Close robot connection
+    robot.close()
+
+
+def main_RM_EGB():
+    # Robot connection
+    robot = UR15Robot("192.168.1.15", 30002)
+    
+    if robot.open() != 0:
+        print("Failed to connect to robot")
+        return
+    
+    # RS485 connection using the new RS485Client class
+    with RS485Client("192.168.1.15", 54321) as rs485:
+        
+        # ==== Example using send_modbus_request() ====
+        print("\n=== Using send_modbus_request() ===")
         
         # # Example 1: Read holding registers (FC03)
         # # Read 2 registers starting from address 0x1008 (4104 decimal)
@@ -387,26 +513,26 @@ def main():
         #     print(f"Read registers response: {parsed}")
 
 
-    
+        for i in range(11):    
+            response = rs485.send_modbus_request(
+                device_id=1, 
+                function_code=0x10,  # write register
+                address=0x1004,   # Starting address
+                values=[i*10, 0]
+            )
+            
+            if response:
+                parsed = RS485Client.parse_modbus_response(response, function_code=3)
+                print(f"Read registers response: {parsed}")
+
+            time.sleep(1)
+
+
         response = rs485.send_modbus_request(
             device_id=1, 
             function_code=0x10,  # write register
             address=0x1004,   # Starting address
-            values=[0]
-        )
-        
-        if response:
-            parsed = RS485Client.parse_modbus_response(response, function_code=3)
-            print(f"Read registers response: {parsed}")
-
-        time.sleep(1)
-
-
-        response = rs485.send_modbus_request(
-            device_id=1, 
-            function_code=0x10,  # write register
-            address=0x1004,   # Starting address
-            values=[100]
+            values=[0, 0]
         )
         
         if response:
@@ -657,7 +783,7 @@ def main_mock():
 
 if __name__ == "__main__":
     # Uncomment to run mock tests
-    main_mock()
+    # main_mock()
     
     # Run normal main
-    # main()
+    main()
