@@ -37,11 +37,11 @@ class URLocateHandle1(URLocateBase):
         # Override movements with custom offsets
         # Format: movement name -> [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]
         self.movements = {
-            "movement1": [-0.03, 0, 0, 0, 0, 0],
-            "movement2": [0.03, 0, 0, 0, 0, 0],
-            "movement3": [-0.05, 0, 0.05, 0, 0, 0],
-            "movement4": [0, 0, -0.03, 0, 0, 0],
-            "movement5": [0, 0, 0.03, 0, 0, 0]
+            "movement1": [-0.01, 0, 0, 0, 0, 0],
+            "movement2": [0.01, 0, 0, 0, 0, 0],
+            "movement3": [-0.02, 0, 0.02, 0, 0, 0],
+            "movement4": [0, 0, -0.01, 0, 0, 0],
+            "movement5": [0, 0, 0.01, 0, 0, 0]
         }
         
         # Override data directory
