@@ -59,6 +59,12 @@ class PushrodNode(Node):
         self.task_start_time = None        # Unix timestamp (seconds)
         self.task_end_time = None          # Unix timestamp (seconds)
         self.completion_reason = None      # None | 'target_reached' | 'force_reached' | 'manual_stop'
+        
+        # ═══════════════════════════════════════════════════════════════
+        # System-wide mutual exclusion (shared with Platform via status)
+        # ═══════════════════════════════════════════════════════════════
+        self.system_busy = False           # True when ANY closed-loop control is active (Platform or Pushrod)
+        self.active_control_owner = None   # 'platform' | 'pushrod' - who owns the current task
 
         # Controller
         self.controller = PushrodController(
@@ -97,22 +103,44 @@ class PushrodNode(Node):
             self.get_logger().info(f"Received pushrod command: {command} [SEQ {seq_id_str}]")
 
             if command == 'stop':
-                self.controller.stop(seq_id=seq_id)
+                # Step 1: Disable all auto control modes FIRST
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual stop - auto control disabled")
+                
+                # Step 2: Wait for control loop to detect flag change and stop sending commands
+                # Wait 1 control cycle (20ms) to ensure control loop has exited
+                time.sleep(CONTROL_RATE)  # 20ms = 1 control cycle
+                
+                # Step 3: Update offset tracking (before sending stop pulse)
                 if self.is_tracking_offset and self.height_before_movement is not None:
                     delta = self.current_height - self.height_before_movement
                     self.pushrod_offset += delta
                     self.get_logger().info(f"[SEQ {seq_id_str}] Offset updated: {delta:.2f}mm (total {self.pushrod_offset:.2f}mm)")
                     self.is_tracking_offset = False
                     self.height_before_movement = None
-                if self.control_enabled:
-                    self.control_enabled = False
-                    self.control_mode = 'manual'
+                
+                # Step 4: Send hardware STOP pulse (after control loop stopped)
+                self.controller.stop(seq_id=seq_id)
                 self.movement_state = 'stop'
-                # Mark task as manually stopped
+                
+                # Step 5: Mark task as manually stopped and release system lock
                 if self.task_state == 'running':
                     self._complete_task('manual_stop')
 
             elif command == 'up':
+                # If interrupting a running closed-loop task, complete it first
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'goto_point', 'force_control']:
+                    self._complete_task('manual_stop')
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual up - interrupted {self.task_type}")
+                
+                # Disable auto control modes if active (manual control takes priority)
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual up - auto control disabled")
+                
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
                 self.controller.up(seq_id=seq_id)
@@ -121,6 +149,17 @@ class PushrodNode(Node):
                 self._start_task('manual_up')
 
             elif command == 'down':
+                # If interrupting a running closed-loop task, complete it first
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'goto_point', 'force_control']:
+                    self._complete_task('manual_stop')
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual down - interrupted {self.task_type}")
+                
+                # Disable auto control modes if active (manual control takes priority)
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual down - auto control disabled")
+                
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
                 self.controller.down(seq_id=seq_id)
@@ -129,6 +168,17 @@ class PushrodNode(Node):
                 self._start_task('manual_down')
 
             elif command == 'timed_up':
+                # If interrupting a running closed-loop task, complete it first
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'goto_point', 'force_control']:
+                    self._complete_task('manual_stop')
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed up - interrupted {self.task_type}")
+                
+                # Disable auto control modes if active (manual control takes priority)
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed up - auto control disabled")
+                
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
                 dur = float(data.get('duration', 1.0))
@@ -137,6 +187,17 @@ class PushrodNode(Node):
                 self._start_task('timed_up')
 
             elif command == 'timed_down':
+                # If interrupting a running closed-loop task, complete it first
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'goto_point', 'force_control']:
+                    self._complete_task('manual_stop')
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed down - interrupted {self.task_type}")
+                
+                # Disable auto control modes if active (manual control takes priority)
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed down - auto control disabled")
+                
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
                 dur = float(data.get('duration', 1.0))
@@ -168,29 +229,55 @@ class PushrodNode(Node):
                     self._start_task('goto_point')
 
             elif command == 'goto_height':
+                # Check if system is busy with another task
+                if self.system_busy and self.active_control_owner != 'pushrod':
+                    self.get_logger().warning(
+                        f"[SEQ {seq_id_str}] goto_height REJECTED - {self.active_control_owner} is busy (task={self.task_type})"
+                    )
+                    return
+                
                 target = data.get('target_height')
                 if target is None:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] goto_height requires target_height")
                 else:
+                    # Initialize offset tracking for this new movement
                     self.height_before_movement = self.current_height
                     self.is_tracking_offset = True
+                    
+                    # Set control parameters
                     self.target_height = float(target)
                     self.control_mode = 'auto'
                     self.control_enabled = True
-                    self.movement_state = 'stop'
-                    # Start goto_height task
-                    self._start_task('goto_height')
+                    self.movement_state = 'stop'  # Reset movement state
+                    
+                    # Start goto_height task (owner=pushrod)
+                    self._start_task('goto_height', owner='pushrod')
                     self.get_logger().info(f"[SEQ {seq_id_str}] Auto height target={self.target_height:.2f}mm")
 
             elif command == 'enable_force_control':
+                # Check if system is busy with another task
+                if self.system_busy and self.active_control_owner != 'pushrod':
+                    self.get_logger().warning(
+                        f"[SEQ {seq_id_str}] enable_force_control REJECTED - {self.active_control_owner} is busy (task={self.task_type})"
+                    )
+                    return
+                
+                # Set force control parameters
                 self.target_force = float(data.get('target_force', 750.0))
                 self.force_threshold = float(data.get('force_threshold', 10.0))
                 self.increase_on_up = bool(data.get('increase_on_up', True))
+                
+                # Initialize control state
                 self.control_enabled = True
                 self.control_mode = 'force'
-                self.movement_state = 'stop'
-                # Start force control task
-                self._start_task('force_control')
+                self.movement_state = 'stop'  # Reset movement state
+                
+                # Clear offset tracking (force control doesn't use offset)
+                self.is_tracking_offset = False
+                self.height_before_movement = None
+                
+                # Start force control task (owner=pushrod)
+                self._start_task('force_control', owner='pushrod')
                 self.get_logger().info(
                     f"[SEQ {seq_id_str}] Force control enabled: target={self.target_force:.2f}N ±{self.force_threshold:.2f}N, increase_on_up={self.increase_on_up}"
                 )
@@ -202,6 +289,51 @@ class PushrodNode(Node):
                     self.control_mode = 'manual'
                     self.movement_state = 'stop'
                     self.get_logger().info(f"[SEQ {seq_id_str}] Force control disabled")
+            
+            elif command == 'reset':
+                # CRITICAL: Reset pushrod - disable all control and clear relays
+                self.get_logger().warn(f"[SEQ {seq_id_str}] 🔴 PUSHROD RESET COMMAND")
+                
+                # Step 1: Disable all control modes
+                self.control_enabled = False
+                self.control_mode = 'manual'
+                self.movement_state = 'stop'
+                self.get_logger().info(f"[SEQ {seq_id_str}] Step 1: All control modes disabled")
+                
+                # Step 1.5: Cancel all active timers (CRITICAL: prevents future relay activations)
+                try:
+                    self.controller.cancel_all_timers()
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 1.5: All timers cancelled (prevents delayed relay closures)")
+                except Exception as e:
+                    self.get_logger().error(f"[SEQ {seq_id_str}] ❌ Timer cancellation failed: {e}")
+                
+                # Step 2: Reset all pushrod relays to 0 FIRST (relays 3,4,5 all OFF)
+                try:
+                    if hasattr(self.controller, 'reset_all_relays'):
+                        self.controller.reset_all_relays(seq_id=seq_id)
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 2: Pushrod relays reset (3,4,5 cleared to 0)")
+                except Exception as e:
+                    self.get_logger().error(f"[SEQ {seq_id_str}] ❌ Pushrod relay reset failed: {e}")
+                
+                # Step 3: Send STOP pulse to physically stop hardware motion
+                # Note: reset_all_relays only sets relays to OFF, but doesn't trigger stop action
+                try:
+                    self.controller.stop(seq_id=seq_id)
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 3: Pushrod STOP pulse sent (triggers hardware stop)")
+                except Exception as e:
+                    self.get_logger().error(f"[SEQ {seq_id_str}] ❌ Pushrod stop pulse failed: {e}")
+                
+                # Step 4: Mark any running task as manually stopped and release system lock
+                if self.task_state == 'running':
+                    self.task_state = 'emergency_stop'
+                    self.completion_reason = 'manual_stop'
+                    self.task_end_time = time.time()
+                
+                # Release system busy lock (CRITICAL!)
+                self.system_busy = False
+                self.active_control_owner = None
+                self.get_logger().info(f"[SEQ {seq_id_str}] ✅ Reset complete (system_busy=False)")
+            
             else:
                 self.get_logger().warning(f"Unknown pushrod command: {command}")
         except json.JSONDecodeError:
@@ -248,12 +380,23 @@ class PushrodNode(Node):
         self.last_force_update_time = now
 
     def _on_auto_stop_complete(self):
+        """
+        Callback when timed operation auto-stops (from controller's timer)
+        Updates offset tracking and marks task as completed
+        """
+        # Update offset if tracking
         if self.is_tracking_offset and self.height_before_movement is not None:
             delta = self.current_height - self.height_before_movement
             self.pushrod_offset += delta
             self.is_tracking_offset = False
             self.height_before_movement = None
             self.get_logger().info(f"Auto-stop offset update: {delta:.2f}mm total={self.pushrod_offset:.2f}mm")
+        
+        # Mark timed task as completed (target_reached)
+        if self.task_state == 'running' and self.task_type in ['timed_up', 'timed_down']:
+            self._complete_task('target_reached')
+            self.get_logger().info(f"Timed operation completed: {self.task_type}")
+
 
     # ------------------------------------------------------------------
     # Control Loop
@@ -416,24 +559,40 @@ class PushrodNode(Node):
     # ═══════════════════════════════════════════════════════════════
     # Task State Management Methods
     # ═══════════════════════════════════════════════════════════════
-    def _start_task(self, task_type):
-        """Start a new task and record timestamp"""
+    def _start_task(self, task_type, owner='pushrod'):
+        """
+        Start a new task and acquire system lock
+        
+        Args:
+            task_type: task type identifier
+            owner: 'platform' or 'pushrod' - who owns this task
+        """
         self.task_state = 'running'
         self.task_type = task_type
         self.task_start_time = time.time()
         self.task_end_time = None
         self.completion_reason = None
-        self.get_logger().debug(f"[Task] Started: {task_type}")
+        self.system_busy = True
+        self.active_control_owner = owner
+        self.get_logger().debug(f"[Task] Started: {task_type} (owner={owner}, system_busy=True)")
     
     def _complete_task(self, reason):
-        """Mark task as completed with reason and timestamp"""
+        """
+        Mark task as completed with reason and timestamp
+        Release system lock
+        """
         if self.task_state == 'running':
             self.task_state = 'completed'
             self.completion_reason = reason
             self.task_end_time = time.time()
             duration = self.task_end_time - self.task_start_time if self.task_start_time else 0
+            
+            # Release system lock
+            self.system_busy = False
+            self.active_control_owner = None
+            
             self.get_logger().info(
-                f"[Task Complete] type={self.task_type} reason={reason} duration={duration:.2f}s"
+                f"[Task Complete] type={self.task_type} reason={reason} duration={duration:.2f}s (system_busy=False)"
             )
     
     def _get_task_state(self):

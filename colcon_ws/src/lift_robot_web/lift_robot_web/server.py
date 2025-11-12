@@ -187,9 +187,21 @@ class LiftRobotWeb(Node):
                 cmd = payload.get('command')
                 target = payload.get('target','platform')
                 duration = payload.get('duration')
-                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height','force_up','force_down'}
+                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height','force_up','force_down','reset'}
                 if cmd not in allowed:
                     return JSONResponse({'error':'invalid command'}, status_code=400)
+                
+                # CRITICAL: Reset command sends to BOTH platform and pushrod
+                if cmd == 'reset':
+                    if target != 'platform':
+                        return JSONResponse({'error':'reset command only valid for platform target (auto-sends to pushrod too)'}, status_code=400)
+                    # Send reset to both platform and pushrod
+                    reset_msg = String()
+                    reset_msg.data = json.dumps({'command': 'reset'})
+                    self.cmd_pub.publish(reset_msg)  # Platform
+                    self.pushrod_cmd_pub.publish(reset_msg)  # Pushrod
+                    return {'status':'ok','command':'reset','target':'both (platform + pushrod)'}
+                
                 # Timed commands only meaningful for pushrod target currently
                 if cmd.startswith('timed') and target != 'pushrod':
                     return JSONResponse({'error':'timed commands only supported for pushrod target'}, status_code=400)

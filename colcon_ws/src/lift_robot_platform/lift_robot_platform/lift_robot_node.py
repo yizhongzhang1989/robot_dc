@@ -25,11 +25,30 @@ POSITION_TOLERANCE = 0.05       # 调低误差带：目标高度允许误差 ±0
 # 提升频率：取消原 0.3s 节流，改为仅在"需要改变方向或停止"时发送继电器脉冲。
 # 不再使用 COMMAND_INTERVAL（保留变量以兼容旧逻辑但设为 0）。
 COMMAND_INTERVAL = 0.0          # 设为 0 表示不做时间节流，仅靠 movement_state 去重
+
+# ═══════════════════════════════════════════════════════════════
+# Overshoot Learning Configuration
+# ═══════════════════════════════════════════════════════════════
+# 超调学习开关：控制是否启用超调自适应学习功能
+# - True: 启用学习模式
+#   * 每次 goto_height 后测量实际超调值
+#   * 使用 EMA 算法持续更新 avg_overshoot_up/down
+#   * 打印 Bootstrap 引导和推荐日志
+#   * 累积样本跨 goto_height 会话保留
+#   * 日志会输出推荐的 OVERSHOOT_INIT 值供人工调整
+# - False: 使用固定模式（默认）
+#   * 每次 goto_height 启动时重置为下方的 OVERSHOOT_INIT 固定值
+#   * 不进行超调测量、不更新 EMA、不打印学习日志
+#   * 适合生产环境，避免日志干扰
+OVERSHOOT_LEARNING_ENABLED = False  
+
 # 预测性提前停参数（用于减少超调）
+# 这些是固定初始值，当 OVERSHOOT_LEARNING_ENABLED=False 时每次都使用这些值
+# 当学习模式开启后，可根据日志中的推荐值手动更新这里的常量
 OVERSHOOT_INIT_UP = 2.067      # 初始向上超调估计 (mm) 使用实验推荐 median (cv=0.111)
 OVERSHOOT_INIT_DOWN = 2.699    # 初始向下超调估计 (mm) 使用实验推荐 median (cv=0.097)
-OVERSHOOT_ALPHA = 0.25         # 指数平均权重 (新值占比)
-OVERSHOOT_SETTLE_DELAY = 0.25  # (s) 停止后等待稳定再测量超调
+OVERSHOOT_ALPHA = 0.25         # 指数平均权重 (新值占比) - 仅学习模式使用
+OVERSHOOT_SETTLE_DELAY = 0.25  # (s) 停止后等待稳定再测量超调 - 仅学习模式使用
 OVERSHOOT_MIN_MARGIN = 0.3     # (mm) 低于该值不使用提前停，避免过早停止导致未达目标
 
 
@@ -45,11 +64,11 @@ class LiftRobotNode(Node):
         self.device_id = self.get_parameter('device_id').value
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
         
-        # Software limit
-        self.software_limit_height = 950.0  # mm - maximum safe height
-        self.limit_exceeded = False
-        self.limit_recovery_active = False  # Flag for recovery in progress (more reliable than timer check)
-        self.limit_recovery_timer = None    # Timer for auto-recovery
+        # ═══════════════════════════════════════════════════════════════
+        # Thread Safety: Control Loop Lock
+        # ═══════════════════════════════════════════════════════════════
+        self.control_lock = threading.RLock()  # Reentrant lock for control loop safety
+        self.reset_in_progress = False          # Flag to signal control loop to stop
         
         # NOTE: Serial port and baudrate are now centrally managed by the modbus_driver node.
         # This node no longer opens the serial device directly; parameters were removed to avoid confusion.
@@ -60,10 +79,15 @@ class LiftRobotNode(Node):
         # ═══════════════════════════════════════════════════════════════
         # Control Loop State Variables
         # ═══════════════════════════════════════════════════════════════
+        # MUTUAL EXCLUSION: Only ONE control mode can be active at a time
+        # - control_enabled = True  → Platform height auto control (goto_height)
+        # - force_control_active = True → Platform force control (force_up/down)
+        # When starting a new control mode, the other MUST be disabled first
+        # Pushrod control is in separate node, no conflict with platform
         self.current_height = 0.0           # Current height from cable sensor (mm) - no filtering needed for digital signal
         self.target_height = 0.0            # Target height setpoint (mm)
         self.last_command_time = self.get_clock().now()  # 兼容旧逻辑（当前不再用于节流）
-        self.control_enabled = False        # Enable/disable closed-loop control
+        self.control_enabled = False        # Enable/disable closed-loop HEIGHT control (PLATFORM ONLY)
         self.control_mode = 'manual'        # 'manual' or 'auto' (height control)
         self.movement_state = 'stop'        # Current movement state: 'up', 'down', or 'stop'
         # Overshoot tracking state (must be instance attributes)
@@ -84,6 +108,14 @@ class LiftRobotNode(Node):
         self.OVERSHOOT_VARIANCE_THRESHOLD = 0.18   # 变异系数 (std/mean) 低于该值认为稳定
         
         # ═══════════════════════════════════════════════════════════════
+        # Global System Lock (Platform and Pushrod Mutual Exclusion)
+        # ═══════════════════════════════════════════════════════════════
+        # To ensure only ONE control operation runs at a time (platform OR pushrod)
+        # This simplifies web status logic - only one task can be running
+        self.system_busy = False           # True when ANY control is active
+        self.active_control_owner = None   # 'platform' or 'pushrod' - who owns the lock
+        
+        # ═══════════════════════════════════════════════════════════════
         # Task State Tracking (for web monitoring)
         # ═══════════════════════════════════════════════════════════════
         self.task_state = 'idle'           # 'idle' | 'running' | 'completed' | 'emergency_stop'
@@ -98,6 +130,9 @@ class LiftRobotNode(Node):
             node=self,
             use_ack_patch=self.use_ack_patch
         )
+        
+        # Set callback for timed operation auto-stop
+        self.controller.on_auto_stop_callback = self._on_auto_stop_complete
         
         # Subscribe to command topic
         self.subscription = self.create_subscription(
@@ -132,15 +167,16 @@ class LiftRobotNode(Node):
         self.controller.initialize()
         
         self.get_logger().info("Lift platform control node started")
-        # ─────────────────────────────────────────────────────────────
-        # Force control state (independent of height auto mode)
-        # ─────────────────────────────────────────────────────────────
+        # ═══════════════════════════════════════════════════════════════
+        # Force Control State (PLATFORM ONLY, mutually exclusive with height auto)
+        # ═══════════════════════════════════════════════════════════════
+        # When force_control_active=True, control_enabled MUST be False
         self.current_force_right = None    # /force_sensor
         self.current_force_left = None     # /force_sensor_2
         self.current_force_combined = None # sum or single available
         self.target_force = None           # target threshold (N)
         self.force_control_direction = None  # 'up'|'down'
-        self.force_control_active = False
+        self.force_control_active = False  # Enable/disable FORCE control (PLATFORM ONLY)
 
         # Subscribe force sensors
         try:
@@ -162,46 +198,103 @@ class LiftRobotNode(Node):
             
             self.get_logger().info(f"Received command: {command} [SEQ {seq_id_str}]")
             
-            # Cancel auto-recovery timer if user sends any command
-            if self.limit_recovery_timer is not None or self.limit_recovery_active:
-                if self.limit_recovery_timer is not None:
-                    self.limit_recovery_timer.cancel()
-                    self.limit_recovery_timer = None
-                self.limit_recovery_active = False
-                self.limit_exceeded = False
-                self.get_logger().info(f"[SEQ {seq_id_str}] Auto-recovery cancelled by user command: {command}")
-            
             if command == 'stop':
-                self.controller.stop(seq_id=seq_id)
-                # Also disable auto control if active
+                # Step 1: Disable all auto control modes FIRST
                 if self.control_enabled:
                     self.control_enabled = False
                     self.control_mode = 'manual'
-                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual stop - auto control disabled")
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual stop - height auto control disabled")
+                if self.force_control_active:
+                    self.force_control_active = False
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual stop - force control disabled")
+                
+                # Step 2: Wait for control loop to detect flag change and stop sending commands
+                # Wait 1 control cycle (20ms) to ensure control loop has exited
+                time.sleep(CONTROL_RATE)  # 20ms = 1 control cycle
+                
+                # Step 3: Send hardware STOP pulse (after control loop stopped)
+                self.controller.stop(seq_id=seq_id)
                 self.movement_state = 'stop'
-                # Mark task as manually stopped
+                
+                # Step 4: Mark task as manually stopped and release system lock
                 if self.task_state == 'running':
                     self._complete_task('manual_stop')
                 
             elif command == 'up':
+                # If interrupting a running closed-loop task, complete it first
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down']:
+                    self._complete_task('manual_stop')
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual up - interrupted {self.task_type}")
+                
+                # Disable auto control modes if active (manual control takes priority)
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual up - height auto control disabled")
+                if self.force_control_active:
+                    self.force_control_active = False
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual up - force control disabled")
+                
                 self.controller.up(seq_id=seq_id)
                 self.movement_state = 'up'
                 # Start manual up task
                 self._start_task('manual_up')
                 
             elif command == 'down':
+                # If interrupting a running closed-loop task, complete it first
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down']:
+                    self._complete_task('manual_stop')
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual down - interrupted {self.task_type}")
+                
+                # Disable auto control modes if active (manual control takes priority)
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual down - height auto control disabled")
+                if self.force_control_active:
+                    self.force_control_active = False
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Manual down - force control disabled")
+                
                 self.controller.down(seq_id=seq_id)
                 self.movement_state = 'down'
                 # Start manual down task
                 self._start_task('manual_down')
                 
             elif command == 'timed_up':
+                # If interrupting a running closed-loop task, complete it first
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down']:
+                    self._complete_task('manual_stop')
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed up - interrupted {self.task_type}")
+                
+                # Disable auto control modes if active (manual control takes priority)
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed up - height auto control disabled")
+                if self.force_control_active:
+                    self.force_control_active = False
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed up - force control disabled")
+                
                 duration = command_data.get('duration', 1.0)
                 self.controller.timed_up(duration, seq_id=seq_id)
                 # Start timed_up task
                 self._start_task('timed_up')
                 
             elif command == 'timed_down':
+                # If interrupting a running closed-loop task, complete it first
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down']:
+                    self._complete_task('manual_stop')
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed down - interrupted {self.task_type}")
+                
+                # Disable auto control modes if active (manual control takes priority)
+                if self.control_enabled:
+                    self.control_enabled = False
+                    self.control_mode = 'manual'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed down - height auto control disabled")
+                if self.force_control_active:
+                    self.force_control_active = False
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Timed down - force control disabled")
+                
                 duration = command_data.get('duration', 1.0)
                 self.controller.timed_down(duration, seq_id=seq_id)
                 # Start timed_down task
@@ -214,6 +307,13 @@ class LiftRobotNode(Node):
                     self._complete_task('manual_stop')
                 
             elif command == 'goto_height':
+                # Platform height control - check if system is busy
+                if self.system_busy and self.active_control_owner != 'platform':
+                    self.get_logger().warning(
+                        f"[SEQ {seq_id_str}] goto_height REJECTED - {self.active_control_owner} is busy (task={self.task_type})"
+                    )
+                    return
+                
                 # New command: go to specific height with closed-loop control
                 target = command_data.get('target_height')
                 if target is not None:
@@ -225,16 +325,54 @@ class LiftRobotNode(Node):
                     self.target_height = float(target)
                     self.control_mode = 'auto'
                     self.control_enabled = True
-                    # Reset tracking to allow immediate first command
+                    
+                    # Reset movement tracking state for new control session
                     self.movement_state = 'stop'  # Reset movement state
-                    # 旧逻辑通过回退 last_command_time 触发首条指令；现在不再依赖时间节流
                     self.last_command_time = self.get_clock().now()
-                    # Start goto_height task
-                    self._start_task('goto_height')
+                    
+                    # Clear any pending overshoot measurement from previous session
+                    if self.overshoot_timer and self.overshoot_timer.is_alive():
+                        self.overshoot_timer.cancel()
+                        self.overshoot_timer = None
+                    self.height_at_stop = None
+                    self.last_stop_direction = None
+                    self.last_stop_time = None
+                    
+                    # Overshoot learning control
+                    if OVERSHOOT_LEARNING_ENABLED:
+                        # Learning mode: avg_overshoot values persist and accumulate across sessions
+                        # Bootstrap samples and recent raw samples also persist
+                        self.get_logger().info(
+                            f"[SEQ {seq_id_str}] Overshoot learning ENABLED - "
+                            f"using learned values (up={self.avg_overshoot_up:.3f}mm, down={self.avg_overshoot_down:.3f}mm)"
+                        )
+                    else:
+                        # Fixed mode: reset to initial values from constants every time
+                        self.avg_overshoot_up = OVERSHOOT_INIT_UP
+                        self.avg_overshoot_down = OVERSHOOT_INIT_DOWN
+                        # Clear learning samples (no accumulation)
+                        self.overshoot_bootstrap_samples_up = []
+                        self.overshoot_bootstrap_samples_down = []
+                        self.recent_raw_overshoot_up = []
+                        self.recent_raw_overshoot_down = []
+                        self.get_logger().info(
+                            f"[SEQ {seq_id_str}] Overshoot learning DISABLED - "
+                            f"using fixed values (up={OVERSHOOT_INIT_UP:.3f}mm, down={OVERSHOOT_INIT_DOWN:.3f}mm)"
+                        )
+                    
+                    # Start goto_height task (owner=platform)
+                    self._start_task('goto_height', owner='platform')
                     self.get_logger().info(f"[SEQ {seq_id_str}] Auto mode: target height = {self.target_height:.2f} mm")
                 else:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] goto_height requires target_height field")
             elif command == 'force_up':
+                # Platform force control - check if system is busy
+                if self.system_busy and self.active_control_owner != 'platform':
+                    self.get_logger().warning(
+                        f"[SEQ {seq_id_str}] force_up REJECTED - {self.active_control_owner} is busy (task={self.task_type})"
+                    )
+                    return
+                
                 tf = command_data.get('target_force')
                 if tf is None:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] force_up requires target_force field")
@@ -249,13 +387,20 @@ class LiftRobotNode(Node):
                         self.force_control_direction = 'up'
                         self.force_control_active = True
                         self.control_mode = 'manual'
-                        # Start force_up task
-                        self._start_task('force_up')
+                        # Start force_up task (owner=platform)
+                        self._start_task('force_up', owner='platform')
                         self.controller.force_up_start(seq_id=seq_id)
                         self.get_logger().info(f"[SEQ {seq_id_str}] Force-UP start target_force={self.target_force:.2f} N")
                     except Exception:
                         self.get_logger().warning(f"[SEQ {seq_id_str}] Invalid target_force for force_up: {tf}")
             elif command == 'force_down':
+                # Platform force control - check if system is busy
+                if self.system_busy and self.active_control_owner != 'platform':
+                    self.get_logger().warning(
+                        f"[SEQ {seq_id_str}] force_down REJECTED - {self.active_control_owner} is busy (task={self.task_type})"
+                    )
+                    return
+                
                 tf = command_data.get('target_force')
                 if tf is None:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] force_down requires target_force field")
@@ -270,12 +415,77 @@ class LiftRobotNode(Node):
                         self.force_control_direction = 'down'
                         self.force_control_active = True
                         self.control_mode = 'manual'
-                        # Start force_down task
-                        self._start_task('force_down')
+                        # Start force_down task (owner=platform)
+                        self._start_task('force_down', owner='platform')
                         self.controller.force_down_start(seq_id=seq_id)
                         self.get_logger().info(f"[SEQ {seq_id_str}] Force-DOWN start target_force={self.target_force:.2f} N")
                     except Exception:
                         self.get_logger().warning(f"[SEQ {seq_id_str}] Invalid target_force for force_down: {tf}")
+            
+            elif command == 'reset':
+                # ═══════════════════════════════════════════════════════
+                # CRITICAL RESET: Thread-safe PLATFORM reset (6-step process)
+                # NOTE: Web server sends reset to BOTH Platform and Pushrod
+                #       to ensure complete system reset.
+                # ═══════════════════════════════════════════════════════
+                self.get_logger().warn(f"[SEQ {seq_id_str}] 🔴 PLATFORM RESET COMMAND - Starting safe shutdown sequence")
+                
+                # Step 1: Signal control loop to stop (set flag FIRST)
+                with self.control_lock:
+                    self.reset_in_progress = True
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 1: Reset flag set, control loop will exit on next cycle")
+                
+                # Step 2: Wait ONE control cycle for loop to detect flag and exit
+                # The control loop checks reset_in_progress at PRIORITY 0 (first thing)
+                # Worst case: loop just started → needs max 20ms to complete current cycle
+                # After this wait, no new control commands will be sent (loop exits early)
+                time.sleep(CONTROL_RATE)  # 20ms = 1 control cycle
+                self.get_logger().info(f"[SEQ {seq_id_str}] Step 2: Waited 20ms for control loop to finish current cycle")
+                
+                # Step 3: Disable all control modes (now safe, control loop is blocked)
+                with self.control_lock:
+                    self.control_enabled = False
+                    self.force_control_active = False
+                    self.control_mode = 'manual'
+                    self.movement_state = 'stop'
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 3: All control modes disabled")
+                
+                # Step 3.5: Cancel all active timers (CRITICAL: prevents future relay activations)
+                try:
+                    self.controller.cancel_all_timers()
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 3.5: All timers cancelled (prevents delayed relay closures)")
+                except Exception as e:
+                    self.get_logger().error(f"[SEQ {seq_id_str}] ❌ Timer cancellation failed: {e}")
+                
+                # Step 4: Reset all Platform relays to 0 FIRST (relays 0,1,2 all OFF)
+                try:
+                    self.controller.reset_all_relays(seq_id=seq_id)
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 4: Platform relays reset (0,1,2 cleared to 0)")
+                except Exception as e:
+                    self.get_logger().error(f"[SEQ {seq_id_str}] ❌ Relay reset failed: {e}")
+                
+                # Step 5: Send STOP pulse (relay 0 flash) to physically stop hardware motion
+                # Note: reset_all_relays only sets relays to OFF, but doesn't trigger stop action
+                # Hardware needs explicit stop pulse (relay 0 ON→OFF) to halt motion
+                try:
+                    self.controller.stop(seq_id=seq_id)
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 5: Platform STOP pulse sent (triggers hardware stop)")
+                except Exception as e:
+                    self.get_logger().error(f"[SEQ {seq_id_str}] ❌ Platform stop pulse failed: {e}")
+                
+                # Step 6: Mark any running task as manually stopped and release system lock
+                with self.control_lock:
+                    if self.task_state == 'running':
+                        # Mark as emergency_stop (manual reset is still an emergency action)
+                        self.task_state = 'emergency_stop'
+                        self.completion_reason = 'manual_stop'
+                        self.task_end_time = time.time()
+                    # Release system busy lock
+                    self.system_busy = False
+                    self.active_control_owner = None
+                    # Clear reset flag to allow control loop to resume (if needed)
+                    self.reset_in_progress = False
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Step 6: Reset complete, system ready (system_busy=False)")
                 
             else:
                 self.get_logger().warning(f"Unknown command: {command}")
@@ -307,75 +517,42 @@ class LiftRobotNode(Node):
         2. Calculate error = target - current
         3. Send up/down/stop command based on error
         4. Commands only sent when direction changes (no time throttling)
+        
+        Thread safety: Acquires control_lock for all operations
         """
         # ═══════════════════════════════════════════════════════════════
-        # PRIORITY 0: SOFTWARE LIMIT CHECK (HIGHEST PRIORITY)
+        # PRIORITY 0: Check reset flag (exit immediately if reset in progress)
         # ═══════════════════════════════════════════════════════════════
-        # Skip ALL limit logic if recovery is in progress
-        if self.limit_recovery_active:
-            return  # Recovery in progress, bypass all limit checks
+        with self.control_lock:
+            if self.reset_in_progress:
+                return  # Exit immediately, do not execute any control logic
         
-        if self.current_height > self.software_limit_height:
-            if not self.limit_exceeded:
-                # First time exceeding limit - emergency stop and auto-recovery
-                self.limit_exceeded = True
-                self.limit_recovery_active = True  # Set flag FIRST to block re-entry
-                try:
-                    self.controller.stop()
-                    self.get_logger().error(
-                        f"🚨 SOFTWARE LIMIT EXCEEDED: height={self.current_height:.2f}mm > limit={self.software_limit_height:.2f}mm - EMERGENCY STOP"
-                    )
-                except Exception as e:
-                    self.get_logger().error(f"Emergency stop failed: {e}")
-                
-                # Disable all active control modes
+        # ═══════════════════════════════════════════════════════════════
+        # PRIORITY 1: Mutual Exclusion Check
+        # Ensure only ONE control mode is active at a time
+        # ═══════════════════════════════════════════════════════════════
+        with self.control_lock:
+            active_controls = sum([
+                self.control_enabled,           # Platform height auto control
+                self.force_control_active,      # Platform force control
+                # Pushrod control is managed by separate node, no conflict
+            ])
+            
+            if active_controls > 1:
+                # CRITICAL: Multiple controls active simultaneously - emergency stop
+                self.get_logger().error(
+                    f"🚨 MUTUAL EXCLUSION VIOLATION: {active_controls} controls active! "
+                    f"height_auto={self.control_enabled}, force={self.force_control_active}"
+                )
+                # Disable all and stop
                 self.control_enabled = False
-                self.control_mode = 'manual'
                 self.force_control_active = False
                 self.movement_state = 'stop'
-                
-                # Mark task as emergency stopped
-                self.task_state = 'emergency_stop'
-                self.completion_reason = 'limit_exceeded'
-                self.task_end_time = time.time()
-                
-                # Start auto-recovery: down for 0.3s then stop
                 try:
-                    self.controller.down()
-                    self.movement_state = 'down'
-                    self.get_logger().warn("🔽 AUTO-RECOVERY: Moving down for 0.3s")
-                    
-                    # Schedule stop after 0.3s
-                    def recovery_stop():
-                        try:
-                            self.controller.stop()
-                            self.movement_state = 'stop'
-                            self.limit_exceeded = False
-                            self.limit_recovery_active = False  # Clear AFTER stop
-                            self.limit_recovery_timer = None
-                            self.get_logger().info(
-                                f"✅ AUTO-RECOVERY COMPLETE: stopped at height={self.current_height:.2f}mm"
-                            )
-                        except Exception as e:
-                            self.get_logger().error(f"Recovery stop failed: {e}")
-                            # Even on error, clear recovery flag to avoid infinite block
-                            self.limit_recovery_active = False
-                            self.limit_recovery_timer = None
-                    
-                    self.limit_recovery_timer = threading.Timer(0.3, recovery_stop)
-                    self.limit_recovery_timer.start()
+                    self.controller.stop()
                 except Exception as e:
-                    self.get_logger().error(f"Recovery down command failed: {e}")
-                    # On error, clear recovery flag
-                    self.limit_recovery_active = False
-            
-            # Block all control while limit exceeded (until recovery completes)
-            return
-        else:
-            # Reset limit flag when back within safe range (if not in recovery)
-            if self.limit_exceeded and not self.limit_recovery_active:
-                self.limit_exceeded = False
-                self.get_logger().info(f"Software limit cleared: height={self.current_height:.2f}mm")
+                    self.get_logger().error(f"Emergency stop failed: {e}")
+                return
         
         # ─────────────────────────────────────────────────────────────
         # Manual down task: check if reached bottom (height < 832mm)
@@ -409,17 +586,62 @@ class LiftRobotNode(Node):
             if self.current_force_combined is None:
                 return
 
-            # Threshold reached -> stop and clear force mode
-            if self.current_force_combined >= self.target_force:
+            # ═══════════════════════════════════════════════════════════════
+            # FORCE CONTROL SAFETY: Check for excessive overshoot
+            # ═══════════════════════════════════════════════════════════════
+            force_overshoot_threshold = 150.0  # N
+            
+            if self.force_control_direction == 'up':
+                # Force up: check if exceeded target by more than threshold
+                if self.current_force_combined > self.target_force + force_overshoot_threshold:
+                    self.get_logger().error(
+                        f"🚨 FORCE CONTROL EMERGENCY: Force overshoot detected! "
+                        f"force={self.current_force_combined:.2f}N > target+threshold={self.target_force + force_overshoot_threshold:.2f}N "
+                        f"(overshoot={self.current_force_combined - self.target_force:.2f}N)"
+                    )
+                    # Trigger emergency reset (6-step process: flag → wait → disable → reset relays → stop → clear)
+                    self._trigger_emergency_reset('force_overshoot')
+                    return
+                    
+            elif self.force_control_direction == 'down':
+                # Force down: check if exceeded target by more than threshold (negative direction)
+                if self.current_force_combined < self.target_force - force_overshoot_threshold:
+                    self.get_logger().error(
+                        f"🚨 FORCE CONTROL EMERGENCY: Force undershoot detected! "
+                        f"force={self.current_force_combined:.2f}N < target-threshold={self.target_force - force_overshoot_threshold:.2f}N "
+                        f"(undershoot={self.target_force - self.current_force_combined:.2f}N)"
+                    )
+                    # Trigger emergency reset (6-step process)
+                    self._trigger_emergency_reset('force_undershoot')
+                    return
+
+            # Check if target force reached (different logic for up/down)
+            force_reached = False
+            if self.force_control_direction == 'up':
+                # Force up: stop when force >= target
+                force_reached = (self.current_force_combined >= self.target_force)
+            elif self.force_control_direction == 'down':
+                # Force down: stop when force <= target
+                force_reached = (self.current_force_combined <= self.target_force)
+            
+            if force_reached:
                 try:
                     self.controller.stop()
                 except Exception as e:
                     self.get_logger().error(f"Force control stop error: {e}")
+                
+                # CRITICAL: Set all control flags to False before completing task
+                # This ensures _get_task_state() will return 'completed' instead of 'running'
                 self.force_control_active = False
+                self.control_enabled = False  # Ensure height control is also disabled
+                self.movement_state = 'stop'
+                
                 # Mark force task as completed
                 self._complete_task('force_reached')
                 self.get_logger().info(
-                    f"[ForceControl] STOP reached force={self.current_force_combined:.2f}N target={self.target_force:.2f}N direction={self.force_control_direction}"
+                    f"[ForceControl] ✅ Target reached: force={self.current_force_combined:.2f}N, "
+                    f"target={self.target_force:.2f}N, direction={self.force_control_direction}, "
+                    f"task_state={self.task_state}"
                 )
                 return
 
@@ -452,6 +674,36 @@ class LiftRobotNode(Node):
         except Exception as e:
             self.get_logger().error(f"[Control] Loop error (calculation): {e}")
             return
+        
+        # ═══════════════════════════════════════════════════════════════
+        # HEIGHT CONTROL SAFETY: Check for excessive overshoot
+        # ═══════════════════════════════════════════════════════════════
+        height_overshoot_threshold = 10.0  # mm
+        
+        if self.control_enabled and self.control_mode == 'auto':
+            if self.movement_state == 'up':
+                # Moving up: check if exceeded target by more than threshold
+                if self.current_height > self.target_height + height_overshoot_threshold:
+                    self.get_logger().error(
+                        f"🚨 HEIGHT CONTROL EMERGENCY: Height overshoot detected! "
+                        f"height={self.current_height:.2f}mm > target+threshold={self.target_height + height_overshoot_threshold:.2f}mm "
+                        f"(overshoot={self.current_height - self.target_height:.2f}mm)"
+                    )
+                    # Trigger emergency reset (6-step process)
+                    self._trigger_emergency_reset('height_overshoot')
+                    return
+                    
+            elif self.movement_state == 'down':
+                # Moving down: check if exceeded target by more than threshold (negative direction)
+                if self.current_height < self.target_height - height_overshoot_threshold:
+                    self.get_logger().error(
+                        f"🚨 HEIGHT CONTROL EMERGENCY: Height undershoot detected! "
+                        f"height={self.current_height:.2f}mm < target-threshold={self.target_height - height_overshoot_threshold:.2f}mm "
+                        f"(undershoot={self.target_height - self.current_height:.2f}mm)"
+                    )
+                    # Trigger emergency reset (6-step process)
+                    self._trigger_emergency_reset('height_undershoot')
+                    return
         
         # Priority 1: Check if target reached
         if abs_error <= POSITION_TOLERANCE:
@@ -522,9 +774,6 @@ class LiftRobotNode(Node):
                 'movement_state': self.movement_state,
                 'avg_overshoot_up': round(self.avg_overshoot_up, 3),
                 'avg_overshoot_down': round(self.avg_overshoot_down, 3),
-                'software_limit_height': self.software_limit_height,
-                'limit_exceeded': self.limit_exceeded,
-                'limit_recovery_active': self.limit_recovery_active,
                 'status': 'online'
             }
             if self.force_control_active:
@@ -595,11 +844,19 @@ class LiftRobotNode(Node):
         )
 
     def _measure_overshoot(self):
-        """Measure overshoot after settle delay and update EMA."""
+        """Measure overshoot after settle delay and update EMA (only if learning enabled)."""
         try:
+            # Skip overshoot measurement if learning is disabled
+            if not OVERSHOOT_LEARNING_ENABLED:
+                # Just clear temporary tracking state
+                self.height_at_stop = None
+                self.last_stop_direction = None
+                return
+            
             stable_height = self.current_height
             if self.height_at_stop is None or self.last_stop_direction is None:
                 return
+            
             if self.last_stop_direction == 'up':
                 raw_overshoot = max(0.0, stable_height - self.height_at_stop)
                 # Bootstrap 引导阶段：优先收集原始样本，达到个数后用中位数重置 EMA
@@ -703,33 +960,110 @@ class LiftRobotNode(Node):
     # ═══════════════════════════════════════════════════════════════
     # Task State Management Methods
     # ═══════════════════════════════════════════════════════════════
-    def _start_task(self, task_type):
-        """Start a new task and record timestamp"""
+    def _start_task(self, task_type, owner='platform'):
+        """
+        Start a new task and acquire system lock
+        
+        Args:
+            task_type: task type identifier
+            owner: 'platform' or 'pushrod' - who owns this task
+        """
         self.task_state = 'running'
         self.task_type = task_type
         self.task_start_time = time.time()
         self.task_end_time = None
         self.completion_reason = None
-        self.get_logger().debug(f"[Task] Started: {task_type}")
+        self.system_busy = True
+        self.active_control_owner = owner
+        self.get_logger().debug(f"[Task] Started: {task_type} (owner={owner}, system_busy=True)")
     
     def _complete_task(self, reason):
-        """Mark task as completed with reason and timestamp"""
+        """
+        Mark task as completed with reason and timestamp
+        Release system lock
+        """
         if self.task_state == 'running' or self.task_state == 'emergency_stop':
             self.task_state = 'completed'
             self.completion_reason = reason
             self.task_end_time = time.time()
             duration = self.task_end_time - self.task_start_time if self.task_start_time else 0
+            
+            # Release system lock
+            self.system_busy = False
+            self.active_control_owner = None
+            
             self.get_logger().info(
-                f"[Task Complete] type={self.task_type} reason={reason} duration={duration:.2f}s"
+                f"[Task Complete] type={self.task_type} reason={reason} duration={duration:.2f}s (system_busy=False)"
+            )
+    
+    def _on_auto_stop_complete(self):
+        """
+        Callback when timed operation auto-stops (from controller's timer)
+        Marks task as completed
+        """
+        # Mark timed task as completed (target_reached)
+        if self.task_state == 'running' and self.task_type in ['timed_up', 'timed_down']:
+            self._complete_task('target_reached')
+            self.get_logger().info(f"Timed operation completed: {self.task_type}")
+    
+    def _trigger_emergency_reset(self, emergency_reason):
+        """
+        Internal emergency reset trigger (called from control loop when safety limit exceeded)
+        
+        This executes the full 6-step reset process to ensure complete system shutdown.
+        
+        Args:
+            emergency_reason: The reason for emergency reset (e.g., 'force_overshoot', 'height_undershoot')
+        """
+        self.get_logger().error(f"🚨 EMERGENCY RESET TRIGGERED: {emergency_reason}")
+        
+        # Step 1: Set reset flag
+        with self.control_lock:
+            self.reset_in_progress = True
+            self.get_logger().warn(f"[EMERGENCY] Step 1: Reset flag set")
+        
+        # Step 2: Wait for control loop to detect and exit (max 20ms detection)
+        time.sleep(CONTROL_RATE * 2)  # 40ms = 2 cycles for safety
+        self.get_logger().warn(f"[EMERGENCY] Step 2: Waited for control loop exit")
+        
+        # Step 3: Disable all control modes
+        with self.control_lock:
+            self.control_enabled = False
+            self.force_control_active = False
+            self.control_mode = 'manual'
+            self.movement_state = 'stop'
+            self.get_logger().warn(f"[EMERGENCY] Step 3: All control modes disabled")
+        
+        # Step 4: Reset all relays to 0 FIRST (before sending stop pulse)
+        try:
+            self.controller.reset_all_relays()
+            self.get_logger().warn(f"[EMERGENCY] Step 4: Platform relays reset (0,1,2 cleared)")
+        except Exception as e:
+            self.get_logger().error(f"[EMERGENCY] ❌ Relay reset failed: {e}")
+        
+        # Step 5: Send STOP pulse
+        try:
+            self.controller.stop()
+            self.get_logger().warn(f"[EMERGENCY] Step 5: Platform STOP pulse sent")
+        except Exception as e:
+            self.get_logger().error(f"[EMERGENCY] ❌ Stop pulse failed: {e}")
+        
+        # Step 6: Mark task as emergency stop and clear reset flag
+        with self.control_lock:
+            self.task_state = 'emergency_stop'
+            self.completion_reason = emergency_reason
+            self.task_end_time = time.time()
+            self.system_busy = False
+            self.active_control_owner = None
+            self.reset_in_progress = False
+            self.get_logger().error(
+                f"[EMERGENCY] Step 6: Emergency stop complete - reason={emergency_reason} (system_busy=False)"
             )
     
     def _get_task_state(self):
         """Get current task state based on control variables (ensures consistency)"""
-        # Emergency stop has highest priority
-        if self.limit_exceeded or self.limit_recovery_active:
-            return 'emergency_stop'
         # Running if any control is active
-        elif self.control_enabled or self.force_control_active or self.movement_state != 'stop':
+        if self.control_enabled or self.force_control_active or self.movement_state != 'stop':
             return 'running'
         # Completed state persists for 5 seconds after task end
         elif self.task_end_time is not None and (time.time() - self.task_end_time) < 5.0:

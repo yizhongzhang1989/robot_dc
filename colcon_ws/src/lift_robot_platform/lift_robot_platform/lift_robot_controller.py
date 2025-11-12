@@ -29,6 +29,9 @@ class LiftRobotController(ModbusDevice):
         self.active_timers = {}  # Dictionary to store active timers
         self.timer_lock = threading.Lock()  # Lock for thread safety
         
+        # Callback for auto-stop completion (set by node)
+        self.on_auto_stop_callback = None
+        
         # Command queue for timed operations
         self.timed_cmd_queue = deque()
         self.waiting_for_timed_ack = False
@@ -157,8 +160,17 @@ class LiftRobotController(ModbusDevice):
             self.node.get_logger().info(f"[SEQ {seq_id}] Timed up {duration}s")
             # Up command
             self.up(seq_id=seq_id)
-            # Auto-stop timer
-            timer = threading.Timer(duration, self.stop)
+            # Auto-stop timer (with callback notification)
+            def auto_stop_with_callback():
+                self.stop(seq_id=seq_id)
+                # Notify node that timed operation completed
+                if self.on_auto_stop_callback:
+                    try:
+                        self.on_auto_stop_callback()
+                    except Exception as e:
+                        self.node.get_logger().error(f"Auto-stop callback error: {e}")
+            
+            timer = threading.Timer(duration, auto_stop_with_callback)
             timer.start()
             self.active_timers['timed_up'] = timer
 
@@ -175,8 +187,17 @@ class LiftRobotController(ModbusDevice):
             self.node.get_logger().info(f"[SEQ {seq_id}] Timed down {duration}s")
             # Down command
             self.down(seq_id=seq_id)
-            # Auto-stop timer
-            timer = threading.Timer(duration, self.stop)
+            # Auto-stop timer (with callback notification)
+            def auto_stop_with_callback():
+                self.stop(seq_id=seq_id)
+                # Notify node that timed operation completed
+                if self.on_auto_stop_callback:
+                    try:
+                        self.on_auto_stop_callback()
+                    except Exception as e:
+                        self.node.get_logger().error(f"Auto-stop callback error: {e}")
+            
+            timer = threading.Timer(duration, auto_stop_with_callback)
             timer.start()
             self.active_timers['timed_down'] = timer
 
