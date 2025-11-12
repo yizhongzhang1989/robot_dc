@@ -8,13 +8,15 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(action_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 # Generate messages
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/GripperCommand.msg"
   "msg/GripperStatus.msg"
-  DEPENDENCIES std_msgs
+  "action/GripperControl.action"
+  "action/GripperActivate.action"
+  DEPENDENCIES std_msgs action_msgs
 )
 
 if(BUILD_TESTING)

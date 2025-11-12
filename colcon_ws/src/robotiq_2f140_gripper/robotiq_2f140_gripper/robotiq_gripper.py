@@ -97,7 +97,7 @@ class Robotiq2f140Gripper:
             device_id=self.device_id,
             function_code=4,
             address=self.GRIPPER_STATUS_REG,
-            values=2
+            values=3  # Read 3 registers (6 bytes total)
         )
         
         if not response:
@@ -109,19 +109,49 @@ class Robotiq2f140Gripper:
             return None
         
         registers = parsed['registers']
-        if len(registers) < 2:
+        if len(registers) < 3:
             return None
         
-        status_byte = registers[0] >> 8
-        position_byte = registers[0] & 0xFF
+        # Gripper returns 6 bytes packed into 3 registers (2 bytes each):
+        # Register 0: byte0 (high) + byte1 (low)
+        #   byte0: gOBJ, gSTA, gGTO, Reserved, gACT
+        #   byte1: reserved
+        # Register 1: byte2 (high) + byte3 (low)
+        #   byte2: fault status, kLFT, gFLT
+        #   byte3: position request echo (gPR)
+        # Register 2: byte4 (high) + byte5 (low)
+        #   byte4: position (gPO)
+        #   byte5: current (gCU)
+        
+        byte0 = registers[0] >> 8    # Status flags
+        # byte1 = registers[0] & 0xFF  # Reserved
+        byte2 = registers[1] >> 8    # Fault status
+        # byte3 = registers[1] & 0xFF  # Position request echo
+        byte4 = registers[2] >> 8    # Actual position (gPO)
+        byte5 = registers[2] & 0xFF  # Current (gCU)
+        
+        # Parse byte0 bits:
+        # bit 7-6: gOBJ (object detection status)
+        #   0x00: Fingers in motion, no object detected
+        #   0x01: Object detected opening (contact while opening)
+        #   0x02: Object detected closing (contact while closing)
+        #   0x03: Fingers at requested position, no object detected
+        # bit 5-4: gSTA (gripper status: 0x00=reset, 0x01=activating, 0x03=activated)
+        # bit 3: gGTO (go to position)
+        # bit 2: reserved
+        # bit 1-0: gACT (activation echo)
+        
+        gOBJ = (byte0 >> 6) & 0x03
+        gSTA = (byte0 >> 4) & 0x03
+        gGTO = (byte0 >> 3) & 0x01
         
         status = {
-            'activated': bool(status_byte & 0x01),
-            'moving': bool(status_byte & 0x08),
-            'object_detected': bool((status_byte >> 6) & 0x03),
-            'fault': bool(status_byte & 0x0F),
-            'position': position_byte,
-            'force': 0,  # Not directly available in status
+            'activated': (gSTA == 0x03),               # gSTA = 0x03 means activation completed
+            'moving': (gOBJ == 0x00),                  # gOBJ = 0x00 means fingers in motion
+            'object_detected': (gOBJ == 0x01 or gOBJ == 0x02),  # Object detected while opening or closing
+            'fault': bool(byte2 & 0x0F),               # Fault bits
+            'position': byte4,                         # gPO - actual position
+            'force': byte5,                            # gCU - current
             'raw_registers': registers
         }
         

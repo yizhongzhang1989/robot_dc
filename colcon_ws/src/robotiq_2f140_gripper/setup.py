@@ -26,7 +26,6 @@ setup(
     entry_points={
         'console_scripts': [
             'robotiq_gripper_node = robotiq_2f140_gripper.robotiq_gripper_node:main',
-            'test_gripper = robotiq_2f140_gripper.test_gripper:main',
         ],
     },
 )
