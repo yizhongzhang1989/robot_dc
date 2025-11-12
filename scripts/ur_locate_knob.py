@@ -17,29 +17,28 @@ from ur_locate_base import URLocateBase
 
 
 class URLocateKnob(URLocateBase):
-    def __init__(self, api_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
+    def __init__(self, ffpp_web_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
         """
-        Initialize URLocateKnob class for UR robot knob location tasks
+        Initialize URLocateKnob class
         
         Args:
-            api_url (str): URL for the FlowFormer++ Web API service
+            ffpp_web_url (str): URL for the FlowFormer++ Web API service
             robot_ip (str): IP address of the UR15 robot
             robot_port (int): Port number of the UR15 robot
         """
-        # Initialize the base class
-        super().__init__(api_url=api_url, robot_ip=robot_ip, robot_port=robot_port)
+        # Call parent class constructor
+        super().__init__(ffpp_web_url=ffpp_web_url, robot_ip=robot_ip, robot_port=robot_port)
         
         # Override ROS node name
         self.get_logger().info('URLocateKnob initialized')
         
         # Override movement offsets (in base coordinate system, unit: meters)
-        # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [0.01, 0, 0, 0, 0, 0],
-            "movement2": [0.03, 0.01, 0, 0, 0, 0],
-            "movement3": [0.03, -0.01, 0, 0, 0, 0],
-            "movement4": [0.03, 0, -0.01, 0, 0, 0],
-            "movement5": [0.03, 0, -0.01, 0, 0, 0]
+            "movement1": [0.01, 0, 0.02, 0, 0, 0],
+            "movement2": [0, 0.01, 0, 0, 0, 0],
+            "movement3": [0, -0.01, 0, 0, 0, 0],
+            "movement4": [0, 0, 0.01, 0, 0, 0],
+            "movement5": [0, 0, -0.01, 0, 0, 0]
         }
         
         # Override data directory path (for storing collected data)
@@ -48,7 +47,7 @@ class URLocateKnob(URLocateBase):
         # Override result directory path
         self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_knob_result')
         
-        # Update reference data paths to use new data directory
+        # Override reference data paths to use new data directory
         self.ref_img_path = os.path.join(self.data_dir, 'ref_img.jpg')
         self.ref_keypoints_path = os.path.join(self.data_dir, 'ref_keypoints.json')
         self.ref_pose_path = os.path.join(self.data_dir, 'ref_pose.json')
@@ -60,17 +59,17 @@ class URLocateKnob(URLocateBase):
         # Try to load collect_start_position from ref_pose.json if it exists
         self._set_new_collect_start_position()
         
-        print(f"URLocateKnob initialized with custom settings:")
-        print(f"  Data directory: {self.data_dir}")
-        print(f"  Result directory: {self.result_dir}")
-        print(f"  Collect position: {[f'{j:.4f}' for j in self.collect_start_position]}")
-        print(f"  Number of movements: {len(self.movements)}")
+        # Load crack local coordinate system from log file
+        crack_coord_file = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result', 'log_local_coordinate_system_result.json')
+        self.load_crack_local_coordinate_system(crack_coord_file)
+        
 
     def _set_new_collect_start_position(self):
         """
         Load collect_start_position from ref_pose.json.
-        This function requires the reference pose file to exist and be valid.
-        If the file doesn't exist or is invalid, it will raise an exception to terminate the script.
+        Note:
+            This function requires the reference pose file to exist and be valid.
+            If the file doesn't exist or is invalid, it will raise an exception to terminate the script.
         """
         if not os.path.exists(self.ref_pose_path):
             raise FileNotFoundError(f'✗ Reference pose file not found: {self.ref_pose_path}\n'
@@ -93,51 +92,6 @@ class URLocateKnob(URLocateBase):
                            f'  The reference pose file is corrupted.')
         except Exception as e:
             raise RuntimeError(f'✗ Error loading collect_start_position from {self.ref_pose_path}: {e}')
-
-    def movej_to_safe_position_before_execution(self):
-        """
-        Move robot to get tool start position after process
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-
-        pose = [-1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 
-                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-
-        pose = [-4.628224555646078, -1.5912000141539515, -0.061849094927310944, 
-                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-
-        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202, 
-                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-
-        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202, 
-                 -1.9046393833556117, 1.4398412704467773, -1.2330482641803187]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-
-        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202,
-                -1.9046393833556117, 0.1272939145565033, 3.737786054611206]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-        
-        if res == 0:
-            print("Robot moved to zero state successfully")
-        else:
-            print(f"Failed to move robot to zero state (error code: {res})")
-        
-        return res
 
 def main():
     """
@@ -173,9 +127,6 @@ def main():
         if not ur_knob.load_camera_parameters():
             print("Failed to load camera parameters!")
             return
-
-        # ur_knob.movej_to_safe_position_before_execution()
-        # time.sleep(0.5)
 
         try:
             # Perform auto data collection (includes moving to collect position)

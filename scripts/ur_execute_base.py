@@ -9,18 +9,18 @@ import socket
 
 class URExecuteBase:
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002, rs485_port=54321):
-        # Robot connection parameters
+
+        # =========================== Configurable Parameters ===========================
+        # IP address and port for UR15 robot
         self.robot_ip = robot_ip
         self.robot_port = robot_port
-        self.robot = None
         
-        # Lift platform web service base URL
-        self.lift_web_base = "http://192.168.1.3:8090"
+        # URL for Lift platform web service
+        self.lift_platform_web_url = "http://192.168.1.3:8090"
         
-        # RS485 connection parameters
+        # Port for RS485 connection of UR15
         self.rs485_port = rs485_port
-        self.rs485_socket = None
-        
+
         # Define the path to camera parameters
         self.camera_params_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -33,16 +33,25 @@ class URExecuteBase:
         self.data_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
-            "ur_test_data"
+            "ur_locate_crack_data"
         )
         
         # Result directory path (for storing results)
         self.result_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
-            "ur_test_result"
+            "ur_locate_crack_result"
         )
         
+        # File names for coordinate system data
+        self.COORD_SYSTEM_RESULT_FILENAME = "log_local_coordinate_system_result.json"
+
+        # ========================= Instance variables =========================
+        self.robot = None
+
+        self.rs485_socket = None
+        
+        # ========================= Other variables =========================
         # Initialize parameter storage
         self.camera_matrix = None
         self.distortion_coefficients = None
@@ -51,6 +60,11 @@ class URExecuteBase:
         # Local coordinate system storage
         self.local_transformation_matrix = None
         self.local_origin = None
+        
+        # Crack coordinate system storage
+        self.crack_coord_origin = None
+        self.crack_coord_transformation = None
+        self.crack_coord_pose = None
         
         # Reference pose storage
         self.ref_joint_angles = None
@@ -61,6 +75,7 @@ class URExecuteBase:
         # Task position information storage
         self.task_position_offset = None
 
+        # ========================= Initialization =========================
         # Initialize the robot connection
         self._initialize_robot()
         
@@ -72,13 +87,13 @@ class URExecuteBase:
         self._load_camera_extrinsic()
         self._load_estimated_kp_coordinates()
         self._load_local_coordinate_system()
+        self._load_crack_local_coordinate_system()
         self._load_ref_joint_angles()
         self._load_task_position_information()
     
     def _load_camera_intrinsic(self):
         """
         Load camera intrinsic parameters from ur15_cam_calibration_result.json
-        Returns: True if successful, False otherwise
         """
         intrinsic_file = os.path.join(
             self.camera_params_dir, 
@@ -113,7 +128,6 @@ class URExecuteBase:
     def _load_camera_extrinsic(self):
         """
         Load camera extrinsic parameters from ur15_cam_eye_in_hand_result.json
-        Returns: True if successful, False otherwise
         """
         extrinsic_file = os.path.join(
             self.camera_params_dir, 
@@ -176,8 +190,6 @@ class URExecuteBase:
     def _load_estimated_kp_coordinates(self):
         """
         Load estimated keypoints coordinates from log_estimation_result.json
-        Returns: List of keypoint dictionaries if successful, None otherwise
-                 Each keypoint dict contains: keypoint_index, x, y, z, num_views, residual_norm
         """
         estimation_file = os.path.join(
             self.result_dir,
@@ -332,7 +344,160 @@ class URExecuteBase:
         except Exception as e:
             print(f"Error loading task position information: {e}")
             return None
+
+    def _load_crack_local_coordinate_system(self, coord_system_file_path=None):
+        """
+        Load the local coordinate system established for crack detection/tracking
+        """
+        try:
+            print("\n" + "="*50)
+            print("Loading Crack Local Coordinate System")
+            print("="*50)
+            
+            # Determine file path
+            if coord_system_file_path is None:
+                coord_system_file_path = os.path.join(self.result_dir, self.COORD_SYSTEM_RESULT_FILENAME)
+            
+            # Check if file exists
+            if not os.path.exists(coord_system_file_path):
+                error_msg = f"Coordinate system file not found: {coord_system_file_path}"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            print(f"📖 Loading from: {coord_system_file_path}")
+            
+            # Load coordinate system data
+            with open(coord_system_file_path, 'r') as f:
+                coord_data = json.load(f)
+            
+            # Validate required fields
+            required_fields = ['origin', 'transformation_matrix', 'pose_representation', 'axes']
+            missing_fields = [field for field in required_fields if field not in coord_data]
+            
+            if missing_fields:
+                error_msg = f"Missing required fields in coordinate system file: {missing_fields}"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            # Extract origin coordinates
+            origin = coord_data['origin']
+            origin_point = np.array([origin['x'], origin['y'], origin['z']])
+            
+            # Extract transformation matrix
+            transformation_matrix = np.array(coord_data['transformation_matrix'])
+            
+            # Validate transformation matrix shape
+            if transformation_matrix.shape != (4, 4):
+                error_msg = f"Invalid transformation matrix shape: {transformation_matrix.shape} (expected 4x4)"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            # Extract pose representation
+            pose_repr = coord_data['pose_representation']
+            
+            # Extract axes information
+            axes_info = coord_data['axes']
+            
+            # ========== Store to instance variables for easy access ==========
+            self.crack_coord_origin = origin_point.copy()
+            self.crack_coord_transformation = transformation_matrix.copy()
+            self.crack_coord_pose = pose_repr.copy()
+            
+            # Print loaded information
+            print("✓ Successfully loaded coordinate system:")
+            print(f"  Origin: ({origin_point[0]:.6f}, {origin_point[1]:.6f}, {origin_point[2]:.6f}) m")
+
+            # Print axes information
+            x_axis = axes_info['x_axis']['vector']
+            y_axis = axes_info['y_axis']['vector']
+            z_axis = axes_info['z_axis']['vector']
+            
+            print(f"  X-axis: [{x_axis[0]:.4f}, {x_axis[1]:.4f}, {x_axis[2]:.4f}] ({axes_info['x_axis']['source']})")
+            print(f"  Y-axis: [{y_axis[0]:.4f}, {y_axis[1]:.4f}, {y_axis[2]:.4f}] ({axes_info['y_axis']['source']})")
+            print(f"  Z-axis: [{z_axis[0]:.4f}, {z_axis[1]:.4f}, {z_axis[2]:.4f}] ({axes_info['z_axis']['source']})")
+                        
+            print("="*50)
+            
+            # Return successful result
+            return {
+                'success': True,
+                'origin': origin,
+                'origin_array': origin_point,
+                'transformation_matrix': transformation_matrix,
+                'pose_representation': pose_repr,
+                'axes': axes_info,
+                'full_data': coord_data,
+                'file_path': coord_system_file_path,
+                'error': None
+            }
+            
+        except FileNotFoundError:
+            error_msg = f"Coordinate system file not found: {coord_system_file_path}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except json.JSONDecodeError as e:
+            error_msg = f"Invalid JSON format in coordinate system file: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except KeyError as e:
+            error_msg = f"Missing key in coordinate system file: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except Exception as e:
+            error_msg = f"Error loading coordinate system: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
     
+# ============================= Robot Movement and Control Methods =============================
     def movej_to_zero_state(self):
         """
         Move robot to zero state position
@@ -345,7 +510,8 @@ class URExecuteBase:
         zero_position = [0, -1.57, 0, -1.57, 0, 0]
         print("Moving robot to zero state position...")
         
-        res = self.robot.movej(zero_position, a=0.5, v=0.3)
+        res = self.robot.movej(zero_position, a=0.5, v=0.5)
+        time.sleep(0.5)
         
         if res == 0:
             print("Robot moved to zero state successfully")
@@ -415,7 +581,66 @@ class URExecuteBase:
               f"{position_base[1]:.6f}, {position_base[2]:.6f})")
         
         return position_base
-    
+
+    def movel_in_crack_frame(self, offset):
+        """
+        Move robot based on "offset" (dx, dy, dz) in crack local coordinate system.   
+        Args:
+            offset: List/tuple [dx, dy, dz] in crack local coordinate system (meters)
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if not hasattr(self, 'crack_coord_transformation') or self.crack_coord_transformation is None:
+            print("Crack local coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Parse offset parameter - must be a 3D array
+        if isinstance(offset, (list, tuple)) and len(offset) == 3:
+            crack_local_displacement = np.array(offset)
+        else:
+            print("Invalid offset parameter. Must be [dx, dy, dz] in crack local coordinate system")
+            return -1
+        
+        # Extract rotation matrix from crack local coordinate system transformation matrix (3x3)
+        crack_local_rotation = self.crack_coord_transformation[:3, :3]
+        
+        # Transform displacement from crack local coordinate system to base coordinate system
+        # displacement_base = R_crack_local_to_base * displacement_crack_local
+        base_displacement = crack_local_rotation @ crack_local_displacement
+        
+        # Calculate target pose in base coordinate system
+        target_pose = [
+            current_pose[0] + base_displacement[0],  # x
+            current_pose[1] + base_displacement[1],  # y
+            current_pose[2] + base_displacement[2],  # z
+            current_pose[3],                         # rx (keep current orientation)
+            current_pose[4],                         # ry
+            current_pose[5]                          # rz
+        ]
+        
+        print(f"\n[INFO] Moving robot: {crack_local_displacement} in crack local frame...")
+        print(f"Crack local displacement (crack local frame): {crack_local_displacement}")
+        print(f"Base displacement (base frame): {base_displacement}")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.05)
+        time.sleep(0.5)
+
+        if res == 0:
+            print("[INFO] Successfully moved robot")
+        else:
+            print(f"[ERROR] Failed to move robot (error code: {res})")
+        
+        return res
+
+# ============================ Quick Changer Control Methods =============================
     def ur_lock_quick_changer(self):
         """
         Lock the quick changer  via RS485 command
@@ -469,7 +694,8 @@ class URExecuteBase:
         except Exception as e:
             print(f"✗ Failed to unlock quick changer: {e}")
             return False
-    
+
+# =========================== Lift Platform Control Methods =============================
     def lift_platform_to_base(self):
         """
         Move the lift platform downward (pulse relay).
@@ -479,7 +705,7 @@ class URExecuteBase:
         print("\n⬇️  Lift Platform Down")
         print("   Sending DOWN command to lift platform...")
         
-        url = f"{self.lift_web_base}/api/cmd"
+        url = f"{self.lift_platform_web_url}/api/cmd"
         payload = {"command": "down", "target": "platform"}
         headers = {"Content-Type": "application/json"}
         
@@ -510,7 +736,7 @@ class URExecuteBase:
         print("\n🏠 Pushrod Go to Base")
         print("   Moving pushrod to base position...")
         
-        url = f"{self.lift_web_base}/api/cmd"
+        url = f"{self.lift_platform_web_url}/api/cmd"
         payload = {"command": "goto_point", "target": "pushrod", "point": "base"}
         headers = {"Content-Type": "application/json"}
         
@@ -541,7 +767,7 @@ class URExecuteBase:
         """
         print(f"\n🎯 Platform Coarse Adjustment: {target_height}mm")
         
-        url = f"{self.lift_web_base}/api/cmd"
+        url = f"{self.lift_platform_web_url}/api/cmd"
         payload = {
             "command": "goto_height",
             "target": "platform",
@@ -577,7 +803,7 @@ class URExecuteBase:
         """
         print(f"\n🔧 Pushrod Fine Adjustment: {target_height}mm")
         
-        url = f"{self.lift_web_base}/api/cmd"
+        url = f"{self.lift_platform_web_url}/api/cmd"
         payload = {
             "command": "goto_height",
             "target": "pushrod",

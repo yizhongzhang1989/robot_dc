@@ -22,17 +22,17 @@ class URLocateHandle1(URLocateBase):
     Inherits from URLocateBase and overrides specific configurations
     """
     
-    def __init__(self, api_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
+    def __init__(self, ffpp_web_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
         """
         Initialize URLocateHandle1 class
         
         Args:
-            api_url (str): URL for the FlowFormer++ Web API service
+            ffpp_web_url (str): URL for the FlowFormer++ Web API service
             robot_ip (str): IP address of the UR15 robot
             robot_port (int): Port number of the UR15 robot
         """
         # Call parent class constructor
-        super().__init__(api_url=api_url, robot_ip=robot_ip, robot_port=robot_port)
+        super().__init__(ffpp_web_url=ffpp_web_url, robot_ip=robot_ip, robot_port=robot_port)
             
         # Override movements with custom offsets
         # Format: movement name -> [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]

@@ -27,47 +27,21 @@ from core.ffpp_webapi_keypoint_tracker import FFPPWebAPIKeypointTracker
 
 
 class URLocateBase(Node):
-    def __init__(self, api_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
+    def __init__(self, ffpp_web_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
         """
-        Initialize URLocateBase class for UR robot location test tasks
+        Initialize URLocateBase class for UR15 robot location tasks
         
         Args:
-            api_url (str): URL for the FlowFormer++ Web API service
+            ffpp_web_url (str): URL for the FlowFormer++ Web API service
             robot_ip (str): IP address of the UR15 robot
             robot_port (int): Port number of the UR15 robot
         """
         # Initialize ROS node
         super().__init__('ur_locate_test')
         
+        # =========================== Configurable Parameters ===========================
         # Get the script directory for relative paths
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # API URL for FlowFormer++ service
-        self.api_url = api_url
-
-        # Lift platform web service base URL
-        self.lift_web_base = "http://192.168.1.3:8090"
-        
-        # Robot connection parameters
-        self.robot_ip = robot_ip
-        self.robot_port = robot_port
-        self.robot = None
-        
-        # Camera-related attributes
-        self.cv_bridge = CvBridge()
-        self.latest_image = None
-        
-        # Create callback group for thread safety
-        self.callback_group = ReentrantCallbackGroup()
-        
-        # Subscribe to camera topic
-        self.image_subscription = self.create_subscription(
-            Image,
-            '/ur15_camera/image_raw',
-            self.image_callback,
-            10,
-            callback_group=self.callback_group
-        )
         
         # Camera parameters paths
         self.intrinsic_params_path = os.path.join(
@@ -78,32 +52,12 @@ class URLocateBase(Node):
             self.script_dir, '..', 'temp', 'ur15_cam_calibration_result',
             'ur15_camera_parameters', 'ur15_cam_eye_in_hand_result.json'
         )
-        
-        # Camera parameters storage
-        self.camera_matrix = None
-        self.distortion_coefficients = None
-        self.cam2end_matrix = None
-        self.target2base_matrix = None
-        
-        # Keypoint tracker
-        self.tracker = None
-        
-        # Predefined collect position joint angles (radians)
-        self.collect_start_position = [-4.666847888623373, -0.8728431028178711, 1.7595298925982874, -3.2923394642271937, -1.8568695227252405, 0.11747467517852783]
-        
-        # Data collection movement offsets (in base coordinate system, unit: meters)
-        # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
-        self.movements = {
-            "movement1": [0.03, 0, 0, 0, 0, 0],      # X_positive
-            "movement2": [-0.03, 0, 0, 0, 0, 0],     # X_negative
-            "movement3": [0, 0.03, 0, 0, 0, 0],      # Y_positive
-            "movement4": [0, -0.03, 0, 0, 0, 0],     # Y_negative
-            "movement5": [0, 0, -0.03, 0, 0, 0]      # Z_negative
-        }
-        
+
         # Data directory path (for storing collected data)
-        self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_test_data')
-        
+        self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_data')
+        # Result directory path
+        self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result')
+                
         # Reference data paths
         self.ref_img_path = os.path.join(self.data_dir, 'ref_img.jpg')
         self.ref_keypoints_path = os.path.join(self.data_dir, 'ref_keypoints.json')
@@ -113,21 +67,80 @@ class URLocateBase(Node):
         self.TRACKING_RESULT_FILENAME = "log_tracking_result.json"
         self.ESTIMATION_RESULT_FILENAME = "log_estimation_result.json"
         self.COORD_SYSTEM_RESULT_FILENAME = "log_local_coordinate_system_result.json"
+
+        # API URL for Lift platform web service
+        self.lift_platform_web_url = "http://192.168.1.3:8090"
+
+        # API URL for FlowFormer++ service
+        self.ffpp_web_url = ffpp_web_url
+
+        # IP address and port for UR15 robot
+        self.robot_ip = robot_ip
+        self.robot_port = robot_port
+
+        # ============================= Instance variables ==============================
+        # robot arm instance
+        self.robot = None
         
-        # Result directory path
-        self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_test_result')
+        # Keypoint tracker
+        self.tracker = None
         
-        # Local coordinate system configuration
-        # Defines which keypoints to use for building the local X-axis
-        # Format: [start_keypoint_index, end_keypoint_index]
+        # =============================== Other variables ==============================      
+        # Camera parameters storage
+        self.camera_matrix = None
+        self.distortion_coefficients = None
+        self.cam2end_matrix = None
+        self.target2base_matrix = None
+        
+        # Local coordinate system parameters (loaded from crack detection results)
+        self.crack_coord_origin = None          # Origin point as numpy array [x, y, z]
+        self.crack_coord_transformation = None  # 4x4 transformation matrix
+        self.crack_coord_pose = None           # Pose representation dict {x, y, z, rx, ry, rz}
+        
+        # Predefined collect position joint angles (radians)
+        self.collect_start_position = [
+            1.5089472532272339,
+            -1.0776807826808472,
+            2.2206338087665003,
+            -2.6346756420531214,
+            -0.8432377020465296,
+            -1.649449650441305]
+        
+        # Data collection movement offsets (in base coordinate system, unit: meters)
+        self.movements = {
+            "movement1": [0, 0.01, 0, 0, 0, 0],      
+            "movement2": [0, -0.01, 0, 0, 0, 0],     
+            "movement3": [0, 0, 0.01, 0, 0, 0],      
+            "movement4": [0, 0, -0.01, 0, 0, 0],     
+            "movement5": [-0.01, 0.02, 0, 0, 0, 0]   
+        }
+        
+        # Defines which keypoints to use for building the X-axis of local coordinate system
         # X-axis direction: from keypoint[start_index] to keypoint[end_index]
         self.local_x_kp_index = [0, 1]
         
+        # ============================ Initialization =================================
         # Initialize the keypoint tracker
         self._initialize_tracker()
         
         # Initialize the robot connection
         self._initialize_robot()
+
+        # Camera-related attributes
+        self.cv_bridge = CvBridge()
+        self.latest_image = None      
+
+        # Create callback group for thread safety
+        self.callback_group = ReentrantCallbackGroup()
+
+        # Subscribe to camera topic
+        self.image_subscription = self.create_subscription(
+            Image,
+            '/ur15_camera/image_raw',
+            self.image_callback,
+            10,
+            callback_group=self.callback_group
+        )
     
     def image_callback(self, msg):
         """
@@ -141,9 +154,9 @@ class URLocateBase(Node):
     def _initialize_tracker(self):
         """Initialize the FlowFormer++ Web API tracker"""
         try:
-            print(f'Initializing FlowFormer++ API tracker at {self.api_url}...')
+            print(f'Initializing FlowFormer++ API tracker at {self.ffpp_web_url}...')
             self.tracker = FFPPWebAPIKeypointTracker(
-                service_url=self.api_url,
+                service_url=self.ffpp_web_url,
                 timeout=60,
                 image_format="jpg",
                 jpeg_quality=95
@@ -175,12 +188,7 @@ class URLocateBase(Node):
         Load reference data (image, keypoints, and pose) for tracking
         
         Returns:
-            dict: Dictionary containing loaded reference data with keys:
-                  - 'success': bool indicating if loading was successful
-                  - 'ref_img': numpy array of reference image (BGR format)
-                  - 'ref_keypoints': list of keypoint dictionaries with 'x' and 'y' keys
-                  - 'ref_pose': dictionary containing pose data
-                  - 'error': error message if loading failed
+            dict: Dictionary containing loaded reference data
         """
         result = {
             'success': False,
@@ -252,9 +260,6 @@ class URLocateBase(Node):
     def load_camera_parameters(self):
         """
         Load UR camera intrinsic and extrinsic parameters from calibration result files
-        
-        Returns:
-            bool: True if parameters loaded successfully, False otherwise
         """
         try:
             # Load intrinsic parameters
@@ -306,9 +311,6 @@ class URLocateBase(Node):
     def movej_to_collect_position(self, robot=None):
         """
         Move robot to predefined collect position using joint movement
-        
-        Args:
-            robot: Optional UR15Robot instance (if None, uses self.robot)
         """
         if robot is None:
             robot = self.robot
@@ -369,12 +371,6 @@ class URLocateBase(Node):
     def _matrix_to_rotvec(self, R):
         """
         Convert rotation matrix to rotation vector (axis-angle representation)
-        
-        Args:
-            R: 3x3 rotation matrix
-            
-        Returns:
-            (rx, ry, rz): rotation vector components
         """
         # Calculate rotation angle
         trace = np.trace(R)
@@ -410,17 +406,13 @@ class URLocateBase(Node):
     
     def capture_image_and_pose(self, save_dir, img_filename, pose_filename, metadata=None, robot=None):
         """
-        Capture current camera image and robot pose
-        
+        Capture current camera image and robot pose, save to specified directory
         Args:
             save_dir: Directory to save the files
             img_filename: Filename for the image
             pose_filename: Filename for the pose JSON
             metadata: Optional dict with extra metadata to include in pose JSON
             robot: Optional UR15Robot instance (if None, uses self.robot)
-            
-        Returns:
-            bool: True if successful, False otherwise
         """
         if robot is None:
             robot = self.robot
@@ -507,15 +499,7 @@ class URLocateBase(Node):
     
     def auto_collect_data(self, save_dir=None, robot=None):
         """
-        Automatically collect data by moving robot in 5 positions relative to current TCP pose
-        First moves to predefined collect position, then moves along base frame: +X, -X, +Y, -Y, -Z (3cm each) using movel()
-        
-        Args:
-            save_dir: Directory to save collected data (default: temp/ur_test_data)
-            robot: Optional UR15Robot instance (if None, uses self.robot)
-            
-        Returns:
-            bool: True if all data collection successful, False otherwise
+        Automatically collect data by moving robot in 5 positions by predefined offsets in base coordinate system.
         """
         if robot is None:
             robot = self.robot
@@ -704,7 +688,7 @@ class URLocateBase(Node):
                     'tracking_mode': 'immediate'
                 }
                 
-                # Save results to temp/ur_test_result directory
+                # Save results to result directory
                 result_dir = self.result_dir
                 os.makedirs(result_dir, exist_ok=True)
                 
@@ -786,12 +770,6 @@ class URLocateBase(Node):
     def estimate_3d_position(self, tracking_result_path=None):
         """
         Estimate 3D coordinates of keypoints using triangulation from multiple viewpoints
-        
-        Args:
-            tracking_result_path: Path to tracking result JSON file
-            
-        Returns:
-            bool: True if estimation successful, False otherwise
         """
         print("\n" + "="*60)
         print("Starting 3D Keypoint Estimation")
@@ -1006,13 +984,6 @@ class URLocateBase(Node):
         - X-axis: keypoint[local_x_kp_index[0]] → keypoint[local_x_kp_index[1]] direction
         - Z-axis: positive direction aligns with base Z-axis (upward)
         - Y-axis: follows right-hand rule (Z × X)
-        
-        Args:
-            estimation_result_path: Path to 3D estimation result JSON file
-            
-        Returns:
-            dict: Coordinate system information including transformation matrix,
-                  or None if failed
         """
         print("\n" + "="*60)
         print("Building Keypoint Coordinate System")
@@ -1218,9 +1189,6 @@ class URLocateBase(Node):
             coord_system: Dictionary containing coordinate system information
                          (output from build_local_coordinate_system)
             tracking_result_path: Optional path to tracking result JSON (to get pose data)
-        
-        Returns:
-            bool: True if visualization created successfully, False otherwise
         """
         print("\n" + "="*60)
         print("Validating Local Coordinate System on Images")
@@ -1474,13 +1442,6 @@ class URLocateBase(Node):
         Creates a visualization showing:
         - Red circles: Original tracked keypoints
         - Green circles: Reprojected 3D estimated keypoints
-        
-        Args:
-            tracking_result_path: Path to tracking result JSON file
-            estimation_result_path: Path to 3D estimation result JSON file
-            
-        Returns:
-            bool: True if validation visualization created successfully, False otherwise
         """
         print("\n" + "="*60)
         print("Validating 3D Keypoint Estimation Results")
@@ -1762,7 +1723,7 @@ class URLocateBase(Node):
             traceback.print_exc()
             return False
     
-
+# ================= Lift Platform and Pushrod Control ==================
     def lift_platform_to_base(self):
         """
         Move the lift platform downward (pulse relay).
@@ -1772,7 +1733,7 @@ class URLocateBase(Node):
         print("\n⬇️  Lift Platform Down")
         print("   Sending DOWN command to lift platform...")
         
-        url = f"{self.lift_web_base}/api/cmd"
+        url = f"{self.lift_platform_web_url}/api/cmd"
         payload = {"command": "down", "target": "platform"}
         headers = {"Content-Type": "application/json"}
         
@@ -1803,7 +1764,7 @@ class URLocateBase(Node):
         print("\n🏠 Pushrod Go to Base")
         print("   Moving pushrod to base position...")
         
-        url = f"{self.lift_web_base}/api/cmd"
+        url = f"{self.lift_platform_web_url}/api/cmd"
         payload = {"command": "goto_point", "target": "pushrod", "point": "base"}
         headers = {"Content-Type": "application/json"}
         
@@ -1834,7 +1795,7 @@ class URLocateBase(Node):
         """
         print(f"\n🎯 Platform Coarse Adjustment: {target_height}mm")
         
-        url = f"{self.lift_web_base}/api/cmd"
+        url = f"{self.lift_platform_web_url}/api/cmd"
         payload = {
             "command": "goto_height",
             "target": "platform",
@@ -1870,7 +1831,7 @@ class URLocateBase(Node):
         """
         print(f"\n🔧 Pushrod Fine Adjustment: {target_height}mm")
         
-        url = f"{self.lift_web_base}/api/cmd"
+        url = f"{self.lift_platform_web_url}/api/cmd"
         payload = {
             "command": "goto_height",
             "target": "pushrod",
@@ -1896,6 +1857,158 @@ class URLocateBase(Node):
             print(f"❌ Pushrod fine adjustment command error: {e}")
             return {"success": False, "error": str(e)}
 
+    def load_crack_local_coordinate_system(self, coord_system_file_path=None):
+        """
+        Load the local coordinate system established for crack detection/tracking
+        """
+        try:
+            print("\n" + "="*50)
+            print("Loading Crack Local Coordinate System")
+            print("="*50)
+            
+            # Determine file path
+            if coord_system_file_path is None:
+                coord_system_file_path = os.path.join(self.result_dir, self.COORD_SYSTEM_RESULT_FILENAME)
+            
+            # Check if file exists
+            if not os.path.exists(coord_system_file_path):
+                error_msg = f"Coordinate system file not found: {coord_system_file_path}"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            print(f"📖 Loading from: {coord_system_file_path}")
+            
+            # Load coordinate system data
+            with open(coord_system_file_path, 'r') as f:
+                coord_data = json.load(f)
+            
+            # Validate required fields
+            required_fields = ['origin', 'transformation_matrix', 'pose_representation', 'axes']
+            missing_fields = [field for field in required_fields if field not in coord_data]
+            
+            if missing_fields:
+                error_msg = f"Missing required fields in coordinate system file: {missing_fields}"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            # Extract origin coordinates
+            origin = coord_data['origin']
+            origin_point = np.array([origin['x'], origin['y'], origin['z']])
+            
+            # Extract transformation matrix
+            transformation_matrix = np.array(coord_data['transformation_matrix'])
+            
+            # Validate transformation matrix shape
+            if transformation_matrix.shape != (4, 4):
+                error_msg = f"Invalid transformation matrix shape: {transformation_matrix.shape} (expected 4x4)"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            # Extract pose representation
+            pose_repr = coord_data['pose_representation']
+            
+            # Extract axes information
+            axes_info = coord_data['axes']
+            
+            # ========== Store to instance variables for easy access ==========
+            self.crack_coord_origin = origin_point.copy()
+            self.crack_coord_transformation = transformation_matrix.copy()
+            self.crack_coord_pose = pose_repr.copy()
+            
+            # Print loaded information
+            print("✓ Successfully loaded coordinate system:")
+            print(f"  Origin: ({origin_point[0]:.6f}, {origin_point[1]:.6f}, {origin_point[2]:.6f}) m")
+
+            # Print axes information
+            x_axis = axes_info['x_axis']['vector']
+            y_axis = axes_info['y_axis']['vector']
+            z_axis = axes_info['z_axis']['vector']
+            
+            print(f"  X-axis: [{x_axis[0]:.4f}, {x_axis[1]:.4f}, {x_axis[2]:.4f}] ({axes_info['x_axis']['source']})")
+            print(f"  Y-axis: [{y_axis[0]:.4f}, {y_axis[1]:.4f}, {y_axis[2]:.4f}] ({axes_info['y_axis']['source']})")
+            print(f"  Z-axis: [{z_axis[0]:.4f}, {z_axis[1]:.4f}, {z_axis[2]:.4f}] ({axes_info['z_axis']['source']})")
+                        
+            print("="*50)
+            
+            # Return successful result
+            return {
+                'success': True,
+                'origin': origin,
+                'origin_array': origin_point,
+                'transformation_matrix': transformation_matrix,
+                'pose_representation': pose_repr,
+                'axes': axes_info,
+                'full_data': coord_data,
+                'file_path': coord_system_file_path,
+                'error': None
+            }
+            
+        except FileNotFoundError:
+            error_msg = f"Coordinate system file not found: {coord_system_file_path}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except json.JSONDecodeError as e:
+            error_msg = f"Invalid JSON format in coordinate system file: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except KeyError as e:
+            error_msg = f"Missing key in coordinate system file: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except Exception as e:
+            error_msg = f"Error loading coordinate system: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+
 def main():
     """
     Main function for testing URLocateBase class
@@ -1905,16 +2018,16 @@ def main():
     
     try:
         # Initialize URLocateBase instance (robot connection is handled internally)
-        ur_test = URLocateBase()
+        ur_base = URLocateBase()
         
         # Check if robot was initialized successfully
-        if ur_test.robot is None or not ur_test.robot.connected:
+        if ur_base.robot is None or not ur_base.robot.connected:
             print("✗ Robot initialization failed. Please check robot connection and try again.")
             return
         
         # Use multi-threaded executor to handle callbacks
         executor = MultiThreadedExecutor()
-        executor.add_node(ur_test)
+        executor.add_node(ur_base)
         
         # Start executor in a separate thread
         executor_thread = threading.Thread(target=executor.spin, daemon=True)
@@ -1927,30 +2040,30 @@ def main():
         
         # Load camera parameters
         print("Loading camera parameters...")
-        if not ur_test.load_camera_parameters():
+        if not ur_base.load_camera_parameters():
             print("Failed to load camera parameters!")
             return
         
         try:
             # Perform auto data collection (includes moving to collect position)
-            if ur_test.auto_collect_data():
+            if ur_base.auto_collect_data():
                 print("\n✅ Data collection completed successfully!")
                 
                 # Perform 3D keypoint estimation after data collection
-                if ur_test.estimate_3d_position():
+                if ur_base.estimate_3d_position():
                     print("✅ 3D estimation completed successfully!")
                     
                     # Validate 3D estimation with reprojection
                     print("\n" + "="*60)
                     print("Validating 3D Estimation with Reprojection...")
                     print("="*60)
-                    if ur_test.validate_keypoints_3d_estimate_result():
+                    if ur_base.validate_keypoints_3d_estimate_result():
                         print("✅ 3D estimation validation completed!")
                     else:
                         print("⚠ 3D estimation validation failed!")
                     
                     # Build keypoint coordinate system
-                    coord_system = ur_test.build_local_coordinate_system()
+                    coord_system = ur_base.build_local_coordinate_system()
                     if coord_system:
                         print("✅ Coordinate system built successfully!")
                         
@@ -1958,7 +2071,7 @@ def main():
                         print("\n" + "="*60)
                         print("Validating Coordinate System...")
                         print("="*60)
-                        if ur_test.validate_local_coordinate_system(coord_system):
+                        if ur_base.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
                         else:
                             print("⚠ Coordinate system validation failed!")
@@ -1974,9 +2087,9 @@ def main():
         
         finally:
             # Always disconnect robot in finally block
-            if ur_test.robot is not None:
+            if ur_base.robot is not None:
                 try:
-                    ur_test.robot.close()
+                    ur_base.robot.close()
                     print("Robot disconnected successfully")
                 except Exception as e:
                     print(f"Error disconnecting robot: {e}")
@@ -1984,7 +2097,7 @@ def main():
             # Shutdown executor
             executor.shutdown()
             # Destroy ROS node
-            ur_test.destroy_node()
+            ur_base.destroy_node()
     
     finally:
         # Shutdown ROS2
