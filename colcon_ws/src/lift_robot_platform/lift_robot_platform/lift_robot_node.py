@@ -1061,15 +1061,13 @@ class LiftRobotNode(Node):
             )
     
     def _get_task_state(self):
-        """Get current task state based on control variables (ensures consistency)"""
-        # Running if any control is active
-        if self.control_enabled or self.force_control_active or self.movement_state != 'stop':
-            return 'running'
-        # Completed state persists for 5 seconds after task end
-        elif self.task_end_time is not None and (time.time() - self.task_end_time) < 5.0:
-            return 'completed'
-        else:
-            return 'idle'
+        """Get current task state based on task_state variable"""
+        # Return the actual task state
+        # Completed state persists for 5 seconds after task end, then returns to idle
+        if self.task_state == 'completed' and self.task_end_time is not None:
+            if (time.time() - self.task_end_time) >= 5.0:
+                return 'idle'
+        return self.task_state
 
 
 def main(args=None):

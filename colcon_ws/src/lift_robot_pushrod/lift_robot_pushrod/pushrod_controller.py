@@ -125,7 +125,8 @@ class PushrodController(ModbusDevice):
             timer = threading.Timer(duration, self._auto_stop_callback, args=(seq_id, timer_id))
             self.stop_timer = timer
             timer.start()
-        self.node.get_logger().info(f"[SEQ {seq_id}] Auto-stop scheduled in {duration}s (timer_id={timer_id})")
+        import time
+        self.node.get_logger().info(f"[SEQ {seq_id}] Auto-stop scheduled in {duration}s (timer_id={timer_id}) at t={time.time():.3f}")
 
     def timed_up(self, duration, seq_id=None):
         """Timed UP: pulse UP then schedule auto STOP after duration seconds."""
@@ -167,12 +168,15 @@ class PushrodController(ModbusDevice):
 
     def _auto_stop_callback(self, seq_id, timer_id):
         """Auto-stop callback: verify timer identity then pulse STOP."""
+        import time
+        t_callback = time.time()
         with self.timer_lock:
             if timer_id != self._stop_timer_id:
                 # Obsolete timer
+                self.node.get_logger().warning(f"[SEQ {seq_id}] Auto-stop callback OBSOLETE timer_id={timer_id} vs current={self._stop_timer_id} at t={t_callback:.3f}")
                 return
             self.stop_timer = None
-        self.node.get_logger().info(f"[SEQ {seq_id}] Auto-stop timer elapsed (timer_id={timer_id}) -> STOP pulse")
+        self.node.get_logger().info(f"[SEQ {seq_id}] Auto-stop timer elapsed (timer_id={timer_id}) at t={t_callback:.3f} -> STOP pulse")
         # Direct STOP pulse; don't call self.stop() to avoid double cancel sequence id churn
         self.flash_relay(relay_address=self.RELAY_STOP, duration_ms=100, seq_id=seq_id)
         # Update estimated position & point after completing timed move
@@ -202,7 +206,9 @@ class PushrodController(ModbusDevice):
         # Call the callback to notify node (for offset tracking)
         if self.on_auto_stop_callback:
             try:
+                self.node.get_logger().info(f"[SEQ {seq_id}] Calling on_auto_stop_callback at t={t_callback:.3f}")
                 self.on_auto_stop_callback()
+                self.node.get_logger().info(f"[SEQ {seq_id}] on_auto_stop_callback completed at t={time.time():.3f}")
             except Exception as e:
                 self.node.get_logger().error(f"Auto-stop callback error: {e}")
 

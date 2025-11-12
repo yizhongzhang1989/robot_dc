@@ -384,6 +384,10 @@ class PushrodNode(Node):
         Callback when timed operation auto-stops (from controller's timer)
         Updates offset tracking and marks task as completed
         """
+        import time
+        t = time.time()
+        self.get_logger().info(f"_on_auto_stop_complete called at t={t:.3f}, task_state={self.task_state}, task_type={self.task_type}")
+        
         # Update offset if tracking
         if self.is_tracking_offset and self.height_before_movement is not None:
             delta = self.current_height - self.height_before_movement
@@ -394,8 +398,12 @@ class PushrodNode(Node):
         
         # Mark timed task as completed (target_reached)
         if self.task_state == 'running' and self.task_type in ['timed_up', 'timed_down']:
+            self.get_logger().info(f"Calling _complete_task('target_reached') at t={time.time():.3f}")
             self._complete_task('target_reached')
-            self.get_logger().info(f"Timed operation completed: {self.task_type}")
+            self.get_logger().info(f"Timed operation completed: {self.task_type} at t={time.time():.3f}")
+        else:
+            self.get_logger().warning(f"_on_auto_stop_complete: NOT completing task (state={self.task_state}, type={self.task_type})")
+
 
 
     # ------------------------------------------------------------------
@@ -596,15 +604,13 @@ class PushrodNode(Node):
             )
     
     def _get_task_state(self):
-        """Get current task state based on control variables (ensures consistency)"""
-        # Running if any control is active
-        if self.control_enabled or self.movement_state != 'stop':
-            return 'running'
-        # Completed state persists for 5 seconds after task end
-        elif self.task_end_time is not None and (time.time() - self.task_end_time) < 5.0:
-            return 'completed'
-        else:
-            return 'idle'
+        """Get current task state based on task_state variable"""
+        # Return the actual task state
+        # Completed state persists for 5 seconds after task end, then returns to idle
+        if self.task_state == 'completed' and self.task_end_time is not None:
+            if (time.time() - self.task_end_time) >= 5.0:
+                return 'idle'
+        return self.task_state
 
     def destroy_node(self):
         self.get_logger().info("Stopping pushrod control node ...")
