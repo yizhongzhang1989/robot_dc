@@ -200,3 +200,17 @@ class LiftRobotController(ModbusDevice):
         with self.timer_lock:
             self.cancel_all_timers()
             self.node.get_logger().info("All timers cleaned up")
+
+    # ─────────────────────────────────────────────────────────────
+    # Force-controlled movement wrappers (start pulses only)
+    # Actual force threshold stop logic handled in node control loop
+    # ─────────────────────────────────────────────────────────────
+    def force_up_start(self, seq_id=None):
+        """Start upward movement under force control (single pulse)."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Force-UP start")
+        self.up(seq_id=seq_id)
+
+    def force_down_start(self, seq_id=None):
+        """Start downward movement under force control (single pulse)."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Force-DOWN start")
+        self.down(seq_id=seq_id)

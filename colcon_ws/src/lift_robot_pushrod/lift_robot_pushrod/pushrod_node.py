@@ -11,6 +11,7 @@ from .pushrod_controller import PushrodController
 import json
 import uuid
 import logging
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -49,6 +50,15 @@ class PushrodNode(Node):
         # 采样速率估计
         self.force_sample_intervals = []
         self.force_sample_rate_hz = 0.0
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Task State Tracking (for web monitoring)
+        # ═══════════════════════════════════════════════════════════════
+        self.task_state = 'idle'           # 'idle' | 'running' | 'completed'
+        self.task_type = None              # None | 'goto_height' | 'force_control' | 'manual_up' | 'manual_down'
+        self.task_start_time = None        # Unix timestamp (seconds)
+        self.task_end_time = None          # Unix timestamp (seconds)
+        self.completion_reason = None      # None | 'target_reached' | 'force_reached' | 'manual_stop'
 
         # Controller
         self.controller = PushrodController(
@@ -98,33 +108,47 @@ class PushrodNode(Node):
                     self.control_enabled = False
                     self.control_mode = 'manual'
                 self.movement_state = 'stop'
+                # Mark task as manually stopped
+                if self.task_state == 'running':
+                    self._complete_task('manual_stop')
 
             elif command == 'up':
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
                 self.controller.up(seq_id=seq_id)
                 self.movement_state = 'up'
+                # Start manual up task
+                self._start_task('manual_up')
 
             elif command == 'down':
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
                 self.controller.down(seq_id=seq_id)
                 self.movement_state = 'down'
+                # Start manual down task
+                self._start_task('manual_down')
 
             elif command == 'timed_up':
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
                 dur = float(data.get('duration', 1.0))
                 self.controller.timed_up(dur, seq_id=seq_id)
+                # Start timed_up task
+                self._start_task('timed_up')
 
             elif command == 'timed_down':
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
                 dur = float(data.get('duration', 1.0))
                 self.controller.timed_down(dur, seq_id=seq_id)
+                # Start timed_down task
+                self._start_task('timed_down')
 
             elif command == 'stop_timed':
                 self.controller.stop_timed(seq_id=seq_id)
+                # Mark timed task as manually stopped
+                if self.task_state == 'running':
+                    self._complete_task('manual_stop')
 
             elif command == 'goto_point':
                 point = data.get('point')
@@ -140,6 +164,8 @@ class PushrodNode(Node):
                         self.height_before_movement = self.current_height
                         self.is_tracking_offset = True
                     self.controller.goto_point(point, seq_id=seq_id)
+                    # Start goto_point task
+                    self._start_task('goto_point')
 
             elif command == 'goto_height':
                 target = data.get('target_height')
@@ -152,6 +178,8 @@ class PushrodNode(Node):
                     self.control_mode = 'auto'
                     self.control_enabled = True
                     self.movement_state = 'stop'
+                    # Start goto_height task
+                    self._start_task('goto_height')
                     self.get_logger().info(f"[SEQ {seq_id_str}] Auto height target={self.target_height:.2f}mm")
 
             elif command == 'enable_force_control':
@@ -161,6 +189,8 @@ class PushrodNode(Node):
                 self.control_enabled = True
                 self.control_mode = 'force'
                 self.movement_state = 'stop'
+                # Start force control task
+                self._start_task('force_control')
                 self.get_logger().info(
                     f"[SEQ {seq_id_str}] Force control enabled: target={self.target_force:.2f}N ±{self.force_threshold:.2f}N, increase_on_up={self.increase_on_up}"
                 )
@@ -247,6 +277,8 @@ class PushrodNode(Node):
                     self.height_before_movement = None
                 self.control_enabled = False
                 self.movement_state = 'stop'
+                # Mark goto_height task as completed
+                self._complete_task('target_reached')
                 self.get_logger().info(
                     f"[Pushrod Height] ✅ TARGET REACHED current={self.current_height:.2f}mm target={self.target_height:.2f}mm"
                 )
@@ -284,6 +316,8 @@ class PushrodNode(Node):
                 if self.movement_state != 'stop':
                     self.controller.stop()
                     self.movement_state = 'stop'
+                    # Mark force control task as completed
+                    self._complete_task('force_reached')
                     self.get_logger().info(
                         f"[Pushrod Force] ✅ IN BAND force={current_force:.2f}N target={self.target_force:.2f}N ±{self.force_threshold:.2f}N -> STOP"
                     )
@@ -361,11 +395,57 @@ class PushrodNode(Node):
                 'increase_on_up': self.increase_on_up,
                 'status': 'online'
             }
+            
+            # Add task state tracking
+            status['task_state'] = self._get_task_state()
+            status['task_type'] = self.task_type
+            if self.task_start_time is not None:
+                status['task_start_time'] = self.task_start_time
+            if self.task_end_time is not None:
+                status['task_end_time'] = self.task_end_time
+                status['task_duration'] = self.task_end_time - self.task_start_time
+            if self.completion_reason is not None:
+                status['completion_reason'] = self.completion_reason
+            
             msg = String()
             msg.data = json.dumps(status)
             self.status_pub.publish(msg)
         except Exception as e:
             self.get_logger().error(f"Status publish error: {e}")
+    
+    # ═══════════════════════════════════════════════════════════════
+    # Task State Management Methods
+    # ═══════════════════════════════════════════════════════════════
+    def _start_task(self, task_type):
+        """Start a new task and record timestamp"""
+        self.task_state = 'running'
+        self.task_type = task_type
+        self.task_start_time = time.time()
+        self.task_end_time = None
+        self.completion_reason = None
+        self.get_logger().debug(f"[Task] Started: {task_type}")
+    
+    def _complete_task(self, reason):
+        """Mark task as completed with reason and timestamp"""
+        if self.task_state == 'running':
+            self.task_state = 'completed'
+            self.completion_reason = reason
+            self.task_end_time = time.time()
+            duration = self.task_end_time - self.task_start_time if self.task_start_time else 0
+            self.get_logger().info(
+                f"[Task Complete] type={self.task_type} reason={reason} duration={duration:.2f}s"
+            )
+    
+    def _get_task_state(self):
+        """Get current task state based on control variables (ensures consistency)"""
+        # Running if any control is active
+        if self.control_enabled or self.movement_state != 'stop':
+            return 'running'
+        # Completed state persists for 5 seconds after task end
+        elif self.task_end_time is not None and (time.time() - self.task_end_time) < 5.0:
+            return 'completed'
+        else:
+            return 'idle'
 
     def destroy_node(self):
         self.get_logger().info("Stopping pushrod control node ...")

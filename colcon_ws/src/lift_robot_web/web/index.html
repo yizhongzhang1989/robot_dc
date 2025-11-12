@@ -12,10 +12,17 @@
   .stale { background:#f59e0b; }
   .disc { background:#ef4444; }
   pre { font-size:12px; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+  .animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
 </style>
 </head>
 <body class="bg-slate-100 p-4">
-  <div class="max-w-2xl mx-auto space-y-4">
+  <div class="max-w-6xl mx-auto space-y-4">
   <h1 class="text-xl font-bold">lift_robot</h1>
     <div class="p-3 bg-white rounded shadow space-y-2">
       <div class="text-sm flex items-center">
@@ -25,6 +32,38 @@
   <span class="ml-4 text-slate-500">Frequency: <span id="freq">-</span> Hz</span>
   <span class="ml-4 text-slate-500">Latency: <span id="age">-</span> ms</span>
       </div>
+    </div>
+    
+    <!-- Unified Task Status Card -->
+    <div class="bg-white rounded-lg shadow-lg p-5 border-l-4 border-indigo-500">
+      <h2 class="font-bold text-xl mb-4 text-slate-700 flex items-center">
+        <svg class="w-6 h-6 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+        </svg>
+        Task Status
+      </h2>
+      <div class="space-y-3 text-sm">
+        <div class="flex items-center justify-between p-3 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg">
+          <span class="text-slate-700 font-semibold text-base">State:</span>
+          <span id="taskState" class="font-bold px-4 py-2 rounded-full text-sm">-</span>
+        </div>
+        <div class="flex items-center justify-between py-2">
+          <span class="text-slate-600 font-medium">Task Type:</span>
+          <span id="taskType" class="font-mono text-sm bg-slate-100 px-3 py-1 rounded">-</span>
+        </div>
+        <div class="flex items-center justify-between py-2">
+          <span class="text-slate-600 font-medium">Duration:</span>
+          <span id="taskDuration" class="font-mono text-sm font-semibold text-indigo-600">-</span>
+        </div>
+        <div class="flex items-center justify-between py-2">
+          <span class="text-slate-600 font-medium">Completion:</span>
+          <span id="taskCompletionReason" class="font-mono text-sm text-green-700 font-medium">-</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="p-3 bg-white rounded shadow space-y-2">
+      <h2 class="font-semibold text-slate-700">Control Panel</h2>
       <div class="flex flex-col gap-2 pt-1">
         <div class="flex gap-2">
           <span class="text-xs font-semibold text-slate-600 pr-2">Platform:</span>
@@ -37,6 +76,13 @@
           <input id="targetHeightPlatform" type="number" placeholder="mm" class="px-2 py-1 border border-slate-300 rounded text-sm w-20" value="750">
           <button id="gotoHeightPlatformBtn" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded">Go to Height</button>
           <span class="text-xs text-slate-500">(use Stop button to cancel)</span>
+        </div>
+        <div class="flex gap-2 items-center mb-1">
+          <span class="text-xs font-semibold text-slate-600 pr-2">Platform 力控:</span>
+          <input id="targetForcePlatform" type="number" placeholder="N" class="px-2 py-1 border border-slate-300 rounded text-sm w-24" value="240">
+          <button id="forceUpBtn" class="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded">Force Up</button>
+          <button id="forceDownBtn" class="px-3 py-1 bg-amber-700 hover:bg-amber-800 text-white text-xs rounded">Force Down</button>
+          <span class="text-xs text-slate-500">(auto stop at target force)</span>
         </div>
         <div class="flex gap-2 items-center mb-1">
           <span class="text-xs font-semibold text-slate-600 pr-2">Pushrod 微调:</span>
@@ -56,50 +102,66 @@
         </div>
   <span id="cmdStatus" class="text-xs text-slate-500"></span>
       </div>
-      <div class="grid grid-cols-2 gap-2 text-sm">
-  <div>seq_id: <span id="seq" class="font-mono">-</span></div>
-  <div>height (mm): <span id="heightVal" class="font-mono font-semibold">-</span></div>
-  <div>Height Freq: <span id="heightFreq" class="font-mono">-</span> Hz</div>
-  <div>Height Latency: <span id="heightLatency" class="font-mono">-</span> ms</div>
-      </div>
-  <div class="text-sm text-slate-600">Last message timestamp: <span id="ts">-</span></div>
     </div>
-    <div class="p-3 bg-white rounded shadow space-y-2">
-      <h2 class="font-semibold">Platform Status</h2>
-      <div class="grid grid-cols-2 gap-2 text-sm">
-        <div>Movement: <span id="platformMovement" class="font-mono">-</span></div>
-        <div>Mode: <span id="platformMode" class="font-mono">-</span></div>
-        <div>Current Height: <span id="platformCurrentHeight" class="font-mono">-</span> mm</div>
-        <div>Target Height: <span id="platformTargetHeight" class="font-mono">-</span> mm</div>
+    
+    <!-- Sensor Data -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="p-3 bg-white rounded shadow space-y-2">
+        <h2 class="font-semibold text-slate-700">Height Sensor</h2>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <div>seq_id: <span id="seq" class="font-mono">-</span></div>
+          <div>height (mm): <span id="heightVal" class="font-mono font-semibold text-lg text-blue-600">-</span></div>
+          <div>Frequency: <span id="heightFreq" class="font-mono">-</span> Hz</div>
+          <div>Latency: <span id="heightLatency" class="font-mono">-</span> ms</div>
+        </div>
+        <div class="text-xs text-slate-500">Last: <span id="ts">-</span></div>
       </div>
-    </div>
-    <div class="p-3 bg-white rounded shadow space-y-2">
-      <h2 class="font-semibold">Pushrod Status</h2>
-      <div class="grid grid-cols-2 gap-2 text-sm">
-        <div>Movement: <span id="pushrodMovement" class="font-mono">-</span></div>
-        <div>Mode: <span id="pushrodMode" class="font-mono">-</span></div>
-        <div>Current Height: <span id="pushrodCurrentHeight" class="font-mono">-</span> mm</div>
-        <div>Target Height: <span id="pushrodTargetHeight" class="font-mono">-</span> mm</div>
-        <div>Offset: <span id="pushrodOffsetVal" class="font-mono font-semibold">-</span> mm</div>
-        <div>Point: <span id="pushrodPoint" class="font-mono">-</span></div>
+      
+      <div class="p-3 bg-white rounded shadow space-y-2">
+        <h2 class="font-semibold text-slate-700">Force Sensors (Calibrated)</h2>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <div>Right (N): <span id="rightForceVal" class="font-mono font-semibold">-</span></div>
+          <div>Left (N): <span id="leftForceVal" class="font-mono font-semibold">-</span></div>
+          <div class="col-span-2">Combined (N): <span id="combinedForceVal" class="font-mono font-semibold text-lg text-amber-600">-</span></div>
+        </div>
+        <div class="text-xs text-slate-500" id="forceTs">-</div>
       </div>
     </div>
-    <div class="p-3 bg-white rounded shadow space-y-2">
-      <h2 class="font-semibold">Force Sensors (Calibrated)</h2>
-      <div class="grid grid-cols-2 gap-2 text-sm">
-        <div>Right Force (N): <span id="rightForceVal" class="font-mono font-semibold">-</span></div>
-        <div>Left Force (N): <span id="leftForceVal" class="font-mono font-semibold">-</span></div>
+    
+    <!-- Detailed Status (Collapsible) -->
+    <details class="bg-white rounded shadow">
+      <summary class="p-3 font-semibold cursor-pointer hover:bg-slate-50">Detailed Status (Platform & Pushrod)</summary>
+      <div class="p-3 space-y-4 border-t">
+        <div>
+          <h3 class="font-semibold text-sm text-slate-700 mb-2">Platform</h3>
+          <div class="grid grid-cols-2 gap-2 text-sm">
+            <div>Movement: <span id="platformMovement" class="font-mono">-</span></div>
+            <div>Mode: <span id="platformMode" class="font-mono">-</span></div>
+            <div>Current Height: <span id="platformCurrentHeight" class="font-mono">-</span> mm</div>
+            <div>Target Height: <span id="platformTargetHeight" class="font-mono">-</span> mm</div>
+          </div>
+        </div>
+        <div>
+          <h3 class="font-semibold text-sm text-slate-700 mb-2">Pushrod</h3>
+          <div class="grid grid-cols-2 gap-2 text-sm">
+            <div>Movement: <span id="pushrodMovement" class="font-mono">-</span></div>
+            <div>Mode: <span id="pushrodMode" class="font-mono">-</span></div>
+            <div>Current Height: <span id="pushrodCurrentHeight" class="font-mono">-</span> mm</div>
+            <div>Target Height: <span id="pushrodTargetHeight" class="font-mono">-</span> mm</div>
+            <div>Offset: <span id="pushrodOffsetVal" class="font-mono font-semibold">-</span> mm</div>
+            <div>Point: <span id="pushrodPoint" class="font-mono">-</span></div>
+          </div>
+        </div>
       </div>
-      <div class="text-xs text-slate-500">
-        <div>Right: device_id=52, /force_sensor</div>
-        <div>Left: device_id=53, /force_sensor_2</div>
+    </details>
+    
+    <!-- Raw JSON (Collapsible) -->
+    <details class="bg-white rounded shadow">
+      <summary class="p-3 font-semibold cursor-pointer hover:bg-slate-50">Raw JSON Data</summary>
+      <div class="p-3 border-t">
+        <pre id="raw" class="bg-slate-50 p-2 rounded max-h-72 overflow-auto text-xs"></pre>
       </div>
-      <div class="text-xs text-slate-500" id="forceTs">-</div>
-    </div>
-    <div class="bg-white p-3 rounded shadow">
-      <h2 class="font-semibold mb-2">Raw JSON</h2>
-      <pre id="raw" class="bg-slate-50 p-2 rounded max-h-72 overflow-auto"></pre>
-    </div>
+    </details>
   </div>
 <script>
 let ws=null, lastReceive=null; let intervals=[]; let usePolling=false; let pollTimer=null; let readInterval=1000;
@@ -127,6 +189,10 @@ function update(d){
     $('leftForceVal').textContent = (d.left_force_sensor===null?'-':(d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(2):d.left_force_sensor));
     $('forceTs').textContent='Updated at '+new Date().toLocaleTimeString();
   }
+  if(d.combined_force_sensor!==undefined) {
+    $('combinedForceVal').textContent = (d.combined_force_sensor===null?'-':(d.combined_force_sensor.toFixed?d.combined_force_sensor.toFixed(2):d.combined_force_sensor));
+    $('forceTs').textContent='Updated at '+new Date().toLocaleTimeString();
+  }
   
   // Platform status
   if(d.platform_status){
@@ -148,8 +214,86 @@ function update(d){
     if(prs.current_point!==undefined) $('pushrodPoint').textContent=prs.current_point;
   }
   
+  // Update unified task status
+  if(d.platform_status || d.pushrod_status) {
+    updateUnifiedTaskStatus(d.platform_status, d.pushrod_status);
+  }
+  
   computeFreq();
 }
+
+// Update unified task status card (merge platform + pushrod)
+function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
+  let mergedState = 'idle';
+  let mergedType = '-';
+  let mergedDuration = '-';
+  let mergedReason = '-';
+  let activeStatus = null;
+  
+  // Determine merged state: running takes priority
+  const platformState = platformStatus?.task_state || 'idle';
+  const pushrodState = pushrodStatus?.task_state || 'idle';
+  
+  if (platformState === 'running' || pushrodState === 'running') {
+    mergedState = 'running';
+    // Use the running one's info
+    activeStatus = platformState === 'running' ? platformStatus : pushrodStatus;
+  } else if (platformState === 'emergency_stop' || pushrodState === 'emergency_stop') {
+    mergedState = 'emergency_stop';
+    activeStatus = platformState === 'emergency_stop' ? platformStatus : pushrodStatus;
+  } else if (platformState === 'completed' || pushrodState === 'completed') {
+    mergedState = 'completed';
+    // Prefer the most recently completed one (has task_end_time)
+    if (platformStatus?.task_end_time && pushrodStatus?.task_end_time) {
+      activeStatus = platformStatus.task_end_time > pushrodStatus.task_end_time ? platformStatus : pushrodStatus;
+    } else if (platformStatus?.task_end_time) {
+      activeStatus = platformStatus;
+    } else if (pushrodStatus?.task_end_time) {
+      activeStatus = pushrodStatus;
+    } else {
+      activeStatus = platformStatus || pushrodStatus;
+    }
+  } else {
+    // Both idle - don't show idle unless initial launch
+    mergedState = 'completed';
+    activeStatus = platformStatus || pushrodStatus;
+  }
+  
+  // Extract info from active status
+  if (activeStatus) {
+    mergedType = activeStatus.task_type || '-';
+    mergedReason = activeStatus.completion_reason || '-';
+    
+    // Calculate duration
+    if (activeStatus.task_duration !== undefined && activeStatus.task_duration !== null) {
+      mergedDuration = activeStatus.task_duration.toFixed(2) + 's';
+    } else if (activeStatus.task_start_time && !activeStatus.task_end_time && mergedState === 'running') {
+      const elapsed = Date.now() / 1000 - activeStatus.task_start_time;
+      mergedDuration = elapsed.toFixed(1) + 's';
+    }
+  }
+  
+  // Update UI
+  const taskStateEl = $('taskState');
+  taskStateEl.textContent = mergedState.toUpperCase();
+  
+  // Color coding
+  taskStateEl.className = 'font-bold px-4 py-2 rounded-full text-sm';
+  if (mergedState === 'running') {
+    taskStateEl.className += ' bg-blue-500 text-white animate-pulse shadow-lg';
+  } else if (mergedState === 'completed') {
+    taskStateEl.className += ' bg-green-500 text-white shadow-md';
+  } else if (mergedState === 'emergency_stop') {
+    taskStateEl.className += ' bg-red-500 text-white shadow-lg';
+  } else {
+    taskStateEl.className += ' bg-gray-400 text-white';
+  }
+  
+  $('taskType').textContent = mergedType;
+  $('taskDuration').textContent = mergedDuration;
+  $('taskCompletionReason').textContent = mergedReason;
+}
+
 function computeFreq(){ intervals.push(Date.now()); if(intervals.length>25) intervals.shift(); if(intervals.length>1){ const diffs=[]; for(let i=1;i<intervals.length;i++) diffs.push(intervals[i]-intervals[i-1]); const avg=diffs.reduce((a,b)=>a+b,0)/diffs.length; $('freq').textContent=(1000/avg).toFixed(2); } }
 setInterval(()=>{ if(!lastReceive){ $('age').textContent='-'; return; } const age=Date.now()-lastReceive; $('age').textContent=age; const staleThreshold=Math.max(2500,2.5*readInterval); if(age>staleThreshold){ setState('stale','Stale'); } },500);
 connect();
@@ -213,6 +357,25 @@ $('gotoHeightPushrodBtn').addEventListener('click', async ()=>{
     setTimeout(()=>$('cmdStatus').textContent='',3000);
   } catch(e){ $('cmdStatus').textContent='Error'; }
 });
+
+// Platform force control buttons
+function sendForceCommand(direction){
+  const targetForce = parseFloat($('targetForcePlatform').value);
+  if(isNaN(targetForce) || targetForce<=0){
+    $('cmdStatus').textContent='Invalid force value';
+    setTimeout(()=>$('cmdStatus').textContent='',2000);
+    return;
+  }
+  const cmd = direction==='up'?'force_up':'force_down';
+  $('cmdStatus').textContent='Platform '+(direction==='up'?'force-up':'force-down')+' to '+targetForce+'N ...';
+  const payload={command:cmd,target:'platform',target_force:targetForce};
+  fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(()=>{ $('cmdStatus').textContent='Force '+direction+' command sent'; setTimeout(()=>$('cmdStatus').textContent='',3000); })
+    .catch(()=>{ $('cmdStatus').textContent='Force command error'; setTimeout(()=>$('cmdStatus').textContent='',3000); });
+}
+$('forceUpBtn').addEventListener('click', ()=> sendForceCommand('up'));
+$('forceDownBtn').addEventListener('click', ()=> sendForceCommand('down'));
 </script>
 </body>
 </html>

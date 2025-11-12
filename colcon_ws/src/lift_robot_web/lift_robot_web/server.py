@@ -30,6 +30,8 @@ class LiftRobotWeb(Node):
         # 双通道力值：右侧力传感器 (device_id=52) 和左侧力传感器 (device_id=53)
         self.right_force_sensor = None  # /force_sensor (device_id=52)
         self.left_force_sensor = None   # /force_sensor_2 (device_id=53)
+        self.combined_force_sensor = None  # 合力 (两个力传感器相加，缺失时退化为单个存在的值)
+        self.last_force_update = None  # 最近力传感器更新时间戳（任一传感器）
         self.platform_status = None
         self.pushrod_status = None
 
@@ -72,6 +74,12 @@ class LiftRobotWeb(Node):
                             merged['right_force_sensor'] = self.right_force_sensor
                         if self.left_force_sensor is not None:
                             merged['left_force_sensor'] = self.left_force_sensor
+                        if self.combined_force_sensor is not None:
+                            merged['combined_force_sensor'] = self.combined_force_sensor
+                        # 力传感器数据陈旧检测（超过2s未更新）
+                        if self.last_force_update is not None:
+                            if (time.time() - self.last_force_update) > 2.0:
+                                merged['force_stale'] = True
                         if self.platform_status is not None:
                             merged['platform_status'] = self.platform_status
                         if self.pushrod_status is not None:
@@ -88,16 +96,46 @@ class LiftRobotWeb(Node):
     def force_cb_right(self, msg):
         """右侧力传感器回调 (device_id=52, /force_sensor)"""
         try:
-            self.right_force_sensor = msg.data
+            if 0 <= msg.data <= 2000:
+                self.right_force_sensor = msg.data
+                self.last_force_update = time.time()
+                self._update_combined_force()
+            else:
+                self.get_logger().warn(f"Right force out of range: {msg.data}")
         except Exception as e:
             self.get_logger().warn(f"Right force callback error: {e}")
     
     def force_cb_left(self, msg):
         """左侧力传感器回调 (device_id=53, /force_sensor_2)"""
         try:
-            self.left_force_sensor = msg.data
+            if 0 <= msg.data <= 2000:
+                self.left_force_sensor = msg.data
+                self.last_force_update = time.time()
+                self._update_combined_force()
+            else:
+                self.get_logger().warn(f"Left force out of range: {msg.data}")
         except Exception as e:
             self.get_logger().warn(f"Left force callback error: {e}")
+
+    def _update_combined_force(self):
+        """更新合力：两个力都存在则求和；只存在一个则等于该值；都不存在为 None；防止 inf 溢出"""
+        try:
+            if self.right_force_sensor is not None and self.left_force_sensor is not None:
+                combined = self.right_force_sensor + self.left_force_sensor
+                # 防止溢出到 inf
+                if combined > 4000 or combined < -1000:
+                    self.get_logger().warn(f"Combined force overflow detected: {combined} (right={self.right_force_sensor}, left={self.left_force_sensor})")
+                    self.combined_force_sensor = None
+                else:
+                    self.combined_force_sensor = combined
+            elif self.right_force_sensor is not None:
+                self.combined_force_sensor = self.right_force_sensor
+            elif self.left_force_sensor is not None:
+                self.combined_force_sensor = self.left_force_sensor
+            else:
+                self.combined_force_sensor = None
+        except Exception as e:
+            self.get_logger().warn(f"Combined force update error: {e}")
     
     def platform_status_cb(self, msg: String):
         try:
@@ -149,7 +187,7 @@ class LiftRobotWeb(Node):
                 cmd = payload.get('command')
                 target = payload.get('target','platform')
                 duration = payload.get('duration')
-                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height'}
+                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height','force_up','force_down'}
                 if cmd not in allowed:
                     return JSONResponse({'error':'invalid command'}, status_code=400)
                 # Timed commands only meaningful for pushrod target currently
@@ -166,6 +204,18 @@ class LiftRobotWeb(Node):
                     target_height = payload.get('target_height')
                     if target_height is None:
                         return JSONResponse({'error':'target_height field required for goto_height'}, status_code=400)
+                if cmd in ('force_up','force_down'):
+                    if target != 'platform':
+                        return JSONResponse({'error':'force_up/force_down only valid for platform target'}, status_code=400)
+                    target_force = payload.get('target_force')
+                    if target_force is None:
+                        return JSONResponse({'error':'target_force field required for force_up/force_down'}, status_code=400)
+                    try:
+                        tf = float(target_force)
+                        if tf <= 0:
+                            return JSONResponse({'error':'target_force must be > 0'}, status_code=400)
+                    except Exception:
+                        return JSONResponse({'error':'invalid target_force'}, status_code=400)
                 # Auto inject 5s for timed_up if not provided
                 if cmd == 'timed_up' and (duration is None):
                     duration = 3.5
@@ -184,6 +234,8 @@ class LiftRobotWeb(Node):
                     body['point'] = payload.get('point')
                 if cmd == 'goto_height':
                     body['target_height'] = payload.get('target_height')
+                if cmd in ('force_up','force_down'):
+                    body['target_force'] = float(payload.get('target_force'))
                 if duration is not None:
                     body['duration'] = duration
                 msg = String(); msg.data = json.dumps(body)
@@ -192,6 +244,41 @@ class LiftRobotWeb(Node):
                 else:
                     self.cmd_pub.publish(msg)
                 return {'status':'ok','command':cmd,'target':target,'duration':duration}
+            
+            @app.get('/api/status')
+            def get_status():
+                """Get current platform and pushrod task status"""
+                response = {}
+                if self.platform_status:
+                    response['platform'] = {
+                        'task_state': self.platform_status.get('task_state', 'unknown'),
+                        'task_type': self.platform_status.get('task_type'),
+                        'task_start_time': self.platform_status.get('task_start_time'),
+                        'task_end_time': self.platform_status.get('task_end_time'),
+                        'task_duration': self.platform_status.get('task_duration'),
+                        'completion_reason': self.platform_status.get('completion_reason'),
+                        'control_mode': self.platform_status.get('control_mode'),
+                        'movement_state': self.platform_status.get('movement_state'),
+                        'current_height': self.platform_status.get('current_height'),
+                        'target_height': self.platform_status.get('target_height'),
+                        'limit_exceeded': self.platform_status.get('limit_exceeded', False),
+                    }
+                if self.pushrod_status:
+                    response['pushrod'] = {
+                        'task_state': self.pushrod_status.get('task_state', 'unknown'),
+                        'task_type': self.pushrod_status.get('task_type'),
+                        'task_start_time': self.pushrod_status.get('task_start_time'),
+                        'task_end_time': self.pushrod_status.get('task_end_time'),
+                        'task_duration': self.pushrod_status.get('task_duration'),
+                        'completion_reason': self.pushrod_status.get('completion_reason'),
+                        'control_mode': self.pushrod_status.get('control_mode'),
+                        'movement_state': self.pushrod_status.get('movement_state'),
+                        'current_height': self.pushrod_status.get('current_height'),
+                        'target_height': self.pushrod_status.get('target_height'),
+                    }
+                if not response:
+                    return JSONResponse({'error': 'no status data available'}, status_code=503)
+                return response
 
             @app.websocket('/ws')
             async def ws_endpoint(ws: WebSocket):

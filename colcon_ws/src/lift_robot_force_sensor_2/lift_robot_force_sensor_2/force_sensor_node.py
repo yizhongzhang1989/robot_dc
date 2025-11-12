@@ -59,7 +59,7 @@ class LiftRobotForceSensor2Node(Node):
             self.vis_timer = self.create_timer(self.vis_interval, self._draw_visualization)
 
     def next_seq(self):
-        self.seq_id += 1
+        self.seq_id = (self.seq_id + 1) % 65536  # Wrap around at 65536
         return self.seq_id
 
     def periodic_read(self):
