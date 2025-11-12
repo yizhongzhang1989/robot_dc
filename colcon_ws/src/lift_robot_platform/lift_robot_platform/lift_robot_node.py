@@ -708,10 +708,10 @@ class LiftRobotNode(Node):
         # Priority 1: Check if target reached
         if abs_error <= POSITION_TOLERANCE:
             if self.control_enabled:
-                # 达到目标误差带：立即终止自动控制，不再发送任何相反方向修正；仅继续超调测量
-                self._issue_stop(direction=self.movement_state, reason="target_band", disable_control=True)
-                # Mark goto_height task as completed
+                # Mark goto_height task as completed FIRST (before disabling control)
                 self._complete_task('target_reached')
+                # Then terminate automatic control
+                self._issue_stop(direction=self.movement_state, reason="target_band", disable_control=True)
             return
         
         # Priority 2: 预测提前停（基于当前方向和平均超调）
@@ -720,12 +720,16 @@ class LiftRobotNode(Node):
             if self.movement_state == 'up' and self.avg_overshoot_up > OVERSHOOT_MIN_MARGIN:
                 threshold_height = self.target_height - self.avg_overshoot_up
                 if self.current_height >= threshold_height:
+                    # Mark task as completed (early stop expects overshoot to reach target)
+                    self._complete_task('target_reached')
                     # 预测提前停：终止控制，剩余惯性与超调仅记录不纠正
                     self._issue_stop(direction='up', reason=f"early_stop_up(th={threshold_height:.2f})", disable_control=True)
                     return
             elif self.movement_state == 'down' and self.avg_overshoot_down > OVERSHOOT_MIN_MARGIN:
                 threshold_height = self.target_height + self.avg_overshoot_down
                 if self.current_height <= threshold_height:
+                    # Mark task as completed (early stop expects overshoot to reach target)
+                    self._complete_task('target_reached')
                     self._issue_stop(direction='down', reason=f"early_stop_down(th={threshold_height:.2f})", disable_control=True)
                     return
 

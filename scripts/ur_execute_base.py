@@ -120,7 +120,7 @@ class LiftPlatformController:
             print(f"❌ Status query error: {e}")
             return None
     
-    def lift_wait_task_complete(self, target, timeout=90, poll_interval=0.2):
+    def lift_wait_task_complete(self, target, timeout=90, poll_interval=0.2, expected_task_type=None):
         """
         Wait for platform or pushrod task to complete by polling status
         
@@ -134,6 +134,7 @@ class LiftPlatformController:
         """
         start_time = time.time()
         last_state = None
+        task_started = False  # Track if we've seen our task start
         
         print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
         
@@ -151,8 +152,18 @@ class LiftPlatformController:
                     print(f"  [{elapsed:.1f}s] State: {task_state} | Type: {task_type}")
                     last_state = task_state
                 
+                # Track if we've seen our task start
+                if task_state == 'running' and (expected_task_type is None or task_type == expected_task_type):
+                    task_started = True
+                
                 # Check completion conditions
                 if task_state == 'completed':
+                    # Verify this is OUR task completing, not leftover from previous task
+                    if expected_task_type is not None and task_type != expected_task_type:
+                        # Wrong task - keep waiting
+                        time.sleep(poll_interval)
+                        continue
+                    
                     reason = task_info.get('completion_reason', 'unknown')
                     duration = task_info.get('task_duration', 0)
                     print(f"✅ Task completed: {reason} (duration: {duration:.2f}s)")
@@ -176,14 +187,16 @@ class LiftPlatformController:
                     }
                 
                 elif task_state == 'idle' and time.time() - start_time > 1.0:
-                    # Returned to idle after starting - likely completed
-                    print(f"⚠️  Returned to idle state")
-                    return {
-                        "success": True,
-                        "task_state": task_state,
-                        "completion_reason": "idle",
-                        "task_info": task_info
-                    }
+                    # Only accept idle if we saw our task start and complete
+                    if task_started:
+                        print(f"⚠️  Returned to idle state")
+                        return {
+                            "success": True,
+                            "task_state": task_state,
+                            "completion_reason": "idle",
+                            "task_info": task_info
+                        }
+                    # Otherwise keep waiting - this might be leftover idle
             
             time.sleep(poll_interval)
         
@@ -212,7 +225,7 @@ class LiftPlatformController:
         if not result['success']:
             return result
         
-        return self.lift_wait_task_complete('platform', timeout=timeout)
+        return self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='goto_height')
     
     def lift_platform_force_up(self, target_force, timeout=90):
         """
@@ -231,7 +244,7 @@ class LiftPlatformController:
         if not result['success']:
             return result
         
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout)
+        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='force_up')
         
         # Get final sensor data if successful
         if wait_result['success']:
@@ -263,7 +276,7 @@ class LiftPlatformController:
         if not result['success']:
             return result
         
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout)
+        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='force_down')
         
         # Get final sensor data if successful
         if wait_result['success']:
@@ -295,7 +308,7 @@ class LiftPlatformController:
         if not result['success']:
             return result
         
-        return self.lift_wait_task_complete('pushrod', timeout=timeout)
+        return self.lift_wait_task_complete('pushrod', timeout=timeout, expected_task_type='goto_height')
     
     def lift_platform_down_timed(self, duration):
         """
@@ -315,7 +328,7 @@ class LiftPlatformController:
         
         # Wait for timed operation to complete (duration + small buffer)
         wait_timeout = duration + 5.0
-        wait_result = self.lift_wait_task_complete('platform', timeout=wait_timeout)
+        wait_result = self.lift_wait_task_complete('platform', timeout=wait_timeout, expected_task_type='timed_up')
         
         if wait_result['success']:
             print(f"✅ Platform timed down completed")
@@ -340,7 +353,7 @@ class LiftPlatformController:
         
         # Wait for timed operation to complete (duration + small buffer)
         wait_timeout = duration + 5.0
-        wait_result = self.lift_wait_task_complete('pushrod', timeout=wait_timeout)
+        wait_result = self.lift_wait_task_complete('pushrod', timeout=wait_timeout, expected_task_type='timed_down')
         
         if wait_result['success']:
             print(f"✅ Pushrod timed down completed")
@@ -384,7 +397,7 @@ class LiftPlatformController:
             return result
         
         # Wait for task to auto-complete
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout)
+        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='manual_down')
         
         if wait_result['success']:
             # Get final height
@@ -978,7 +991,7 @@ class URExecuteBase(LiftPlatformController):
             print(f"❌ Status query error: {e}")
             return None
     
-    def lift_wait_task_complete(self, target, timeout=90, poll_interval=0.2):
+    def lift_wait_task_complete(self, target, timeout=90, poll_interval=0.2, expected_task_type=None):
         """
         Wait for platform or pushrod task to complete by polling status
         
@@ -992,6 +1005,7 @@ class URExecuteBase(LiftPlatformController):
         """
         start_time = time.time()
         last_state = None
+        task_started = False  # Track if we've seen our task start
         
         print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
         
@@ -1009,8 +1023,18 @@ class URExecuteBase(LiftPlatformController):
                     print(f"  [{elapsed:.1f}s] State: {task_state} | Type: {task_type}")
                     last_state = task_state
                 
+                # Track if we've seen our task start
+                if task_state == 'running' and (expected_task_type is None or task_type == expected_task_type):
+                    task_started = True
+                
                 # Check completion conditions
                 if task_state == 'completed':
+                    # Verify this is OUR task completing, not leftover from previous task
+                    if expected_task_type is not None and task_type != expected_task_type:
+                        # Wrong task - keep waiting
+                        time.sleep(poll_interval)
+                        continue
+                    
                     reason = task_info.get('completion_reason', 'unknown')
                     duration = task_info.get('task_duration', 0)
                     print(f"✅ Task completed: {reason} (duration: {duration:.2f}s)")
@@ -1034,14 +1058,16 @@ class URExecuteBase(LiftPlatformController):
                     }
                 
                 elif task_state == 'idle' and time.time() - start_time > 1.0:
-                    # Returned to idle after starting - likely completed
-                    print(f"⚠️  Returned to idle state")
-                    return {
-                        "success": True,
-                        "task_state": task_state,
-                        "completion_reason": "idle",
-                        "task_info": task_info
-                    }
+                    # Only accept idle if we saw our task start and complete
+                    if task_started:
+                        print(f"⚠️  Returned to idle state")
+                        return {
+                            "success": True,
+                            "task_state": task_state,
+                            "completion_reason": "idle",
+                            "task_info": task_info
+                        }
+                    # Otherwise keep waiting - this might be leftover idle
             
             time.sleep(poll_interval)
         
@@ -1070,7 +1096,7 @@ class URExecuteBase(LiftPlatformController):
         if not result['success']:
             return result
         
-        return self.lift_wait_task_complete('platform', timeout=timeout)
+        return self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='goto_height')
     
     def lift_platform_force_up(self, target_force, timeout=90):
         """
@@ -1089,7 +1115,7 @@ class URExecuteBase(LiftPlatformController):
         if not result['success']:
             return result
         
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout)
+        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='force_up')
         
         # Get final sensor data if successful
         if wait_result['success']:
@@ -1121,7 +1147,7 @@ class URExecuteBase(LiftPlatformController):
         if not result['success']:
             return result
         
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout)
+        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='force_down')
         
         # Get final sensor data if successful
         if wait_result['success']:
@@ -1153,7 +1179,7 @@ class URExecuteBase(LiftPlatformController):
         if not result['success']:
             return result
         
-        return self.lift_wait_task_complete('pushrod', timeout=timeout)
+        return self.lift_wait_task_complete('pushrod', timeout=timeout, expected_task_type='goto_height')
     
     def lift_platform_down_timed(self, duration):
         """
@@ -1173,7 +1199,7 @@ class URExecuteBase(LiftPlatformController):
         
         # Wait for timed operation to complete (duration + small buffer)
         wait_timeout = duration + 5.0
-        wait_result = self.lift_wait_task_complete('platform', timeout=wait_timeout)
+        wait_result = self.lift_wait_task_complete('platform', timeout=wait_timeout, expected_task_type='timed_up')
         
         if wait_result['success']:
             print(f"✅ Platform timed down completed")
@@ -1198,7 +1224,7 @@ class URExecuteBase(LiftPlatformController):
         
         # Wait for timed operation to complete (duration + small buffer)
         wait_timeout = duration + 5.0
-        wait_result = self.lift_wait_task_complete('pushrod', timeout=wait_timeout)
+        wait_result = self.lift_wait_task_complete('pushrod', timeout=wait_timeout, expected_task_type='timed_down')
         
         if wait_result['success']:
             print(f"✅ Pushrod timed down completed")
@@ -1242,7 +1268,7 @@ class URExecuteBase(LiftPlatformController):
             return result
         
         # Wait for task to auto-complete
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout)
+        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='manual_down')
         
         if wait_result['success']:
             # Get final height
