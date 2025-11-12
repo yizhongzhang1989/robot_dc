@@ -33,13 +33,12 @@ class URLocatePush2End(URLocateBase):
         self.get_logger().info('URLocatePush2End initialized')
         
         # Override movement offsets (in base coordinate system, unit: meters)
-        # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [0.01, 0, 0, 0, 0, 0],
-            "movement2": [0.03, 0.01, 0, 0, 0, 0],
-            "movement3": [0.03, -0.01, 0, 0, 0, 0],
-            "movement4": [0.03, 0, -0.01, 0, 0, 0],
-            "movement5": [0.03, 0, -0.01, 0, 0, 0]
+            "movement1": [0.01, 0, -0.01, 0, 0, 0],
+            "movement2": [0, 0.01, 0, 0, 0, 0],
+            "movement3": [0, -0.01, 0, 0, 0, 0],
+            "movement4": [0, 0, 0.02, 0, 0, 0],
+            "movement5": [0, 0, -0.02, 0, 0, 0]
         }
         
         # Override data directory path (for storing collected data)
@@ -60,11 +59,9 @@ class URLocatePush2End(URLocateBase):
         # Try to load collect_start_position from ref_pose.json if it exists
         self._set_new_collect_start_position()
         
-        print(f"URLocatePush2End initialized with custom settings:")
-        print(f"  Data directory: {self.data_dir}")
-        print(f"  Result directory: {self.result_dir}")
-        print(f"  Collect position: {[f'{j:.4f}' for j in self.collect_start_position]}")
-        print(f"  Number of movements: {len(self.movements)}")
+        # Load crack local coordinate system from log file
+        crack_coord_file = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result', 'log_local_coordinate_system_result.json')
+        self.load_crack_local_coordinate_system(crack_coord_file)
 
     def _set_new_collect_start_position(self):
         """
