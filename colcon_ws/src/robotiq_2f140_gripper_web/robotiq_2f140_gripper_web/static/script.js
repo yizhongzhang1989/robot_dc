@@ -88,17 +88,25 @@ function updateStatusDisplay(data) {
 }
 
 function updateGripperVisual(position) {
-    // Position: 0 = open, 255 = closed
+    // Position: 0 = open (max gap), 255 = closed (fingers touching)
     const percentage = (position / 255) * 100;
     
     // Update position bar
     document.getElementById('position-fill').style.width = percentage + '%';
     
-    // Update finger positions (closer together when closing)
-    const maxGap = 35; // Maximum gap in pixels
-    const gap = maxGap * (1 - position / 255);
-    document.getElementById('left-finger').style.transform = `translateX(-${gap}px)`;
-    document.getElementById('right-finger').style.transform = `translateX(${gap}px)`;
+    // Update finger positions
+    // Left finger: starts at calc(50% - 50px), which is 50px left of center
+    // Right finger: starts at calc(50% - 50px) from right, which is 50px right of center
+    // Each finger is 30px wide
+    // Left finger's right edge is at 50px - 30px = 20px left of center initially
+    // To touch at center, left finger needs to move 20px right
+    // When position = 0 (open): movement = 0
+    // When position = 255 (closed): movement = 20px (inner edges meet at center)
+    const maxMovement = 22; // Just enough to make inner edges touch at center
+    const movement = maxMovement * (position / 255);
+    
+    document.getElementById('left-finger').style.transform = `translateX(${movement}px)`;
+    document.getElementById('right-finger').style.transform = `translateX(-${movement}px)`;
 }
 
 function updateDebugOutput(data) {

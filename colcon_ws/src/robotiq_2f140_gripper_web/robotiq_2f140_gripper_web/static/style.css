@@ -115,15 +115,19 @@ h3 {
     padding: 20px;
     background: #f8f9fa;
     border-radius: 10px;
+    display: flex;
+    gap: 30px;
+    align-items: center;
 }
 
 .gripper-visual {
     height: 100px;
+    width: 150px;
     position: relative;
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-bottom: 20px;
+    flex-shrink: 0;
 }
 
 .finger {
@@ -133,16 +137,21 @@ h3 {
     border-radius: 5px;
     position: absolute;
     transition: all 0.3s ease;
+    border: 2px solid rgba(255,255,255,0.3);
 }
 
 .left-finger {
-    left: 50%;
-    transform: translateX(-35px);
+    left: calc(50% - 50px); /* Start 50px from center */
+    transform: translateX(0);
 }
 
 .right-finger {
-    right: 50%;
-    transform: translateX(35px);
+    right: calc(50% - 50px); /* Start 50px from center */
+    transform: translateX(0);
+}
+
+.position-info {
+    flex: 1;
 }
 
 .position-bar {
