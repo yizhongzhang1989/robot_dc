@@ -9,18 +9,21 @@ ROS2 driver for controlling the Robotiq 2F-140 gripper via RS485/Modbus interfac
   - `GripperActivate.action`: Action for gripper activation
   - `GripperControl.action`: Action for gripper position control
 - **robotiq_2f140_gripper**: ROS2 node for gripper control
+- **robotiq_2f140_gripper_web**: Web interface for gripper monitoring and control
 
 ## Installation
 
 ```bash
 cd ~/Documents/robot_dc/colcon_ws
-colcon build --packages-select robotiq_gripper_msgs robotiq_2f140_gripper
+colcon build --packages-select robotiq_gripper_msgs robotiq_2f140_gripper robotiq_2f140_gripper_web
 source install/setup.bash
 ```
 
 ## Usage
 
-### 1. Launch the Gripper Node
+### 1. Launch the Gripper
+
+**Option A: Driver Only**
 
 ```bash
 # Default configuration (device_id=9, host=192.168.1.15, port=54321)
@@ -33,6 +36,26 @@ ros2 launch robotiq_2f140_gripper robotiq_gripper.launch.py \
     rs485_port:=54321 \
     status_publish_rate:=10.0
 ```
+
+**Option B: With Web Interface**
+
+Launch the gripper driver with web interface in a single command:
+
+```bash
+# Default configuration
+ros2 launch robotiq_2f140_gripper robotiq_gripper_web.launch.py
+
+# Custom configuration
+ros2 launch robotiq_2f140_gripper robotiq_gripper_web.launch.py \
+    device_id:=9 \
+    rs485_host:=192.168.1.15 \
+    rs485_port:=54321 \
+    status_publish_rate:=10.0 \
+    web_host:=0.0.0.0 \
+    web_port:=9000
+```
+
+This starts both the gripper driver and web server. Open `http://localhost:9000` in your browser to access the web interface, which provides:
 
 ### 2. Activate the Gripper
 
