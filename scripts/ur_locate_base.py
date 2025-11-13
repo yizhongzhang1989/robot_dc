@@ -99,12 +99,12 @@ class URLocateBase(Node):
         
         # Predefined collect position joint angles (radians)
         self.collect_start_position = [
-            1.5089472532272339,
-            -1.0776807826808472,
-            2.2206338087665003,
-            -2.6346756420531214,
-            -0.8432377020465296,
-            -1.649449650441305]
+            1.475162148475647,
+            -0.7454956334880372,
+            2.228308979664938,
+            3.157601996059082,
+            -0.7743623892413538,
+            -1.3792231718646448]
         
         # Data collection movement offsets (in base coordinate system, unit: meters)
         self.movements = {
