@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-UR Locate Close2 Script
-This script inherits from URLocateBase and customizes it for close2 location tasks.
+UR Locate CloseLeft Script
+This script inherits from URLocateBase and customizes it for close_left location tasks.
 """
 
 import os
@@ -16,10 +16,10 @@ from rclpy.executors import MultiThreadedExecutor
 from ur_locate_base import URLocateBase
 
 
-class URLocateClose2(URLocateBase):
+class URLocateCloseLeft(URLocateBase):
     def __init__(self, ffpp_web_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
         """
-        Initialize URLocateClose2 class
+        Initialize URLocateCloseLeft class
         
         Args:
             ffpp_web_url (str): URL for the FlowFormer++ Web API service
@@ -30,23 +30,22 @@ class URLocateClose2(URLocateBase):
         super().__init__(ffpp_web_url=ffpp_web_url, robot_ip=robot_ip, robot_port=robot_port)
         
         # Override ROS node name
-        self.get_logger().info('URLocateClose2 initialized')
+        self.get_logger().info('URLocateCloseLeft initialized')
                
         # Override movement offsets (in base coordinate system, unit: meters)
-        # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [0.01, 0, 0, 0, 0, 0],
-            "movement2": [0.03, 0.01, 0, 0, 0, 0],
-            "movement3": [0.03, -0.01, 0, 0, 0, 0],
-            "movement4": [0.03, 0, -0.01, 0, 0, 0],
-            "movement5": [0.03, 0, -0.01, 0, 0, 0]
+            "movement1": [0, 0.015, 0.02, 0, 0, 0],
+            "movement2": [0, 0.01, 0, 0, 0, 0],
+            "movement3": [0, -0.01, 0, 0, 0, 0],
+            "movement4": [0, 0, 0.01, 0, 0, 0],
+            "movement5": [0, 0, -0.01, 0, 0, 0]
         }
         
         # Override data directory path (for storing collected data)
-        self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_close2_data')
+        self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_close_left_data')
         
         # Override result directory path
-        self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_close2_result')
+        self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_close_left_result')
         
         # Update reference data paths to use new data directory
         self.ref_img_path = os.path.join(self.data_dir, 'ref_img.jpg')
@@ -54,17 +53,15 @@ class URLocateClose2(URLocateBase):
         self.ref_pose_path = os.path.join(self.data_dir, 'ref_pose.json')
         
         # Override local coordinate system X-axis keypoint indices
-        # For close2 location, use keypoint 0 to keypoint 1 to define X-axis
+        # For close_left location, use keypoint 0 to keypoint 1 to define X-axis
         self.local_x_kp_index = [0, 1]
         
         # Try to load collect_start_position from ref_pose.json if it exists
         self._set_new_collect_start_position()
         
-        print(f"URLocateClose2 initialized with custom settings:")
-        print(f"  Data directory: {self.data_dir}")
-        print(f"  Result directory: {self.result_dir}")
-        print(f"  Collect position: {[f'{j:.4f}' for j in self.collect_start_position]}")
-        print(f"  Number of movements: {len(self.movements)}")
+        # Load crack local coordinate system from log file
+        crack_coord_file = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result', 'log_local_coordinate_system_result.json')
+        self.load_crack_local_coordinate_system(crack_coord_file)
 
     def _set_new_collect_start_position(self):
         """
@@ -97,23 +94,23 @@ class URLocateClose2(URLocateBase):
 
 def main():
     """
-    Main function for URLocateClose2
+    Main function for URLocateCloseLeft
     """
     # Initialize ROS2
     rclpy.init()
     
     try:
-        # Initialize URLocateClose2 instance (robot connection is handled internally)
-        ur_close2 = URLocateClose2()
+        # Initialize URLocateCloseLeft instance (robot connection is handled internally)
+        ur_close_left = URLocateCloseLeft()
         
         # Check if robot was initialized successfully
-        if ur_close2.robot is None or not ur_close2.robot.connected:
+        if ur_close_left.robot is None or not ur_close_left.robot.connected:
             print("✗ Robot initialization failed. Please check robot connection and try again.")
             return
         
         # Use multi-threaded executor to handle callbacks
         executor = MultiThreadedExecutor()
-        executor.add_node(ur_close2)
+        executor.add_node(ur_close_left)
         
         # Start executor in a separate thread
         executor_thread = threading.Thread(target=executor.spin, daemon=True)
@@ -126,30 +123,30 @@ def main():
         
         # Load camera parameters
         print("Loading camera parameters...")
-        if not ur_close2.load_camera_parameters():
+        if not ur_close_left.load_camera_parameters():
             print("Failed to load camera parameters!")
             return
 
         try:
             # Perform auto data collection (includes moving to collect position)
-            if ur_close2.auto_collect_data():
+            if ur_close_left.auto_collect_data():
                 print("\n✅ Data collection completed successfully!")
                 
                 # Perform 3D keypoint estimation after data collection
-                if ur_close2.estimate_3d_position():
+                if ur_close_left.estimate_3d_position():
                     print("✅ 3D estimation completed successfully!")
                     
                     # Validate 3D estimation with reprojection
                     print("\n" + "="*60)
                     print("Validating 3D Estimation with Reprojection...")
                     print("="*60)
-                    if ur_close2.validate_keypoints_3d_estimate_result():
+                    if ur_close_left.validate_keypoints_3d_estimate_result():
                         print("✅ 3D estimation validation completed!")
                     else:
                         print("⚠ 3D estimation validation failed!")
                     
                     # Build keypoint coordinate system
-                    coord_system = ur_close2.build_local_coordinate_system()
+                    coord_system = ur_close_left.build_local_coordinate_system()
                     if coord_system:
                         print("✅ Coordinate system built successfully!")
                         
@@ -157,7 +154,7 @@ def main():
                         print("\n" + "="*60)
                         print("Validating Coordinate System...")
                         print("="*60)
-                        if ur_close2.validate_local_coordinate_system(coord_system):
+                        if ur_close_left.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
 
                         else:
@@ -175,9 +172,9 @@ def main():
         finally:
 
             # Always disconnect robot in finally block
-            if ur_close2.robot is not None:
+            if ur_close_left.robot is not None:
                 try:
-                    ur_close2.robot.close()
+                    ur_close_left.robot.close()
                     print("Robot disconnected successfully")
                 except Exception as e:
                     print(f"Error disconnecting robot: {e}")
@@ -185,7 +182,7 @@ def main():
             # Shutdown executor
             executor.shutdown()
             # Destroy ROS node
-            ur_close2.destroy_node()
+            ur_close_left.destroy_node()
     
     finally:
         # Shutdown ROS2
