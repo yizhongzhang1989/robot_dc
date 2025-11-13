@@ -346,8 +346,466 @@ class RS485Client:
         self.disconnect()
 
 
+class Robotiq2f140Gripper:
+    """
+    High-level control interface for Robotiq 2F-140 Gripper.
+    
+    This class provides easy-to-use methods for controlling the gripper,
+    including activation, open/close, position control, and status monitoring.
+    
+    Modbus Register Map (for reference):
+    - 0x03E8 (1000): Action Request Register
+    - 0x07D0 (2000): Gripper Status Register
+    """
+    
+    # Modbus addresses
+    ACTION_REQUEST_REG = 0x03E8  # Write registers starting here
+    GRIPPER_STATUS_REG = 0x07D0  # Read registers starting here
+    
+    # Action request byte positions (for write)
+    ACTION_REG_ACTION = 0      # rACT, rGTO, rATR, rARD, rFR, rSP, rPR
+    ACTION_REG_POSITION = 1    # Position request (0-255)
+    ACTION_REG_SPEED_FORCE = 2 # Speed and force
+    
+    def __init__(self, device_id: int = 9, 
+                 rs485_client: Optional[RS485Client] = None,
+                 host: str = "192.168.1.15", 
+                 port: int = 54321):
+        """
+        Initialize Robotiq 2F-140 Gripper controller.
+        
+        Args:
+            device_id: Modbus device ID (default: 9)
+            rs485_client: Existing RS485Client instance, or None to create new one
+            host: RS485 gateway IP address (used if rs485_client is None)
+            port: RS485 gateway port (used if rs485_client is None)
+        """
+        self.device_id = device_id
+        self._owns_client = rs485_client is None
+        
+        if rs485_client is None:
+            self.rs485 = RS485Client(host, port)
+            self.rs485.connect()
+        else:
+            self.rs485 = rs485_client
+        
+        self._is_activated = False
+    
+    def activate(self, timeout: float = 3.0) -> bool:
+        """
+        Activate the gripper. Must be called before any motion commands.
+        
+        Args:
+            timeout: Maximum time to wait for activation (seconds)
+        
+        Returns:
+            True if activation successful, False otherwise
+        """
+        print("Activating gripper...")
+        
+        # Send activation command: [0x0000, 0x0000, 0x0000]
+        # rACT=0: Reset gripper
+        response = self.rs485.send_modbus_request(
+            device_id=self.device_id,
+            function_code=16,
+            address=self.ACTION_REQUEST_REG,
+            values=[0x0000, 0x0000, 0x0000]
+        )
+        
+        if not response:
+            print("Failed to send reset command")
+            return False
+        
+        time.sleep(0.5)
+        
+        # Send activation command: [0x0100, 0x0000, 0x0000]
+        # rACT=1: Activate gripper
+        response = self.rs485.send_modbus_request(
+            device_id=self.device_id,
+            function_code=16,
+            address=self.ACTION_REQUEST_REG,
+            values=[0x0100, 0x0000, 0x0000]
+        )
+        
+        if not response:
+            print("Failed to send activation command")
+            return False
+        
+        # Wait for activation to complete
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            status = self.get_status()
+            if status and status.get('activated', False):
+                print("Gripper activated successfully")
+                self._is_activated = True
+                return True
+            time.sleep(0.1)
+        
+        print("Gripper activation timeout")
+        return False
+    
+    def get_status(self) -> Optional[dict]:
+        """
+        Read gripper status.
+        
+        Returns:
+            Dictionary containing status information, or None if failed:
+            - activated: bool - Gripper is activated
+            - moving: bool - Gripper is moving
+            - position: int - Current position (0-255)
+            - object_detected: bool - Object detected during grip
+            - fault: bool - Fault status
+        """
+        response = self.rs485.send_modbus_request(
+            device_id=self.device_id,
+            function_code=4,  # Read Input Registers
+            address=self.GRIPPER_STATUS_REG,
+            values=2  # Read 2 registers
+        )
+        
+        if not response:
+            return None
+        
+        parsed = RS485Client.parse_modbus_response(response, function_code=4)
+        
+        if parsed.get('error') or 'registers' not in parsed:
+            return None
+        
+        registers = parsed['registers']
+        if len(registers) < 2:
+            return None
+        
+        # Parse status register (first register)
+        status_byte = registers[0] >> 8  # High byte
+        position_byte = registers[0] & 0xFF  # Low byte
+        
+        status = {
+            'activated': bool(status_byte & 0x01),
+            'moving': bool(status_byte & 0x08),
+            'object_detected': bool((status_byte >> 6) & 0x03),
+            'fault': bool(status_byte & 0x0F),
+            'position': position_byte,
+            'raw_registers': registers
+        }
+        
+        return status
+    
+    def move_to_position(self, position: int, speed: int = 255, 
+                        force: int = 255, wait: bool = True) -> bool:
+        """
+        Move gripper to specified position.
+        
+        Args:
+            position: Target position (0=open, 255=closed)
+            speed: Closing speed (0-255, default: 255=max)
+            force: Gripping force (0-255, default: 255=max)
+            wait: Wait for motion to complete
+        
+        Returns:
+            True if command sent successfully
+        """
+        if not self._is_activated:
+            print("Warning: Gripper not activated. Call activate() first.")
+        
+        # Clamp values
+        position = max(0, min(255, position))
+        speed = max(0, min(255, speed))
+        force = max(0, min(255, force))
+        
+        # Build command: rACT=1, rGTO=1 (go to position)
+        action_byte = 0x0900  # rACT=1, rGTO=1
+        position_byte = position
+        speed_force_byte = (speed << 8) | force
+        
+        response = self.rs485.send_modbus_request(
+            device_id=self.device_id,
+            function_code=16,
+            address=self.ACTION_REQUEST_REG,
+            values=[action_byte, position_byte, speed_force_byte]
+        )
+        
+        if not response:
+            print("Failed to send position command")
+            return False
+        
+        if wait:
+            return self.wait_for_motion_complete()
+        
+        return True
+    
+    def open(self, speed: int = 255, wait: bool = True) -> bool:
+        """
+        Fully open the gripper.
+        
+        Args:
+            speed: Opening speed (0-255, default: 255=max)
+            wait: Wait for motion to complete
+        
+        Returns:
+            True if successful
+        """
+        print(f"Opening gripper (speed={speed})...")
+        return self.move_to_position(0, speed=speed, force=0, wait=wait)
+    
+    def close(self, speed: int = 255, force: int = 255, wait: bool = True) -> bool:
+        """
+        Fully close the gripper.
+        
+        Args:
+            speed: Closing speed (0-255, default: 255=max)
+            force: Gripping force (0-255, default: 255=max)
+            wait: Wait for motion to complete
+        
+        Returns:
+            True if successful
+        """
+        print(f"Closing gripper (speed={speed}, force={force})...")
+        return self.move_to_position(255, speed=speed, force=force, wait=wait)
+    
+    def wait_for_motion_complete(self, timeout: float = 5.0) -> bool:
+        """
+        Wait for gripper motion to complete.
+        
+        Args:
+            timeout: Maximum wait time in seconds
+        
+        Returns:
+            True if motion completed, False if timeout
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            status = self.get_status()
+            if status and not status['moving']:
+                print("Motion complete")
+                return True
+            time.sleep(0.05)
+        
+        print("Motion timeout")
+        return False
+    
+    def stop(self) -> bool:
+        """
+        Stop gripper motion immediately.
+        
+        Returns:
+            True if command sent successfully
+        """
+        print("Stopping gripper...")
+        # Send command with rGTO=0 to stop
+        response = self.rs485.send_modbus_request(
+            device_id=self.device_id,
+            function_code=16,
+            address=self.ACTION_REQUEST_REG,
+            values=[0x0100, 0x0000, 0x0000]  # rACT=1, rGTO=0
+        )
+        return response is not None
+    
+    def is_object_detected(self) -> bool:
+        """
+        Check if an object is detected/gripped.
+        
+        Returns:
+            True if object detected, False otherwise
+        """
+        status = self.get_status()
+        return status.get('object_detected', False) if status else False
+    
+    def get_position(self) -> Optional[int]:
+        """
+        Get current gripper position.
+        
+        Returns:
+            Position (0-255), or None if failed
+        """
+        status = self.get_status()
+        return status.get('position') if status else None
+    
+    def disconnect(self):
+        """Disconnect the gripper controller and close RS485 connection if we own it."""
+        if self._owns_client:
+            self.rs485.disconnect()
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        self.disconnect()
+
 
 def main():
+    """Demonstrate Robotiq2f140Gripper high-level interface."""
+    # Robot connection
+    robot = UR15Robot("192.168.1.15", 30002)
+    
+    if robot.open() != 0:
+        print("Failed to connect to robot")
+        return
+    
+    # Use the high-level Robotiq gripper interface
+    with Robotiq2f140Gripper(device_id=9, host="192.168.1.15", port=54321) as gripper:
+        
+        # Activate the gripper
+        if not gripper.activate():
+            print("Failed to activate gripper")
+            robot.close()
+            return
+        
+        # Check status
+        status = gripper.get_status()
+        print(f"Gripper status: {status}")
+        
+        # Close the gripper
+        gripper.close(speed=255, force=255, wait=True)
+        
+        time.sleep(1)
+        
+        # Check if object detected
+        if gripper.is_object_detected():
+            print("Object gripped!")
+        
+        # Open the gripper
+        gripper.open(speed=255, wait=True)
+        
+        time.sleep(1)
+        
+        # Move to specific position (half closed)
+        gripper.move_to_position(128, speed=200, force=150, wait=True)
+        
+        # Get current position
+        pos = gripper.get_position()
+        print(f"Current position: {pos}")
+    
+    robot.close()
+
+
+def main_low_level():
+    """Demonstrate low-level RS485Client interface (old method)."""
+    # Robot connection
+    robot = UR15Robot("192.168.1.15", 30002)
+    
+    if robot.open() != 0:
+        print("Failed to connect to robot")
+        return
+    
+    # RS485 connection using the low-level RS485Client class
+    with RS485Client("192.168.1.15", 54321) as rs485:
+        
+        # ==== Example using send_modbus_request() ====
+        print("\n=== Using send_modbus_request() ===")
+
+        # activate
+        response = rs485.send_modbus_request(
+            device_id=9, 
+            function_code=16,  # Write Multiple Registers
+            address=0x03E8,   # Starting address
+            values=[0x0000, 0x0000, 0x0000]
+        )
+        
+        if response:
+            parsed = RS485Client.parse_modbus_response(response, function_code=3)
+            print(f"Read registers response: {parsed}")
+
+        time.sleep(3)      
+
+        # check status
+        response = rs485.send_modbus_request(
+            device_id=9, 
+            function_code=4,  # Read Holding Registers
+            address=0x07D0,   # Starting address
+            values=2          # Number of registers to read
+        )
+        
+        if response:
+            parsed = RS485Client.parse_modbus_response(response, function_code=3)
+            print(f"Read registers response: {parsed}")
+
+        time.sleep(1)      
+
+        # close gripper
+        response = rs485.send_modbus_request(
+            device_id=9, 
+            function_code=16,  # Write Multiple Registers
+            address=0x03E8,   # Starting address
+            values=[0x0900, 0x00FF, 0xFFFF]
+        )
+        
+        if response:
+            parsed = RS485Client.parse_modbus_response(response, function_code=3)
+            print(f"Read registers response: {parsed}")
+
+        time.sleep(3)      
+
+        # open gripper
+        response = rs485.send_modbus_request(
+            device_id=9, 
+            function_code=16,  # Write Multiple Registers
+            address=0x03E8,   # Starting address
+            values=[0x0900, 0x0000, 0xFFFF]
+        )
+        
+        if response:
+            parsed = RS485Client.parse_modbus_response(response, function_code=3)
+            print(f"Read registers response: {parsed}")
+
+        time.sleep(3)      
+
+
+        # response = rs485.send_modbus_request(
+        #     device_id=1, 
+        #     function_code=3,  # Read Holding Registers
+        #     address=0x1010,   # Starting address
+        #     values=2          # Number of registers to read
+        # )
+        
+        # if response:
+        #     parsed = RS485Client.parse_modbus_response(response, function_code=3)
+        #     print(f"Read registers response: {parsed}")
+
+
+        # response = rs485.send_modbus_request(
+        #     device_id=1, 
+        #     function_code=0x10,  # write register
+        #     address=0x1004,   # Starting address
+        #     values=[0, 0]
+        # )
+        
+        # if response:
+        #     parsed = RS485Client.parse_modbus_response(response, function_code=3)
+        #     print(f"Read registers response: {parsed}")
+
+        # time.sleep(1)
+
+
+        # Example 2: Write single register (FC06)
+        # response = rs485.send_modbus_request(
+        #     device_id=1,
+        #     function_code=6,  # Write Single Register
+        #     address=0x1000,
+        #     values=1234       # Value to write
+        # )
+        # if response:
+        #     parsed = RS485Client.parse_modbus_response(response, function_code=6)
+        #     print(f"Write register response: {parsed}")
+        
+        # Example 3: Write multiple registers (FC16)
+        # response = rs485.send_modbus_request(
+        #     device_id=1,
+        #     function_code=16,  # Write Multiple Registers
+        #     address=0x1000,
+        #     values=[100, 200, 300]  # List of values
+        # )
+        # if response:
+        #     parsed = RS485Client.parse_modbus_response(response, function_code=16)
+        #     print(f"Write multiple registers response: {parsed}")
+        
+    
+    # Close robot connection
+    robot.close()
+
+
+def main_RM_EGB():
     # Robot connection
     robot = UR15Robot("192.168.1.15", 30002)
     
@@ -387,26 +845,26 @@ def main():
         #     print(f"Read registers response: {parsed}")
 
 
-    
+        for i in range(11):    
+            response = rs485.send_modbus_request(
+                device_id=1, 
+                function_code=0x10,  # write register
+                address=0x1004,   # Starting address
+                values=[i*10, 0]
+            )
+            
+            if response:
+                parsed = RS485Client.parse_modbus_response(response, function_code=3)
+                print(f"Read registers response: {parsed}")
+
+            time.sleep(1)
+
+
         response = rs485.send_modbus_request(
             device_id=1, 
             function_code=0x10,  # write register
             address=0x1004,   # Starting address
-            values=[0]
-        )
-        
-        if response:
-            parsed = RS485Client.parse_modbus_response(response, function_code=3)
-            print(f"Read registers response: {parsed}")
-
-        time.sleep(1)
-
-
-        response = rs485.send_modbus_request(
-            device_id=1, 
-            function_code=0x10,  # write register
-            address=0x1004,   # Starting address
-            values=[100]
+            values=[0, 0]
         )
         
         if response:
@@ -655,9 +1113,57 @@ def main_mock():
     print("=== Mock Testing Complete ===")
 
 
-if __name__ == "__main__":
-    # Uncomment to run mock tests
-    main_mock()
+def demo_gripper_only():
+    """Demonstrate gripper control without robot connection."""
+    print("=== Robotiq 2F-140 Gripper Demo ===\n")
     
-    # Run normal main
-    # main()
+    # Create gripper controller (will auto-connect)
+    with Robotiq2f140Gripper(device_id=9, host="192.168.1.15", port=54321) as gripper:
+        
+        # 1. Activate
+        print("\n1. Activating gripper...")
+        if not gripper.activate():
+            print("Activation failed!")
+            return
+        
+        # 2. Open
+        print("\n2. Opening gripper...")
+        gripper.open(speed=255, wait=True)
+        
+        # 3. Close
+        print("\n3. Closing gripper...")
+        gripper.close(speed=255, force=255, wait=True)
+        
+        # 4. Check status
+        print("\n4. Checking status...")
+        status = gripper.get_status()
+        print(f"   Status: {status}")
+        print(f"   Object detected: {gripper.is_object_detected()}")
+        print(f"   Current position: {gripper.get_position()}")
+        
+        # 5. Partial open
+        print("\n5. Moving to 50% position...")
+        gripper.move_to_position(128, speed=200, wait=True)
+        print(f"   Position: {gripper.get_position()}")
+        
+        # 6. Final open
+        print("\n6. Final open...")
+        gripper.open(wait=True)
+    
+    print("\n=== Demo Complete ===")
+
+
+if __name__ == "__main__":
+    # Choose which demo to run:
+    
+    # Option 1: High-level gripper control with robot
+    main()
+    
+    # Option 2: Low-level RS485 commands
+    # main_low_level()
+    
+    # Option 3: Gripper only (no robot)
+    # demo_gripper_only()
+    
+    # Option 4: Mock testing (no hardware needed)
+    # main_mock()
