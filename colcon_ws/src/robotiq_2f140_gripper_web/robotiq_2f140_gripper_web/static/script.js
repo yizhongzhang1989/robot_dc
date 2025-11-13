@@ -2,10 +2,23 @@
 let statusInterval;
 let isControlling = false;
 
+// Function to adjust body padding based on header height
+function adjustBodyPadding() {
+    const header = document.querySelector('.fixed-header');
+    if (header) {
+        const headerHeight = header.offsetHeight;
+        document.body.style.paddingTop = (headerHeight + 20) + 'px'; // Add 20px margin
+    }
+}
+
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    adjustBodyPadding();
     initializeControls();
     startStatusUpdates();
+    
+    // Recalculate padding when window is resized
+    window.addEventListener('resize', adjustBodyPadding);
 });
 
 function initializeControls() {

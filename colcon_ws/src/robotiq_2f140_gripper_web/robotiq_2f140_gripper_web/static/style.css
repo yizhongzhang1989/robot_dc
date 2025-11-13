@@ -8,7 +8,7 @@ body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
-    padding-top: 400px; /* Space for fixed header - increased */
+    padding-top: 0; /* Will be set dynamically by JavaScript */
 }
 
 /* Fixed Header */
@@ -323,10 +323,6 @@ h3 {
 }
 
 @media (max-width: 768px) {
-    body {
-        padding-top: 380px; /* More space for mobile header - increased */
-    }
-    
     .header-content h1 {
         font-size: 1.5em;
     }
