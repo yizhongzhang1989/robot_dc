@@ -6,22 +6,22 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from ur15_robot_arm.ur15 import UR15Robot
 
-class URExecutePrePull2(URExecuteBase):
+class URExecutePrePull3(URExecuteBase):
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002):
         # Call parent class constructor first
         super().__init__(robot_ip, robot_port)
         
-        # Override data_dir and result_dir with prepull2-specific paths
+        # Override data_dir and result_dir with prepull3-specific paths
         self.data_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
-            "ur_locate_prepull2_data"
+            "ur_locate_prepull3_data"
         )
         
         self.result_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
-            "ur_locate_prepull2_result"
+            "ur_locate_prepull3_result"
         )
         
         # Reload parameters from the new directories
@@ -229,7 +229,7 @@ class URExecutePrePull2(URExecuteBase):
 # ================================ Force Control Functions ================================
     def force_task_touch_server(self):
         """
-        Execute force control task to touch the left handle before prepull2 using TCP coordinate system.
+        Execute force control task to touch the left handle before prepull3 using TCP coordinate system.
         """
         if self.robot is None:
             print("Robot is not initialized")
@@ -305,7 +305,7 @@ class URExecutePrePull2(URExecuteBase):
 
     def force_task_prepull_server(self):
         """
-        Execute force control task to prepull2 the left handle using TCP coordinate system.
+        Execute force control task to prepull3 the left handle using TCP coordinate system.
         """
         if self.robot is None:
             print("Robot is not initialized")
@@ -374,51 +374,51 @@ class URExecutePrePull2(URExecuteBase):
             limits=limits,
             damping=0.1,
             end_type=3,
-            end_distance=[0,0,0.10,0,0,0]
+            end_distance=[0,0,0.08,0,0,0]
         )
         time.sleep(0.5)
         return result
 
 
 if __name__ == "__main__":
-    # Create URExecutePrePull2 instance
-    ur_prepull2 = URExecutePrePull2()
+    # Create URExecutePrePull3 instance
+    ur_prepull3 = URExecutePrePull3()
     
     # All parameters are automatically loaded during initialization
     # Access them directly from instance variables
     
-    if ur_prepull2.camera_matrix is not None:
+    if ur_prepull3.camera_matrix is not None:
         print("\nCamera Matrix:")
-        print(ur_prepull2.camera_matrix)
+        print(ur_prepull3.camera_matrix)
         print("\nDistortion Coefficients:")
-        print(ur_prepull2.distortion_coefficients)
+        print(ur_prepull3.distortion_coefficients)
     
-    if ur_prepull2.cam2end_matrix is not None:
+    if ur_prepull3.cam2end_matrix is not None:
         print("\nCamera to End-effector Matrix:")
-        print(ur_prepull2.cam2end_matrix)
+        print(ur_prepull3.cam2end_matrix)
     
-    if ur_prepull2.estimated_keypoints is not None:
+    if ur_prepull3.estimated_keypoints is not None:
         print("\nEstimated Keypoints:")
-        for kp in ur_prepull2.estimated_keypoints:
+        for kp in ur_prepull3.estimated_keypoints:
             print(f"Keypoint {kp['keypoint_index']}: ({kp['x']:.6f}, {kp['y']:.6f}, {kp['z']:.6f})")
     
-    if ur_prepull2.local_transformation_matrix is not None:
+    if ur_prepull3.local_transformation_matrix is not None:
         print("\nLocal Coordinate System Transformation Matrix:")
-        print(ur_prepull2.local_transformation_matrix)
+        print(ur_prepull3.local_transformation_matrix)
     
-    if ur_prepull2.ref_joint_angles is not None:
+    if ur_prepull3.ref_joint_angles is not None:
         print("\nReference Joint Angles (radians):")
-        for i, angle in enumerate(ur_prepull2.ref_joint_angles):
+        for i, angle in enumerate(ur_prepull3.ref_joint_angles):
             print(f"Joint {i}: {angle:.6f}")
     
-    if ur_prepull2.task_position_offset is not None:
+    if ur_prepull3.task_position_offset is not None:
         print("\nTask Position Offset (in local coordinate system):")
-        print(f"x: {ur_prepull2.task_position_offset.get('x', 0):.6f}")
-        print(f"y: {ur_prepull2.task_position_offset.get('y', 0):.6f}")
-        print(f"z: {ur_prepull2.task_position_offset.get('z', 0):.6f}")
+        print(f"x: {ur_prepull3.task_position_offset.get('x', 0):.6f}")
+        print(f"y: {ur_prepull3.task_position_offset.get('y', 0):.6f}")
+        print(f"z: {ur_prepull3.task_position_offset.get('z', 0):.6f}")
 
     # Calculate target position in base coordinate system
-    target_position = ur_prepull2.get_target_position()
+    target_position = ur_prepull3.get_target_position()
     if target_position is not None:
         print("\nTarget Position in Base Coordinate System:")
         print(target_position)
@@ -426,42 +426,42 @@ if __name__ == "__main__":
     # ======================= Task execution ======================
     # move to reference joint positions (commented out for safety)
     print("\n" + "="*50)
-    ur_prepull2.movej_to_reference_joint_positions()
+    ur_prepull3.movej_to_reference_joint_positions()
     time.sleep(0.5)
     
     # align tool TCP with local coordinate system
     print("\n" + "="*50)
-    ur_prepull2.movel_to_correct_tool_tcp()
+    ur_prepull3.movel_to_correct_tool_tcp()
     time.sleep(0.5)
     
     # move to target position using linear movement
     print("\n" + "="*50)
-    ur_prepull2.movel_to_target_position()
+    ur_prepull3.movel_to_target_position()
     time.sleep(0.5)
 
     # execute force task to push server to the end
     print("\n" + "="*50)
-    ur_prepull2.force_task_touch_server()
+    ur_prepull3.force_task_touch_server()
     time.sleep(0.5)
 
     # execute force task to pull server out again
     print("\n" + "="*50)
-    ur_prepull2.force_task_prepull_server()
+    ur_prepull3.force_task_prepull_server()
     time.sleep(0.5)
     
     # # move to leave the left handle
     print("\n" + "="*50)
-    ur_prepull2.movel_in_crack_frame([0, -0.01, -0.04])
+    ur_prepull3.movel_in_crack_frame([0, -0.01, -0.04])
     time.sleep(0.5)
 
     # # move to leave the left handle
     print("\n" + "="*50)
-    ur_prepull2.movel_in_crack_frame([0, -0.20, 0])
+    ur_prepull3.movel_in_crack_frame([0, -0.20, 0])
     time.sleep(0.5)
 
     # move to reference joint positions (commented out for safety)
     print("\n" + "="*50)
-    ur_prepull2.movej_to_reference_joint_positions()
+    ur_prepull3.movej_to_reference_joint_positions()
     time.sleep(0.5)
 
 

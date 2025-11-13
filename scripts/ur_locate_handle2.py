@@ -47,11 +47,11 @@ class URLocateHandle2(URLocateBase):
         # Override movement offsets for handle2 task (in base coordinate system, unit: meters)
         # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [-0.03, 0, 0, 0, 0, 0],
+            "movement1": [0.01, 0, 0, 0, 0, 0],
             "movement2": [-0.01, 0, 0, 0, 0, 0],
-            "movement3": [0, 0, 0.01, 0, 0, 0],
-            "movement4": [-0.03, 0, -0.01, 0, 0, 0],
-            "movement5": [-0.01, 0, -0.01, 0, 0, 0]
+            "movement3": [0, -0.01, 0, 0, 0, 0],
+            "movement4": [0, 0.01, 0, 0, 0, 0],
+            "movement5": [0.015, 0.015, 0, 0, 0, 0]
         }
         
         self.local_x_kp_index = [0, 2]
@@ -59,14 +59,9 @@ class URLocateHandle2(URLocateBase):
         # Try to load collect_start_position from ref_pose.json if it exists
         self._set_new_collect_start_position()
 
-        print(f"\n{'='*60}")
-        print("URLocateHandle2 Initialized")
-        print(f"{'='*60}")
-        print(f"Data directory: {self.data_dir}")
-        print(f"Result directory: {self.result_dir}")
-        print(f"Collect start position: {self.collect_start_position}")
-        print(f"Number of movements: {len(self.movements)}")
-        print(f"{'='*60}\n")
+        # Load crack local coordinate system from log file
+        crack_coord_file = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result', 'log_local_coordinate_system_result.json')
+        self.load_crack_local_coordinate_system(crack_coord_file)
 
     def _set_new_collect_start_position(self):
         """
@@ -260,9 +255,6 @@ def main():
                         if ur_handle2.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
 
-                            # ur_handle2.movej_to_get_position_after_process()
-                            # time.sleep(0.5)
-                            
                         else:
                             print("⚠ Coordinate system validation failed!")
                     else:

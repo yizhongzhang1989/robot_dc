@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-UR Locate Frame Script
-This script inherits from URLocateBase and customizes it for frame location tasks.
+UR Locate Knob2 Script
+This script inherits from URLocateBase and customizes it for knob2 location tasks.
 """
 
 import os
@@ -16,10 +16,10 @@ from rclpy.executors import MultiThreadedExecutor
 from ur_locate_base import URLocateBase
 
 
-class URLocateFrame(URLocateBase):
+class URLocateKnob2(URLocateBase):
     def __init__(self, ffpp_web_url="http://10.172.100.34:8001", robot_ip="192.168.1.15", robot_port=30002):
         """
-        Initialize URLocateFrame class
+        Initialize URLocateKnob2 class
         
         Args:
             ffpp_web_url (str): URL for the FlowFormer++ Web API service
@@ -30,12 +30,11 @@ class URLocateFrame(URLocateBase):
         super().__init__(ffpp_web_url=ffpp_web_url, robot_ip=robot_ip, robot_port=robot_port)
         
         # Override ROS node name
-        self.get_logger().info('URLocateFrame initialized')
-              
+        self.get_logger().info('URLocateKnob2 initialized')
+        
         # Override movement offsets (in base coordinate system, unit: meters)
-        # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
         self.movements = {
-            "movement1": [0, -0.015, 0.015, 0, 0, 0],
+            "movement1": [0.01, 0, 0.02, 0, 0, 0],
             "movement2": [0, 0.01, 0, 0, 0, 0],
             "movement3": [0, -0.01, 0, 0, 0, 0],
             "movement4": [0, 0, 0.01, 0, 0, 0],
@@ -43,18 +42,18 @@ class URLocateFrame(URLocateBase):
         }
         
         # Override data directory path (for storing collected data)
-        self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_frame_data')
+        self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_knob2_data')
         
         # Override result directory path
-        self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_frame_result')
+        self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_knob2_result')
         
-        # Update reference data paths to use new data directory
+        # Override reference data paths to use new data directory
         self.ref_img_path = os.path.join(self.data_dir, 'ref_img.jpg')
         self.ref_keypoints_path = os.path.join(self.data_dir, 'ref_keypoints.json')
         self.ref_pose_path = os.path.join(self.data_dir, 'ref_pose.json')
         
         # Override local coordinate system X-axis keypoint indices
-        # For frame location, use keypoint 0 to keypoint 1 to define X-axis
+        # For knob2 location, use keypoint 0 to keypoint 2 to define X-axis
         self.local_x_kp_index = [0, 2]
         
         # Try to load collect_start_position from ref_pose.json if it exists
@@ -63,12 +62,14 @@ class URLocateFrame(URLocateBase):
         # Load crack local coordinate system from log file
         crack_coord_file = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result', 'log_local_coordinate_system_result.json')
         self.load_crack_local_coordinate_system(crack_coord_file)
+        
 
     def _set_new_collect_start_position(self):
         """
         Load collect_start_position from ref_pose.json.
-        This function requires the reference pose file to exist and be valid.
-        If the file doesn't exist or is invalid, it will raise an exception to terminate the script.
+        Note:
+            This function requires the reference pose file to exist and be valid.
+            If the file doesn't exist or is invalid, it will raise an exception to terminate the script.
         """
         if not os.path.exists(self.ref_pose_path):
             raise FileNotFoundError(f'✗ Reference pose file not found: {self.ref_pose_path}\n'
@@ -92,70 +93,25 @@ class URLocateFrame(URLocateBase):
         except Exception as e:
             raise RuntimeError(f'✗ Error loading collect_start_position from {self.ref_pose_path}: {e}')
 
-    def movej_to_safe_position_before_execution(self):
-        """
-        Move robot to get tool start position after process
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-
-        pose = [-1.5214632193194788, -1.5912000141539515, -0.061849094927310944, 
-                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-
-        pose = [-4.628224555646078, -1.5912000141539515, -0.061849094927310944, 
-                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-
-        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202, 
-                 0.06347672521557612, 1.4398412704467773, -1.2330482641803187]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-
-        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202, 
-                 -1.9046393833556117, 1.4398412704467773, -1.2330482641803187]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-
-        pose = [-4.628224555646078, -0.5939362210086365, 1.9152935186969202,
-                -1.9046393833556117, 0.1272939145565033, 3.737786054611206]
-        print("Moving robot to zero state position...")
-        res = self.robot.movej(pose, a=0.5, v=0.5)
-        time.sleep(0.5)
-        
-        if res == 0:
-            print("Robot moved to zero state successfully")
-        else:
-            print(f"Failed to move robot to zero state (error code: {res})")
-        
-        return res
-
 def main():
     """
-    Main function for URLocateFrame
+    Main function for URLocateKnob2
     """
     # Initialize ROS2
     rclpy.init()
     
     try:
-        # Initialize URLocateFrame instance (robot connection is handled internally)
-        ur_frame = URLocateFrame()
+        # Initialize URLocateKnob2 instance (robot connection is handled internally)
+        ur_knob2 = URLocateKnob2()
         
         # Check if robot was initialized successfully
-        if ur_frame.robot is None or not ur_frame.robot.connected:
+        if ur_knob2.robot is None or not ur_knob2.robot.connected:
             print("✗ Robot initialization failed. Please check robot connection and try again.")
             return
         
         # Use multi-threaded executor to handle callbacks
         executor = MultiThreadedExecutor()
-        executor.add_node(ur_frame)
+        executor.add_node(ur_knob2)
         
         # Start executor in a separate thread
         executor_thread = threading.Thread(target=executor.spin, daemon=True)
@@ -168,30 +124,30 @@ def main():
         
         # Load camera parameters
         print("Loading camera parameters...")
-        if not ur_frame.load_camera_parameters():
+        if not ur_knob2.load_camera_parameters():
             print("Failed to load camera parameters!")
             return
 
         try:
             # Perform auto data collection (includes moving to collect position)
-            if ur_frame.auto_collect_data():
+            if ur_knob2.auto_collect_data():
                 print("\n✅ Data collection completed successfully!")
                 
                 # Perform 3D keypoint estimation after data collection
-                if ur_frame.estimate_3d_position():
+                if ur_knob2.estimate_3d_position():
                     print("✅ 3D estimation completed successfully!")
                     
                     # Validate 3D estimation with reprojection
                     print("\n" + "="*60)
                     print("Validating 3D Estimation with Reprojection...")
                     print("="*60)
-                    if ur_frame.validate_keypoints_3d_estimate_result():
+                    if ur_knob2.validate_keypoints_3d_estimate_result():
                         print("✅ 3D estimation validation completed!")
                     else:
                         print("⚠ 3D estimation validation failed!")
                     
                     # Build keypoint coordinate system
-                    coord_system = ur_frame.build_local_coordinate_system()
+                    coord_system = ur_knob2.build_local_coordinate_system()
                     if coord_system:
                         print("✅ Coordinate system built successfully!")
                         
@@ -199,7 +155,7 @@ def main():
                         print("\n" + "="*60)
                         print("Validating Coordinate System...")
                         print("="*60)
-                        if ur_frame.validate_local_coordinate_system(coord_system):
+                        if ur_knob2.validate_local_coordinate_system(coord_system):
                             print("✅ Coordinate system validation completed!")
 
                         else:
@@ -215,11 +171,11 @@ def main():
             print(f"Error during execution: {e}")
         
         finally:
-            
+
             # Always disconnect robot in finally block
-            if ur_frame.robot is not None:
+            if ur_knob2.robot is not None:
                 try:
-                    ur_frame.robot.close()
+                    ur_knob2.robot.close()
                     print("Robot disconnected successfully")
                 except Exception as e:
                     print(f"Error disconnecting robot: {e}")
@@ -227,7 +183,7 @@ def main():
             # Shutdown executor
             executor.shutdown()
             # Destroy ROS node
-            ur_frame.destroy_node()
+            ur_knob2.destroy_node()
     
     finally:
         # Shutdown ROS2

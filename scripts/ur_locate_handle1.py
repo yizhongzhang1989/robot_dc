@@ -39,7 +39,7 @@ class URLocateHandle1(URLocateBase):
         self.movements = {
             "movement1": [-0.01, 0, 0, 0, 0, 0],
             "movement2": [0.01, 0, 0, 0, 0, 0],
-            "movement3": [-0.02, 0.02, 0, 0, 0, 0],
+            "movement3": [-0.015, 0.015, 0, 0, 0, 0],
             "movement4": [0, -0.01, 0, 0, 0, 0],
             "movement5": [0, 0.01, 0, 0, 0, 0]
         }
@@ -60,9 +60,9 @@ class URLocateHandle1(URLocateBase):
         # Try to load collect_start_position from ref_pose.json if it exists
         self._set_new_collect_start_position()
 
-        print(f"✓ URLocateHandle1 initialized")
-        print(f"  Data directory: {self.data_dir}")
-        print(f"  Result directory: {self.result_dir}")
+        # Load crack local coordinate system from log file
+        crack_coord_file = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result', 'log_local_coordinate_system_result.json')
+        self.load_crack_local_coordinate_system(crack_coord_file)
 
     def _set_new_collect_start_position(self):
         """

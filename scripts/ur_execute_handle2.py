@@ -29,7 +29,9 @@ class URExecuteHandle2(URExecuteBase):
         self._load_local_coordinate_system()
         self._load_ref_joint_angles()
         self._load_task_position_information()
-    
+        self._load_crack_local_coordinate_system()
+
+# ================================= Movement Functions ================================
     def movel_to_correct_tool_tcp(self):
         """
         Align tool TCP orientation with base and local coordinate systems, then rotate 30 degrees around TCP Z axis
@@ -38,8 +40,8 @@ class URExecuteHandle2(URExecuteBase):
             print("Robot is not initialized")
             return -1
         
-        if self.local_transformation_matrix is None:
-            print("Local coordinate system transformation matrix not loaded")
+        if self.crack_coord_transformation is None:
+            print("Crack local coordinate system transformation matrix not loaded")
             return -1
         
         # Get current TCP pose
@@ -48,37 +50,31 @@ class URExecuteHandle2(URExecuteBase):
             print("Failed to get current robot pose")
             return -1
         
-        # Extract rotation matrix from local transformation matrix (3x3)
-        local_rotation = self.local_transformation_matrix[:3, :3]
+        # Extract rotation matrix from crack coordinate transformation matrix (3x3)
+        crack_local_rotation = self.crack_coord_transformation[:3, :3]
         
-        # Local coordinate system axes in base frame
-        local_x = local_rotation[:, 0]  # Local X+ direction
-        local_y = local_rotation[:, 1]  # Local Y+ direction
-        local_z = local_rotation[:, 2]  # Local Z+ direction
+        # Crack local coordinate system axes in base frame
+        crack_local_x = crack_local_rotation[:, 0]  # Crack Local X+ direction
+        crack_local_y = crack_local_rotation[:, 1]  # Crack Local Y+ direction
+        crack_local_z = crack_local_rotation[:, 2]  # Crack Local Z+ direction
         
-        # Base coordinate system Z axis (downward direction for tool)
-        base_z_negative = np.array([0, 0, -1])  # Base Z- direction
-        
-        # Construct target rotation matrix for tool frame:
-        # Priority 1: Tool Z+ -> Base Z- (pointing downward)
-        # Priority 2: Tool X+ -> Local X+
-        # Priority 3: Tool Y+ -> Calculated by right-hand rule: Y = Z × X
-        tool_z = base_z_negative  # Base Z-
-
-        tool_x = local_x  # Local X+
+        # Construct target rotation matrix for tool frame according to specified mapping:
+        # Tool Z+ = Crack Local Z-
+        # Tool X+ = Crack Local X+
+        # Tool Y+ = Crack Local Y-
+        tool_z = -crack_local_z  # Crack Local Z-
+        tool_x = crack_local_x   # Crack Local X+
+        tool_y = -crack_local_y  # Crack Local Y-
         
         # Normalize to ensure unit vectors
         tool_z = tool_z / np.linalg.norm(tool_z)
         tool_x = tool_x / np.linalg.norm(tool_x)
-        
-        # Calculate tool_y using right-hand rule: Y = Z × X
-        tool_y = np.cross(tool_z, tool_x)
         tool_y = tool_y / np.linalg.norm(tool_y)
         
         target_tool_rotation = np.column_stack([
-            tool_x,  # Tool X+ = Local X+
-            tool_y,  # Tool Y+ = Local Y- (adjusted if needed)
-            tool_z   # Tool Z+ = Base Z-
+            tool_x,  # Tool X+ = Crack Local X+
+            tool_y,  # Tool Y+ = Crack Local Y-
+            tool_z   # Tool Z+ = Crack Local Z-
         ])
         
         # Convert rotation matrix to rotation vector (axis-angle representation)
@@ -95,10 +91,10 @@ class URExecuteHandle2(URExecuteBase):
             rotation_vector[2]    # rz
         ]
         
-        print("\nStep 1: Aligning tool TCP with base and local coordinate systems...")
+        print("\nStep 1: Aligning tool TCP with crack local coordinate system...")
         print(f"Target pose: {target_pose}")
         
-        res = self.robot.movel(target_pose, a=0.1, v=0.05)
+        res = self.robot.movel(target_pose, a=0.1, v=0.1)
         time.sleep(0.5)
 
         if res != 0:
@@ -111,8 +107,8 @@ class URExecuteHandle2(URExecuteBase):
         angle_deg = 31
         angle_rad = np.deg2rad(angle_deg)
         
-        # The Z axis in tool frame corresponds to base_z_negative in base frame
-        rotation_axis = base_z_negative / np.linalg.norm(base_z_negative)  # Normalize
+        # The Z axis in tool frame corresponds to crack_local_z_negative in base frame
+        rotation_axis = tool_z / np.linalg.norm(tool_z)  # Normalize (should already be normalized)
         additional_rotation = R.from_rotvec(angle_rad * rotation_axis)
         
         # Combine the rotations: first align, then rotate around Z
@@ -131,7 +127,7 @@ class URExecuteHandle2(URExecuteBase):
         print(f"\nStep 2: Rotating {angle_deg} degrees around TCP Z axis...")
         print(f"Final pose: {final_pose}")
         
-        res = self.robot.movel(final_pose, a=0.1, v=0.05)
+        res = self.robot.movel(final_pose, a=0.1, v=0.1)
         time.sleep(0.5)
         
         if res == 0:
@@ -213,7 +209,7 @@ class URExecuteHandle2(URExecuteBase):
         
         # Step 2: Move along local Z direction to final target position
         tool_offset_z = 0.2265  # Tool offset along local Z direction (in meters)
-        correct_offset = 0.015   # Correct offset to avoid collision (meters)
+        correct_offset = 0.02   # Correct offset to avoid collision (meters)
         final_movement_z = (movement_local_z + tool_offset_z + correct_offset) * local_z
         final_position = intermediate_position + final_movement_z
         
@@ -229,69 +225,13 @@ class URExecuteHandle2(URExecuteBase):
         print(f"\nStep 2: Moving along local Z direction...")
         print(f"Final pose: {final_pose}")
         
-        res = self.robot.movel(final_pose, a=0.1, v=0.05)
+        res = self.robot.movel(final_pose, a=0.1, v=0.1)
         time.sleep(0.5)
 
         if res == 0:
             print("Robot moved to target position successfully")
         else:
             print(f"Failed to move along local Z (error code: {res})")
-        
-        return res
-
-    def movel_to_leave_server(self, distance):
-        """
-        Move robot based on "distance" (dx, dy, dz) in local coordinate system to leave the server.
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-        
-        if self.local_transformation_matrix is None:
-            print("Local coordinate system transformation matrix not loaded")
-            return -1
-        
-        # Get current TCP pose
-        current_pose = self.robot.get_actual_tcp_pose()
-        if current_pose is None or len(current_pose) < 6:
-            print("Failed to get current robot pose")
-            return -1
-        
-        # Parse distance parameter - must be a 3D array
-        if isinstance(distance, (list, tuple)) and len(distance) == 3:
-            local_displacement = np.array(distance)
-        else:
-            print("Invalid distance parameter. Must be [dx, dy, dz] in local coordinate system")
-            return -1
-        
-        # Extract rotation matrix from local transformation matrix (3x3)
-        local_rotation = self.local_transformation_matrix[:3, :3]
-        
-        # Transform displacement from local coordinate system to base coordinate system
-        # displacement_base = R_local_to_base * displacement_local
-        base_displacement = local_rotation @ local_displacement
-        
-        # Calculate target pose in base coordinate system
-        target_pose = [
-            current_pose[0] + base_displacement[0],  # x
-            current_pose[1] + base_displacement[1],  # y
-            current_pose[2] + base_displacement[2],  # z
-            current_pose[3],                         # rx (keep current orientation)
-            current_pose[4],                         # ry
-            current_pose[5]                          # rz
-        ]
-        
-        print(f"\n[INFO] Moving away from handle: {local_displacement} in local frame...")
-        print(f"Local displacement (local frame): {local_displacement}")
-        print(f"Base displacement (base frame): {base_displacement}")
-        
-        res = self.robot.movel(target_pose, a=0.1, v=0.05)
-        time.sleep(0.5)
-
-        if res == 0:
-            print("[INFO] Successfully moved away from handle")
-        else:
-            print(f"[ERROR] Failed to move away from handle (error code: {res})")
         
         return res
 
@@ -402,7 +342,7 @@ class URExecuteHandle2(URExecuteBase):
         
         # Set force mode parameters
         selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
-        wrench = [0, 70, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 80, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task...")
@@ -523,10 +463,6 @@ if __name__ == "__main__":
     # ur_handle2.pushrod_fine_adjust(937)
     # time.sleep(5)
 
-    # print("\n" + "="*50)
-    # ur_handle2.movej_to_execute_start()
-    # time.sleep(0.5)
-
     print("\n" + "="*70)
     print("Moving robot to reference joint positions...")
     ur_handle2.movej_to_reference_joint_positions()
@@ -549,10 +485,10 @@ if __name__ == "__main__":
 
     print("\n" + "="*50)
     ur_handle2.lift_platform_coarse_adjust(926)
-    time.sleep(5)  
+    time.sleep(3)  
 
     print("\n" + "="*50)
-    ur_handle2.movel_to_leave_server([0,0.02,-0.015])
+    ur_handle2.movel_in_crack_frame([0,0.02,-0.01])
     time.sleep(0.5)
 
     # step2: move to positon 2
@@ -562,7 +498,7 @@ if __name__ == "__main__":
 
     # move to exit position
     print("\n" + "="*50)
-    ur_handle2.movel_to_leave_server([0,0,0.20])
+    ur_handle2.movel_in_crack_frame([0,0,0.20])
     time.sleep(0.5)
 
     print("\n" + "="*50)
