@@ -295,7 +295,7 @@ class URExecuteClose(URExecuteBase):
         print("Step 1 completed successfully")
         
         # Step 2: Move along local Y direction to final target (with tool offset)
-        final_movement_y = (movement_local_y - 0.2) * local_y
+        final_movement_y = (movement_local_y - 0.25) * local_y
         final_position = intermediate_position + final_movement_y
         
         final_pose = [
@@ -338,7 +338,7 @@ class URExecuteClose(URExecuteBase):
         # Set force mode parameters
         task_frame = tcp_pose  # Use TCP coordinate system instead of base
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to TCP)
-        wrench = [0, 0, 15, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 25, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task...")
@@ -351,7 +351,7 @@ class URExecuteClose(URExecuteBase):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.02,0.02,0.15,0,0,0]
+            end_distance=[0.02,0.02,0.10,0,0,0]
         )
         time.sleep(0.5)
         return result
@@ -373,7 +373,7 @@ class URExecuteClose(URExecuteBase):
         # Set force mode parameters
         task_frame = tcp_pose  # Use TCP coordinate system instead of base
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to TCP)
-        wrench = [0, 0, 15, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 25, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task...")
@@ -627,7 +627,7 @@ class URExecuteClose(URExecuteBase):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.05,0.05,0.05,0,0,0]
+            end_distance=[0.06,0.05,0.05,0,0,0]
         )
         
         if result1 != 0:

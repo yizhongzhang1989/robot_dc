@@ -241,7 +241,7 @@ class URExecuteCloseLeft(URExecuteBase):
         # Set force mode parameters
         task_frame = tcp_pose  # Use TCP coordinate system instead of base
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to TCP)
-        wrench = [0, 0, 15, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 25, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task...")
@@ -254,7 +254,7 @@ class URExecuteCloseLeft(URExecuteBase):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.02,0.02,0.14,0,0,0]
+            end_distance=[0.02,0.02,0.10,0,0,0]
         )
         time.sleep(0.5)
         return result
@@ -554,7 +554,7 @@ class URExecuteCloseLeft(URExecuteBase):
         
         # Set force mode parameters for unlocking
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable torque control in Z direction only
-        wrench = [-15, 0, 25, 0, 0, -1.0]
+        wrench = [-15, 0, 30, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - unlocking...")
@@ -567,7 +567,7 @@ class URExecuteCloseLeft(URExecuteBase):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.9,0.05,0.10,0,0,0]
+            end_distance=[0.08,0.05,0.10,0,0,0]
         )
         
         if result1 != 0:
