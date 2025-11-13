@@ -13,6 +13,7 @@ import uuid
 import logging
 import threading
 import time
+import os
 
 # Configure root logging level
 logging.basicConfig(level=logging.INFO)
@@ -27,29 +28,15 @@ POSITION_TOLERANCE = 0.05       # 调低误差带：目标高度允许误差 ±0
 COMMAND_INTERVAL = 0.0          # 设为 0 表示不做时间节流，仅靠 movement_state 去重
 
 # ═══════════════════════════════════════════════════════════════
-# Overshoot Learning Configuration
+# Overshoot Calibration Configuration
 # ═══════════════════════════════════════════════════════════════
-# 超调学习开关：控制是否启用超调自适应学习功能
-# - True: 启用学习模式
-#   * 每次 goto_height 后测量实际超调值
-#   * 使用 EMA 算法持续更新 avg_overshoot_up/down
-#   * 打印 Bootstrap 引导和推荐日志
-#   * 累积样本跨 goto_height 会话保留
-#   * 日志会输出推荐的 OVERSHOOT_INIT 值供人工调整
-# - False: 使用固定模式（默认）
-#   * 每次 goto_height 启动时重置为下方的 OVERSHOOT_INIT 固定值
-#   * 不进行超调测量、不更新 EMA、不打印学习日志
-#   * 适合生产环境，避免日志干扰
-OVERSHOOT_LEARNING_ENABLED = False  
-
-# 预测性提前停参数（用于减少超调）
-# 这些是固定初始值，当 OVERSHOOT_LEARNING_ENABLED=False 时每次都使用这些值
-# 当学习模式开启后，可根据日志中的推荐值手动更新这里的常量
-OVERSHOOT_INIT_UP = 2.067      # 初始向上超调估计 (mm) 使用实验推荐 median (cv=0.111)
-OVERSHOOT_INIT_DOWN = 2.699    # 初始向下超调估计 (mm) 使用实验推荐 median (cv=0.097)
-OVERSHOOT_ALPHA = 0.25         # 指数平均权重 (新值占比) - 仅学习模式使用
-OVERSHOOT_SETTLE_DELAY = 0.25  # (s) 停止后等待稳定再测量超调 - 仅学习模式使用
-OVERSHOOT_MIN_MARGIN = 0.3     # (mm) 低于该值不使用提前停，避免过早停止导致未达目标
+# Predictive early stop parameters (to reduce overshoot)
+# These are default initial values used when no calibration config file exists
+# Use web calibration interface to collect samples and update these values
+OVERSHOOT_INIT_UP = 2.7999999999999545      # Initial upward overshoot estimate (mm)
+OVERSHOOT_INIT_DOWN = 3.0139999999999985    # Initial downward overshoot estimate (mm)
+OVERSHOOT_SETTLE_DELAY = 0.5   # (s) Wait time after stop to measure stable position (increased from 0.25s)
+OVERSHOOT_MIN_MARGIN = 0.3     # (mm) Minimum margin - don't use early stop if below this
 
 
 class LiftRobotNode(Node):
@@ -90,22 +77,55 @@ class LiftRobotNode(Node):
         self.control_enabled = False        # Enable/disable closed-loop HEIGHT control (PLATFORM ONLY)
         self.control_mode = 'manual'        # 'manual' or 'auto' (height control)
         self.movement_state = 'stop'        # Current movement state: 'up', 'down', or 'stop'
-        # Overshoot tracking state (must be instance attributes)
-        self.avg_overshoot_up = OVERSHOOT_INIT_UP
-        self.avg_overshoot_down = OVERSHOOT_INIT_DOWN
-        self.height_at_stop = None
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Load Overshoot Calibration from Config File
+        # ═══════════════════════════════════════════════════════════════
+        config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+        overshoot_up_loaded = OVERSHOOT_INIT_UP
+        overshoot_down_loaded = OVERSHOOT_INIT_DOWN
+        
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                    overshoot_up_loaded = config_data.get('overshoot_up', OVERSHOOT_INIT_UP)
+                    overshoot_down_loaded = config_data.get('overshoot_down', OVERSHOOT_INIT_DOWN)
+                    self.get_logger().info(
+                        f"[lift_robot_platform] Loaded overshoot calibration: "
+                        f"up={overshoot_up_loaded}, down={overshoot_down_loaded}"
+                    )
+            except Exception as e:
+                self.get_logger().warn(
+                    f"[lift_robot_platform] Warning: Failed to load overshoot config: {e}"
+                )
+                self.get_logger().warn(
+                    f"[lift_robot_platform] Using default values: "
+                    f"up={OVERSHOOT_INIT_UP}, down={OVERSHOOT_INIT_DOWN}"
+                )
+        else:
+            self.get_logger().warn(
+                f"[lift_robot_platform] No overshoot config found at {config_path}"
+            )
+            self.get_logger().warn(
+                f"[lift_robot_platform] Using default values: "
+                f"up={OVERSHOOT_INIT_UP}, down={OVERSHOOT_INIT_DOWN}"
+            )
+        
+        # Overshoot parameters (loaded from config, used for predictive early stop)
+        self.avg_overshoot_up = overshoot_up_loaded
+        self.avg_overshoot_down = overshoot_down_loaded
+        
+        # Web calibration tracking state
+        self.height_at_stop = None           # Height when stop command issued
         self.last_stop_direction = None      # 'up' or 'down'
         self.last_stop_time = None
         self.overshoot_timer = None
-        # Bootstrap & recent raw samples for recommendation
-        self.overshoot_bootstrap_samples_up = []   # 初始引导阶段向上超调原始值
-        self.overshoot_bootstrap_samples_down = [] # 初始引导阶段向下超调原始值
-        self.OVERSHOOT_BOOTSTRAP_COUNT = 3         # 收集多少原始样本后确定初始 EMA 基准（降低使重置更早）
-        self.recent_raw_overshoot_up = []          # 最近若干次向上 raw 超调
-        self.recent_raw_overshoot_down = []        # 最近若干次向下 raw 超调
-        self.RECENT_RAW_LIMIT = 8                  # 最近样本保留数量
-        self.RECOMMEND_MIN_STABLE_COUNT = 3        # 至少多少次非零样本后才给出稳定推荐
-        self.OVERSHOOT_VARIANCE_THRESHOLD = 0.18   # 变异系数 (std/mean) 低于该值认为稳定
+        self.last_goto_target = None         # Target height for last goto_height command
+        self.last_goto_actual = None         # Actual stable height after settle delay
+        self.last_goto_stop_height = None    # Height when stop command was issued (for residual overshoot calculation)
+        self.last_goto_direction = None      # 'up' or 'down'
+        self.last_goto_timestamp = None      # When the measurement completed
         
         # ═══════════════════════════════════════════════════════════════
         # Global System Lock (Platform and Pushrod Mutual Exclusion)
@@ -123,6 +143,14 @@ class LiftRobotNode(Node):
         self.task_start_time = None        # Unix timestamp (seconds)
         self.task_end_time = None          # Unix timestamp (seconds)
         self.completion_reason = None      # None | 'target_reached' | 'force_reached' | 'limit_exceeded' | 'manual_stop'
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Motion Stall Detection (Hardware Failure Protection)
+        # ═══════════════════════════════════════════════════════════════
+        self.stall_check_start_time = None  # Time when movement command was sent
+        self.stall_check_start_position = None  # Position when movement command was sent
+        self.stall_check_duration = 0.5     # seconds - how long to wait before checking for stall
+        self.position_change_tolerance = 0.01  # mm - positions within this range considered identical
         
         # Create controller
         self.controller = LiftRobotController(
@@ -344,6 +372,12 @@ class LiftRobotNode(Node):
                         self.control_mode = 'auto'
                         self.control_enabled = True
                         
+                        # Store target for web calibration
+                        self.last_goto_target = target_height
+                        self.last_goto_actual = None  # Will be measured after settle delay
+                        self.last_goto_direction = None  # Will be determined by movement
+                        self.last_goto_timestamp = None
+                        
                         # Reset movement tracking state for new control session
                         self.movement_state = 'stop'  # Reset movement state
                         self.last_command_time = self.get_clock().now()
@@ -356,33 +390,12 @@ class LiftRobotNode(Node):
                         self.last_stop_direction = None
                         self.last_stop_time = None
                         
-                        # Overshoot learning control
-                        if OVERSHOOT_LEARNING_ENABLED:
-                            # Learning mode: avg_overshoot values persist and accumulate across sessions
-                            # Bootstrap samples and recent raw samples also persist
-                            self.get_logger().info(
-                                f"[SEQ {seq_id_str}] Overshoot learning ENABLED - "
-                                f"using learned values (up={self.avg_overshoot_up:.3f}mm, down={self.avg_overshoot_down:.3f}mm)"
-                            )
-                        else:
-                            # Fixed mode: reset to initial values from constants every time
-                            self.avg_overshoot_up = OVERSHOOT_INIT_UP
-                            self.avg_overshoot_down = OVERSHOOT_INIT_DOWN
-                            # Clear learning samples (no accumulation)
-                            self.overshoot_bootstrap_samples_up = []
-                            self.overshoot_bootstrap_samples_down = []
-                            self.recent_raw_overshoot_up = []
-                            self.recent_raw_overshoot_down = []
-                            self.get_logger().info(
-                                f"[SEQ {seq_id_str}] Overshoot learning DISABLED - "
-                                f"using fixed values (up={OVERSHOOT_INIT_UP:.3f}mm, down={OVERSHOOT_INIT_DOWN:.3f}mm)"
-                            )
-                        
                         # Start goto_height task (owner=platform)
                         self._start_task('goto_height', owner='platform')
                         self.get_logger().info(
                             f"[SEQ {seq_id_str}] Auto mode: target height={self.target_height:.2f}mm "
-                            f"(current={self.current_height:.2f}mm, error={current_error:.2f}mm)"
+                            f"(current={self.current_height:.2f}mm, error={current_error:.2f}mm, "
+                            f"overshoot_up={self.avg_overshoot_up:.3f}mm, overshoot_down={self.avg_overshoot_down:.3f}mm)"
                         )
                 else:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] goto_height requires target_height field")
@@ -698,12 +711,20 @@ class LiftRobotNode(Node):
         
         # ═══════════════════════════════════════════════════════════════
         # HEIGHT CONTROL SAFETY: Check for excessive overshoot
+        # This check must happen regardless of control_enabled state
+        # because overshoot can occur AFTER early stop is triggered
+        # Check direction-specific overshoot to avoid false triggers
         # ═══════════════════════════════════════════════════════════════
         height_overshoot_threshold = 10.0  # mm
         
-        if self.control_enabled and self.control_mode == 'auto':
-            if self.movement_state == 'up':
-                # Moving up: check if exceeded target by more than threshold
+        # Check overshoot during active goto_height task (even if control disabled)
+        if self.task_type == 'goto_height' and self.task_state == 'running':
+            # Determine expected movement direction based on error
+            error = self.target_height - self.current_height
+            
+            # Only check overshoot in the direction we're moving/moved
+            if error > 0 or self.movement_state == 'up' or self.last_stop_direction == 'up':
+                # Moving/moved upward: only check upward overshoot
                 if self.current_height > self.target_height + height_overshoot_threshold:
                     self.get_logger().error(
                         f"🚨 HEIGHT CONTROL EMERGENCY: Height overshoot detected! "
@@ -713,9 +734,9 @@ class LiftRobotNode(Node):
                     # Trigger emergency reset (6-step process)
                     self._trigger_emergency_reset('height_overshoot')
                     return
-                    
-            elif self.movement_state == 'down':
-                # Moving down: check if exceeded target by more than threshold (negative direction)
+            
+            if error < 0 or self.movement_state == 'down' or self.last_stop_direction == 'down':
+                # Moving/moved downward: only check downward undershoot
                 if self.current_height < self.target_height - height_overshoot_threshold:
                     self.get_logger().error(
                         f"🚨 HEIGHT CONTROL EMERGENCY: Height undershoot detected! "
@@ -757,28 +778,75 @@ class LiftRobotNode(Node):
         # Priority 3: 移除时间节流逻辑：只在方向需要变化或到达目标时发送命令。
         # （依靠 movement_state 防止重复脉冲）
         
+        # ═══════════════════════════════════════════════════════════════
+        # Priority 2.5: Motion Stall Detection
+        # If movement_state is 'up' or 'down' but position hasn't changed after 0.5s,
+        # reset to 'stop' to trigger re-sending command (hardware failure recovery)
+        # ═══════════════════════════════════════════════════════════════
+        if self.movement_state in ['up', 'down']:
+            # Check if we've been in this movement state long enough
+            if self.stall_check_start_time is not None:
+                elapsed = time.time() - self.stall_check_start_time
+                
+                if elapsed >= self.stall_check_duration:
+                    # Check if position has changed since movement started
+                    position_change = abs(self.current_height - self.stall_check_start_position)
+                    
+                    if position_change <= self.position_change_tolerance:
+                        # Motor stalled - position not changing despite movement command
+                        self.get_logger().warning(
+                            f"[Control] ⚠️  STALL DETECTED: movement_state={self.movement_state} "
+                            f"but position unchanged at {self.current_height:.2f}mm for {self.stall_check_duration}s. "
+                            f"Resetting to 'stop' to re-send command."
+                        )
+                        self.movement_state = 'stop'
+                        self.stall_check_start_time = None
+                        self.stall_check_start_position = None
+                        # Next control cycle will detect error and re-send movement command
+        else:
+            # Not in active movement - clear stall detection state
+            self.stall_check_start_time = None
+            self.stall_check_start_position = None
+        
         # Priority 3: Send movement command based on error direction
         try:
             if error > POSITION_TOLERANCE:
                 # Need to move up - only send command if not already moving up
                 if self.movement_state != 'up':
                     # 仅在方向变化时发送一次脉冲
+                    self.get_logger().info(
+                        f"[Control] ⬆️  Sending UP command: current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}"
+                    )
                     self.controller.up()
                     self.movement_state = 'up'
-                    self.get_logger().info(
-                        f"[Control] ⬆️  DIR->UP current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}"
-                    )
                     self.last_command_time = now
-                # 已经在向上运动则不重复发指令（避免 50Hz 重复脉冲）
+                    # Start stall detection timer
+                    self.stall_check_start_time = time.time()
+                    self.stall_check_start_position = self.current_height
+                else:
+                    # Already moving up - periodic status log
+                    if (time.time() - self.task_start_time) % 2.0 < CONTROL_RATE:  # Log every 2 seconds
+                        self.get_logger().debug(
+                            f"[Control] ⬆️  Continuing UP: current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}"
+                        )
                 
             elif error < -POSITION_TOLERANCE:
                 if self.movement_state != 'down':
+                    self.get_logger().info(
+                        f"[Control] ⬇️  Sending DOWN command: current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}"
+                    )
                     self.controller.down()
                     self.movement_state = 'down'
-                    self.get_logger().info(
-                        f"[Control] ⬇️  DIR->DOWN current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}"
-                    )
                     self.last_command_time = now
+                    # Start stall detection timer
+                    self.stall_check_start_time = time.time()
+                    self.stall_check_start_position = self.current_height
+                else:
+                    # Already moving down - periodic status log
+                    if (time.time() - self.task_start_time) % 2.0 < CONTROL_RATE:  # Log every 2 seconds
+                        self.get_logger().debug(
+                            f"[Control] ⬇️  Continuing DOWN: current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}"
+                        )
                 
                 
         except Exception as e:
@@ -822,6 +890,16 @@ class LiftRobotNode(Node):
                 status['task_duration'] = self.task_end_time - self.task_start_time
             if self.completion_reason is not None:
                 status['completion_reason'] = self.completion_reason
+            
+            # Add last goto_height measurement for web calibration
+            if self.last_goto_target is not None:
+                status['last_goto_target'] = round(self.last_goto_target, 2)
+            if self.last_goto_actual is not None:
+                status['last_goto_actual'] = round(self.last_goto_actual, 2)
+                if self.last_goto_stop_height is not None:
+                    status['last_goto_stop_height'] = round(self.last_goto_stop_height, 2)
+                status['last_goto_direction'] = self.last_goto_direction
+                status['last_goto_timestamp'] = self.last_goto_timestamp
             
             status_msg = String()
             status_msg.data = json.dumps(status)
@@ -869,103 +947,55 @@ class LiftRobotNode(Node):
         )
 
     def _measure_overshoot(self):
-        """Measure overshoot after settle delay and update EMA (only if learning enabled)."""
+        """Measure stable position after settle delay for web calibration.
+        
+        CRITICAL: Measures RESIDUAL overshoot (movement after stop command)
+        This is what the EMA algorithm should learn - the inertial drift that 
+        occurs even after sending the stop pulse. This value is used to 
+        calculate the early-stop threshold (target ± avg_overshoot).
+        
+        DO NOT measure total error from target - that would make the calibration
+        try to compensate for early-stop offsets, creating a feedback loop.
+        """
         try:
-            # Skip overshoot measurement if learning is disabled
-            if not OVERSHOOT_LEARNING_ENABLED:
-                # Just clear temporary tracking state
-                self.height_at_stop = None
-                self.last_stop_direction = None
-                return
-            
             stable_height = self.current_height
             if self.height_at_stop is None or self.last_stop_direction is None:
                 return
             
-            if self.last_stop_direction == 'up':
-                raw_overshoot = max(0.0, stable_height - self.height_at_stop)
-                # Bootstrap 引导阶段：优先收集原始样本，达到个数后用中位数重置 EMA
-                if len(self.overshoot_bootstrap_samples_up) < self.OVERSHOOT_BOOTSTRAP_COUNT:
-                    self.overshoot_bootstrap_samples_up.append(raw_overshoot)
-                    self.get_logger().info(
-                        f"[Overshoot-Bootstrap] UP sample={raw_overshoot:.3f} collected={len(self.overshoot_bootstrap_samples_up)}/{self.OVERSHOOT_BOOTSTRAP_COUNT}"
-                    )
-                    if len(self.overshoot_bootstrap_samples_up) == self.OVERSHOOT_BOOTSTRAP_COUNT:
-                        median_val = sorted(self.overshoot_bootstrap_samples_up)[len(self.overshoot_bootstrap_samples_up)//2]
-                        self.avg_overshoot_up = median_val
-                        self.get_logger().info(
-                            f"[Overshoot-Bootstrap] UP median={median_val:.3f} -> init EMA reset"
-                        )
-                else:
-                    # 正常 EMA 更新
-                    self.avg_overshoot_up = (1 - OVERSHOOT_ALPHA) * self.avg_overshoot_up + OVERSHOOT_ALPHA * raw_overshoot
-                # 维护最近原始样本列表
-                self.recent_raw_overshoot_up.append(raw_overshoot)
-                if len(self.recent_raw_overshoot_up) > self.RECENT_RAW_LIMIT:
-                    self.recent_raw_overshoot_up.pop(0)
+            # Store measurement for web calibration interface
+            self.last_goto_actual = stable_height
+            self.last_goto_stop_height = self.height_at_stop  # Save stop height for web display
+            self.last_goto_direction = self.last_stop_direction
+            self.last_goto_timestamp = time.time()
+            
+            # Calculate RESIDUAL overshoot (movement after stop command)
+            # This is the inertial drift that EMA should learn
+            if self.last_goto_target is not None:
+                if self.last_stop_direction == 'up':
+                    # Upward: residual overshoot = how much we drifted UP after stopping
+                    # Positive value means we drifted upward (normal inertia)
+                    # Negative value means we fell back (unusual, but possible)
+                    total_overshoot = stable_height - self.height_at_stop
+                else:  # down
+                    # Downward: residual overshoot = how much we drifted DOWN after stopping  
+                    # Positive value means we drifted downward (normal inertia)
+                    # Negative value means we bounced back up (unusual)
+                    total_overshoot = self.height_at_stop - stable_height
+                
                 self.get_logger().info(
-                    f"[Overshoot] UP measured={raw_overshoot:.3f} avg={self.avg_overshoot_up:.3f} stable={stable_height:.2f} stop={self.height_at_stop:.2f}"
+                    f"[Overshoot] {self.last_stop_direction.upper()} measured: "
+                    f"target={self.last_goto_target:.2f} stop_at={self.height_at_stop:.2f} actual={stable_height:.2f} "
+                    f"residual_overshoot={total_overshoot:.3f}mm (drift after stop command)"
                 )
-                # 推荐初始参数输出
-                self._recommend_overshoot_init(direction='up')
-            elif self.last_stop_direction == 'down':
-                raw_overshoot = max(0.0, self.height_at_stop - stable_height)
-                if len(self.overshoot_bootstrap_samples_down) < self.OVERSHOOT_BOOTSTRAP_COUNT:
-                    self.overshoot_bootstrap_samples_down.append(raw_overshoot)
-                    self.get_logger().info(
-                        f"[Overshoot-Bootstrap] DOWN sample={raw_overshoot:.3f} collected={len(self.overshoot_bootstrap_samples_down)}/{self.OVERSHOOT_BOOTSTRAP_COUNT}"
-                    )
-                    if len(self.overshoot_bootstrap_samples_down) == self.OVERSHOOT_BOOTSTRAP_COUNT:
-                        median_val = sorted(self.overshoot_bootstrap_samples_down)[len(self.overshoot_bootstrap_samples_down)//2]
-                        self.avg_overshoot_down = median_val
-                        self.get_logger().info(
-                            f"[Overshoot-Bootstrap] DOWN median={median_val:.3f} -> init EMA reset"
-                        )
-                else:
-                    self.avg_overshoot_down = (1 - OVERSHOOT_ALPHA) * self.avg_overshoot_down + OVERSHOOT_ALPHA * raw_overshoot
-                self.recent_raw_overshoot_down.append(raw_overshoot)
-                if len(self.recent_raw_overshoot_down) > self.RECENT_RAW_LIMIT:
-                    self.recent_raw_overshoot_down.pop(0)
-                self.get_logger().info(
-                    f"[Overshoot] DOWN measured={raw_overshoot:.3f} avg={self.avg_overshoot_down:.3f} stable={stable_height:.2f} stop={self.height_at_stop:.2f}"
-                )
-                self._recommend_overshoot_init(direction='down')
-            # 复位高度参考
+            else:
+                self.get_logger().warn("[Overshoot] Cannot calculate overshoot - target not set")
+            
+            # Clear temporary tracking state
             self.height_at_stop = None
             self.last_stop_direction = None
+            
         except Exception as e:
             self.get_logger().error(f"Overshoot measurement error: {e}")
-
-    def _recommend_overshoot_init(self, direction: str):
-        """基于最近原始超调样本给出下一次运行的初始参数推荐。
-        策略：
-        1. 样本数量不足 → 不给推荐。
-        2. 计算 mean, std, median。
-        3. 若变异系数 (std/mean) < 阈值且样本数≥RECOMMEND_MIN_STABLE_COUNT，推荐使用 median（更抗离群）。
-        4. 若波动尚大，仅提示使用当前 EMA。
-        5. 最终打印统一格式方便人工复制到配置。
-        """
-        samples = self.recent_raw_overshoot_up if direction == 'up' else self.recent_raw_overshoot_down
-        if len(samples) < self.RECOMMEND_MIN_STABLE_COUNT:
-            self.get_logger().info(f"[Overshoot-Recommend] {direction.upper()} insufficient samples ({len(samples)}/{self.RECOMMEND_MIN_STABLE_COUNT})")
-            return
-        mean_val = sum(samples) / len(samples)
-        # 计算标准差
-        var = sum((x - mean_val) ** 2 for x in samples) / len(samples)
-        std_val = var ** 0.5
-        median_val = sorted(samples)[len(samples)//2]
-        cv = std_val / mean_val if mean_val > 1e-6 else 0.0
-        if cv < self.OVERSHOOT_VARIANCE_THRESHOLD:
-            recommended = median_val
-            reason = f"stable cv={cv:.3f}<thr use median"
-        else:
-            # 波动较大：用当前 EMA 作为参考，但加上说明
-            ema_val = self.avg_overshoot_up if direction == 'up' else self.avg_overshoot_down
-            recommended = ema_val
-            reason = f"unstable cv={cv:.3f} use EMA"
-        self.get_logger().info(
-            f"[Overshoot-Recommend] {direction.upper()} samples={len(samples)} mean={mean_val:.3f} std={std_val:.3f} median={median_val:.3f} cv={cv:.3f} -> next_init={recommended:.3f} ({reason})"
-        )
 
     # ─────────────────────────────────────────────────────────────
     # Force sensor callbacks

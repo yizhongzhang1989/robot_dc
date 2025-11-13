@@ -27,8 +27,14 @@ class LiftRobotForceSensorNode(Node):
         # Visualization enable flag (can also be overridden via CLI args)
         self.declare_parameter('enable_visualization', False)
         # Calibration parameters (from calibration: actual_force = sensor_reading × scale)
-        self.declare_parameter('calibration_scale', 0.116125)  # device_id=52 calibration result
-        self.declare_parameter('calibration_offset', 0.0)  # Force zero offset (always 0 after tare)
+        # Default values used when launch file doesn't load from JSON config
+        # Device-specific defaults:
+        #   - device_id=52 (right sensor, /force_sensor): scale=0.116125
+        #   - device_id=53 (left sensor, /force_sensor_2): scale=0.116125
+        # Note: These are initial calibration results. For best accuracy, perform
+        # web-based calibration and save to JSON config file.
+        self.declare_parameter('calibration_scale', 0.116125)
+        self.declare_parameter('calibration_offset', 0.0)  # Always 0.0 after tare
 
         self.device_id = self.get_parameter('device_id').value
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
