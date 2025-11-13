@@ -228,6 +228,9 @@ def api_control():
 
 def run_flask(host='0.0.0.0', port=5000):
     """Run Flask app in a separate thread."""
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)  # Only show errors, suppress access logs
     app.run(host=host, port=port, debug=False, use_reloader=False)
 
 
