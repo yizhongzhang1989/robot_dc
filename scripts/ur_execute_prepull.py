@@ -375,7 +375,7 @@ class URExecutePrePull(URExecuteBase):
             limits=limits,
             damping=0.1,
             end_type=3,
-            end_distance=[0.08,0,0.10,0,0,0]
+            end_distance=[0.10,0,0.10,0,0,0]
         )
         time.sleep(0.5)
         return result

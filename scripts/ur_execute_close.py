@@ -28,17 +28,116 @@ class URExecuteClose(URExecuteBase):
         self._load_local_coordinate_system()
         self._load_ref_joint_angles()
         self._load_task_position_information()
-    
-    def movel_to_target_position(self):
+        self._load_crack_local_coordinate_system()
+
+# ================================= Movement Functions ================================
+    def movel_to_correct_tool_tcp(self):
         """
-        Move robot to target position using linear movement based on local coordinate system.
+        Correct tool TCP orientation based on crack local coordinate system.
         """
         if self.robot is None:
             print("Robot is not initialized")
             return -1
         
-        if self.local_transformation_matrix is None:
-            print("Local coordinate system transformation matrix not loaded")
+        if not hasattr(self, 'crack_coord_transformation') or self.crack_coord_transformation is None:
+            print("Crack local coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract rotation matrix from crack local coordinate system transformation matrix (3x3)
+        crack_local_rotation = self.crack_coord_transformation[:3, :3]
+        
+        # Crack local coordinate system axes in base coordinates
+        crack_local_x = crack_local_rotation[:, 0]  # Crack Local X+ direction
+        crack_local_y = crack_local_rotation[:, 1]  # Crack Local Y+ direction
+        crack_local_z = crack_local_rotation[:, 2]  # Crack Local Z+ direction
+        
+        # Construct target rotation matrix for tool based on crack local coordinate system:
+        # Tool X+ -> Crack Local X+
+        # Tool Y+ -> Crack Local Z- (negative Z)
+        # Tool Z+ -> Crack Local Y+
+        
+        target_tool_rotation = np.column_stack([
+            crack_local_x,     # Tool X+ = Crack Local X+
+            -crack_local_z,    # Tool Y+ = Crack Local Z- (negative Z)
+            crack_local_y      # Tool Z+ = Crack Local Y+
+        ])
+        
+        # Convert rotation matrix to rotation vector (axis-angle representation)
+        # UR uses rotation vector [rx, ry, rz] where the direction is the axis and the magnitude is the angle in radians
+        rotation_obj = R.from_matrix(target_tool_rotation)
+        rotation_vector = rotation_obj.as_rotvec()
+        
+        # Step 1: Align with local coordinate system
+        target_pose = [
+            current_pose[0],      # x (keep current position)
+            current_pose[1],      # y
+            current_pose[2],      # z
+            rotation_vector[0],   # rx
+            rotation_vector[1],   # ry
+            rotation_vector[2]    # rz
+        ]
+        
+        print("\nStep 1: Aligning tool TCP...")
+        print(f"Target pose: {target_pose}")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.1)
+        time.sleep(0.5)
+        
+        if res != 0:
+            print(f"Failed to align tool TCP (error code: {res})")
+            return res
+        else:
+            print("Aligned tool tcp pose with crack local coordinate system successfully")
+        
+        # Step 2: Rotate 31 degrees around TCP Z axis
+        angle_deg = 31
+        angle_rad = np.deg2rad(angle_deg)
+        
+        # The Z axis in tool corresponds to crack_local_y in base coordinates
+        rotation_axis = crack_local_y / np.linalg.norm(crack_local_y)  # Normalize (should already be normalized)
+        additional_rotation = R.from_rotvec(angle_rad * rotation_axis)
+        
+        # Combine the rotations: first align, then rotate around Z
+        combined_rotation = additional_rotation * rotation_obj
+        combined_rotation_vector = combined_rotation.as_rotvec()
+        
+        final_pose = [
+            current_pose[0],              # x (keep current position)
+            current_pose[1],              # y
+            current_pose[2],              # z
+            combined_rotation_vector[0],  # rx
+            combined_rotation_vector[1],  # ry
+            combined_rotation_vector[2]   # rz
+        ]
+        
+        print(f"\nStep 2: Rotating {angle_deg} degrees around TCP Z axis to correct tool orientation...")
+                
+        res = self.robot.movel(final_pose, a=0.1, v=0.1)
+        time.sleep(0.5)
+
+        if res == 0:
+            print("Tool TCP orientation corrected successfully")
+        else:
+            print(f"Failed to rotate around TCP Z axis (error code: {res})")
+        
+        return res
+
+    def movel_to_target_position(self):
+        """
+        Move robot to target position using linear movement based on crack local coordinate system.
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if not hasattr(self, 'crack_coord_transformation') or self.crack_coord_transformation is None:
+            print("Crack local coordinate system transformation matrix not loaded")
             return -1
         
         # Get target position in base coordinate system
@@ -53,11 +152,11 @@ class URExecuteClose(URExecuteBase):
             print("Failed to get current robot pose")
             return -1
         
-        # Extract local coordinate system axes from transformation matrix
-        local_rotation = self.local_transformation_matrix[:3, :3]
-        local_x = local_rotation[:, 0]  # Local X+ direction in base coordinates
-        local_y = local_rotation[:, 1]  # Local Y+ direction in base coordinates
-        local_z = local_rotation[:, 2]  # Local Z+ direction in base coordinates
+        # Extract crack local coordinate system axes from transformation matrix
+        crack_local_rotation = self.crack_coord_transformation[:3, :3]
+        crack_local_x = crack_local_rotation[:, 0]  # Crack Local X+ direction in base coordinates
+        crack_local_y = crack_local_rotation[:, 1]  # Crack Local Y+ direction in base coordinates
+        crack_local_z = crack_local_rotation[:, 2]  # Crack Local Z+ direction in base coordinates
 
         # Calculate movement vector from current position to target
         current_position = np.array(current_pose[:3])
@@ -65,15 +164,15 @@ class URExecuteClose(URExecuteBase):
         movement_vector = target_position_array - current_position
         print(f"\nMovement vector in base coordinates: {movement_vector}")
         
-        # Project movement vector onto local coordinate system axes
-        movement_local_x = np.dot(movement_vector, local_x)
-        movement_local_y = np.dot(movement_vector, local_y) 
-        movement_local_z = np.dot(movement_vector, local_z)
+        # Project movement vector onto crack local coordinate system axes
+        movement_crack_local_x = np.dot(movement_vector, crack_local_x)
+        movement_crack_local_y = np.dot(movement_vector, crack_local_y) 
+        movement_crack_local_z = np.dot(movement_vector, crack_local_z)
 
-        # Step 1: Move along local X and Z directions (keep local Y unchanged)
-        # Calculate intermediate position by adding local X and Z movements
-        intermediate_movement_x = movement_local_x * local_x
-        intermediate_movement_z = movement_local_z * local_z
+        # Step 1: Move along crack local X and Z directions (keep crack local Y unchanged)
+        # Calculate intermediate position by adding crack local X and Z movements
+        intermediate_movement_x = movement_crack_local_x * crack_local_x
+        intermediate_movement_z = movement_crack_local_z * crack_local_z
         intermediate_movement = intermediate_movement_x + intermediate_movement_z
         intermediate_position = current_position + intermediate_movement
         
@@ -86,20 +185,20 @@ class URExecuteClose(URExecuteBase):
             current_pose[5]           # rz
         ]
         
-        print(f"\nStep 1: Moving along local X and Z directions...")
+        print(f"\nStep 1: Moving along crack local X and Z directions...")
         print(f"Intermediate pose: {intermediate_pose}")
         
-        res = self.robot.movel(intermediate_pose, a=0.1, v=0.05)
+        res = self.robot.movel(intermediate_pose, a=0.1, v=0.1)
         time.sleep(0.5)
 
         if res != 0:
-            print(f"Failed to move along local X and Z (error code: {res})")
+            print(f"Failed to move along crack local X and Z (error code: {res})")
             return res
         
         print("Step 1 completed successfully")
         
-        # Step 2: Move along local Y direction to final target (with tool offset)
-        final_movement_y = (movement_local_y - 0.4) * local_y
+        # Step 2: Move along crack local Y direction to final target
+        final_movement_y = (movement_crack_local_y - 0.4) * crack_local_y
         final_position = intermediate_position + final_movement_y
         
         final_pose = [
@@ -111,16 +210,16 @@ class URExecuteClose(URExecuteBase):
             current_pose[5]           # rz
         ]
         
-        print(f"\nStep 2: Moving along local Y direction...")
+        print(f"\nStep 2: Moving along crack local Y direction...")
         print(f"Final pose: {final_pose}")
         
-        res = self.robot.movel(final_pose, a=0.1, v=0.05)
+        res = self.robot.movel(final_pose, a=0.1, v=0.1)
         time.sleep(0.5)
 
         if res == 0:
             print("Robot moved to target position successfully")
         else:
-            print(f"Failed to move along local Y (error code: {res})")
+            print(f"Failed to move along crack local Y (error code: {res})")
         
         return res
     
@@ -186,7 +285,7 @@ class URExecuteClose(URExecuteBase):
         print(f"\n[Right Close] Step 1: Moving along local X and Z directions...")
         print(f"Intermediate pose: {intermediate_pose}")
         
-        res = self.robot.movel(intermediate_pose, a=0.1, v=0.05)
+        res = self.robot.movel(intermediate_pose, a=0.1, v=0.1)
         time.sleep(0.5)
 
         if res != 0:
@@ -211,7 +310,7 @@ class URExecuteClose(URExecuteBase):
         print(f"\n[Right Close] Step 2: Moving along local Y direction...")
         print(f"Final pose: {final_pose}")
         
-        res = self.robot.movel(final_pose, a=0.1, v=0.05)
+        res = self.robot.movel(final_pose, a=0.1, v=0.1)
         time.sleep(0.5)
 
         if res == 0:
@@ -220,114 +319,8 @@ class URExecuteClose(URExecuteBase):
             print(f"Failed to move along local Y (error code: {res})")
         
         return res
-    
-    def movel_to_correct_tool_tcp(self):
-        """
-        Align tool TCP orientation with local coordinate system.
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-        
-        if self.local_transformation_matrix is None:
-            print("Local coordinate system transformation matrix not loaded")
-            return -1
-        
-        # Get current TCP pose
-        current_pose = self.robot.get_actual_tcp_pose()
-        if current_pose is None or len(current_pose) < 6:
-            print("Failed to get current robot pose")
-            return -1
-        
-        # Extract rotation matrix from local transformation matrix (3x3)
-        local_rotation = self.local_transformation_matrix[:3, :3]
-        
-        # Local coordinate system axes in base close
-        local_x = local_rotation[:, 0]  # Local X+ direction
-        local_y = local_rotation[:, 1]  # Local Y+ direction
-        local_z = local_rotation[:, 2]  # Local Z+ direction
-        
-        # Construct target rotation matrix for tool close:
-        # Tool X+ -> Local X+
-        # Tool Y+ -> Local Z- (negative Z)
-        # Tool Z+ -> projection of Local Y+ onto base XOY plane (parallel to base XOY)
-        
-        # Project local_y onto base XOY plane (set z component to 0 and normalize)
-        tool_z_direction = np.array([local_y[0], local_y[1], 0.0])
-        tool_z_direction = tool_z_direction / np.linalg.norm(tool_z_direction)
-        
-        # Tool Y+ should be perpendicular to both Tool X+ and Tool Z+
-        # Use cross product: Tool Y+ = Tool Z+ × Tool X+
-        tool_y_direction = np.cross(tool_z_direction, local_x)
-        tool_y_direction = tool_y_direction / np.linalg.norm(tool_y_direction)
-        
-        target_tool_rotation = np.column_stack([
-            local_x,           # Tool X+ = Local X+
-            tool_y_direction,  # Tool Y+ = perpendicular to Tool X+ and Tool Z+
-            tool_z_direction   # Tool Z+ = Local Y+ projected onto base XOY plane
-        ])
-        
-        # Convert rotation matrix to rotation vector (axis-angle representation)
-        # UR uses rotation vector [rx, ry, rz] where the direction is the axis and the magnitude is the angle in radians
-        rotation_obj = R.from_matrix(target_tool_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
-        
-        # Step 1: Align with local coordinate system
-        target_pose = [
-            current_pose[0],      # x (keep current position)
-            current_pose[1],      # y
-            current_pose[2],      # z
-            rotation_vector[0],   # rx
-            rotation_vector[1],   # ry
-            rotation_vector[2]    # rz
-        ]
-        
-        print("\nStep 1: Aligning tool TCP with local coordinate system...")
-        print(f"Target pose: {target_pose}")
-        
-        res = self.robot.movel(target_pose, a=0.1, v=0.05)
-        time.sleep(0.5)
-        
-        if res != 0:
-            print(f"Failed to align tool TCP (error code: {res})")
-            return res
-        
-        print("Step 1 completed successfully")
-        
-        # Step 2: Rotate 31 degrees around TCP Z axis
-        angle_deg = 31
-        angle_rad = np.deg2rad(angle_deg)
-        
-        # The Z axis in tool close corresponds to local_y in base close
-        rotation_axis = local_y / np.linalg.norm(local_y)  # Normalize (should already be normalized)
-        additional_rotation = R.from_rotvec(angle_rad * rotation_axis)
-        
-        # Combine the rotations: first align, then rotate around Z
-        combined_rotation = additional_rotation * rotation_obj
-        combined_rotation_vector = combined_rotation.as_rotvec()
-        
-        final_pose = [
-            current_pose[0],              # x (keep current position)
-            current_pose[1],              # y
-            current_pose[2],              # z
-            combined_rotation_vector[0],  # rx
-            combined_rotation_vector[1],  # ry
-            combined_rotation_vector[2]   # rz
-        ]
-        
-        print(f"\nStep 2: Rotating {angle_deg} degrees around TCP Z axis...")
-        print(f"Final pose: {final_pose}")
-        
-        res = self.robot.movel(final_pose, a=0.1, v=0.05)
-        time.sleep(0.5)
 
-        if res == 0:
-            print("Tool TCP aligned and rotated successfully")
-        else:
-            print(f"Failed to rotate around TCP Z axis (error code: {res})")
-        
-        return res
-
+# ================================ Force Control Functions ================================
     def force_task_touch_left_handle(self):
         """
         Execute force control task to touch the left handle using TCP coordinate system.
@@ -459,7 +452,7 @@ class URExecuteClose(URExecuteBase):
         
         # Set force mode parameters for unlocking
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable torque control in Z direction only
-        wrench = [20, 0, 15, 0, 0, -1.0]
+        wrench = [25, 0, 20, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - unlocking...")
@@ -472,7 +465,7 @@ class URExecuteClose(URExecuteBase):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.10,0.05,0.10,0,0,0]
+            end_distance=[0.12,0.05,0.12,0,0,0]
         )
         
         if result1 != 0:
@@ -493,7 +486,7 @@ class URExecuteClose(URExecuteBase):
         target_pose = [
             tcp_pose[0],        # x (keep current)
             tcp_pose[1],        # y (keep current)
-            tcp_pose[2] + 0.005, # z (move 1cm up)
+            tcp_pose[2] + 0.01, # z (move 1cm up)
             tcp_pose[3],        # rx (keep current orientation)
             tcp_pose[4],        # ry
             tcp_pose[5]         # rz
@@ -555,7 +548,7 @@ class URExecuteClose(URExecuteBase):
         target_pose = [
             tcp_pose[0],        # x (keep current)
             tcp_pose[1],        # y (keep current)
-            tcp_pose[2] - 0.005, # z (move 1cm up)
+            tcp_pose[2] - 0.01, # z (move 1cm up)
             tcp_pose[3],        # rx (keep current orientation)
             tcp_pose[4],        # ry
             tcp_pose[5]         # rz
@@ -824,63 +817,7 @@ class URExecuteClose(URExecuteBase):
         
         print("[INFO] Close handle sequence completed successfully")
         return 0
-
-    def movel_to_leave_handle(self, distance):
-        """
-        Move robot based on "distance" (dx, dy, dz) in local coordinate system to leave the handle.
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
         
-        if self.local_transformation_matrix is None:
-            print("Local coordinate system transformation matrix not loaded")
-            return -1
-        
-        # Get current TCP pose
-        current_pose = self.robot.get_actual_tcp_pose()
-        if current_pose is None or len(current_pose) < 6:
-            print("Failed to get current robot pose")
-            return -1
-        
-        # Parse distance parameter - must be a 3D array
-        if isinstance(distance, (list, tuple)) and len(distance) == 3:
-            local_displacement = np.array(distance)
-        else:
-            print("Invalid distance parameter. Must be [dx, dy, dz] in local coordinate system")
-            return -1
-        
-        # Extract rotation matrix from local transformation matrix (3x3)
-        local_rotation = self.local_transformation_matrix[:3, :3]
-        
-        # Transform displacement from local coordinate system to base coordinate system
-        # displacement_base = R_local_to_base * displacement_local
-        base_displacement = local_rotation @ local_displacement
-        
-        # Calculate target pose in base coordinate system
-        target_pose = [
-            current_pose[0] + base_displacement[0],  # x
-            current_pose[1] + base_displacement[1],  # y
-            current_pose[2] + base_displacement[2],  # z
-            current_pose[3],                         # rx (keep current orientation)
-            current_pose[4],                         # ry
-            current_pose[5]                          # rz
-        ]
-        
-        print(f"\n[INFO] Moving away from handle: {local_displacement} in local frame...")
-        print(f"Local displacement (local frame): {local_displacement}")
-        print(f"Base displacement (base frame): {base_displacement}")
-        
-        res = self.robot.movel(target_pose, a=0.1, v=0.05)
-        time.sleep(0.5)
-
-        if res == 0:
-            print("[INFO] Successfully moved away from handle")
-        else:
-            print(f"[ERROR] Failed to move away from handle (error code: {res})")
-        
-        return res
-
 if __name__ == "__main__":
     # Create URExecuteClose instance
     ur_close = URExecuteClose()
@@ -924,6 +861,7 @@ if __name__ == "__main__":
         print("\nTarget Position in Base Coordinate System:")
         print(target_position)
 
+    # ========================= Task execution =========================
     # move to reference joint positions (commented out for safety)
     print("\n" + "="*50)
     ur_close.movej_to_reference_joint_positions()
@@ -952,7 +890,7 @@ if __name__ == "__main__":
 
     # # move to leave the handle
     print("\n" + "="*50)
-    ur_close.movel_to_leave_handle([0, -0.2, 0])
+    ur_close.movel_in_crack_frame([0, -0.2, 0])
     time.sleep(0.5)
 
 
@@ -974,7 +912,7 @@ if __name__ == "__main__":
 
     # # move to leave the handle
     print("\n" + "="*50)
-    ur_close.movel_to_leave_handle([0, -0.25, 0])
+    ur_close.movel_in_crack_frame([0, -0.25, 0])
     time.sleep(0.5)
 
     # move to reference joint positions (commented out for safety)
