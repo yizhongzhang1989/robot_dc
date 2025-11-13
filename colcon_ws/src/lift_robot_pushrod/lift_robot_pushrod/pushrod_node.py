@@ -240,19 +240,37 @@ class PushrodNode(Node):
                 if target is None:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] goto_height requires target_height")
                 else:
-                    # Initialize offset tracking for this new movement
-                    self.height_before_movement = self.current_height
-                    self.is_tracking_offset = True
+                    target_height = float(target)
+                    current_error = abs(target_height - self.current_height)
                     
-                    # Set control parameters
-                    self.target_height = float(target)
-                    self.control_mode = 'auto'
-                    self.control_enabled = True
-                    self.movement_state = 'stop'  # Reset movement state
-                    
-                    # Start goto_height task (owner=pushrod)
-                    self._start_task('goto_height', owner='pushrod')
-                    self.get_logger().info(f"[SEQ {seq_id_str}] Auto height target={self.target_height:.2f}mm")
+                    # Check if already at target position
+                    if current_error <= POSITION_TOLERANCE:
+                        # Already at target - complete immediately without starting control
+                        self.get_logger().info(
+                            f"[SEQ {seq_id_str}] Already at target height={target_height:.2f}mm "
+                            f"(current={self.current_height:.2f}mm, error={current_error:.3f}mm) - completing immediately"
+                        )
+                        # Start and immediately complete the task
+                        self._start_task('goto_height', owner='pushrod')
+                        self._complete_task('target_reached')
+                    else:
+                        # Need to move - start control loop
+                        # Initialize offset tracking for this new movement
+                        self.height_before_movement = self.current_height
+                        self.is_tracking_offset = True
+                        
+                        # Set control parameters
+                        self.target_height = target_height
+                        self.control_mode = 'auto'
+                        self.control_enabled = True
+                        self.movement_state = 'stop'  # Reset movement state
+                        
+                        # Start goto_height task (owner=pushrod)
+                        self._start_task('goto_height', owner='pushrod')
+                        self.get_logger().info(
+                            f"[SEQ {seq_id_str}] Auto height target={self.target_height:.2f}mm "
+                            f"(current={self.current_height:.2f}mm, error={current_error:.2f}mm)"
+                        )
 
             elif command == 'enable_force_control':
                 # Check if system is busy with another task

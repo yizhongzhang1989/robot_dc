@@ -317,52 +317,73 @@ class LiftRobotNode(Node):
                 # New command: go to specific height with closed-loop control
                 target = command_data.get('target_height')
                 if target is not None:
-                    # Auto-initialize: disable force control if active
-                    if self.force_control_active:
-                        self.force_control_active = False
-                        self.get_logger().info(f"[SEQ {seq_id_str}] Disabled force control for goto_height")
+                    target_height = float(target)
+                    current_error = abs(target_height - self.current_height)
                     
-                    self.target_height = float(target)
-                    self.control_mode = 'auto'
-                    self.control_enabled = True
-                    
-                    # Reset movement tracking state for new control session
-                    self.movement_state = 'stop'  # Reset movement state
-                    self.last_command_time = self.get_clock().now()
-                    
-                    # Clear any pending overshoot measurement from previous session
-                    if self.overshoot_timer and self.overshoot_timer.is_alive():
-                        self.overshoot_timer.cancel()
-                        self.overshoot_timer = None
-                    self.height_at_stop = None
-                    self.last_stop_direction = None
-                    self.last_stop_time = None
-                    
-                    # Overshoot learning control
-                    if OVERSHOOT_LEARNING_ENABLED:
-                        # Learning mode: avg_overshoot values persist and accumulate across sessions
-                        # Bootstrap samples and recent raw samples also persist
+                    # Check if already at target position
+                    if current_error <= POSITION_TOLERANCE:
+                        # Already at target - complete immediately without starting control
                         self.get_logger().info(
-                            f"[SEQ {seq_id_str}] Overshoot learning ENABLED - "
-                            f"using learned values (up={self.avg_overshoot_up:.3f}mm, down={self.avg_overshoot_down:.3f}mm)"
+                            f"[SEQ {seq_id_str}] Already at target height={target_height:.2f}mm "
+                            f"(current={self.current_height:.2f}mm, error={current_error:.3f}mm) - completing immediately"
                         )
+                        # Auto-initialize: disable force control if active
+                        if self.force_control_active:
+                            self.force_control_active = False
+                        # Start and immediately complete the task
+                        self._start_task('goto_height', owner='platform')
+                        self._complete_task('target_reached')
                     else:
-                        # Fixed mode: reset to initial values from constants every time
-                        self.avg_overshoot_up = OVERSHOOT_INIT_UP
-                        self.avg_overshoot_down = OVERSHOOT_INIT_DOWN
-                        # Clear learning samples (no accumulation)
-                        self.overshoot_bootstrap_samples_up = []
-                        self.overshoot_bootstrap_samples_down = []
-                        self.recent_raw_overshoot_up = []
-                        self.recent_raw_overshoot_down = []
+                        # Need to move - start control loop
+                        # Auto-initialize: disable force control if active
+                        if self.force_control_active:
+                            self.force_control_active = False
+                            self.get_logger().info(f"[SEQ {seq_id_str}] Disabled force control for goto_height")
+                        
+                        self.target_height = target_height
+                        self.control_mode = 'auto'
+                        self.control_enabled = True
+                        
+                        # Reset movement tracking state for new control session
+                        self.movement_state = 'stop'  # Reset movement state
+                        self.last_command_time = self.get_clock().now()
+                        
+                        # Clear any pending overshoot measurement from previous session
+                        if self.overshoot_timer and self.overshoot_timer.is_alive():
+                            self.overshoot_timer.cancel()
+                            self.overshoot_timer = None
+                        self.height_at_stop = None
+                        self.last_stop_direction = None
+                        self.last_stop_time = None
+                        
+                        # Overshoot learning control
+                        if OVERSHOOT_LEARNING_ENABLED:
+                            # Learning mode: avg_overshoot values persist and accumulate across sessions
+                            # Bootstrap samples and recent raw samples also persist
+                            self.get_logger().info(
+                                f"[SEQ {seq_id_str}] Overshoot learning ENABLED - "
+                                f"using learned values (up={self.avg_overshoot_up:.3f}mm, down={self.avg_overshoot_down:.3f}mm)"
+                            )
+                        else:
+                            # Fixed mode: reset to initial values from constants every time
+                            self.avg_overshoot_up = OVERSHOOT_INIT_UP
+                            self.avg_overshoot_down = OVERSHOOT_INIT_DOWN
+                            # Clear learning samples (no accumulation)
+                            self.overshoot_bootstrap_samples_up = []
+                            self.overshoot_bootstrap_samples_down = []
+                            self.recent_raw_overshoot_up = []
+                            self.recent_raw_overshoot_down = []
+                            self.get_logger().info(
+                                f"[SEQ {seq_id_str}] Overshoot learning DISABLED - "
+                                f"using fixed values (up={OVERSHOOT_INIT_UP:.3f}mm, down={OVERSHOOT_INIT_DOWN:.3f}mm)"
+                            )
+                        
+                        # Start goto_height task (owner=platform)
+                        self._start_task('goto_height', owner='platform')
                         self.get_logger().info(
-                            f"[SEQ {seq_id_str}] Overshoot learning DISABLED - "
-                            f"using fixed values (up={OVERSHOOT_INIT_UP:.3f}mm, down={OVERSHOOT_INIT_DOWN:.3f}mm)"
+                            f"[SEQ {seq_id_str}] Auto mode: target height={self.target_height:.2f}mm "
+                            f"(current={self.current_height:.2f}mm, error={current_error:.2f}mm)"
                         )
-                    
-                    # Start goto_height task (owner=platform)
-                    self._start_task('goto_height', owner='platform')
-                    self.get_logger().info(f"[SEQ {seq_id_str}] Auto mode: target height = {self.target_height:.2f} mm")
                 else:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] goto_height requires target_height field")
             elif command == 'force_up':
