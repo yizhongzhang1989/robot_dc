@@ -8,20 +8,45 @@ body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
+    padding-top: 400px; /* Space for fixed header - increased */
+}
+
+/* Fixed Header */
+.fixed-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 1000;
     padding: 20px;
 }
 
-.container {
+.header-content {
     max-width: 1200px;
     margin: 0 auto;
 }
 
-h1 {
+.header-content h1 {
     color: white;
     text-align: center;
-    margin-bottom: 30px;
-    font-size: 2.5em;
+    margin-bottom: 20px;
+    font-size: 2em;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Main Container Below Header */
+.main-container {
+    padding: 20px;
+}
+
+.content-wrapper {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
 }
 
 h2 {
@@ -36,42 +61,45 @@ h3 {
     margin-bottom: 15px;
 }
 
-.status-panel, .control-panel, .debug-panel {
+.control-panel, .debug-panel {
     background: white;
     border-radius: 10px;
     padding: 25px;
-    margin-bottom: 20px;
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 
 .status-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 15px;
-    margin-bottom: 25px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
 }
 
 .status-item {
     display: flex;
     justify-content: space-between;
-    padding: 10px;
-    background: #f8f9fa;
-    border-radius: 5px;
-    border-left: 4px solid #667eea;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .status-item .label {
     font-weight: 600;
-    color: #555;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9em;
 }
 
 .status-item .value {
     font-weight: bold;
-    color: #333;
+    color: white;
+    font-size: 0.95em;
 }
 
 .status-item .value.active {
-    color: #28a745;
+    color: #4caf50;
 }
 
 .status-item .value.inactive {
@@ -279,9 +307,24 @@ h3 {
     color: #d4d4d4;
 }
 
+@media (max-width: 968px) {
+    .content-wrapper {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media (max-width: 768px) {
-    h1 {
-        font-size: 1.8em;
+    body {
+        padding-top: 380px; /* More space for mobile header - increased */
+    }
+    
+    .header-content h1 {
+        font-size: 1.5em;
+    }
+    
+    .status-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
     }
     
     .button-group {

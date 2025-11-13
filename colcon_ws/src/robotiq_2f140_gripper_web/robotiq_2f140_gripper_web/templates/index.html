@@ -7,11 +7,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>🤖 Robotiq 2F-140 Gripper Control</h1>
-        
-        <div class="status-panel">
-            <h2>Gripper Status</h2>
+    <!-- Fixed Header with Gripper Status -->
+    <header class="fixed-header">
+        <div class="header-content">
+            <h1>🤖 Robotiq 2F-140 Gripper Control</h1>
+            
             <div class="status-grid">
                 <div class="status-item">
                     <span class="label">Connection:</span>
@@ -26,7 +26,7 @@
                     <span class="value" id="moving-status">-</span>
                 </div>
                 <div class="status-item">
-                    <span class="label">Object Detected:</span>
+                    <span class="label">Object:</span>
                     <span class="value" id="object-status">-</span>
                 </div>
                 <div class="status-item">
@@ -58,50 +58,57 @@
                 </div>
             </div>
         </div>
-        
-        <div class="control-panel">
-            <h2>Control</h2>
-            
-            <div class="control-section">
-                <button id="activate-btn" class="btn btn-primary">Activate Gripper</button>
-                <div id="activate-message" class="message"></div>
+    </header>
+    
+    <!-- Main Content Below Header -->
+    <div class="main-container">
+        <div class="content-wrapper">
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <h2>⚙️ Control</h2>
+                
+                <div class="control-section">
+                    <button id="activate-btn" class="btn btn-primary">Activate Gripper</button>
+                    <div id="activate-message" class="message"></div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Position Control</h3>
+                    <div class="slider-group">
+                        <label for="position-slider">Position (0=Open, 255=Close):</label>
+                        <input type="range" id="position-slider" min="0" max="255" value="128">
+                        <span id="position-slider-value">128</span>
+                    </div>
+                    
+                    <div class="slider-group">
+                        <label for="speed-slider">Speed (0=Slow, 255=Fast):</label>
+                        <input type="range" id="speed-slider" min="0" max="255" value="128">
+                        <span id="speed-slider-value">128</span>
+                    </div>
+                    
+                    <div class="slider-group">
+                        <label for="force-slider">Force (0=Low, 255=High):</label>
+                        <input type="range" id="force-slider" min="0" max="255" value="128">
+                        <span id="force-slider-value">128</span>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button id="open-btn" class="btn btn-success">Open</button>
+                        <button id="half-btn" class="btn btn-info">Half</button>
+                        <button id="close-btn" class="btn btn-success">Close</button>
+                        <button id="move-btn" class="btn btn-primary">Move to Position</button>
+                    </div>
+                    
+                    <div id="control-message" class="message"></div>
+                </div>
             </div>
             
-            <div class="control-section">
-                <h3>Position Control</h3>
-                <div class="slider-group">
-                    <label for="position-slider">Position (0=Open, 255=Close):</label>
-                    <input type="range" id="position-slider" min="0" max="255" value="128">
-                    <span id="position-slider-value">128</span>
+            <!-- Debug Panel -->
+            <div class="debug-panel">
+                <h2>🔍 Debug Info</h2>
+                <div class="debug-content">
+                    <pre id="debug-output">Waiting for data...</pre>
                 </div>
-                
-                <div class="slider-group">
-                    <label for="speed-slider">Speed (0=Slow, 255=Fast):</label>
-                    <input type="range" id="speed-slider" min="0" max="255" value="128">
-                    <span id="speed-slider-value">128</span>
-                </div>
-                
-                <div class="slider-group">
-                    <label for="force-slider">Force (0=Low, 255=High):</label>
-                    <input type="range" id="force-slider" min="0" max="255" value="128">
-                    <span id="force-slider-value">128</span>
-                </div>
-                
-                <div class="button-group">
-                    <button id="open-btn" class="btn btn-success">Open</button>
-                    <button id="half-btn" class="btn btn-info">Half</button>
-                    <button id="close-btn" class="btn btn-success">Close</button>
-                    <button id="move-btn" class="btn btn-primary">Move to Position</button>
-                </div>
-                
-                <div id="control-message" class="message"></div>
-            </div>
-        </div>
-        
-        <div class="debug-panel">
-            <h2>Debug Info</h2>
-            <div class="debug-content">
-                <pre id="debug-output">Waiting for data...</pre>
             </div>
         </div>
     </div>
