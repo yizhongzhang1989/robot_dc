@@ -253,8 +253,8 @@ class URExecutePush2End(URExecuteBase):
             wrench=wrench,
             limits=limits,
             damping=0.1,
-            end_type=2,
-            end_force=[0,0,12,0,0,0]
+            end_type=1,
+            end_time=5
         )
         time.sleep(0.5)
         return result
