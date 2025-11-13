@@ -38,7 +38,8 @@ class Robotiq2f140Gripper:
         
         if rs485_client is None:
             self.rs485 = RS485Client(host, port)
-            self.rs485.connect()
+            if not self.rs485.connect():
+                raise ConnectionError(f"Failed to connect to RS485 gateway at {host}:{port}")
         else:
             self.rs485 = rs485_client
         

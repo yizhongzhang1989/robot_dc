@@ -5,6 +5,7 @@ RS485/Modbus communication client over TCP/IP socket.
 
 import socket
 import time
+import threading
 from typing import List, Optional, Union
 
 
@@ -28,25 +29,45 @@ class RS485Client:
         self.timeout = timeout
         self.socket: Optional[socket.socket] = None
         self._connected = False
+        self._lock = threading.Lock()  # Thread safety for concurrent access
     
-    def connect(self) -> bool:
+    def connect(self, max_retries: int = 3, retry_delay: float = 0.5) -> bool:
         """
-        Establish connection to RS485 gateway.
+        Establish connection to RS485 gateway with retry logic.
+        
+        Args:
+            max_retries: Maximum number of connection attempts (default: 3)
+            retry_delay: Delay between retries in seconds (default: 0.5)
         
         Returns:
             True if connection successful, False otherwise
         """
-        try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(self.timeout)
-            self.socket.connect((self.host, self.port))
-            self._connected = True
-            print(f"Connected to RS485 gateway at {self.host}:{self.port}")
-            return True
-        except Exception as e:
-            print(f"Failed to connect: {e}")
-            self._connected = False
-            return False
+        for attempt in range(max_retries):
+            try:
+                # Close any existing socket
+                if self.socket:
+                    try:
+                        self.socket.close()
+                    except Exception:
+                        pass
+                
+                self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self.socket.settimeout(self.timeout)
+                self.socket.connect((self.host, self.port))
+                self._connected = True
+                print(f"Connected to RS485 gateway at {self.host}:{self.port}", flush=True)
+                return True
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"Connection attempt {attempt + 1} failed: {e}, retrying...", flush=True)
+                    time.sleep(retry_delay)
+                else:
+                    print(f"Failed to connect after {max_retries} attempts: {e}", flush=True)
+                    self._connected = False
+                    return False
+        
+        return False
     
     def disconnect(self):
         """Close the socket connection."""
@@ -62,6 +83,7 @@ class RS485Client:
                      response_delay: float = 0.1) -> Optional[bytes]:
         """
         Send a command and receive response.
+        Thread-safe for concurrent access.
         
         Args:
             command: Command bytes as list of integers or bytes object
@@ -73,22 +95,30 @@ class RS485Client:
         if not self._connected:
             return None
         
-        try:
-            if isinstance(command, list):
-                command_bytes = bytes(command)
-            else:
-                command_bytes = command
-            
-            self.socket.sendall(command_bytes)
-            time.sleep(response_delay)
-            response = self.socket.recv(1024)
-            return response
-            
-        except socket.timeout:
-            return None
-        except Exception as e:
-            print(f"Error during communication: {e}")
-            return None
+        # Acquire lock to prevent concurrent socket access
+        with self._lock:
+            try:
+                if isinstance(command, list):
+                    command_bytes = bytes(command)
+                else:
+                    command_bytes = command
+                
+                self.socket.sendall(command_bytes)
+                time.sleep(response_delay)
+                response = self.socket.recv(1024)
+                
+                if len(response) == 0:
+                    print(f"Warning: Received empty response", flush=True)
+                    return None
+                    
+                return response
+                
+            except socket.timeout:
+                print(f"Warning: Socket timeout while waiting for response", flush=True)
+                return None
+            except Exception as e:
+                print(f"Error during communication: {e}", flush=True)
+                return None
     
     @staticmethod
     def _calculate_crc16(data: bytes) -> int:

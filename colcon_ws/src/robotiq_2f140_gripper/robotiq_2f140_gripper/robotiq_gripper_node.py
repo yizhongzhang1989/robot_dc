@@ -51,6 +51,9 @@ class RobotiqGripperNode(Node):
             port=rs485_port
         )
         
+        # Create callback group for status timer (separate from action servers)
+        self.status_callback_group = ReentrantCallbackGroup()
+        
         # Create action server for gripper activation
         self._activate_action_server = ActionServer(
             self,
@@ -76,9 +79,13 @@ class RobotiqGripperNode(Node):
             10
         )
         
-        # Create timer for status publishing
+        # Create timer for status publishing with separate callback group
         timer_period = 1.0 / status_rate if status_rate > 0 else 0.1
-        self.status_timer = self.create_timer(timer_period, self.publish_status)
+        self.status_timer = self.create_timer(
+            timer_period, 
+            self.publish_status,
+            callback_group=self.status_callback_group
+        )
         
         self.get_logger().info('Robotiq Gripper Node initialized successfully')
         self.get_logger().info('Waiting for activation... Send goal to /gripper/activate action')
@@ -204,10 +211,14 @@ class RobotiqGripperNode(Node):
     
     def publish_status(self):
         """Periodically publish gripper status."""
-        status_dict = self.gripper.get_status()
-        
-        if status_dict is None:
-            self.get_logger().warn('Failed to read gripper status', throttle_duration_sec=5.0)
+        try:
+            status_dict = self.gripper.get_status()
+            
+            if status_dict is None:
+                self.get_logger().warn('Failed to read gripper status (returned None)', throttle_duration_sec=5.0)
+                return
+        except Exception as e:
+            self.get_logger().error(f'Exception while reading gripper status: {e}', throttle_duration_sec=5.0)
             return
         
         # Create and populate status message
@@ -238,8 +249,13 @@ def main(args=None):
     
     node = RobotiqGripperNode()
     
+    # Use MultiThreadedExecutor to allow parallel callback execution
+    from rclpy.executors import MultiThreadedExecutor
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
