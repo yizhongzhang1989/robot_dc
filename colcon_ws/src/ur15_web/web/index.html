@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UR15 Web Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for video container */
+        .video-container {
+            position: relative;
+            width: 1000px;
+            height: 450px;  /* Keep height unchanged */
+            max-width: 100%;
+            margin: 0 auto;  /* Center the video container */
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .video-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 6px;
+        }
+        
+        /* Status Bar Styles */
+        .status-bar {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 0.75rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            display: flex;
+            gap: 0.75rem;
+        }
+        
+        .status-bar-title {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-family: 'Inter', 'SF Pro Display', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #374151;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 0.5rem 0.4rem;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        
+        .status-bar-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .status-bar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .status-bar-item {
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 6px;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            transition: all 0.2s;
+            position: relative;
+            min-height: 60px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .status-bar-item:hover {
+            background: rgba(255, 255, 255, 0.95);
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-bar-label {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+            font-weight: 500;
+            color: #64748b;
+            font-size: 0.7rem;
+            line-height: 1;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .status-bar-value {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+            font-weight: 700;
+            color: #1e293b;
+            font-size: 1rem;
+            text-align: left;
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            line-height: 1.2;
+        }
+        
+        .status-bar-value.connected {
+            color: #10b981 !important;
+        }
+        
+        .status-bar-value.disconnected {
+            color: #ef4444 !important;
+        }
+        
+        /* Clickable mode card styles */
+        .status-bar-item.clickable {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .status-bar-item.clickable:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .status-bar-item.clickable:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Two-row grid layout */
+        .status-bar-grid-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .status-bar-grid-row:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-full font-sans">
+    <!-- Header in background area -->
+    <div class="text-center py-8 bg-gray-100">
+        <h1 class="text-4xl font-bold text-gray-800 mb-2">🤖 UR15 Control Center</h1>
+        <p class="text-gray-600 text-lg">UR15 Robot Arm Web Interface</p>
+    </div>
+    
+    <!-- Status Bar -->
+    <div class="max-w-7xl mx-auto mb-6">
+        <div class="status-bar">
+            <div class="status-bar-title">
+                Status
+            </div>
+            <div class="status-bar-content">
+                <!-- First Row -->
+                <div class="status-bar-grid-row">
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">Robot</div>
+                        <div id="statusBarRobotStatus" class="status-bar-value disconnected">-</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">Camera</div>
+                        <div id="statusBarCameraStatus" class="status-bar-value disconnected">Disconnected</div>
+                    </div>
+                    <div class="status-bar-item clickable" onclick="toggleFreedrive()" title="Click to toggle between Normal and Freedrive mode">
+                        <div class="status-bar-label">Drive Mode</div>
+                        <div id="statusBarFreedriveStatus" class="status-bar-value">Normal</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">Intrinsic Params</div>
+                        <div id="statusBarIntrinsic" class="status-bar-value disconnected">Not Loaded</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">Extrinsic Params</div>
+                        <div id="statusBarExtrinsic" class="status-bar-value disconnected">Not Loaded</div>
+                    </div>
+                </div>
+                <!-- Second Row -->
+                <div class="status-bar-grid-row">
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">Image Topic</div>
+                        <div id="statusBarImageTopic" class="status-bar-value">{{ camera_topic }}</div>
+                    </div>
+                    <div class="status-bar-item clickable" onclick="changeDataDir()" title="Click to change dataset directory">
+                        <div class="status-bar-label">Data Dir</div>
+                        <div id="statusBarDataDir" class="status-bar-value">{{ data_dir }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Camera Feed Section -->
+    <div class="max-w-7xl mx-auto mb-8 bg-white rounded-lg shadow-md p-6">
+        <div class="text-left mb-6">
+            <h2 class="text-2xl font-semibold text-gray-700">📹 Camera Feed</h2>
+        </div>
+        <div class="video-container border-2 border-gray-300 shadow-lg">
+            <img id="videoFeed" class="video-frame" src="/video_feed" alt="Camera Feed">
+        </div>
+        
+        <!-- Calibration Control Area -->
+        <div class="mt-6 flex gap-4 justify-center">
+            <button id="screenshotBtn" class="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center gap-2" onclick="takeScreenshot()">
+                <span>🖼️</span>
+                <span>Screenshot</span>
+            </button>
+            
+            <input type="file" id="intrinsicFile" accept=".json" class="hidden" onchange="uploadIntrinsic()">
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center gap-2" onclick="document.getElementById('intrinsicFile').click()">
+                <span>📁</span>
+                <span>Load Intrinsic Parameters</span>
+            </button>
+            
+            <input type="file" id="extrinsicFile" accept=".json" class="hidden" onchange="uploadExtrinsic()">
+            <button class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center gap-2" onclick="document.getElementById('extrinsicFile').click()">
+                <span>📁</span>
+                <span>Load Extrinsic Parameters</span>
+            </button>
+            
+            <button id="validateCalibrationBtn" class="bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center gap-2" onclick="toggleValidation()">
+                <span>🎯</span>
+                <span>Validate Calibration Result</span>
+            </button>
+        </div>
+    </div>
+    
+    <div class="max-w-7xl mx-auto bg-white rounded-lg shadow-md p-6 mb-8">
+        <!-- Robot State Panel -->
+        <div class="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6 mb-6">
+            <h3 class="text-xl font-semibold text-green-800 mb-4">🤖 Robot State</h3>
+            <div class="space-y-4">
+                <div class="bg-white p-4 rounded-lg border border-green-100">
+                    <span class="block text-sm font-medium text-gray-600 mb-2">Joint Positions (°):</span>
+                    <div id="jointPositions" class="font-mono text-sm text-gray-700 bg-gray-50 p-3 rounded border-l-4 border-green-500">Waiting for data...</div>
+                </div>
+                <div class="bg-white p-4 rounded-lg border border-green-100">
+                    <span class="block text-sm font-medium text-gray-600 mb-2">TCP Pose:</span>
+                    <div id="tcpPoseDisplay" class="font-mono text-sm text-gray-700 bg-gray-50 p-3 rounded border-l-4 border-green-500">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Message Modal -->
+    <div id="messageModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 max-w-md mx-4">
+            <span id="messageText" class="text-gray-800"></span>
+        </div>
+    </div>
+
+    <!-- Data Directory Change Modal -->
+    <div id="dataDirModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display: none;">
+        <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
+            <div class="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-4 rounded-t-lg">
+                <h3 class="text-xl font-semibold text-white">📁 Change Dataset Directory</h3>
+            </div>
+            <div class="p-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Enter new directory path:
+                </label>
+                <input 
+                    type="text" 
+                    id="dataDirInput" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all font-mono text-sm"
+                    placeholder="/path/to/dataset"
+                />
+            </div>
+            <div class="bg-gray-50 px-6 py-4 rounded-b-lg flex justify-end gap-3">
+                <button 
+                    onclick="closeDataDirModal()" 
+                    class="px-5 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium rounded-lg transition-colors"
+                >
+                    Cancel
+                </button>
+                <button 
+                    onclick="confirmDataDirChange()" 
+                    class="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg transition-colors shadow-md hover:shadow-lg"
+                >
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/ur15_web.js"></script>
+</body>
+</html>

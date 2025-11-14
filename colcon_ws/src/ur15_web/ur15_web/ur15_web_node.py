@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-UR15 Camera Calibration Validation Node
+UR15 Web Node
 
-This node provides a web interface for validating camera calibration with UR15 robot.
+This node provides a web interface for UR15 robot camera calibration validation.
 It displays real-time camera feed, robot joint positions, TCP pose, and allows:
 - Loading intrinsic and extrinsic calibration parameters
 - Visualizing base coordinate origin projection on camera image
@@ -31,7 +31,7 @@ from ament_index_python.packages import get_package_share_directory
 try:
     # Try to find the package in the workspace
     ur15_pkg_path = os.path.join(
-        os.path.dirname(get_package_share_directory('camera_node')),
+        os.path.dirname(get_package_share_directory('ur15_web')),
         'ur15_robot_arm'
     )
     if os.path.exists(ur15_pkg_path):
@@ -54,41 +54,102 @@ def find_available_port(start_port=8030, max_attempts=10):
     return None
 
 
-class UR15CameraValidateNode(Node):
-    """ROS2 node for UR15 camera calibration validation with web interface."""
+class UR15WebNode(Node):
+    """ROS2 node for UR15 web interface with camera calibration validation."""
     
     def __init__(self):
-        super().__init__('ur15_cam_validate_node')
+        super().__init__('ur15_web_node')
         
         # Declare parameters
         self.declare_parameter('camera_topic', '/ur15_camera/image_raw')
         self.declare_parameter('web_port', 8030)
         self.declare_parameter('ur15_ip', '192.168.1.15')
         self.declare_parameter('ur15_port', 30002)
+        self.declare_parameter('data_dir', '/tmp/dataset')
         
         # Get parameters
         self.camera_topic = self.get_parameter('camera_topic').value
         web_port = self.get_parameter('web_port').value
         self.ur15_ip = self.get_parameter('ur15_ip').value
         self.ur15_port = self.get_parameter('ur15_port').value
+        self.data_dir = self.get_parameter('data_dir').value
         
-        # Find available port if the requested port is occupied
-        if web_port:
+        # Use only the specified port, clear it if occupied
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(('localhost', web_port))
+                self.web_port = web_port
+                self.get_logger().info(f"Web interface will run on port {web_port}")
+        except OSError as e:
+            self.get_logger().warning(f"Port {web_port} is occupied, attempting to clear it...")
+            success = False
+            
             try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('localhost', web_port))
-                    self.web_port = web_port
-            except OSError:
-                available_port = find_available_port(web_port, 10)
-                if available_port:
-                    self.web_port = available_port
-                    self.get_logger().warning(f"Port {web_port} is occupied, using port {available_port} instead")
-                else:
-                    raise RuntimeError(f"No available ports found starting from {web_port}")
-        else:
-            self.web_port = find_available_port()
-            if not self.web_port:
-                raise RuntimeError("No available ports found")
+                # First try to find and kill processes using the port
+                import subprocess
+                result = subprocess.run(['lsof', '-ti', f':{web_port}'], 
+                                      capture_output=True, text=True, timeout=5)
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid.isdigit():
+                            self.get_logger().info(f"Killing process {pid} using port {web_port}")
+                            try:
+                                subprocess.run(['kill', '-9', pid], timeout=5, check=True)
+                            except subprocess.CalledProcessError:
+                                pass  # Process might already be dead
+                    
+                    # Wait for processes to be killed
+                    time.sleep(2)
+                
+                # Try multiple times with SO_REUSEADDR
+                for attempt in range(3):
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                            s.bind(('localhost', web_port))
+                            self.web_port = web_port
+                            self.get_logger().info(f"Successfully bound to port {web_port} after {attempt + 1} attempts")
+                            success = True
+                            break
+                    except OSError:
+                        if attempt < 2:
+                            self.get_logger().info(f"Port {web_port} still occupied, waiting... (attempt {attempt + 1}/3)")
+                            time.sleep(2)
+                
+                if not success:
+                    # Final attempt with different bind options
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                            s.bind(('0.0.0.0', web_port))  # Bind to all interfaces as last resort
+                            self.web_port = web_port
+                            self.get_logger().warning(f"Bound to port {web_port} using SO_REUSEPORT on all interfaces")
+                            success = True
+                    except OSError:
+                        pass
+                
+                if not success:
+                    raise RuntimeError(f"Unable to bind to port {web_port} after multiple attempts. "
+                                     f"Port may be in TIME_WAIT state or reserved by system. "
+                                     f"Please wait a few minutes or restart the system. Original error: {e}")
+                                     
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(f"Timeout while trying to clear port {web_port}")
+            except FileNotFoundError:
+                # lsof not available, try with SO_REUSEADDR anyway
+                self.get_logger().warning("lsof command not found, trying SO_REUSEADDR")
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                        s.bind(('localhost', web_port))
+                        self.web_port = web_port
+                        self.get_logger().info(f"Successfully bound to port {web_port} using SO_REUSEADDR")
+                except OSError:
+                    raise RuntimeError(f"Port {web_port} is occupied and 'lsof' command not available. Please free up the port manually.")
         
         # Initialize CV bridge
         self.bridge = CvBridge()
@@ -114,6 +175,7 @@ class UR15CameraValidateNode(Node):
         # UR15 robot control
         self.ur15_robot = None
         self.freedrive_active = False
+        self.validation_active = False
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
@@ -156,7 +218,8 @@ class UR15CameraValidateNode(Node):
         self.get_logger().info("Subscribed to /tcp_pose_broadcaster/pose topic")
         
         # Setup Flask app
-        self.app = Flask(__name__)
+        web_dir = os.path.join(get_package_share_directory('ur15_web'), 'web')
+        self.app = Flask(__name__, static_folder=web_dir, static_url_path='/static')
         self.flask_running = True
         self.setup_flask_routes()
         
@@ -193,6 +256,59 @@ class UR15CameraValidateNode(Node):
             except Exception as e:
                 self.get_logger().error(f"Error closing UR15 connection: {e}")
         super().destroy_node()
+    
+    def _rotvec_to_matrix(self, rx, ry, rz):
+        """Convert rotation vector to rotation matrix using Rodrigues' formula."""
+        import math
+        angle = math.sqrt(rx**2 + ry**2 + rz**2)
+        if angle < 1e-10:
+            return np.eye(3)
+        
+        # Normalize axis
+        kx, ky, kz = rx/angle, ry/angle, rz/angle
+        
+        # Rodrigues' rotation formula
+        c = math.cos(angle)
+        s = math.sin(angle)
+        v = 1 - c
+        
+        R = np.array([
+            [kx*kx*v + c,    kx*ky*v - kz*s, kx*kz*v + ky*s],
+            [ky*kx*v + kz*s, ky*ky*v + c,    ky*kz*v - kx*s],
+            [kz*kx*v - ky*s, kz*ky*v + kx*s, kz*kz*v + c]
+        ])
+        return R
+    
+    def _pose_to_matrix(self, pose):
+        """Convert pose [X,Y,Z,Rx,Ry,Rz] to 4x4 homogeneous transformation matrix."""
+        T = np.eye(4)
+        T[0:3, 0:3] = self._rotvec_to_matrix(pose[3], pose[4], pose[5])
+        T[0:3, 3] = [pose[0], pose[1], pose[2]]
+        return T
+    
+    def _get_next_file_number(self):
+        """Find the next available file number by checking existing files in data_dir."""
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir, exist_ok=True)
+            return 0
+        
+        existing_files = [f for f in os.listdir(self.data_dir) if f.endswith('.json')]
+        if not existing_files:
+            return 0
+        
+        # Extract numbers from filenames like "0.json", "1.json", etc.
+        numbers = []
+        for f in existing_files:
+            try:
+                num = int(f.replace('.json', ''))
+                numbers.append(num)
+            except ValueError:
+                continue
+        
+        if not numbers:
+            return 0
+        
+        return max(numbers) + 1
         
     def _run_flask_server(self):
         """Run Flask server with proper error handling."""
@@ -285,548 +401,25 @@ class UR15CameraValidateNode(Node):
     def setup_flask_routes(self):
         """Setup Flask web routes."""
         
-        # Import the HTML template from the original script
-        from pathlib import Path
+        from flask import render_template
         
         @self.app.route('/')
         def index():
             """Main web interface."""
-            html_template = """
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UR15 Camera Calibration Validator</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f0f0f0;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background-color: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .header {
-            text-align: center;
-            color: #333;
-            margin-bottom: 20px;
-        }
-        .header h1 {
-            margin: 0 0 10px 0;
-        }
-        .header p {
-            margin: 0;
-            color: #666;
-        }
-        .video-container {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .video-frame {
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            width: 1280px;
-            max-width: 100%;
-            height: auto;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .controls {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            transition: all 0.3s ease;
-        }
-        .btn-freedrive {
-            background-color: #28a745;
-            color: white;
-        }
-        .btn-freedrive:hover {
-            background-color: #218838;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(40,167,69,0.3);
-        }
-        .btn-freedrive.active {
-            background-color: #dc3545;
-        }
-        .btn-freedrive.active:hover {
-            background-color: #c82333;
-        }
-        .info-panel {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border: 1px solid #dee2e6;
-            border-radius: 12px;
-            padding: 20px;
-            margin-top: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .info-panel h3 {
-            margin-top: 0;
-            margin-bottom: 15px;
-            color: #495057;
-            border-bottom: 2px solid #007bff;
-            padding-bottom: 10px;
-            font-size: 1.2em;
-        }
-        .info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-        }
-        .info-item {
-            background-color: white;
-            padding: 12px 16px;
-            border-radius: 8px;
-            border: 1px solid #e9ecef;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            transition: transform 0.2s ease;
-        }
-        .info-item:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-        }
-        .info-label {
-            display: block;
-            font-weight: 600;
-            color: #495057;
-            font-size: 0.9em;
-            margin-bottom: 5px;
-        }
-        .info-value {
-            display: block;
-            font-weight: 500;
-            color: #212529;
-            font-size: 1em;
-        }
-        #cameraStatus {
-            font-weight: 600;
-        }
-        .robot-info {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        .robot-info-item {
-            background-color: white;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #e9ecef;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .robot-value {
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            color: #212529;
-            margin-top: 8px;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            border-left: 3px solid #007bff;
-            word-break: break-word;
-            white-space: pre-wrap;
-        }
-        .upload-section {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 10px;
-        }
-        .upload-item {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            border: 2px dashed #dee2e6;
-            text-align: center;
-            transition: all 0.3s ease;
-        }
-        .upload-item:hover {
-            border-color: #007bff;
-            box-shadow: 0 2px 8px rgba(0,123,255,0.2);
-        }
-        .upload-label {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 15px;
-        }
-        .upload-title {
-            font-weight: 600;
-            color: #495057;
-            font-size: 1em;
-        }
-        .btn-upload {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
-            transition: all 0.3s ease;
-        }
-        .btn-upload:hover {
-            background-color: #0056b3;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,123,255,0.3);
-        }
-        .file-name {
-            margin-top: 10px;
-            font-size: 0.9em;
-            color: #6c757d;
-            font-style: italic;
-        }
-        .message-modal {
-            display: none;
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 2000;
-            animation: slideDown 0.3s ease-out;
-        }
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateX(-50%) translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(-50%) translateY(0);
-            }
-        }
-        .message-content {
-            background-color: white;
-            padding: 15px 30px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            border-left: 4px solid #007bff;
-        }
-        .message-content.success {
-            border-left-color: #28a745;
-        }
-        .message-content.error {
-            border-left-color: #dc3545;
-        }
-        .message-text {
-            font-size: 1em;
-            font-weight: 500;
-            color: #333;
-        }
-        @media (max-width: 768px) {
-            .info {
-                grid-template-columns: 1fr;
-            }
-            .upload-section {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📷 UR15 Camera Calibration Validator</h1>
-            <p>Real-time Camera View & Calibration Validation</p>
-        </div>
-        
-        <div class="video-container">
-            <img id="videoFeed" class="video-frame" src="/video_feed" alt="Camera Feed">
-        </div>
-        
-        <div class="controls">
-            <button id="freedriveBtn" class="btn btn-freedrive" onclick="toggleFreedrive()">
-                🎮 Enter Freedrive Mode
-            </button>
-        </div>
-        
-        <div class="info-panel">
-            <h3>📊 Camera Status</h3>
-            <div class="info">
-                <div class="info-item">
-                    <span class="info-label">Camera Status:</span>
-                    <span id="cameraStatus" class="info-value">Waiting for connection...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Camera Topic:</span>
-                    <span id="cameraTopic" class="info-value">{{ camera_topic }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Intrinsic Calibration:</span>
-                    <span id="intrinsicStatus" class="info-value">Not Loaded</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Extrinsic Calibration:</span>
-                    <span id="extrinsicStatus" class="info-value">Not Loaded</span>
-                </div>
-            </div>
-        </div>
-        
-        <div class="info-panel">
-            <h3>🤖 Robot State</h3>
-            <div class="robot-info">
-                <div class="robot-info-item">
-                    <span class="info-label">Joint Positions (°):</span>
-                    <div id="jointPositions" class="robot-value">Waiting for data...</div>
-                </div>
-                <div class="robot-info-item">
-                    <span class="info-label">TCP Pose:</span>
-                    <div id="tcpPoseDisplay" class="robot-value">Waiting for data...</div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="info-panel">
-            <h3>📁 Load Calibration Data</h3>
-            <div class="upload-section">
-                <div class="upload-item">
-                    <label class="upload-label">
-                        <span class="upload-title">📐 Intrinsic Parameters (JSON)</span>
-                        <input type="file" id="intrinsicFile" accept=".json" style="display: none;" onchange="uploadIntrinsic()">
-                        <button class="btn btn-upload" onclick="document.getElementById('intrinsicFile').click()">Choose File</button>
-                    </label>
-                    <span id="intrinsicFileName" class="file-name">No file selected</span>
-                </div>
+            try:
+                web_dir = os.path.join(get_package_share_directory('ur15_web'), 'web')
+                html_file_path = os.path.join(web_dir, 'index.html')
+                with open(html_file_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
                 
-                <div class="upload-item">
-                    <label class="upload-label">
-                        <span class="upload-title">🎯 Extrinsic Parameters (JSON)</span>
-                        <input type="file" id="extrinsicFile" accept=".json" style="display: none;" onchange="uploadExtrinsic()">
-                        <button class="btn btn-upload" onclick="document.getElementById('extrinsicFile').click()">Choose File</button>
-                    </label>
-                    <span id="extrinsicFileName" class="file-name">No file selected</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div id="messageModal" class="message-modal">
-        <div class="message-content">
-            <span class="message-text" id="messageText"></span>
-        </div>
-    </div>
-
-    <script>
-        let freedriveActive = false;
-
-        function showMessage(message, type = 'info') {
-            const modal = document.getElementById('messageModal');
-            const content = modal.querySelector('.message-content');
-            const text = document.getElementById('messageText');
-            
-            text.textContent = message;
-            content.className = 'message-content ' + type;
-            modal.style.display = 'block';
-            
-            setTimeout(() => {
-                modal.style.display = 'none';
-            }, 3000);
-        }
-
-        function toggleFreedrive() {
-            const btn = document.getElementById('freedriveBtn');
-            btn.disabled = true;
-            
-            fetch('/toggle_freedrive', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    freedriveActive = data.freedrive_active;
-                    updateFreedriveBtnUI();
-                    showMessage(data.message, 'success');
-                } else {
-                    showMessage('❌ ' + data.message, 'error');
-                }
-                btn.disabled = false;
-            })
-            .catch(error => {
-                showMessage('❌ Request failed: ' + error.message, 'error');
-                btn.disabled = false;
-            });
-        }
-
-        function updateFreedriveBtnUI() {
-            const btn = document.getElementById('freedriveBtn');
-            if (freedriveActive) {
-                btn.textContent = '🛑 Exit Freedrive Mode';
-                btn.className = 'btn btn-freedrive active';
-            } else {
-                btn.textContent = '🎮 Enter Freedrive Mode';
-                btn.className = 'btn btn-freedrive';
-            }
-        }
-
-        function uploadIntrinsic() {
-            const fileInput = document.getElementById('intrinsicFile');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                return;
-            }
-            
-            document.getElementById('intrinsicFileName').textContent = file.name;
-            
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            fetch('/upload_intrinsic', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage('✅ Intrinsic parameters loaded successfully', 'success');
-                    updateStatus();
-                } else {
-                    showMessage('❌ Failed to load intrinsic parameters: ' + data.message, 'error');
-                }
-            })
-            .catch(error => {
-                showMessage('❌ Upload failed: ' + error.message, 'error');
-            });
-        }
-
-        function uploadExtrinsic() {
-            const fileInput = document.getElementById('extrinsicFile');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                return;
-            }
-            
-            document.getElementById('extrinsicFileName').textContent = file.name;
-            
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            fetch('/upload_extrinsic', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage('✅ Extrinsic parameters loaded successfully', 'success');
-                    updateStatus();
-                } else {
-                    showMessage('❌ Failed to load extrinsic parameters: ' + data.message, 'error');
-                }
-            })
-            .catch(error => {
-                showMessage('❌ Upload failed: ' + error.message, 'error');
-            });
-        }
-
-        function updateStatus() {
-            fetch('/get_status')
-            .then(response => response.json())
-            .then(data => {
-                // Update camera status
-                const cameraStatusElement = document.getElementById('cameraStatus');
-                if (data.has_image) {
-                    cameraStatusElement.textContent = 'Connected';
-                    cameraStatusElement.style.color = 'green';
-                } else {
-                    cameraStatusElement.textContent = 'Waiting for connection...';
-                    cameraStatusElement.style.color = 'red';
-                }
+                # Replace template variables
+                html_content = html_content.replace('{{ camera_topic }}', self.camera_topic)
+                html_content = html_content.replace('{{ data_dir }}', self.data_dir)
                 
-                // Update camera topic
-                document.getElementById('cameraTopic').textContent = data.camera_topic;
-                
-                // Update intrinsic calibration status
-                const intrinsicStatusElement = document.getElementById('intrinsicStatus');
-                if (data.has_intrinsic) {
-                    intrinsicStatusElement.textContent = 'Loaded ✓';
-                    intrinsicStatusElement.style.color = 'green';
-                } else {
-                    intrinsicStatusElement.textContent = 'Not Loaded';
-                    intrinsicStatusElement.style.color = 'red';
-                }
-                
-                // Update extrinsic calibration status
-                const extrinsicStatusElement = document.getElementById('extrinsicStatus');
-                if (data.has_extrinsic) {
-                    extrinsicStatusElement.textContent = 'Loaded ✓';
-                    extrinsicStatusElement.style.color = 'green';
-                } else {
-                    extrinsicStatusElement.textContent = 'Not Loaded';
-                    extrinsicStatusElement.style.color = 'red';
-                }
-                
-                // Update joint positions
-                const jointPositionsElement = document.getElementById('jointPositions');
-                if (data.joint_positions && data.joint_positions.length > 0) {
-                    const jointText = data.joint_positions.map((pos, idx) => 
-                        `J${idx + 1}: ${pos.toFixed(2)}°`
-                    ).join('\\n');
-                    jointPositionsElement.textContent = jointText;
-                    jointPositionsElement.style.color = '#212529';
-                } else {
-                    jointPositionsElement.textContent = 'Waiting for data...';
-                    jointPositionsElement.style.color = '#6c757d';
-                }
-                
-                // Update TCP pose
-                const tcpPoseElement = document.getElementById('tcpPoseDisplay');
-                if (data.tcp_pose) {
-                    const pose = data.tcp_pose;
-                    const poseText = `Position (mm):\\n  X: ${pose.x.toFixed(2)}\\n  Y: ${pose.y.toFixed(2)}\\n  Z: ${pose.z.toFixed(2)}\\n\\nOrientation (quaternion):\\n  X: ${pose.qx.toFixed(4)}\\n  Y: ${pose.qy.toFixed(4)}\\n  Z: ${pose.qz.toFixed(4)}\\n  W: ${pose.qw.toFixed(4)}`;
-                    tcpPoseElement.textContent = poseText;
-                    tcpPoseElement.style.color = '#212529';
-                } else {
-                    tcpPoseElement.textContent = 'Waiting for data...';
-                    tcpPoseElement.style.color = '#6c757d';
-                }
-                
-                // Update freedrive button state
-                if (data.freedrive_active !== undefined) {
-                    freedriveActive = data.freedrive_active;
-                    updateFreedriveBtnUI();
-                }
-            })
-            .catch(error => {
-                console.error('Status fetch failed:', error);
-                document.getElementById('cameraStatus').textContent = 'Connection Error';
-                document.getElementById('cameraStatus').style.color = 'red';
-            });
-        }
-
-        // Update status every 500ms
-        setInterval(() => {
-            updateStatus();
-        }, 500);
-
-        // Update status on page load
-        window.onload = function() {
-            updateStatus();
-        };
-    </script>
-</body>
-</html>
-            """
-            return render_template_string(html_template, camera_topic=self.camera_topic)
+                return html_content
+            except Exception as e:
+                self.get_logger().error(f"Error loading HTML template: {e}")
+                return f"<html><body><h1>Error loading web interface: {str(e)}</h1></body></html>"
         
         @self.app.route('/video_feed')
         def video_feed():
@@ -834,11 +427,32 @@ class UR15CameraValidateNode(Node):
             return Response(self.generate_frames(),
                           mimetype='multipart/x-mixed-replace; boundary=frame')
         
+        @self.app.route('/js/<filename>')
+        def serve_js_file(filename):
+            """Serve JavaScript files."""
+            from flask import send_from_directory
+            try:
+                web_dir = os.path.join(get_package_share_directory('ur15_web'), 'web')
+                js_dir = os.path.join(web_dir, 'js')
+                return send_from_directory(js_dir, filename, mimetype='application/javascript')
+            except Exception as e:
+                self.get_logger().error(f"Error serving JS file {filename}: {e}")
+                return f"Error: {str(e)}", 404
+        
         @self.app.route('/get_status')
         def get_status():
             """Get current status."""
             from flask import jsonify
             has_image = self.current_image is not None
+            
+            # Debug log for camera status
+            if hasattr(self, '_debug_counter'):
+                self._debug_counter += 1
+            else:
+                self._debug_counter = 1
+            
+            if self._debug_counter % 20 == 0:  # Log every 10 seconds (20 * 500ms)
+                self.get_logger().info(f"Camera status check: has_image={has_image}, current_image type: {type(self.current_image)}")
             
             with self.calibration_lock:
                 has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
@@ -852,6 +466,7 @@ class UR15CameraValidateNode(Node):
             
             with self.ur15_lock:
                 freedrive_active = self.freedrive_active
+                robot_connected = self.ur15_robot is not None
             
             # Check if data is recent (within last 2 seconds)
             current_time = time.time()
@@ -861,11 +476,13 @@ class UR15CameraValidateNode(Node):
             return jsonify({
                 'has_image': has_image,
                 'camera_topic': self.camera_topic,
+                'data_dir': self.data_dir,
                 'has_intrinsic': has_intrinsic,
                 'has_extrinsic': has_extrinsic,
                 'joint_positions': joint_positions if joint_data_valid else [],
                 'tcp_pose': tcp_pose if tcp_data_valid else None,
-                'freedrive_active': freedrive_active
+                'freedrive_active': freedrive_active,
+                'robot_connected': robot_connected
             })
         
         @self.app.route('/upload_intrinsic', methods=['POST'])
@@ -960,6 +577,43 @@ class UR15CameraValidateNode(Node):
                 self.get_logger().error(f"Error loading extrinsic parameters: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
+        @self.app.route('/change_data_dir', methods=['POST'])
+        def change_data_dir():
+            """Change dataset directory."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data or 'data_dir' not in data:
+                    return jsonify({'success': False, 'message': 'No data_dir provided'})
+                
+                new_dir = data['data_dir'].strip()
+                if not new_dir:
+                    return jsonify({'success': False, 'message': 'Directory path cannot be empty'})
+                
+                # Expand user home directory if needed
+                new_dir = os.path.expanduser(new_dir)
+                
+                # Create directory if it doesn't exist
+                try:
+                    os.makedirs(new_dir, exist_ok=True)
+                    self.data_dir = new_dir
+                    self.get_logger().info(f"Dataset directory changed to: {new_dir}")
+                    return jsonify({
+                        'success': True, 
+                        'message': 'Directory changed successfully',
+                        'data_dir': new_dir
+                    })
+                except Exception as e:
+                    return jsonify({
+                        'success': False, 
+                        'message': f'Failed to create/access directory: {str(e)}'
+                    })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error changing data directory: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
         @self.app.route('/toggle_freedrive', methods=['POST'])
         def toggle_freedrive():
             """Toggle freedrive mode on/off."""
@@ -1013,6 +667,134 @@ class UR15CameraValidateNode(Node):
                     'success': False, 
                     'message': str(e),
                     'freedrive_active': self.freedrive_active
+                })
+        
+        @self.app.route('/toggle_validation', methods=['POST'])
+        def toggle_validation():
+            """Toggle calibration validation display on/off."""
+            from flask import jsonify
+            
+            try:
+                with self.calibration_lock:
+                    has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
+                    has_extrinsic = self.cam2end_matrix is not None and self.target2base_matrix is not None
+                
+                if not (has_intrinsic and has_extrinsic):
+                    return jsonify({
+                        'success': False,
+                        'message': 'Both intrinsic and extrinsic parameters must be loaded first',
+                        'validation_active': False
+                    })
+                
+                self.validation_active = not self.validation_active
+                status = 'activated' if self.validation_active else 'deactivated'
+                self.get_logger().info(f"Validation display {status}")
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Validation display {status}',
+                    'validation_active': self.validation_active
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error toggling validation: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'validation_active': self.validation_active
+                })
+        
+        @self.app.route('/take_screenshot', methods=['POST'])
+        def take_screenshot():
+            """Take a screenshot of current camera feed and save robot pose."""
+            from flask import jsonify
+            from datetime import datetime
+            import json
+            
+            try:
+                # Check if we have camera image
+                with self.image_lock:
+                    if self.current_image is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'No camera image available'
+                        })
+                    
+                    # Copy the current image (already in OpenCV format)
+                    cv_image = self.current_image.copy()
+                
+                # Check if robot is connected
+                with self.ur15_lock:
+                    if self.ur15_robot is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Robot not connected'
+                        })
+                    
+                    # Read actual joint positions and TCP pose
+                    try:
+                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        if joint_positions is None:
+                            return jsonify({
+                                'success': False,
+                                'message': 'Failed to read joint positions'
+                            })
+                        
+                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        if tcp_pose is None:
+                            return jsonify({
+                                'success': False,
+                                'message': 'Failed to read TCP pose'
+                            })
+                    except Exception as e:
+                        return jsonify({
+                            'success': False,
+                            'message': f'Failed to read robot state: {str(e)}'
+                        })
+                
+                # Find next available file number
+                counter = self._get_next_file_number()
+                
+                # Calculate end2base transformation matrix
+                end2base = self._pose_to_matrix(tcp_pose)
+                
+                # Prepare data structure
+                data = {
+                    "joint_angles": list(joint_positions),
+                    "end_xyzrpy": {
+                        "x": tcp_pose[0],
+                        "y": tcp_pose[1],
+                        "z": tcp_pose[2],
+                        "rx": tcp_pose[3],
+                        "ry": tcp_pose[4],
+                        "rz": tcp_pose[5]
+                    },
+                    "end2base": end2base.tolist(),
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # Save JSON file
+                json_filename = os.path.join(self.data_dir, f"{counter}.json")
+                with open(json_filename, 'w') as f:
+                    json.dump(data, f, indent=2)
+                
+                # Save image file
+                image_filename = os.path.join(self.data_dir, f"{counter}.jpg")
+                cv2.imwrite(image_filename, cv_image)
+                
+                self.get_logger().info(f"Screenshot saved: {counter}.jpg and {counter}.json")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Screenshot saved successfully',
+                    'filename': f"{counter}.jpg"
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error taking screenshot: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
                 })
     
     def project_base_origin_to_image(self, frame):
@@ -1164,16 +946,22 @@ class UR15CameraValidateNode(Node):
                 with self.image_lock:
                     if self.current_image is not None:
                         frame = self.current_image.copy()
-                        frame = self.project_base_origin_to_image(frame)
                         
+                        # Only project validation if validation is active
+                        if self.validation_active:
+                            frame = self.project_base_origin_to_image(frame)
+                        
+                        # Scale down for web display while maintaining aspect ratio
                         height, width = frame.shape[:2]
-                        if width > 800:
-                            scale = 800.0 / width
+                        max_display_width = 800  # Maximum width for web display
+                        
+                        if width > max_display_width:
+                            scale = max_display_width / width
                             new_width = int(width * scale)
                             new_height = int(height * scale)
-                            frame = cv2.resize(frame, (new_width, new_height))
+                            frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
                         
-                        encode_param = [cv2.IMWRITE_JPEG_QUALITY, 85]
+                        encode_param = [cv2.IMWRITE_JPEG_QUALITY, 95]
                         _, buffer = cv2.imencode('.jpg', frame, encode_param)
                         frame_bytes = buffer.tobytes()
                         
@@ -1181,7 +969,7 @@ class UR15CameraValidateNode(Node):
                                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
                     else:
                         placeholder = self.create_placeholder_image()
-                        _, buffer = cv2.imencode('.jpg', placeholder, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        _, buffer = cv2.imencode('.jpg', placeholder, [cv2.IMWRITE_JPEG_QUALITY, 95])
                         frame_bytes = buffer.tobytes()
                         
                         yield (b'--frame\r\n'
@@ -1261,7 +1049,7 @@ def main(args=None):
     rclpy.init(args=args)
     
     try:
-        node = UR15CameraValidateNode()
+        node = UR15WebNode()
         rclpy.spin(node)
         
     except KeyboardInterrupt:

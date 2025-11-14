@@ -138,3 +138,6 @@ Thumbs.db
 
 # Image storage directory (now in root directory)
 temp/
+
+# Dataset directory
+dataset/
