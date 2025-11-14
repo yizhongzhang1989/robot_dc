@@ -85,16 +85,58 @@ class LiftRobotNode(Node):
         overshoot_up_loaded = OVERSHOOT_INIT_UP
         overshoot_down_loaded = OVERSHOOT_INIT_DOWN
         
+        # Region-based calibration list (each: {lower, upper, overshoot_up, overshoot_down})
+        self.overshoot_regions = []
+        # Polynomial fit (optional): dict with type='poly', degree, coeffs_up, coeffs_down, x_min, x_max
+        self.overshoot_fit = None
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
                     config_data = json.load(f)
-                    overshoot_up_loaded = config_data.get('overshoot_up', OVERSHOOT_INIT_UP)
-                    overshoot_down_loaded = config_data.get('overshoot_down', OVERSHOOT_INIT_DOWN)
+                    # New format (v2) stores default + regions
+                    if 'default' in config_data:
+                        overshoot_up_loaded = config_data['default'].get('overshoot_up', OVERSHOOT_INIT_UP)
+                        overshoot_down_loaded = config_data['default'].get('overshoot_down', OVERSHOOT_INIT_DOWN)
+                    else:
+                        # Backward compatibility (legacy single values)
+                        overshoot_up_loaded = config_data.get('overshoot_up', OVERSHOOT_INIT_UP)
+                        overshoot_down_loaded = config_data.get('overshoot_down', OVERSHOOT_INIT_DOWN)
+                    if 'regions' in config_data and isinstance(config_data['regions'], list):
+                        # Validate region entries
+                        for r in config_data['regions']:
+                            try:
+                                lb = float(r.get('lower'))
+                                ub = float(r.get('upper'))
+                                upv = float(r.get('overshoot_up'))
+                                dnv = float(r.get('overshoot_down'))
+                                if lb < ub:
+                                    self.overshoot_regions.append({
+                                        'lower': lb,
+                                        'upper': ub,
+                                        'overshoot_up': upv,
+                                        'overshoot_down': dnv
+                                    })
+                            except Exception:
+                                self.get_logger().warn(f"[lift_robot_platform] Skipping invalid region entry: {r}")
                     self.get_logger().info(
-                        f"[lift_robot_platform] Loaded overshoot calibration: "
-                        f"up={overshoot_up_loaded}, down={overshoot_down_loaded}"
+                        f"[lift_robot_platform] Loaded overshoot calibration: default(up={overshoot_up_loaded}, down={overshoot_down_loaded}), regions={len(self.overshoot_regions)}"
                     )
+                    # Load fit block if present
+                    if 'fit' in config_data and isinstance(config_data['fit'], dict):
+                        fb = config_data['fit']
+                        if fb.get('type') == 'poly' and 'coeffs_up' in fb and 'coeffs_down' in fb:
+                            # Basic validation
+                            try:
+                                self.overshoot_fit = {
+                                    'degree': int(fb.get('degree', len(fb['coeffs_up'])-1)),
+                                    'coeffs_up': [float(c) for c in fb['coeffs_up']],
+                                    'coeffs_down': [float(c) for c in fb['coeffs_down']],
+                                    'x_min': float(fb.get('x_min', 0.0)),
+                                    'x_max': float(fb.get('x_max', 0.0))
+                                }
+                                self.get_logger().info(f"[lift_robot_platform] Loaded overshoot fit: degree={self.overshoot_fit['degree']} (poly)")
+                            except Exception as e:
+                                self.get_logger().warn(f"[lift_robot_platform] Invalid overshoot fit block: {e}")
             except Exception as e:
                 self.get_logger().warn(
                     f"[lift_robot_platform] Warning: Failed to load overshoot config: {e}"
@@ -115,6 +157,10 @@ class LiftRobotNode(Node):
         # Overshoot parameters (loaded from config, used for predictive early stop)
         self.avg_overshoot_up = overshoot_up_loaded
         self.avg_overshoot_down = overshoot_down_loaded
+
+        # Sort regions by lower bound for deterministic search
+        if self.overshoot_regions:
+            self.overshoot_regions.sort(key=lambda r: r['lower'])
         
         # Web calibration tracking state
         self.height_at_stop = None           # Height when stop command issued
@@ -371,6 +417,14 @@ class LiftRobotNode(Node):
                         self.target_height = target_height
                         self.control_mode = 'auto'
                         self.control_enabled = True
+
+                        # Region-specific overshoot selection
+                        try:
+                            up_o, down_o = self._get_fitted_or_region_overshoot(self.target_height)
+                            self.avg_overshoot_up = up_o
+                            self.avg_overshoot_down = down_o
+                        except Exception as e:
+                            self.get_logger().warn(f"[SEQ {seq_id_str}] Overshoot selection failed: {e}")
                         
                         # Store target for web calibration
                         self.last_goto_target = target_height
@@ -395,7 +449,7 @@ class LiftRobotNode(Node):
                         self.get_logger().info(
                             f"[SEQ {seq_id_str}] Auto mode: target height={self.target_height:.2f}mm "
                             f"(current={self.current_height:.2f}mm, error={current_error:.2f}mm, "
-                            f"overshoot_up={self.avg_overshoot_up:.3f}mm, overshoot_down={self.avg_overshoot_down:.3f}mm)"
+                            f"overshoot_up={self.avg_overshoot_up:.3f}mm, overshoot_down={self.avg_overshoot_down:.3f}mm, regions={len(self.overshoot_regions)})"
                         )
                 else:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] goto_height requires target_height field")
@@ -996,6 +1050,49 @@ class LiftRobotNode(Node):
             
         except Exception as e:
             self.get_logger().error(f"Overshoot measurement error: {e}")
+
+    # ─────────────────────────────────────────────────────────────
+    # Region overshoot helpers
+    # ─────────────────────────────────────────────────────────────
+    def _eval_poly(self, coeffs, x):
+        try:
+            deg = len(coeffs) - 1
+            y = 0.0
+            for k, c in enumerate(coeffs):
+                powr = deg - k
+                y += c * (x ** powr)
+            return y
+        except Exception:
+            return None
+
+    def _get_fitted_or_region_overshoot(self, height):
+        """Prefer polynomial fit if available; otherwise use region selection.
+        Returns (overshoot_up, overshoot_down). Clips x to fit range.
+        """
+        if self.overshoot_fit:
+            x_min = self.overshoot_fit.get('x_min', height)
+            x_max = self.overshoot_fit.get('x_max', height)
+            x = max(x_min, min(x_max, height))
+            upv = self._eval_poly(self.overshoot_fit['coeffs_up'], x)
+            dnv = self._eval_poly(self.overshoot_fit['coeffs_down'], x)
+            if (upv is not None) and (dnv is not None):
+                return (float(upv), float(dnv))
+        # Fallback to region-based
+        return self._get_region_overshoot(height)
+    def _get_region_overshoot(self, height):
+        """Return (overshoot_up, overshoot_down) for a target height.
+        If no matching region, fall back to current defaults (avg_overshoot_*).
+        Region match rule: lower <= height < upper (upper inclusive if last region).
+        """
+        if not self.overshoot_regions:
+            return (self.avg_overshoot_up, self.avg_overshoot_down)
+        for i, r in enumerate(self.overshoot_regions):
+            lb = r['lower']; ub = r['upper']
+            last = (i == len(self.overshoot_regions) - 1)
+            if (height >= lb) and (height < ub or (last and height <= ub)):
+                return (r.get('overshoot_up', self.avg_overshoot_up), r.get('overshoot_down', self.avg_overshoot_down))
+        # No region matched
+        return (self.avg_overshoot_up, self.avg_overshoot_down)
 
     # ─────────────────────────────────────────────────────────────
     # Force sensor callbacks

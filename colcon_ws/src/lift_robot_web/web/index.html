@@ -423,18 +423,39 @@
           </h2>
           <span id="overshootCalibStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">Loading...</span>
         </div>
+
+        <!-- Detected Range & Calibrated Regions Display -->
+        <div class="mb-2 text-xs space-y-1">
+          <div id="detectedRangeDisplay" class="text-slate-600 italic">Range: --</div>
+          <div id="overshootRegionsContainer" class="space-y-1">
+            <div class="text-slate-400">No regions calibrated</div>
+          </div>
+          <div class="mt-2">
+            <span id="overshootFitEq" class="text-slate-700 text-xs font-semibold"></span>
+          </div>
+          <div class="mt-2">
+            <img id="overshootFitImg" src="" alt="Overshoot fit" class="w-full border border-slate-200 rounded hidden"/>
+          </div>
+        </div>
+
+        <!-- Full-auto range + multi-region calibration single button -->
+        <div class="mb-3">
+          <button id="overshootFullAutoBtn" class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded font-semibold transition">
+            � Full Auto Range + Region Calibration
+          </button>
+        </div>
         
       <div class="space-y-3">
         
-        <!-- Calibration Range Input -->
-        <div class="grid grid-cols-2 gap-2">
+        <!-- Hidden Calibration Range Inputs (kept for internal logic compatibility) -->
+        <div class="grid grid-cols-2 gap-2 hidden">
           <div>
             <label class="block text-xs font-semibold text-slate-700 mb-1">Lower Bound (mm)</label>
-            <input id="overshootLowerBound" type="number" placeholder="910" class="w-full px-2 py-1 border border-slate-300 rounded text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" value="910">
+            <input id="overshootLowerBound" type="number" placeholder="910" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" value="910">
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-700 mb-1">Upper Bound (mm)</label>
-            <input id="overshootUpperBound" type="number" placeholder="945" class="w-full px-2 py-1 border border-slate-300 rounded text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" value="945">
+            <input id="overshootUpperBound" type="number" placeholder="945" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" value="945">
           </div>
         </div>
         
@@ -729,89 +750,33 @@ $('gotoHeightPushrodBtn').addEventListener('click', async ()=>{
 });
 
 // Platform force control buttons
-function sendForceCommand(direction){
-  const targetForce = parseFloat($('targetForcePlatform').value);
-  if(isNaN(targetForce) || targetForce<=0){
-    $('cmdStatus').textContent='Invalid force value';
-    setTimeout(()=>$('cmdStatus').textContent='',2000);
-    return;
-  }
+async function sendForceCommand(direction){
+  const val = parseFloat($('targetForcePlatform').value);
+  if(isNaN(val) || val<=0){ $('cmdStatus').textContent='Invalid force value'; setTimeout(()=>$('cmdStatus').textContent='',2000); return; }
   const cmd = direction==='up'?'force_up':'force_down';
-  $('cmdStatus').textContent='Platform '+(direction==='up'?'force-up':'force-down')+' to '+targetForce+'N ...';
-  const payload={command:cmd,target:'platform',target_force:targetForce};
-  fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-    .then(()=>{ $('cmdStatus').textContent='Force '+direction+' command sent'; setTimeout(()=>$('cmdStatus').textContent='',3000); })
-    .catch(()=>{ $('cmdStatus').textContent='Force command error'; setTimeout(()=>$('cmdStatus').textContent='',3000); });
+  $('cmdStatus').textContent='Platform '+(direction==='up'?'force-up':'force-down')+' to '+val+'N ...';
+  try{
+    const r = await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd,target:'platform',target_force:val})});
+    if(!r.ok){ $('cmdStatus').textContent='Force command failed'; setTimeout(()=>$('cmdStatus').textContent='',3000); return; }
+    await r.json();
+    $('cmdStatus').textContent='Force '+direction+' command sent'; setTimeout(()=>$('cmdStatus').textContent='',3000);
+  }catch(e){ $('cmdStatus').textContent='Force command error'; setTimeout(()=>$('cmdStatus').textContent='',3000); }
 }
 $('forceUpBtn').addEventListener('click', ()=> sendForceCommand('up'));
 $('forceDownBtn').addEventListener('click', ()=> sendForceCommand('down'));
 
 // Emergency Reset button
 $('resetBtn').addEventListener('click', async ()=>{
-  // Direct execution without confirmation dialog
   $('cmdStatus').textContent='🔴 Sending RESET command...';
-  const payload={command:'reset',target:'platform'}; // Web server will send to both
-  try {
+  const payload={command:'reset',target:'platform'}; // backend will send to both
+  try{
     const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(!r.ok){ 
-      $('cmdStatus').textContent='❌ Reset failed'; 
-      setTimeout(()=>$('cmdStatus').textContent='',3000);
-      return; 
-    }
+    if(!r.ok){ $('cmdStatus').textContent='❌ Reset failed'; setTimeout(()=>$('cmdStatus').textContent='',3000); return; }
     const resp=await r.json();
-    $('cmdStatus').textContent='✅ RESET complete - '+resp.target;
+    $('cmdStatus').textContent='✅ RESET complete - '+(resp.target||'platform+pushrod');
     setTimeout(()=>$('cmdStatus').textContent='',5000);
-  } catch(e){ 
-    $('cmdStatus').textContent='❌ Reset error: '+e.message; 
-    setTimeout(()=>$('cmdStatus').textContent='',3000);
-  }
+  }catch(e){ $('cmdStatus').textContent='❌ Reset error: '+e.message; setTimeout(()=>$('cmdStatus').textContent='',3000); }
 });
-
-// Calibration functions
-async function updateCalibrationStatus() {
-  try {
-    const resp = await fetch('/api/calibration/status');
-    const data = await resp.json();
-    
-    // Update sensor value
-    $('calibSensorVal').textContent = data.latest_sensor !== null ? data.latest_sensor.toFixed(2) : '--';
-    
-    // Update estimated height
-    $('calibEstHeight').textContent = data.estimated_height !== null ? 
-      data.estimated_height.toFixed(2) + ' mm' : '--';
-    
-    // Update sample count
-    $('calibSampleCount').textContent = data.num_samples;
-    
-    // Update calibration formula display
-    if (data.calibrated) {
-      $('calibFormulaBox').classList.remove('hidden');
-      $('calibFormula').textContent = 
-        `height = ${data.scale.toFixed(6)} × sensor + ${data.offset.toFixed(6)}`;
-    } else {
-      $('calibFormulaBox').classList.add('hidden');
-    }
-    
-    // Update status badge
-    const badge = $('calibStatusBadge');
-    if (data.calibrated_at) {
-      badge.textContent = `Calibrated ${data.calibrated_at}`;
-      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700';
-    } else if (data.calibrated) {
-      badge.textContent = 'Default';
-      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-yellow-100 text-yellow-700';
-    } else {
-      badge.textContent = 'Not Calibrated';
-      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
-    }
-    
-    // Update sample list
-    updateCalibrationSamples();
-  } catch (error) {
-    console.error('Failed to update calibration status:', error);
-  }
-}
 
 async function updateCalibrationSamples() {
   try {
@@ -837,6 +802,44 @@ async function updateCalibrationSamples() {
     `).join('');
   } catch (error) {
     console.error('Failed to update samples:', error);
+  }
+}
+
+// Calibration functions
+async function updateCalibrationStatus() {
+  try {
+    const resp = await fetch('/api/calibration/status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    // Sensor
+    $('calibSensorVal').textContent = data.latest_sensor !== null && data.latest_sensor !== undefined ? Number(data.latest_sensor).toFixed(2) : '--';
+    // Estimated height
+    $('calibEstHeight').textContent = data.estimated_height !== null && data.estimated_height !== undefined ? Number(data.estimated_height).toFixed(2) + ' mm' : '--';
+    // Sample count
+    $('calibSampleCount').textContent = data.num_samples ?? 0;
+    // Formula box
+    if (data.calibrated) {
+      $('calibFormulaBox').classList.remove('hidden');
+      $('calibFormula').textContent = `height = ${Number(data.scale).toFixed(6)} × sensor + ${Number(data.offset).toFixed(6)}`;
+    } else {
+      $('calibFormulaBox').classList.add('hidden');
+    }
+    // Status badge
+    const badge = $('calibStatusBadge');
+    if (data.calibrated_at) {
+      badge.textContent = `Calibrated ${data.calibrated_at}`;
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700';
+    } else if (data.calibrated) {
+      badge.textContent = 'Default';
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-yellow-100 text-yellow-700';
+    } else {
+      badge.textContent = 'Not Calibrated';
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+    }
+    // Samples list
+    await updateCalibrationSamples();
+  } catch (error) {
+    console.error('Failed to update calibration status:', error);
   }
 }
 
@@ -1077,6 +1080,90 @@ function generateCalibrationPoints(lowerBound, upperBound, currentHeight) {
   return points;
 }
 
+// Wait for platform movement to complete by checking task status
+async function waitForMovementComplete() {
+  const maxWaitTime = 30000; // 30 seconds max
+  const pollInterval = 200; // Check every 200ms
+  const startTime = Date.now();
+  
+  // Phase 1: Wait for task to START (task_type becomes 'goto_height')
+  console.log('[Auto Calib] Waiting for goto_height task to start...');
+  let taskStarted = false;
+  let waitCount = 0;
+  
+  while (Date.now() - startTime < maxWaitTime) {
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        continue;
+      }
+      
+      const data = await res.json();
+      const platform = data.platform;
+      
+      waitCount++;
+      if (waitCount % 10 === 0) { // Log every 2 seconds
+        console.log(`[Auto Calib] Waiting for start... task_state="${platform?.task_state}" task_type="${platform?.task_type}"`);
+      }
+      
+      // Task started if task_type is 'goto_height' and task_state is 'running' or 'active'
+      if (platform?.task_type === 'goto_height' && 
+          (platform?.task_state === 'running' || platform?.task_state === 'active')) {
+        console.log('[Auto Calib] Task started:', platform.task_state, platform.task_type);
+        taskStarted = true;
+        break;
+      }
+      
+    } catch (e) {
+      console.error('[Auto Calib] Error fetching status:', e);
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+  
+  if (!taskStarted) {
+    throw new Error('Task did not start (timeout)');
+  }
+  
+  // Phase 2: Wait for task to COMPLETE (task_state becomes 'completed' or 'idle')
+  console.log('[Auto Calib] Waiting for goto_height task to complete...');
+  waitCount = 0;
+  
+  while (Date.now() - startTime < maxWaitTime) {
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        continue;
+      }
+      
+      const data = await res.json();
+      const platform = data.platform;
+      
+      waitCount++;
+      if (waitCount % 10 === 0) { // Log every 2 seconds
+        console.log(`[Auto Calib] Waiting for completion... task_state="${platform?.task_state}" task_type="${platform?.task_type}"`);
+      }
+      
+      // Task completed if task_state is 'completed', 'idle', or task_type is no longer goto_height
+      if (platform?.task_state === 'completed' || 
+          platform?.task_state === 'idle' ||
+          (platform?.task_type !== 'goto_height' && platform?.task_state !== 'running')) {
+        console.log('[Auto Calib] Task completed:', platform.task_state, 'reason:', platform.completion_reason);
+        return true;
+      }
+      
+    } catch (e) {
+      console.error('[Auto Calib] Error fetching status:', e);
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+  
+  throw new Error('Task completion timeout');
+}
+
 // Reset auto calibration state
 function resetAutoCalibration() {
   console.log('[Auto Calib] Resetting calibration state');
@@ -1190,8 +1277,8 @@ async function startAutoCalibration() {
       
       console.log(`[Auto Calib] Goto command sent, waiting for movement...`);
       
-      // Wait for movement to complete (poll status)
-      await waitForMovementComplete();
+  // Wait for movement to complete (poll status) with stall recovery
+  await waitForMovementComplete(target);
       
       console.log(`[Auto Calib] Movement complete, waiting 1s for stabilization and sample recording...`);
       
@@ -1245,89 +1332,7 @@ function stopAutoCalibration() {
   // Reset will happen when the loop exits
 }
 
-// Wait for platform movement to complete by checking task status
-async function waitForMovementComplete() {
-  const maxWaitTime = 30000; // 30 seconds max
-  const pollInterval = 200; // Check every 200ms
-  const startTime = Date.now();
-  
-  // Phase 1: Wait for task to START (task_type becomes 'goto_height')
-  console.log('[Auto Calib] Waiting for goto_height task to start...');
-  let taskStarted = false;
-  let waitCount = 0;
-  
-  while (Date.now() - startTime < maxWaitTime) {
-    try {
-      const res = await fetch('/api/status');
-      if (!res.ok) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        continue;
-      }
-      
-      const data = await res.json();
-      const platform = data.platform;
-      
-      waitCount++;
-      if (waitCount % 10 === 0) { // Log every 2 seconds
-        console.log(`[Auto Calib] Waiting for start... task_state="${platform?.task_state}" task_type="${platform?.task_type}"`);
-      }
-      
-      // Task started if task_type is 'goto_height' and task_state is 'running' or 'active'
-      if (platform?.task_type === 'goto_height' && 
-          (platform?.task_state === 'running' || platform?.task_state === 'active')) {
-        console.log('[Auto Calib] Task started:', platform.task_state, platform.task_type);
-        taskStarted = true;
-        break;
-      }
-      
-    } catch (e) {
-      console.error('[Auto Calib] Error fetching status:', e);
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-  
-  if (!taskStarted) {
-    throw new Error('Task did not start (timeout)');
-  }
-  
-  // Phase 2: Wait for task to COMPLETE (task_state becomes 'completed' or 'idle')
-  console.log('[Auto Calib] Waiting for goto_height task to complete...');
-  waitCount = 0;
-  
-  while (Date.now() - startTime < maxWaitTime) {
-    try {
-      const res = await fetch('/api/status');
-      if (!res.ok) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        continue;
-      }
-      
-      const data = await res.json();
-      const platform = data.platform;
-      
-      waitCount++;
-      if (waitCount % 10 === 0) { // Log every 2 seconds
-        console.log(`[Auto Calib] Waiting for completion... task_state="${platform?.task_state}" task_type="${platform?.task_type}"`);
-      }
-      
-      // Task completed if task_state is 'completed', 'idle', or task_type is no longer goto_height
-      if (platform?.task_state === 'completed' || 
-          platform?.task_state === 'idle' ||
-          (platform?.task_type !== 'goto_height' && platform?.task_state !== 'running')) {
-        console.log('[Auto Calib] Task completed:', platform.task_state, 'reason:', platform.completion_reason);
-        return true;
-      }
-      
-    } catch (e) {
-      console.error('[Auto Calib] Error fetching status:', e);
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-  
-  throw new Error('Task completion timeout');
-}
+// (Old waitForMovementComplete removed; now defined above with stall recovery and expectedTarget)
 
 async function updateOvershootStatus() {
   try {
@@ -1406,6 +1411,9 @@ async function updateOvershootStatus() {
     
     // Update sample lists
     await updateOvershootSamples();
+
+  // Render regions & detected range
+  renderOvershootRegions(data);
     
   } catch (e) {
     console.error('Overshoot status update error:', e);
@@ -1515,23 +1523,19 @@ async function deleteOvershootSample(direction, index) {
 }
 
 async function clearOvershootSamples() {
-  if (!confirm('Clear all overshoot samples (both up and down)?')) return;
-  
+  // Auto clear without confirmation per new requirement
   try {
-    const res = await fetch('/api/overshoot/samples', {
-      method: 'DELETE'
-    });
-    
+    const res = await fetch('/api/overshoot/samples', { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
-      $('overshootStatusMsg').textContent = '✓ All samples cleared';
+      $('overshootStatusMsg').textContent = '✓ Samples cleared';
       await updateOvershootStatus();
     } else {
       $('overshootStatusMsg').textContent = '❌ ' + (data.error || 'Failed to clear');
     }
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
+    setTimeout(() => $('overshootStatusMsg').textContent = '', 2500);
   } catch (e) {
-    $('overshootStatusMsg').textContent = '❌ Error: ' + e.message;
+    $('overshootStatusMsg').textContent = '❌ Clear error: ' + e.message;
     setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
   }
 }
@@ -1611,6 +1615,258 @@ async function saveOvershoot() {
 $('overshootStartBtn').addEventListener('click', startAutoCalibration);
 $('overshootSaveBtn').addEventListener('click', saveOvershoot);
 $('overshootClearBtn').addEventListener('click', clearOvershootSamples);
+
+// ─────────────────────────────────────────────────────────────
+// Region-based overshoot calibration workflow additions
+// ─────────────────────────────────────────────────────────────
+let regionMinHeight = null;
+let regionMaxHeight = null;
+let calibrationRangeDetected = false;
+let regionCalibAbort = false;
+let overshootFullAutoMode = false; // Indicates one-click full-auto workflow is running
+// Render calibrated regions and detected range summary
+function renderOvershootRegions(data){
+  try{
+    const container = $('overshootRegionsContainer');
+    const regions = Array.isArray(data.regions)? data.regions: [];
+    if(!container) return;
+    if(regions.length===0){
+      container.innerHTML = '<div class="text-slate-400 text-xs">No regions calibrated</div>';
+    } else {
+      container.innerHTML = regions.map((r,i)=>{
+        const up = (r.overshoot_up!==undefined && r.overshoot_up!==null)? Number(r.overshoot_up).toFixed(2): '--';
+        const down = (r.overshoot_down!==undefined && r.overshoot_down!==null)? Number(r.overshoot_down).toFixed(2): '--';
+        return `<div class="flex justify-between items-center text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1"><span class="font-mono">#${i+1} [${r.lower.toFixed(1)}, ${r.upper.toFixed(1)}]</span><span class="text-slate-700">up:${up} / down:${down}</span></div>`;
+      }).join('');
+    }
+    // Range display priority: detected variables; fallback to region aggregate
+    const rangeEl = $('detectedRangeDisplay');
+    if(rangeEl){
+      let minDisplay = regionMinHeight!=null? regionMinHeight.toFixed(2): (regions.length? Math.min(...regions.map(r=>r.lower)).toFixed(2): '--');
+      let maxDisplay = regionMaxHeight!=null? regionMaxHeight.toFixed(2): (regions.length? Math.max(...regions.map(r=>r.upper)).toFixed(2): '--');
+      rangeEl.textContent = `Range: ${minDisplay} mm → ${maxDisplay} mm`;
+    }
+  }catch(e){ console.error('Render regions error:', e); }
+}
+
+async function computeAndShowOvershootFit(autoMode = true){
+  try{
+    const payload = {auto: true};
+    const res = await fetch('/api/overshoot/fit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data = await res.json();
+    if(!data.success){ $('overshootStatusMsg').textContent = '❌ Fit error: '+(data.error||'unknown'); setTimeout(()=>$('overshootStatusMsg').textContent='',4000); return; }
+    const fit = data.fit;
+    const cu = fit.coeffs_up; const cd = fit.coeffs_down;
+    const degreeText = `Degree ${fit.degree}:`;
+    const eqUp = `up(h) = ${cu.map((c,i)=>`${Number(c).toFixed(4)}·h^${cu.length-1-i}`).join(' + ')}`;
+    const eqDn = `down(h) = ${cd.map((c,i)=>`${Number(c).toFixed(4)}·h^${cd.length-1-i}`).join(' + ')}`;
+    $('overshootFitEq').textContent = degreeText + ' ' + eqUp + ' ; ' + eqDn;
+    if(data.plot_url){ const img=$('overshootFitImg'); img.src = data.plot_url+'?ts='+Date.now(); img.classList.remove('hidden'); }
+    if (!autoMode) {
+      $('overshootStatusMsg').textContent = '✓ Fit computed and saved'; 
+      setTimeout(()=>$('overshootStatusMsg').textContent='',3000);
+    }
+  }catch(e){ 
+    $('overshootStatusMsg').textContent='❌ Fit error: '+e.message; 
+    setTimeout(()=>$('overshootStatusMsg').textContent='',3000); 
+  }
+}
+
+async function detectPlatformRange(){
+  // In full-auto mode always re-detect silently
+  if (!overshootFullAutoMode && calibrationRangeDetected) {
+    if(!confirm('Range already detected. Redetect?')) return;
+  }
+  $('overshootStatusMsg').textContent='🔁 Detecting platform range (down → up stall)...';
+  try {
+    // Phase 1: Pushrod timed down (initialize)
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'timed_down',target:'pushrod',duration:7.0})});
+    $('overshootStatusMsg').textContent='⏳ Waiting 2s for pushrod down...';
+    await new Promise(r=>setTimeout(r,2000));
+
+    // Phase 2: Platform down until STALL (no meaningful change for 2s) with refined logic
+    $('overshootStatusMsg').textContent='⬇️ Moving platform DOWN (waiting for true stall)...';
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'down',target:'platform'})});
+    const STALL_MS = 2000; // duration of stability
+    const RESET_DELTA = 0.005; // tiny delta still counts as movement (resets timer)
+    const STABLE_DELTA = 0.02; // must be below this to be considered stable
+  let firstHeight = null; let prevHeight = null; let lastChangeTime = Date.now();
+  // Removed fixed timeout: loop until stall condition met. WARNING: could wait indefinitely if sensors freeze.
+  while(true){
+      const st = await fetch('/api/status');
+      const data = await st.json();
+      const h = data.platform?.current_height;
+      if(h!==undefined && h!==null){
+        if(firstHeight===null) firstHeight = h;
+        if(prevHeight!==null){
+          const delta = Math.abs(h - prevHeight);
+          // Any movement over RESET_DELTA considered progress
+          if(delta > RESET_DELTA){ lastChangeTime = Date.now(); }
+          // Accept stall only if descent moved >=5mm AND no delta > RESET_DELTA for STALL_MS AND latest delta < STABLE_DELTA
+          const movedEnough = firstHeight!==null && (firstHeight - h) >= 5;
+          if(movedEnough && (Date.now() - lastChangeTime) >= STALL_MS && delta < STABLE_DELTA){
+            regionMinHeight = h;
+            console.log('[RangeDetect] MIN stall detected at', h, 'firstHeight', firstHeight, 'total descent', (firstHeight-h));
+            await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'stop',target:'platform'})});
+            break;
+          }
+        }
+        prevHeight = h;
+      }
+      await new Promise(r=>setTimeout(r,300));
+    }
+    // If still null (e.g., never broke), fetch one last reading and continue (rare edge case)
+    if(regionMinHeight===null){
+      const st2 = await fetch('/api/status');
+      const data2 = await st2.json();
+      regionMinHeight = data2.platform?.current_height;
+      $('overshootStatusMsg').textContent='⚠️ Min stall not detected; using last height.';
+    }
+    if(regionMinHeight===undefined || regionMinHeight===null){ throw new Error('Failed to read min height'); }
+    $('overshootStatusMsg').textContent=`✅ Min height: ${regionMinHeight.toFixed(2)}mm | ⬆️ Ascending to detect max...`;    
+
+  // Phase 3: Manual UP until stall (2s stability) with refined logic
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'up',target:'platform'})});
+  let upStartHeight = null; let prevUp = null; let lastUpChange = Date.now();
+  // Removed fixed timeout: loop until upward stall condition met.
+  while(true){
+      const st = await fetch('/api/status');
+      const data = await st.json();
+      const h = data.platform?.current_height;
+      if(h!==undefined && h!==null){
+        if(upStartHeight===null) upStartHeight = h;
+        if(prevUp!==null){
+          const delta = Math.abs(h - prevUp);
+          if(delta > RESET_DELTA){ lastUpChange = Date.now(); }
+          const movedEnoughUp = upStartHeight!==null && (h - upStartHeight) >= 5;
+          if(movedEnoughUp && (Date.now() - lastUpChange) >= STALL_MS && delta < STABLE_DELTA){
+            regionMaxHeight = h;
+            console.log('[RangeDetect] MAX stall detected at', h, 'startHeight', upStartHeight, 'total ascent', (h-upStartHeight));
+            await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'stop',target:'platform'})});
+            break;
+          }
+          // Early stall recovery: UP command may not have engaged (no ascent progress)
+          if((Date.now() - lastUpChange) > 1500 && (h - upStartHeight) < 5){
+            console.log('[RangeDetect] No ascent progress for 1.5s (<5mm). Resending UP command. Current delta=', (h-upStartHeight));
+            await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'up',target:'platform'})});
+            lastUpChange = Date.now();
+          }
+        }
+        prevUp = h;
+      }
+      await new Promise(r=>setTimeout(r,300));
+    }
+    if(regionMaxHeight===null){
+      const st3 = await fetch('/api/status');
+      const data3 = await st3.json();
+      regionMaxHeight = data3.platform?.current_height;
+      $('overshootStatusMsg').textContent='⚠️ Max stall not detected; using last height.';
+    }
+    calibrationRangeDetected = true;
+    $('overshootLowerBound').value = regionMinHeight.toFixed(2);
+    $('overshootUpperBound').value = regionMaxHeight.toFixed(2);
+    $('overshootStatusMsg').textContent = `✅ Range detected: ${regionMinHeight.toFixed(2)}mm → ${regionMaxHeight.toFixed(2)}mm`;
+    renderOvershootRegions({regions: []}); // Update range display even before regions
+  } catch(e){
+    $('overshootStatusMsg').textContent='❌ Range detection failed: '+e.message;
+  }
+  setTimeout(()=>{ if($('overshootStatusMsg').textContent.startsWith('✅')) $('overshootStatusMsg').textContent=''; },8000);
+}
+
+async function saveOvershootRegion(lower, upper){
+  try{
+    const res = await fetch('/api/overshoot/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lower_bound:lower,upper_bound:upper,overwrite:true})});
+    const data = await res.json();
+    if(!data.success){ throw new Error(data.error||'Save region failed'); }
+    $('overshootStatusMsg').textContent = `💾 Saved region [${lower.toFixed(1)}, ${upper.toFixed(1)}] overshoot_up=${data.overshoot_up?.toFixed?.(2)} down=${data.overshoot_down?.toFixed?.(2)}`;
+    // Refresh regions list
+    await updateOvershootStatus();
+    return true;
+  }catch(e){
+    $('overshootStatusMsg').textContent='❌ '+e.message;
+    return false;
+  }
+}
+
+async function multiRegionCalibrate(){
+  if(!calibrationRangeDetected){ $('overshootStatusMsg').textContent='❌ Please detect range first'; return; }
+  if(regionCalibAbort){ regionCalibAbort=false; }
+  const span = 50.0; // mm per region
+  const minH = regionMinHeight; const maxH = regionMaxHeight;
+  const regions = [];
+  for(let lb=minH; lb<maxH; lb+=span){ const ub=Math.min(maxH, lb+span); regions.push({lower:lb, upper:ub}); }
+  if(regions.length===0){ $('overshootStatusMsg').textContent='❌ No regions computed'; return; }
+  if(!confirm(`Start multi-region calibration (${regions.length} regions of ~${span}mm)?`)) return;
+  $('overshootStatusMsg').textContent=`🚀 Starting multi-region calibration (${regions.length} regions)...`;
+  for(let i=0;i<regions.length;i++){
+    if(regionCalibAbort){ $('overshootStatusMsg').textContent='🛑 Aborted by user'; break; }
+    const {lower, upper} = regions[i];
+    $('overshootLowerBound').value = lower.toFixed(2);
+    $('overshootUpperBound').value = upper.toFixed(2);
+    $('overshootStatusMsg').textContent = `🧪 Region ${i+1}/${regions.length}: ${lower.toFixed(1)}-${upper.toFixed(1)}mm calibrating...`;
+    // Clear previous samples to avoid cross-region contamination
+    try { await clearOvershootSamples(); } catch(e){}
+    // Run auto calibration for this region
+    try { await startAutoCalibration(); } catch(e){ $('overshootStatusMsg').textContent='❌ Auto calibration error: '+e.message; break; }
+    // Save region overshoot values
+    const ok = await saveOvershootRegion(lower, upper);
+    if(!ok){ break; }
+    await new Promise(r=>setTimeout(r,1000));
+  }
+  $('overshootStatusMsg').textContent+=' ✔️ Done.';
+  setTimeout(()=>{ $('overshootStatusMsg').textContent=''; },10000);
+}
+
+// One-click full auto workflow
+async function fullAutoOvershootCalibration(){
+  try {
+    overshootFullAutoMode = true;
+    regionCalibAbort = false;
+    calibrationRangeDetected = false; // force fresh detection
+    // Clear previous region calibration file before starting
+    $('overshootStatusMsg').textContent='🧹 Clearing previous overshoot config...';
+    try { await fetch('/api/overshoot/config',{method:'DELETE'}); } catch(e){ console.warn('Clear overshoot config error', e); }
+    renderOvershootRegions({regions: []});
+    $('overshootStatusMsg').textContent='🚀 Full-auto calibration: detecting range...';
+    await detectPlatformRange();
+    if(!calibrationRangeDetected || regionMinHeight===null || regionMaxHeight===null){
+      throw new Error('Range detection failed');
+    }
+    const span = 50.0;
+    const minH = regionMinHeight; const maxH = regionMaxHeight;
+    // Build regions top-down (descending) so calibration proceeds from highest region to lowest
+    const regions = [];
+    for(let ub=maxH; ub>minH; ub-=span){ const lb = max( minH, ub - span ); regions.push({lower:lb, upper:Math.min(ub, maxH)}); }
+    // Helper since we are inside browser, define max function
+    function max(a,b){ return a>b?a:b; }
+    if(regions.length===0){ throw new Error('No regions computed'); }
+    $('overshootStatusMsg').textContent=`📐 Detected range ${minH.toFixed(1)}-${maxH.toFixed(1)}mm. ${regions.length} regions (~${span}mm each). Starting...`;
+    for(let i=0;i<regions.length;i++){
+      if(regionCalibAbort){ $('overshootStatusMsg').textContent='🛑 Aborted'; break; }
+      const {lower, upper} = regions[i];
+      $('overshootLowerBound').value = lower.toFixed(2);
+      $('overshootUpperBound').value = upper.toFixed(2);
+      $('overshootStatusMsg').textContent = `🧪 Region ${i+1}/${regions.length}: ${lower.toFixed(1)}-${upper.toFixed(1)}mm calibrating...`;
+      try { await clearOvershootSamples(); } catch(e){}
+      try { await startAutoCalibration(); } catch(e){ $('overshootStatusMsg').textContent='❌ Auto calibration error: '+e.message; break; }
+      const ok = await saveOvershootRegion(lower, upper);
+      if(!ok){ break; }
+      await new Promise(r=>setTimeout(r,500));
+    }
+    if(!$('overshootStatusMsg').textContent.startsWith('❌') && !$('overshootStatusMsg').textContent.startsWith('🛑')){
+      // Auto-fit and plot after successful region calibration
+      $('overshootStatusMsg').textContent='🔬 Auto-selecting optimal fit degree and plotting...';
+      await computeAndShowOvershootFit(true); // Pass true for auto mode
+      $('overshootStatusMsg').textContent+=' ✔️ Full-auto done with fit.';
+    }
+  } catch(e){
+    $('overshootStatusMsg').textContent='❌ Full-auto failed: '+e.message;
+  } finally {
+    overshootFullAutoMode = false;
+    setTimeout(()=>{ if($('overshootStatusMsg').textContent.includes('Full-auto')) $('overshootStatusMsg').textContent=''; },12000);
+  }
+}
+document.getElementById('overshootFullAutoBtn').addEventListener('click', fullAutoOvershootCalibration);
 
 // ═══════════════════════════════════════════════════════════════
 // Force Sensor Calibration Functions (Single Channel Mode)

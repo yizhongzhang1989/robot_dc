@@ -6,7 +6,7 @@ import json, asyncio, threading, os, time
 from ament_index_python.packages import get_package_share_directory
 
 try:
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
     from fastapi.responses import FileResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
     import uvicorn
@@ -191,6 +191,11 @@ class LiftRobotWeb(Node):
                 web_dir = os.path.join(get_package_share_directory('lift_robot_web'), 'web')
             except Exception:
                 web_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web'))
+            # Serve static assets (images, css, js) from web directory
+            try:
+                app.mount('/static', StaticFiles(directory=web_dir), name='static')
+            except Exception as e:
+                self.get_logger().warn(f"Failed to mount static files: {e}")
 
             @app.get('/')
             def index():
@@ -734,7 +739,9 @@ class LiftRobotWeb(Node):
             
             @app.get('/api/overshoot/status')
             async def overshoot_status():
-                """Get current overshoot calibration status"""
+                """Get current overshoot calibration status.
+                Extended: include region list from config file if present.
+                """
                 try:
                     with self.overshoot_lock:
                         result = {
@@ -745,7 +752,7 @@ class LiftRobotWeb(Node):
                             'calibrated_up': self.overshoot_up is not None,
                             'calibrated_down': self.overshoot_down is not None
                         }
-                        
+
                         # Add last goto_height measurement from platform status
                         if self.platform_status:
                             if 'last_goto_target' in self.platform_status:
@@ -756,73 +763,400 @@ class LiftRobotWeb(Node):
                                 result['last_goto_timestamp'] = self.platform_status.get('last_goto_timestamp')
                             if 'last_goto_stop_height' in self.platform_status:
                                 result['last_goto_stop_height'] = self.platform_status['last_goto_stop_height']
-                        
-                        # Load timestamp from config file if exists
+
+                        # Load timestamp & regions from config file if exists
                         config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
                         if os.path.exists(config_path):
                             try:
                                 with open(config_path, 'r') as f:
                                     config_data = json.load(f)
                                     result['calibrated_at'] = config_data.get('generated_at_iso')
+                                    if 'regions' in config_data:
+                                        result['regions'] = config_data['regions']
+                                    if 'default' in config_data:
+                                        # Backward compatible default block
+                                        result['default'] = config_data['default']
                             except Exception as e:
-                                self.get_logger().error(f"Failed to read overshoot timestamp: {e}")
-                        
+                                self.get_logger().error(f"Failed to read overshoot config: {e}")
+
                         return JSONResponse(result)
                 except Exception as e:
                     return JSONResponse({'success': False, 'error': str(e)})
             
-            @app.post('/api/overshoot/save')
-            async def save_overshoot():
-                """Save overshoot calibration to JSON config file"""
+            @app.delete('/api/overshoot/config')
+            async def clear_overshoot_config():
+                """Clear (reset) overshoot calibration config file and in-memory values.
+                Removes regions and default values; file is deleted if exists.
+                Safe to call before a new full-auto multi-region calibration.
+                """
                 try:
-                    with self.overshoot_lock:
-                        overshoot_up = self.overshoot_up
-                        overshoot_down = self.overshoot_down
-                    
-                    if overshoot_up is None and overshoot_down is None:
-                        return JSONResponse({
-                            'success': False,
-                            'error': 'No calibration calculated yet. Please calculate first.'
-                        })
-                    
-                    # Config file path
                     config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    with self.overshoot_lock:
+                        self.overshoot_up = None
+                        self.overshoot_down = None
+                    if os.path.exists(config_path):
+                        try:
+                            os.remove(config_path)
+                        except Exception as e:
+                            self.get_logger().warn(f"Failed to delete overshoot config (will overwrite on save): {e}")
+                    return JSONResponse({'success': True, 'message': 'Overshoot config cleared'})
+                except Exception as e:
+                    return JSONResponse({'success': False, 'error': str(e)})
+
+            @app.post('/api/overshoot/fit')
+            async def overshoot_fit(payload: dict = None):
+                """Compute polynomial fit (default degree=2 or auto-select) for overshoot_up/down vs height.
+                x: region midpoints; y: overshoot values. Saves coefficients to config and
+                renders a plot image using OpenCV into web_dir.
+                Returns JSON with coeffs and plot URL.
+                Supports auto=true to automatically select optimal degree based on R² and AIC.
+                """
+                try:
+                    import numpy as np
+                    import cv2
+                except Exception as e:
+                    return JSONResponse({'success': False, 'error': f'OpenCV/Numpy not available: {e}'})
+                try:
+                    auto_select = payload and payload.get('auto', False)
+                    degree = 2
+                    if not auto_select and payload and 'degree' in payload:
+                        try:
+                            degree = int(payload['degree'])
+                            degree = max(1, min(degree, 5))
+                        except Exception:
+                            degree = 2
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    if not os.path.exists(config_path):
+                        return JSONResponse({'success': False, 'error': 'No calibration config found'})
+                    with open(config_path, 'r') as f:
+                        cfg = json.load(f)
+                    regions = cfg.get('regions') or []
+                    if not regions:
+                        return JSONResponse({'success': False, 'error': 'No regions to fit'})
+                    # Prepare data
+                    xs = []
+                    yu = []
+                    yd = []
+                    for r in regions:
+                        try:
+                            lb = float(r['lower']); ub = float(r['upper'])
+                            mid = 0.5*(lb+ub)
+                            xs.append(mid)
+                            yu.append(float(r.get('overshoot_up', 0.0)))
+                            yd.append(float(r.get('overshoot_down', 0.0)))
+                        except Exception:
+                            continue
+                    if len(xs) < 2:
+                        return JSONResponse({'success': False, 'error': 'Insufficient points for fitting'})
+                    x = np.array(xs)
+                    y_up = np.array(yu)
+                    y_dn = np.array(yd)
                     
-                    # Prepare config data (no samples stored)
-                    config_data = {
-                        'overshoot_up': overshoot_up if overshoot_up is not None else 2.067,
-                        'overshoot_down': overshoot_down if overshoot_down is not None else 2.699,
-                        'enable': True,
-                        'formula': 'Predictive early stop to reduce overshoot',
+                    # Auto-select optimal degree if requested
+                    if auto_select:
+                        def compute_r2(y_true, y_pred):
+                            ss_res = np.sum((y_true - y_pred) ** 2)
+                            ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+                            return 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+                        
+                        def compute_aic(n, mse, k):
+                            # AIC = n*ln(MSE) + 2*k
+                            return n * np.log(mse + 1e-10) + 2 * (k + 1)
+                        
+                        best_degree = 1
+                        best_score = -np.inf
+                        n = len(xs)
+                        
+                        for d in range(1, min(6, n)):  # Test degrees 1 to min(5, n-1)
+                            try:
+                                # Fit both curves
+                                cu_test = np.polyfit(x, y_up, d)
+                                cd_test = np.polyfit(x, y_dn, d)
+                                # Evaluate
+                                y_up_pred = np.polyval(cu_test, x)
+                                y_dn_pred = np.polyval(cd_test, x)
+                                # R² for both
+                                r2_up = compute_r2(y_up, y_up_pred)
+                                r2_dn = compute_r2(y_dn, y_dn_pred)
+                                avg_r2 = (r2_up + r2_dn) / 2
+                                # MSE for AIC
+                                mse_up = np.mean((y_up - y_up_pred) ** 2)
+                                mse_dn = np.mean((y_dn - y_dn_pred) ** 2)
+                                avg_mse = (mse_up + mse_dn) / 2
+                                # AIC penalty (lower is better)
+                                aic = compute_aic(n, avg_mse, d)
+                                # Combined score: R² - normalized AIC penalty
+                                # Normalize AIC by dividing by n to scale similarly to R²
+                                score = avg_r2 - (aic / (n * 10))
+                                
+                                self.get_logger().info(f"Degree {d}: R²={avg_r2:.4f}, AIC={aic:.2f}, Score={score:.4f}")
+                                
+                                if score > best_score:
+                                    best_score = score
+                                    best_degree = d
+                            except Exception as e:
+                                self.get_logger().warn(f"Degree {d} fit failed: {e}")
+                                continue
+                        
+                        degree = best_degree
+                        self.get_logger().info(f"Auto-selected degree: {degree} (score: {best_score:.4f})")
+                    
+                    # Final fit with selected degree
+                    if len(xs) < (degree + 1):
+                        degree = len(xs) - 1
+                        self.get_logger().warn(f"Reduced degree to {degree} due to insufficient points")
+                    
+                    cu = np.polyfit(x, y_up, degree).tolist()  # highest power first
+                    cd = np.polyfit(x, y_dn, degree).tolist()
+                    # Save into config
+                    fit_block = {
+                        'type': 'poly',
+                        'degree': degree,
+                        'coeffs_up': cu,
+                        'coeffs_down': cd,
+                        'x_min': float(min(xs)),
+                        'x_max': float(max(xs)),
                         'generated_at': time.time(),
                         'generated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     }
-                    
-                    # Create directory if needed
+                    cfg['fit'] = fit_block
+                    with open(config_path, 'w') as f:
+                        json.dump(cfg, f, indent=2)
+                    # Render plot to web_dir
+                    try:
+                        W, H = 800, 400
+                        img = np.ones((H, W, 3), dtype=np.uint8) * 255
+                        margin_left = 70
+                        margin_right = 40
+                        margin_top = 50
+                        margin_bottom = 60
+                        x_min, x_max = fit_block['x_min'], fit_block['x_max']
+                        # y range from points
+                        y_min = float(min(min(yu), min(y_dn)))
+                        y_max = float(max(max(yu), max(y_dn)))
+                        # Padding
+                        pad_y = (y_max - y_min) * 0.1 if (y_max>y_min) else 1.0
+                        y_min -= pad_y; y_max += pad_y
+                        
+                        plot_x0 = margin_left
+                        plot_x1 = W - margin_right
+                        plot_y0 = margin_top
+                        plot_y1 = H - margin_bottom
+                        
+                        def x_to_px(xx):
+                            return int(plot_x0 + (xx - x_min) / (x_max - x_min) * (plot_x1 - plot_x0))
+                        def y_to_px(yy):
+                            return int(plot_y1 - (yy - y_min) / (y_max - y_min) * (plot_y1 - plot_y0))
+                        
+                        # Draw axes box
+                        cv2.rectangle(img, (plot_x0, plot_y0), (plot_x1, plot_y1), (180,180,180), 1)
+                        
+                        # X-axis ticks and labels (height)
+                        num_x_ticks = 6
+                        for i in range(num_x_ticks):
+                            x_val = x_min + (x_max - x_min) * i / (num_x_ticks - 1)
+                            px = x_to_px(x_val)
+                            # Tick mark
+                            cv2.line(img, (px, plot_y1), (px, plot_y1 + 5), (100,100,100), 1)
+                            # Label
+                            label = f'{x_val:.0f}'
+                            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)[0]
+                            cv2.putText(img, label, (px - text_size[0]//2, plot_y1 + 20), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.35, (60,60,60), 1, cv2.LINE_AA)
+                        
+                        # X-axis label
+                        cv2.putText(img, 'Height (mm)', (W//2 - 30, H - 10), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.45, (40,40,40), 1, cv2.LINE_AA)
+                        
+                        # Y-axis ticks and labels (overshoot)
+                        num_y_ticks = 6
+                        for i in range(num_y_ticks):
+                            y_val = y_min + (y_max - y_min) * i / (num_y_ticks - 1)
+                            py = y_to_px(y_val)
+                            # Tick mark
+                            cv2.line(img, (plot_x0 - 5, py), (plot_x0, py), (100,100,100), 1)
+                            # Label
+                            label = f'{y_val:.1f}'
+                            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)[0]
+                            cv2.putText(img, label, (plot_x0 - text_size[0] - 8, py + 4), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.35, (60,60,60), 1, cv2.LINE_AA)
+                        
+                        # Y-axis label (rotated text simulation with individual chars)
+                        y_label = 'Overshoot (mm)'
+                        for idx, ch in enumerate(y_label):
+                            cv2.putText(img, ch, (10, plot_y0 + 80 + idx*12), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (40,40,40), 1, cv2.LINE_AA)
+                        
+                        # points
+                        for i in range(len(xs)):
+                            px = x_to_px(xs[i])
+                            pyu = y_to_px(yu[i]); pyd = y_to_px(yd[i])
+                            cv2.circle(img, (px, pyu), 3, (0,0,255), -1)
+                            cv2.circle(img, (px, pyd), 3, (255,0,0), -1)
+                        # fitted curves
+                        def eval_poly(coeffs, xx):
+                            yy = 0.0
+                            deg = len(coeffs)-1
+                            for k,c in enumerate(coeffs):
+                                powr = deg - k
+                                yy += c * (xx ** powr)
+                            return yy
+                        pts_up = []
+                        pts_dn = []
+                        for t in np.linspace(x_min, x_max, 200):
+                            yu_t = eval_poly(cu, t)
+                            yd_t = eval_poly(cd, t)
+                            pts_up.append((x_to_px(t), y_to_px(yu_t)))
+                            pts_dn.append((x_to_px(t), y_to_px(yd_t)))
+                        cv2.polylines(img, [np.array(pts_up, dtype=np.int32)], False, (0,0,255), 2)
+                        cv2.polylines(img, [np.array(pts_dn, dtype=np.int32)], False, (255,0,0), 2)
+                        # legends
+                        cv2.putText(img, 'Up (red) / Down (blue) overshoot vs height', (plot_x0, margin_top-20), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (80,80,80), 1, cv2.LINE_AA)
+                        # Save
+                        plot_path = os.path.join(web_dir, 'overshoot_fit.png')
+                        cv2.imwrite(plot_path, img)
+                        plot_url = '/static/overshoot_fit.png'
+                    except Exception as e:
+                        plot_url = None
+                        self.get_logger().warn(f"Plot render error: {e}")
+                    return JSONResponse({'success': True, 'fit': fit_block, 'plot_url': plot_url})
+                except Exception as e:
+                    self.get_logger().error(f"Overshoot fit error: {e}")
+                    return JSONResponse({'success': False, 'error': str(e)})
+
+            @app.post('/api/overshoot/save')
+            async def save_overshoot(request: Request):
+                """Save overshoot calibration to JSON config file.
+
+                Extended: if request body contains lower_bound & upper_bound, store
+                region-specific overshoot values. Otherwise update global default.
+
+                New JSON format:
+                {
+                  "enable": true,
+                  "generated_at": ..., "generated_at_iso": "...",
+                  "default": {"overshoot_up": X, "overshoot_down": Y},
+                  "regions": [
+                     {"lower": L, "upper": U, "overshoot_up": Xr, "overshoot_down": Yr, "generated_at": ts, "generated_at_iso": "..."}
+                  ]
+                }
+                Backward compatibility: existing single-value file will be migrated on first region save.
+                """
+                try:
+                    body = {}
+                    try:
+                        body = await request.json()
+                    except Exception:
+                        body = {}
+                    lower_bound = body.get('lower_bound')
+                    upper_bound = body.get('upper_bound')
+                    overwrite_region = body.get('overwrite', False)
+
+                    with self.overshoot_lock:
+                        overshoot_up = self.overshoot_up
+                        overshoot_down = self.overshoot_down
+
+                    if overshoot_up is None and overshoot_down is None:
+                        return JSONResponse({'success': False, 'error': 'No calibration calculated yet. Please calculate first.'})
+
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
                     config_dir = os.path.dirname(config_path)
                     if not os.path.exists(config_dir):
                         os.makedirs(config_dir)
-                        self.get_logger().info(f"Created config directory: {config_dir}")
-                    
-                    # Save to file
+
+                    # Load existing config (if any) to preserve regions
+                    existing = {}
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                existing = json.load(f)
+                        except Exception as e:
+                            self.get_logger().warn(f"Failed to read existing overshoot config (will recreate): {e}")
+                            existing = {}
+
+                    # Migrate legacy format (flat overshoot_up/down at top-level)
+                    regions = existing.get('regions', [])
+                    default_block = existing.get('default')
+                    if default_block is None:
+                        # Legacy file uses top-level overshoot_*; capture as default
+                        legacy_up = existing.get('overshoot_up')
+                        legacy_down = existing.get('overshoot_down')
+                        if legacy_up is not None or legacy_down is not None:
+                            default_block = {
+                                'overshoot_up': legacy_up,
+                                'overshoot_down': legacy_down
+                            }
+
+                    # If region bounds provided, append/update region entry
+                    region_saved = None
+                    if lower_bound is not None and upper_bound is not None:
+                        try:
+                            lb = float(lower_bound)
+                            ub = float(upper_bound)
+                            if lb >= ub:
+                                return JSONResponse({'success': False, 'error': 'lower_bound must be < upper_bound'})
+                        except Exception:
+                            return JSONResponse({'success': False, 'error': 'Invalid bounds'})
+
+                        # Search existing region that overlaps exactly (same bounds)
+                        existing_index = None
+                        for i, r in enumerate(regions):
+                            if r.get('lower') == lb and r.get('upper') == ub:
+                                existing_index = i
+                                break
+                        region_entry = {
+                            'lower': lb,
+                            'upper': ub,
+                            'overshoot_up': overshoot_up if overshoot_up is not None else 0.0,
+                            'overshoot_down': overshoot_down if overshoot_down is not None else 0.0,
+                            'generated_at': time.time(),
+                            'generated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                        }
+                        if existing_index is not None and overwrite_region:
+                            regions[existing_index] = region_entry
+                        elif existing_index is None:
+                            regions.append(region_entry)
+                        region_saved = region_entry
+
+                    # Update default block if not present or if no bounds provided
+                    if default_block is None or (lower_bound is None and upper_bound is None):
+                        default_block = {
+                            'overshoot_up': overshoot_up if overshoot_up is not None else existing.get('overshoot_up', 0.0),
+                            'overshoot_down': overshoot_down if overshoot_down is not None else existing.get('overshoot_down', 0.0)
+                        }
+
+                    new_config = {
+                        'enable': True,
+                        'generated_at': time.time(),
+                        'generated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                        'default': default_block,
+                        'regions': regions,
+                        'format_version': 2
+                    }
+
                     with open(config_path, 'w') as f:
-                        json.dump(config_data, f, indent=2)
-                    
-                    self.get_logger().info(f"Saved overshoot calibration: up={overshoot_up}, down={overshoot_down}")
-                    
-                    return JSONResponse({
+                        json.dump(new_config, f, indent=2)
+
+                    self.get_logger().info(
+                        f"Saved overshoot calibration: default(up={default_block['overshoot_up']}, down={default_block['overshoot_down']}), regions={len(regions)}"
+                    )
+
+                    resp = {
                         'success': True,
                         'filepath': config_path,
                         'overshoot_up': overshoot_up,
                         'overshoot_down': overshoot_down,
-                        'message': 'Config saved. Restart lift_robot_platform to apply (no rebuild needed).'
-                    })
+                        'message': 'Config saved. Restart lift_robot_platform to apply.',
+                        'regions_count': len(regions),
+                        'region_saved': region_saved
+                    }
+                    if region_saved is not None:
+                        resp['saved_region_bounds'] = [region_saved['lower'], region_saved['upper']]
+                    return JSONResponse(resp)
                 except Exception as e:
                     self.get_logger().error(f"Failed to save overshoot calibration: {e}")
-                    return JSONResponse({
-                        'success': False,
-                        'error': str(e)
-                    })
+                    return JSONResponse({'success': False, 'error': str(e)})
 
             # ═══════════════════════════════════════════════════════════════
             # Force Sensor Calibration API Endpoints (Dual-Channel)

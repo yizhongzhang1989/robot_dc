@@ -104,6 +104,46 @@ robot_dc/
 
    > On Linux, you may need to allow port 8000 through your firewall to access from other PCs.
 
+       ## Platform Overshoot Multi-Region Calibration (Web UI)
+
+       The platform now supports predictive early-stop overshoot compensation using a multi-region calibration workflow.
+
+       Workflow Summary:
+       1. Open the web interface (`lift_robot_web` package, default port 8090).
+       2. In the "Platform Overshoot Calibration" card click "Detect Range":
+            * Performs initialization (pushrod timed down, platform down to base ≈832mm) and records the minimum height.
+            * Sends manual UP and waits for stall detection (no height change for ≥0.5s) to record maximum height.
+       3. Click "Multi-Region Calibrate" to automatically split the full range into 50 mm segments.
+            Each segment runs the existing auto calibration (6 random alternating points). For each segment the residual overshoot (drift after stop pulse) is learned and saved.
+       4. Region results are written into `colcon_ws/config/platform_overshoot_calibration.json`.
+
+       JSON Format (v2):
+       ```json
+       {
+          "enable": true,
+          "generated_at": 1763099999.123,
+          "generated_at_iso": "2025-11-14 14:05:12",
+          "format_version": 2,
+          "default": { "overshoot_up": 2.55, "overshoot_down": 2.78 },
+          "regions": [
+             { "lower": 832.0, "upper": 882.0, "overshoot_up": 2.40, "overshoot_down": 2.60, "generated_at": 1763099999.234, "generated_at_iso": "2025-11-14 14:05:12" },
+             { "lower": 882.0, "upper": 932.0, "overshoot_up": 2.35, "overshoot_down": 2.55, "generated_at": 1763099999.987, "generated_at_iso": "2025-11-14 14:06:05" }
+          ]
+       }
+       ```
+
+       Runtime Selection:
+       * When `goto_height` is invoked the `lift_robot_platform` node selects region where `lower <= target < upper` (last region inclusive upper bound).
+       * If no region matches it falls back to `default` values.
+       * Legacy single-value file (top-level `overshoot_up` / `overshoot_down`) is auto-migrated when first region is saved.
+
+       Notes:
+       * Overshoot value stored is the residual drift after the stop pulse (not total target error).
+       * Minimum margin `OVERSHOOT_MIN_MARGIN` is enforced (below this early-stop is skipped).
+       * Safe to regenerate: existing region with same bounds can be overwritten (`overwrite:true`).
+
+       To apply new calibration restart the `lift_robot_platform` node (no rebuild required).
+
 5. **Take camera snapshots via the web interface:**
 
    The system includes a dual-camera RTSP snapshot service. Once the system is running, you can:
