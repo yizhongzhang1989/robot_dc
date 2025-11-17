@@ -420,6 +420,48 @@ class UR15WebNode(Node):
             return 0
         
         return max(numbers) + 1
+    
+    def _get_next_capture_file_number(self, directory):
+        """Find the next available capture file number by checking existing ref_img_* files."""
+        if not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+            return 1  # Start from 1 for capture files
+        
+        # Look for existing ref_img_* files
+        import glob
+        existing_img_files = glob.glob(os.path.join(directory, 'ref_img_*.jpg'))
+        existing_json_files = glob.glob(os.path.join(directory, 'ref_img_*.json'))
+        existing_pose_files = glob.glob(os.path.join(directory, 'ref_img_*_pose.json'))
+        
+        all_files = existing_img_files + existing_json_files + existing_pose_files
+        
+        if not all_files:
+            return 1  # Start from 1 for capture files
+        
+        # Extract numbers from filenames like "ref_img_1.jpg", "ref_img_1.json", "ref_img_1_pose.json", etc.
+        numbers = []
+        for f in all_files:
+            basename = os.path.basename(f)
+            # Extract number from patterns like ref_img_N.jpg, ref_img_N.json, ref_img_N_pose.json
+            if basename.startswith('ref_img_'):
+                try:
+                    if '_pose.json' in basename:
+                        # Extract number from ref_img_N_pose.json
+                        num_part = basename.replace('ref_img_', '').replace('_pose.json', '')
+                        if num_part.isdigit():
+                            numbers.append(int(num_part))
+                    else:
+                        # Extract number from ref_img_N.ext (jpg or json)
+                        num_part = basename.replace('ref_img_', '').split('.')[0]
+                        if num_part.isdigit():
+                            numbers.append(int(num_part))
+                except:
+                    continue
+        
+        if not numbers:
+            return 1  # Start from 1 for capture files
+        
+        return max(numbers) + 1
         
     def _run_flask_server(self):
         """Run Flask server with proper error handling."""
@@ -849,6 +891,42 @@ class UR15WebNode(Node):
                 self.get_logger().error(f"Error changing chessboard config: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
+        @self.app.route('/change_operation_path', methods=['POST'])
+        def change_operation_path():
+            """Change operation path."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data or 'operation_path' not in data:
+                    return jsonify({'success': False, 'message': 'No operation_path provided'})
+                
+                new_path = data['operation_path'].strip()
+                if not new_path:
+                    return jsonify({'success': False, 'message': 'Path cannot be empty'})
+                
+                # Expand user home directory if needed
+                new_path = os.path.expanduser(new_path)
+                
+                # Create directory if it doesn't exist
+                try:
+                    os.makedirs(new_path, exist_ok=True)
+                    self.get_logger().info(f"Operation path changed to: {new_path}")
+                    return jsonify({
+                        'success': True, 
+                        'message': 'Operation path changed successfully',
+                        'operation_path': self._simplify_path(new_path)
+                    })
+                except Exception as e:
+                    return jsonify({
+                        'success': False, 
+                        'message': f'Failed to create/access directory: {str(e)}'
+                    })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error changing operation path: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
         @self.app.route('/get_pose_count', methods=['GET'])
         def get_pose_count():
             """Get the number of pose JSON files in calibration data directory."""
@@ -1094,8 +1172,9 @@ class UR15WebNode(Node):
                         'count': 0
                     })
                 
-                # Count JSON files (assuming each image has a corresponding JSON)
-                json_files = glob.glob(os.path.join(directory, '*.json'))
+                # Count JSON files (assuming each image has a corresponding JSON, excluding chessboard_config.json)
+                json_files = [f for f in glob.glob(os.path.join(directory, '*.json')) 
+                             if not f.endswith('chessboard_config.json')]
                 count = len(json_files)
                 
                 return jsonify({
@@ -1131,11 +1210,12 @@ class UR15WebNode(Node):
                         'message': 'Directory does not exist'
                     })
                 
-                # Get all JSON files
-                json_files = glob.glob(os.path.join(directory, '*.json'))
+                # Get all JSON files (excluding chessboard_config.json)
+                json_files = [f for f in glob.glob(os.path.join(directory, '*.json')) 
+                             if not f.endswith('chessboard_config.json')]
                 
                 if delete_all:
-                    # Delete all images and JSON files
+                    # Delete all images and JSON files (excluding chessboard_config.json)
                     jpg_files = glob.glob(os.path.join(directory, '*.jpg'))
                     total_deleted = len(json_files) + len(jpg_files)
                     
@@ -1147,7 +1227,7 @@ class UR15WebNode(Node):
                     
                     return jsonify({
                         'success': True,
-                        'message': f'Successfully deleted all {total_deleted} files'
+                        'message': f'Successfully deleted all {total_deleted} calibration files (chessboard_config.json preserved)'
                     })
                 
                 # Delete specific image
@@ -1169,8 +1249,9 @@ class UR15WebNode(Node):
                     os.remove(jpg_file)
                     deleted_files.append(f"{image_number}.jpg")
                 
-                # Get all remaining files and renumber them
-                json_files = glob.glob(os.path.join(directory, '*.json'))
+                # Get all remaining files and renumber them (excluding chessboard_config.json)
+                json_files = [f for f in glob.glob(os.path.join(directory, '*.json')) 
+                             if not f.endswith('chessboard_config.json')]
                 jpg_files = glob.glob(os.path.join(directory, '*.jpg'))
                 
                 # Extract numbers from filenames
@@ -1528,6 +1609,187 @@ class UR15WebNode(Node):
                     'success': False,
                     'message': str(e)
                 })
+        
+        @self.app.route('/capture_task_data', methods=['POST'])
+        def capture_task_data():
+            """Capture current image, robot pose, and camera parameters for a task."""
+            from flask import jsonify, request
+            import time
+            import json
+            
+            try:
+                data = request.get_json()
+                task_name = data.get('task_name')
+                task_path = data.get('task_path')
+                calibration_data_dir = data.get('calibration_data_dir')
+                
+                if not task_name or not task_path:
+                    return jsonify({
+                        'success': False, 
+                        'message': 'Missing task_name or task_path'
+                    })
+                
+                if not calibration_data_dir:
+                    return jsonify({
+                        'success': False, 
+                        'message': 'Missing calibration_data_dir'
+                    })
+                
+                # Expand ~ in paths and ensure task directory exists
+                expanded_task_path = os.path.expanduser(task_path)
+                os.makedirs(expanded_task_path, exist_ok=True)
+                
+                # Get next available file number for capture
+                capture_number = self._get_next_capture_file_number(expanded_task_path)
+                
+                # 1. Capture current image as ref_img_N.jpg
+                with self.image_lock:
+                    if self.current_image is None:
+                        return jsonify({
+                            'success': False, 
+                            'message': 'No camera image available'
+                        })
+                    
+                    image_filename = f'ref_img_{capture_number}.jpg'
+                    image_path = os.path.join(expanded_task_path, image_filename)
+                    cv2.imwrite(image_path, self.current_image)
+                
+                # 2. Get current robot pose and save as ref_pose.json
+                current_tcp_pose = None
+                with self.ur15_lock:
+                    if self.ur15_robot is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Robot not connected'
+                        })
+                    
+                    try:
+                        # Read both joint positions and TCP pose like in screenshot
+                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        if joint_positions is None:
+                            return jsonify({
+                                'success': False,
+                                'message': 'Failed to read joint positions'
+                            })
+                        
+                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        if tcp_pose is None:
+                            return jsonify({
+                                'success': False,
+                                'message': 'Failed to read TCP pose'
+                            })
+                        
+                        # Calculate end2base transformation matrix like in screenshot
+                        end2base = self._pose_to_matrix(tcp_pose)
+                        
+                        # Format pose data exactly like screenshot endpoint
+                        from datetime import datetime
+                        current_tcp_pose = {
+                            "joint_angles": list(joint_positions),
+                            "end_xyzrpy": {
+                                "x": tcp_pose[0],
+                                "y": tcp_pose[1],
+                                "z": tcp_pose[2],
+                                "rx": tcp_pose[3],
+                                "ry": tcp_pose[4],
+                                "rz": tcp_pose[5]
+                            },
+                            "end2base": end2base.tolist(),
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    except Exception as e:
+                        return jsonify({
+                            'success': False,
+                            'message': f'Failed to read robot pose: {str(e)}'
+                        })
+                
+                if current_tcp_pose is None:
+                    return jsonify({
+                        'success': False, 
+                        'message': 'No robot pose data available'
+                    })
+                
+                pose_filename = f'ref_img_{capture_number}_pose.json'
+                pose_path = os.path.join(expanded_task_path, pose_filename)
+                with open(pose_path, 'w') as f:
+                    json.dump(current_tcp_pose, f, indent=2)
+                
+                # 3. Get camera parameters from calibration results and save as ref_img_N.json
+                camera_params = self._get_camera_parameters_from_calibration(calibration_data_dir)
+                if not camera_params['success']:
+                    return jsonify({
+                        'success': False, 
+                        'message': camera_params['message']
+                    })
+                
+                camera_params_filename = f'ref_img_{capture_number}.json'
+                camera_params_path = os.path.join(expanded_task_path, camera_params_filename)
+                with open(camera_params_path, 'w') as f:
+                    json.dump(camera_params['data'], f, indent=2)
+                
+                # Add web log message
+                self.push_web_log(f'Captured data for task {task_name}', 'success')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Successfully captured data for task {task_name}',
+                    'image_path': image_path,
+                    'pose_path': pose_path,
+                    'camera_params_path': camera_params_path,
+                    'image_file': image_filename,
+                    'pose_file': pose_filename,
+                    'camera_params_file': camera_params_filename,
+                    'calibration_source': camera_params.get('source', 'Unknown')
+                })
+                
+            except Exception as e:
+                error_msg = f'Failed to capture task data: {str(e)}'
+                self.get_logger().error(error_msg)
+                self.push_web_log(error_msg, 'error')
+                return jsonify({'success': False, 'message': error_msg})
+        
+        @self.app.route('/set_task_path', methods=['POST'])
+        def set_task_path():
+            """Set path for a specific task."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                task_name = data.get('task_name')
+                task_path = data.get('task_path')
+                
+                if not task_name or not task_path:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Missing task_name or task_path'
+                    })
+                
+                # Expand ~ in path and create directory if it doesn't exist
+                try:
+                    expanded_task_path = os.path.expanduser(task_path)
+                    os.makedirs(expanded_task_path, exist_ok=True)
+                    self.get_logger().info(f"Task path set for {task_name}: {expanded_task_path}")
+                    self.push_web_log(f'Path set for task "{task_name}": {self._simplify_path(expanded_task_path)}', 'success')
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': f'Successfully set path for task {task_name}',
+                        'task_name': task_name,
+                        'task_path': expanded_task_path
+                    })
+                
+                except OSError as e:
+                    error_msg = f'Failed to create directory: {str(e)}'
+                    self.get_logger().error(f"Failed to create directory {expanded_task_path}: {e}")
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg
+                    })
+                    
+            except Exception as e:
+                error_msg = f'Failed to set task path: {str(e)}'
+                self.get_logger().error(error_msg)
+                return jsonify({'success': False, 'message': error_msg})
         
         @self.app.route('/movej', methods=['POST'])
         def movej():
@@ -1990,6 +2252,96 @@ class UR15WebNode(Node):
             y += 30
         
         return img
+
+    def _get_camera_parameters_from_calibration(self, calibration_data_dir):
+        """Get camera parameters from calibration result files."""
+        try:
+            # Expand ~ in path and construct paths to calibration result files
+            expanded_calibration_data_dir = os.path.expanduser(calibration_data_dir)
+            calib_data_parent = os.path.dirname(expanded_calibration_data_dir)
+            calibration_result_dir = os.path.join(calib_data_parent, 'ur15_cam_calibration_result')
+            camera_params_dir = os.path.join(calibration_result_dir, 'ur15_camera_parameters')
+            
+            intrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
+            extrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
+            
+            self.get_logger().info(f"Looking for calibration files:")
+            self.get_logger().info(f"  Intrinsic: {intrinsic_file}")
+            self.get_logger().info(f"  Extrinsic: {extrinsic_file}")
+            
+            # Load intrinsic parameters
+            intrinsics = None
+            if os.path.exists(intrinsic_file):
+                try:
+                    with open(intrinsic_file, 'r') as f:
+                        intrinsic_data = json.load(f)
+                    
+                    if intrinsic_data.get('success', False):
+                        intrinsics = {
+                            'camera_matrix': intrinsic_data['camera_matrix'],
+                            'distortion_coefficients': intrinsic_data['distortion_coefficients']
+                        }
+                        self.get_logger().info("✅ Successfully loaded intrinsic parameters from file")
+                    else:
+                        self.get_logger().warning("Intrinsic calibration file indicates failure")
+                except Exception as e:
+                    self.get_logger().error(f"Failed to load intrinsic file: {e}")
+            else:
+                self.get_logger().warning(f"Intrinsic file not found: {intrinsic_file}")
+            
+            # Load extrinsic parameters
+            extrinsics = None
+            if os.path.exists(extrinsic_file):
+                try:
+                    with open(extrinsic_file, 'r') as f:
+                        extrinsic_data = json.load(f)
+                    
+                    if extrinsic_data.get('success', False):
+                        # Calculate current camera pose based on robot TCP and hand-eye calibration
+                        cam2end_matrix = np.array(extrinsic_data['cam2end_matrix'], dtype=np.float64)
+                        
+                        # Save the cam2end_matrix directly as extrinsics
+                        # This is the fixed transformation from camera to end-effector from calibration
+                        extrinsics = {
+                            'cam2end_matrix': cam2end_matrix.tolist()
+                        }
+                        self.get_logger().info("✅ Successfully loaded cam2end_matrix as extrinsic parameters")
+                    else:
+                        self.get_logger().warning("Extrinsic calibration file indicates failure")
+                except Exception as e:
+                    self.get_logger().error(f"Failed to load extrinsic file: {e}")
+            else:
+                self.get_logger().warning(f"Extrinsic file not found: {extrinsic_file}")
+            
+            # Check if we have required parameters
+            if intrinsics is None:
+                return {
+                    'success': False,
+                    'message': f'Camera intrinsic parameters not found in {camera_params_dir}. Please run calibration first.'
+                }
+            
+            # Compile camera parameters - only intrinsics and extrinsics
+            camera_params = {
+                'intrinsics': intrinsics
+            }
+            
+            # Only add extrinsics if available
+            if extrinsics is not None:
+                camera_params['extrinsics'] = extrinsics
+            
+            source_description = f"Calibration results from {os.path.basename(calibration_result_dir)}"
+            
+            return {
+                'success': True, 
+                'data': camera_params,
+                'source': source_description
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'Error reading calibration files: {str(e)}'
+            }
 
 
 def main(args=None):

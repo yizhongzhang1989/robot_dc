@@ -178,6 +178,8 @@ function confirmDataDirChange() {
         if (data.success) {
             // Update the path panel
             document.getElementById('datasetDirPath').value = data.data_dir;
+            // Update all task paths with new dataset directory
+            updateAllTaskPaths(data.data_dir);
             logToWeb(`Dataset directory changed successfully to: ${data.data_dir}`, 'success');
             closeDataDirModal();
         } else {
@@ -188,6 +190,162 @@ function confirmDataDirChange() {
     .catch(error => {
         console.error('Failed to change data directory:', error);
         logToWeb(`Failed to change data directory: ${error}`, 'error');
+    });
+}
+
+// Operation Path Functions
+function changeOperationPath() {
+    const currentPath = document.getElementById('operationPath').value;
+    const modal = document.getElementById('operationPathModal');
+    const input = document.getElementById('operationPathInput');
+    
+    // Set current path as default value
+    input.value = currentPath;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    
+    // Focus on input
+    setTimeout(() => input.focus(), 100);
+    
+    // Handle Enter key
+    input.onkeypress = function(e) {
+        if (e.key === 'Enter') {
+            confirmOperationPathChange();
+        }
+    };
+}
+
+function closeOperationPathModal() {
+    const modal = document.getElementById('operationPathModal');
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+}
+
+function confirmOperationPathChange() {
+    const currentPath = document.getElementById('operationPath').value;
+    const input = document.getElementById('operationPathInput');
+    const newPath = input.value.trim();
+    
+    if (newPath === '' || newPath === currentPath) {
+        closeOperationPathModal();
+        return;
+    }
+    
+    logToWeb(`Changing operation path to: ${newPath}`, 'info');
+    
+    // Update the path immediately for better user experience
+    document.getElementById('operationPath').value = newPath;
+    
+    // Send to server (if needed for backend persistence)
+    fetch('/change_operation_path', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ operation_path: newPath })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`Operation path changed successfully to: ${data.operation_path}`, 'success');
+            closeOperationPathModal();
+        } else {
+            console.error('Failed to change operation path:', data.message || 'Unknown error');
+            logToWeb(`Failed to change operation path: ${data.message || 'Unknown error'}`, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Failed to change operation path:', error);
+        logToWeb(`Failed to change operation path: ${error}`, 'error');
+    });
+}
+
+function updateAllTaskPaths(datasetDir) {
+    // Update operation path if it's empty or follows default pattern
+    const operationPathInput = document.getElementById('operationPath');
+    if (operationPathInput) {
+        const currentPath = operationPathInput.value;
+        
+        // Update operation path to match dataset directory if empty or default
+        if (!currentPath || currentPath === '' || currentPath === document.getElementById('datasetDirPath').value) {
+            operationPathInput.value = datasetDir;
+            logToWeb(`Updated operation path to: ${datasetDir}`, 'info');
+        }
+    }
+}
+
+function captureTaskData(taskName) {
+    const operationPath = document.getElementById('operationPath').value;
+    const calibrationDataDir = document.getElementById('calibrationDirPath').value;
+    
+    if (!operationPath || operationPath.trim() === '') {
+        logToWeb(`Please set an operation path before capturing`, 'warning');
+        showMessage(`Please set an operation path before capturing`, 'warning');
+        return;
+    }
+    
+    if (!calibrationDataDir || calibrationDataDir.trim() === '') {
+        logToWeb(`Please set calibration data directory before capturing`, 'warning');
+        showMessage(`Please set calibration data directory before capturing`, 'warning');
+        return;
+    }
+    
+    logToWeb(`Starting capture for task "${taskName}"...`, 'info');
+    
+    // Send capture request to server
+    fetch('/capture_task_data', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            task_name: taskName,
+            task_path: operationPath.trim(),
+            calibration_data_dir: calibrationDataDir.trim()
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`Capture completed for task "${taskName}"`, 'success');
+            logToWeb(`✓ Saved: ${data.image_file}`, 'success');
+            logToWeb(`✓ Saved: ${data.pose_file}`, 'success');
+            logToWeb(`✓ Saved: ${data.camera_params_file}`, 'success');
+            
+            // Show calibration source information
+            if (data.calibration_source) {
+                logToWeb(`📷 Camera params from: ${data.calibration_source}`, 'info');
+            }
+            
+            showMessage(
+                `Successfully captured data for task "${taskName}":\n` +
+                `• Image: ${data.image_file}\n` +
+                `• Pose: ${data.pose_file}\n` +
+                `• Camera params: ${data.camera_params_file}` +
+                (data.calibration_source ? `\n• Source: ${data.calibration_source}` : ''), 
+                'success', 
+                '📷 Capture Complete'
+            );
+        } else {
+            console.error(`Failed to capture data for task ${taskName}:`, data.message || 'Unknown error');
+            logToWeb(`Failed to capture data for task ${taskName}: ${data.message || 'Unknown error'}`, 'error');
+            showMessage(
+                `Failed to capture data for task "${taskName}": ${data.message || 'Unknown error'}`, 
+                'error', 
+                '❌ Capture Failed'
+            );
+        }
+    })
+    .catch(error => {
+        console.error(`Failed to capture data for task ${taskName}:`, error);
+        logToWeb(`Failed to capture data for task ${taskName}: ${error}`, 'error');
+        showMessage(
+            `Failed to capture data for task "${taskName}": ${error}`, 
+            'error', 
+            '❌ Capture Error'
+        );
     });
 }
 
