@@ -330,7 +330,6 @@ function captureTaskData(taskName) {
             logToWeb(`Capture completed for task "${taskName}"`, 'success');
             logToWeb(`✓ Saved: ${data.image_file}`, 'success');
             logToWeb(`✓ Saved: ${data.pose_file}`, 'success');
-            logToWeb(`✓ Saved: ${data.camera_params_file}`, 'success');
             
             // Show calibration source information
             if (data.calibration_source) {
@@ -340,8 +339,7 @@ function captureTaskData(taskName) {
             showMessage(
                 `Successfully captured data for task "${taskName}":\n` +
                 `• Image: ${data.image_file}\n` +
-                `• Pose: ${data.pose_file}\n` +
-                `• Camera params: ${data.camera_params_file}` +
+                `• Pose & Camera params: ${data.pose_file}` +
                 (data.calibration_source ? `\n• Source: ${data.calibration_source}` : ''), 
                 'success', 
                 '📷 Capture Complete'

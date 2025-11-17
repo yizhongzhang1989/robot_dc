@@ -1708,26 +1708,37 @@ class UR15WebNode(Node):
                         'success': False, 
                         'message': 'No robot pose data available'
                     })
-                
-                pose_filename = f'ref_img_{capture_number}_pose.json'
-                pose_path = os.path.join(expanded_task_path, pose_filename)
-                with open(pose_path, 'w') as f:
-                    json.dump(current_tcp_pose, f, indent=2)
-                
-                # 3. Get camera parameters from calibration results and save as ref_img_N.json
+
+                # 3. Get camera parameters from calibration results
                 camera_params = self._get_camera_parameters_from_calibration(calibration_data_dir)
                 if not camera_params['success']:
                     return jsonify({
                         'success': False, 
                         'message': camera_params['message']
                     })
+
+                # Merge all data into flat structure and save as ref_img_N_pose.json
+                combined_data = {}
                 
-                camera_params_filename = f'ref_img_{capture_number}.json'
-                camera_params_path = os.path.join(expanded_task_path, camera_params_filename)
-                with open(camera_params_path, 'w') as f:
-                    json.dump(camera_params['data'], f, indent=2)
+                # Add pose data directly to top level (excluding timestamp first)
+                pose_data_without_timestamp = {k: v for k, v in current_tcp_pose.items() if k != 'timestamp'}
+                combined_data.update(pose_data_without_timestamp)
                 
-                # Add web log message
+                # Add camera parameters directly to top level (flattened)
+                camera_data = camera_params['data']
+                if 'intrinsics' in camera_data:
+                    combined_data.update(camera_data['intrinsics'])
+                if 'extrinsics' in camera_data:
+                    combined_data.update(camera_data['extrinsics'])
+                
+                # Add timestamp at the end
+                if 'timestamp' in current_tcp_pose:
+                    combined_data['timestamp'] = current_tcp_pose['timestamp']
+                
+                pose_filename = f'ref_img_{capture_number}_pose.json'
+                pose_path = os.path.join(expanded_task_path, pose_filename)
+                with open(pose_path, 'w') as f:
+                    json.dump(combined_data, f, indent=2)                # Add web log message
                 self.push_web_log(f'Captured data for task {task_name}', 'success')
                 
                 return jsonify({
@@ -1735,10 +1746,8 @@ class UR15WebNode(Node):
                     'message': f'Successfully captured data for task {task_name}',
                     'image_path': image_path,
                     'pose_path': pose_path,
-                    'camera_params_path': camera_params_path,
                     'image_file': image_filename,
                     'pose_file': pose_filename,
-                    'camera_params_file': camera_params_filename,
                     'calibration_source': camera_params.get('source', 'Unknown')
                 })
                 
