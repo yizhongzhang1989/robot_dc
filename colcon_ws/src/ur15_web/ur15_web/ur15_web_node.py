@@ -1739,11 +1739,11 @@ class UR15WebNode(Node):
                 pose_path = os.path.join(expanded_task_path, pose_filename)
                 with open(pose_path, 'w') as f:
                     json.dump(combined_data, f, indent=2)                # Add web log message
-                self.push_web_log(f'Captured data for task {task_name}', 'success')
+                self.push_web_log(f'Captured image and pose data: {image_filename}, {pose_filename}', 'success')
                 
                 return jsonify({
                     'success': True,
-                    'message': f'Successfully captured data for task {task_name}',
+                    'message': f'Successfully captured image and pose data',
                     'image_path': image_path,
                     'pose_path': pose_path,
                     'image_file': image_filename,

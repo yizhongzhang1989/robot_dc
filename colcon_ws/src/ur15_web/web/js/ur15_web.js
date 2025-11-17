@@ -310,7 +310,7 @@ function captureTaskData(taskName) {
         return;
     }
     
-    logToWeb(`Starting capture for task "${taskName}" to: ${currentOperationPath}`, 'info');
+    logToWeb(`Starting capture to: ${currentOperationPath}`, 'info');
     
     // Send capture request to server
     fetch('/capture_task_data', {
@@ -327,7 +327,7 @@ function captureTaskData(taskName) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            logToWeb(`Capture completed for task "${taskName}"`, 'success');
+            logToWeb(`Capture completed`, 'success');
             logToWeb(`✓ Saved: ${data.image_file}`, 'success');
             logToWeb(`✓ Saved: ${data.pose_file}`, 'success');
             
@@ -337,7 +337,7 @@ function captureTaskData(taskName) {
             }
             
             showMessage(
-                `Successfully captured data for task "${taskName}":\n` +
+                `Successfully captured image and pose data:\n` +
                 `• Image: ${data.image_file}\n` +
                 `• Pose & Camera params: ${data.pose_file}` +
                 (data.calibration_source ? `\n• Source: ${data.calibration_source}` : ''), 
@@ -345,20 +345,20 @@ function captureTaskData(taskName) {
                 '📷 Capture Complete'
             );
         } else {
-            console.error(`Failed to capture data for task ${taskName}:`, data.message || 'Unknown error');
-            logToWeb(`Failed to capture data for task ${taskName}: ${data.message || 'Unknown error'}`, 'error');
+            console.error(`Failed to capture data:`, data.message || 'Unknown error');
+            logToWeb(`Failed to capture data: ${data.message || 'Unknown error'}`, 'error');
             showMessage(
-                `Failed to capture data for task "${taskName}": ${data.message || 'Unknown error'}`, 
+                `Failed to capture data: ${data.message || 'Unknown error'}`, 
                 'error', 
                 '❌ Capture Failed'
             );
         }
     })
     .catch(error => {
-        console.error(`Failed to capture data for task ${taskName}:`, error);
-        logToWeb(`Failed to capture data for task ${taskName}: ${error}`, 'error');
+        console.error(`Failed to capture data:`, error);
+        logToWeb(`Failed to capture data: ${error}`, 'error');
         showMessage(
-            `Failed to capture data for task "${taskName}": ${error}`, 
+            `Failed to capture data: ${error}`, 
             'error', 
             '❌ Capture Error'
         );
