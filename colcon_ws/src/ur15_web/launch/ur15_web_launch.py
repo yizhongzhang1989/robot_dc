@@ -38,17 +38,31 @@ def generate_launch_description():
         description='RTSP URL for camera stream'
     )
     
-    data_dir_arg = DeclareLaunchArgument(
-        'data_dir',
+    dataset_dir_arg = DeclareLaunchArgument(
+        'dataset_dir',
         default_value=os.path.join(os.path.dirname(os.getcwd()), 'dataset'),
         description='Directory for storing dataset files'
+    )
+    
+    calib_data_dir_arg = DeclareLaunchArgument(
+        'calib_data_dir',
+        default_value=os.path.join(os.path.dirname(os.getcwd()), 'temp', 'ur15_cam_calibration_data'),
+        description='Directory for camera calibration data'
+    )
+    
+    chessboard_config_arg = DeclareLaunchArgument(
+        'chessboard_config',
+        default_value=os.path.join(os.path.dirname(os.getcwd()), 'temp', 'ur15_cam_calibration_data', 'chessboard_config.json'),
+        description='JSON file containing chessboard pattern configuration'
     )
     
     # Get launch configurations
     ur15_ip = LaunchConfiguration('ur15_ip')
     camera_topic = LaunchConfiguration('camera_topic')
     rtsp_url = LaunchConfiguration('rtsp_url')
-    data_dir = LaunchConfiguration('data_dir')
+    dataset_dir = LaunchConfiguration('dataset_dir')
+    calib_data_dir = LaunchConfiguration('calib_data_dir')
+    chessboard_config = LaunchConfiguration('chessboard_config')
     
     # UR robot driver launch
     ur_control_launch = IncludeLaunchDescription(
@@ -96,7 +110,9 @@ def generate_launch_description():
             'web_port': 8030,
             'ur15_ip': ur15_ip,
             'ur15_port': 30002,
-            'data_dir': data_dir
+            'dataset_dir': dataset_dir,
+            'calib_data_dir': calib_data_dir,
+            'chessboard_config': chessboard_config
         }]
     )
     
@@ -117,7 +133,9 @@ def generate_launch_description():
         ur15_ip_arg,
         camera_topic_arg,
         rtsp_url_arg,
-        data_dir_arg,
+        dataset_dir_arg,
+        calib_data_dir_arg,
+        chessboard_config_arg,
         
         # Sequential launch: robot -> camera -> web
         ur_control_launch,          # Start immediately

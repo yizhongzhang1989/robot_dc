@@ -24,8 +24,12 @@ import json
 import time
 import sys
 import os
+import subprocess
+import signal
+import atexit
 from flask import Flask, render_template_string, Response
 from ament_index_python.packages import get_package_share_directory
+from common.workspace_utils import get_scripts_directory
 
 # Add ur15_robot_arm to Python path
 try:
@@ -65,14 +69,18 @@ class UR15WebNode(Node):
         self.declare_parameter('web_port', 8030)
         self.declare_parameter('ur15_ip', '192.168.1.15')
         self.declare_parameter('ur15_port', 30002)
-        self.declare_parameter('data_dir', '/tmp/dataset')
+        self.declare_parameter('dataset_dir', '/tmp/dataset')
+        self.declare_parameter('calib_data_dir', '/tmp/ur15_cam_calibration_data')
+        self.declare_parameter('chessboard_config', '/tmp/ur15_cam_calibration_data/chessboard_config.json')
         
         # Get parameters
         self.camera_topic = self.get_parameter('camera_topic').value
         web_port = self.get_parameter('web_port').value
         self.ur15_ip = self.get_parameter('ur15_ip').value
         self.ur15_port = self.get_parameter('ur15_port').value
-        self.data_dir = self.get_parameter('data_dir').value
+        self.data_dir = self.get_parameter('dataset_dir').value
+        self.calibration_data_dir = self.get_parameter('calib_data_dir').value
+        self.chessboard_config = self.get_parameter('chessboard_config').value
         
         # Use only the specified port, clear it if occupied
         try:
@@ -179,6 +187,20 @@ class UR15WebNode(Node):
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
+        # Child process management
+        self.child_processes = []
+        self.process_lock = threading.Lock()
+        self._cleanup_done = False
+        
+        # Web log message queue
+        self.web_log_messages = []
+        self.web_log_lock = threading.Lock()
+        
+        # Register cleanup handlers
+        atexit.register(self.cleanup)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        
         # Create QoS profile for camera subscription
         qos_profile = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -228,6 +250,71 @@ class UR15WebNode(Node):
         self.flask_thread.start()
         
         self.get_logger().info(f"Web interface running at http://0.0.0.0:{self.web_port}")
+    
+    def _signal_handler(self, signum, frame):
+        """Handle termination signals."""
+        self.get_logger().info(f"Received signal {signum}, cleaning up...")
+        self.cleanup()
+        sys.exit(0)
+    
+    def __del__(self):
+        """Destructor to clean up resources."""
+        self.cleanup()
+    
+    def cleanup(self):
+        """Clean up all resources including child processes."""
+        # Avoid duplicate cleanup
+        if self._cleanup_done:
+            return
+        self._cleanup_done = True
+        
+        self.get_logger().info("Cleaning up resources...")
+        
+        # Terminate all child processes
+        with self.process_lock:
+            for process in self.child_processes:
+                if process.poll() is None:  # Process is still running
+                    try:
+                        self.get_logger().info(f"Terminating child process with PID: {process.pid}")
+                        process.terminate()
+                        # Wait for process to terminate (with timeout)
+                        try:
+                            process.wait(timeout=5)
+                            self.get_logger().info(f"Process {process.pid} terminated successfully")
+                        except subprocess.TimeoutExpired:
+                            self.get_logger().warning(f"Process {process.pid} did not terminate, killing it")
+                            process.kill()
+                            process.wait()
+                    except Exception as e:
+                        self.get_logger().error(f"Error terminating process {process.pid}: {e}")
+            
+            self.child_processes.clear()
+        
+        # Disconnect from robot
+        if self.ur15_robot is not None:
+            try:
+                if self.freedrive_active:
+                    self.ur15_robot.freedrive_mode(False)
+                self.ur15_robot.close()
+                self.get_logger().info("Disconnected from UR15 robot")
+            except Exception as e:
+                self.get_logger().error(f"Error disconnecting from robot: {e}")
+    
+    def _simplify_path(self, path):
+        """Simplify path by replacing home directory with ~ and removing /home/a/Documents/."""
+        if not path:
+            return path
+        
+        # First try to replace with ~
+        home_dir = os.path.expanduser('~')
+        if path.startswith(home_dir):
+            return path.replace(home_dir, '~', 1)
+        
+        # Also handle /home/a/Documents/ specifically
+        if path.startswith('/home/a/Documents/'):
+            return path.replace('/home/a/Documents/', '~/', 1)
+        
+        return path
     
     def _init_ur15_connection(self):
         """Initialize connection to UR15 robot for freedrive control."""
@@ -293,6 +380,30 @@ class UR15WebNode(Node):
             return 0
         
         existing_files = [f for f in os.listdir(self.data_dir) if f.endswith('.json')]
+        if not existing_files:
+            return 0
+        
+        # Extract numbers from filenames like "0.json", "1.json", etc.
+        numbers = []
+        for f in existing_files:
+            try:
+                num = int(f.replace('.json', ''))
+                numbers.append(num)
+            except ValueError:
+                continue
+        
+        if not numbers:
+            return 0
+        
+        return max(numbers) + 1
+    
+    def _get_next_file_number_in_dir(self, directory):
+        """Find the next available file number by checking existing files in specified directory."""
+        if not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+            return 0
+        
+        existing_files = [f for f in os.listdir(directory) if f.endswith('.json')]
         if not existing_files:
             return 0
         
@@ -398,6 +509,21 @@ class UR15WebNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error processing TCP pose: {e}")
     
+    def push_web_log(self, message, log_type='info'):
+        """Push a message to the web log queue."""
+        import time
+        with self.web_log_lock:
+            timestamp = time.strftime('%H:%M:%S')
+            log_entry = {
+                'timestamp': timestamp,
+                'message': message,
+                'type': log_type
+            }
+            self.web_log_messages.append(log_entry)
+            # Keep only the last 100 messages to prevent memory issues
+            if len(self.web_log_messages) > 100:
+                self.web_log_messages = self.web_log_messages[-100:]
+    
     def setup_flask_routes(self):
         """Setup Flask web routes."""
         
@@ -414,7 +540,9 @@ class UR15WebNode(Node):
                 
                 # Replace template variables
                 html_content = html_content.replace('{{ camera_topic }}', self.camera_topic)
-                html_content = html_content.replace('{{ data_dir }}', self.data_dir)
+                html_content = html_content.replace('{{ data_dir }}', self._simplify_path(self.data_dir))
+                html_content = html_content.replace('{{ calibration_data_dir }}', self._simplify_path(self.calibration_data_dir))
+                html_content = html_content.replace('{{ chessboard_config }}', self._simplify_path(self.chessboard_config))
                 
                 return html_content
             except Exception as e:
@@ -476,7 +604,8 @@ class UR15WebNode(Node):
             return jsonify({
                 'has_image': has_image,
                 'camera_topic': self.camera_topic,
-                'data_dir': self.data_dir,
+                'data_dir': self._simplify_path(self.data_dir),
+                'calibration_data_dir': self._simplify_path(self.calibration_data_dir),
                 'has_intrinsic': has_intrinsic,
                 'has_extrinsic': has_extrinsic,
                 'joint_positions': joint_positions if joint_data_valid else [],
@@ -484,6 +613,33 @@ class UR15WebNode(Node):
                 'freedrive_active': freedrive_active,
                 'robot_connected': robot_connected
             })
+        
+        @self.app.route('/get_web_logs', methods=['GET'])
+        def get_web_logs():
+            """Get new web log messages."""
+            from flask import request, jsonify
+            
+            try:
+                # Get the last message index from query parameter
+                last_index = int(request.args.get('last_index', -1))
+                
+                with self.web_log_lock:
+                    # Return messages after the last_index
+                    new_messages = []
+                    if last_index < len(self.web_log_messages) - 1:
+                        start_index = max(0, last_index + 1)
+                        new_messages = self.web_log_messages[start_index:]
+                    
+                    return jsonify({
+                        'success': True,
+                        'messages': new_messages,
+                        'current_index': len(self.web_log_messages) - 1
+                    })
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
         
         @self.app.route('/upload_intrinsic', methods=['POST'])
         def upload_intrinsic():
@@ -602,7 +758,7 @@ class UR15WebNode(Node):
                     return jsonify({
                         'success': True, 
                         'message': 'Directory changed successfully',
-                        'data_dir': new_dir
+                        'data_dir': self._simplify_path(new_dir)
                     })
                 except Exception as e:
                     return jsonify({
@@ -612,6 +768,119 @@ class UR15WebNode(Node):
                 
             except Exception as e:
                 self.get_logger().error(f"Error changing data directory: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/change_calibration_dir', methods=['POST'])
+        def change_calibration_dir():
+            """Change calibration data directory."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data or 'calibration_dir' not in data:
+                    return jsonify({'success': False, 'message': 'No calibration_dir provided'})
+                
+                new_dir = data['calibration_dir'].strip()
+                if not new_dir:
+                    return jsonify({'success': False, 'message': 'Directory path cannot be empty'})
+                
+                # Expand user home directory if needed
+                new_dir = os.path.expanduser(new_dir)
+                
+                # Create directory if it doesn't exist
+                try:
+                    os.makedirs(new_dir, exist_ok=True)
+                    self.calibration_data_dir = new_dir
+                    self.get_logger().info(f"Calibration data directory changed to: {new_dir}")
+                    return jsonify({
+                        'success': True, 
+                        'message': 'Calibration directory changed successfully',
+                        'calibration_data_dir': self._simplify_path(new_dir)
+                    })
+                except Exception as e:
+                    return jsonify({
+                        'success': False, 
+                        'message': f'Failed to create/access directory: {str(e)}'
+                    })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error changing calibration directory: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/change_chessboard_config', methods=['POST'])
+        def change_chessboard_config():
+            """Change chessboard configuration file path."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data or 'chessboard_config' not in data:
+                    return jsonify({'success': False, 'message': 'No chessboard_config provided'})
+                
+                new_path = data['chessboard_config'].strip()
+                if not new_path:
+                    return jsonify({'success': False, 'message': 'File path cannot be empty'})
+                
+                # Expand user home directory if needed
+                new_path = os.path.expanduser(new_path)
+                
+                # Check if file exists or can be created
+                config_dir = os.path.dirname(new_path)
+                if config_dir and not os.path.exists(config_dir):
+                    try:
+                        os.makedirs(config_dir, exist_ok=True)
+                    except Exception as e:
+                        return jsonify({
+                            'success': False, 
+                            'message': f'Failed to create directory: {str(e)}'
+                        })
+                
+                # Update the configuration path
+                self.chessboard_config = new_path
+                self.get_logger().info(f"Chessboard config file changed to: {new_path}")
+                
+                return jsonify({
+                    'success': True, 
+                    'message': 'Chessboard config file path changed successfully',
+                    'chessboard_config': self._simplify_path(new_path)
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error changing chessboard config: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/get_pose_count', methods=['GET'])
+        def get_pose_count():
+            """Get the number of pose JSON files in calibration data directory."""
+            from flask import jsonify
+            
+            try:
+                if not hasattr(self, 'calibration_data_dir') or not self.calibration_data_dir:
+                    return jsonify({'success': False, 'message': 'Calibration directory not set'})
+                
+                calib_dir = self.calibration_data_dir
+                
+                # Check if directory exists
+                if not os.path.exists(calib_dir):
+                    return jsonify({'success': True, 'count': 0})
+                
+                # Count JSON files with numeric names (0.json, 1.json, etc.)
+                count = 0
+                for filename in os.listdir(calib_dir):
+                    if filename.endswith('.json'):
+                        try:
+                            # Try to parse filename as integer (e.g., "0.json" -> 0)
+                            int(os.path.splitext(filename)[0])
+                            count += 1
+                        except ValueError:
+                            # Skip non-numeric JSON files
+                            continue
+                
+                self.get_logger().debug(f"Pose count in {calib_dir}: {count}")
+                return jsonify({'success': True, 'count': count})
+                
+            except Exception as e:
+                self.get_logger().error(f"Error getting pose count: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
         @self.app.route('/toggle_freedrive', methods=['POST'])
@@ -707,11 +976,21 @@ class UR15WebNode(Node):
         @self.app.route('/take_screenshot', methods=['POST'])
         def take_screenshot():
             """Take a screenshot of current camera feed and save robot pose."""
-            from flask import jsonify
+            from flask import jsonify, request
             from datetime import datetime
             import json
             
             try:
+                # Get save directory from request, default to calibration_data_dir
+                request_data = request.get_json() or {}
+                save_dir = request_data.get('save_dir', self.calibration_data_dir)
+                
+                # Expand user home directory if present
+                save_dir = os.path.expanduser(save_dir)
+                
+                # Create directory if it doesn't exist
+                os.makedirs(save_dir, exist_ok=True)
+                
                 # Check if we have camera image
                 with self.image_lock:
                     if self.current_image is None:
@@ -752,8 +1031,8 @@ class UR15WebNode(Node):
                             'message': f'Failed to read robot state: {str(e)}'
                         })
                 
-                # Find next available file number
-                counter = self._get_next_file_number()
+                # Find next available file number in the save directory
+                counter = self._get_next_file_number_in_dir(save_dir)
                 
                 # Calculate end2base transformation matrix
                 end2base = self._pose_to_matrix(tcp_pose)
@@ -774,24 +1053,693 @@ class UR15WebNode(Node):
                 }
                 
                 # Save JSON file
-                json_filename = os.path.join(self.data_dir, f"{counter}.json")
+                json_filename = os.path.join(save_dir, f"{counter}.json")
                 with open(json_filename, 'w') as f:
                     json.dump(data, f, indent=2)
                 
                 # Save image file
-                image_filename = os.path.join(self.data_dir, f"{counter}.jpg")
+                image_filename = os.path.join(save_dir, f"{counter}.jpg")
                 cv2.imwrite(image_filename, cv_image)
                 
-                self.get_logger().info(f"Screenshot saved: {counter}.jpg and {counter}.json")
+                self.get_logger().info(f"Screenshot saved: {image_filename}")
                 
                 return jsonify({
                     'success': True,
                     'message': 'Screenshot saved successfully',
+                    'file_path': image_filename,
                     'filename': f"{counter}.jpg"
                 })
                 
             except Exception as e:
                 self.get_logger().error(f"Error taking screenshot: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        @self.app.route('/get_image_count', methods=['POST'])
+        def get_image_count():
+            """Get the count of images in the calibration directory."""
+            from flask import jsonify, request
+            import glob
+            
+            try:
+                request_data = request.get_json() or {}
+                directory = request_data.get('directory', self.calibration_data_dir)
+                directory = os.path.expanduser(directory)
+                
+                if not os.path.exists(directory):
+                    return jsonify({
+                        'success': True,
+                        'count': 0
+                    })
+                
+                # Count JSON files (assuming each image has a corresponding JSON)
+                json_files = glob.glob(os.path.join(directory, '*.json'))
+                count = len(json_files)
+                
+                return jsonify({
+                    'success': True,
+                    'count': count
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error getting image count: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'count': 0
+                })
+        
+        @self.app.route('/delete_calibration_image', methods=['POST'])
+        def delete_calibration_image():
+            """Delete specific calibration image(s) and renumber remaining files."""
+            from flask import jsonify, request
+            import glob
+            import re
+            
+            try:
+                request_data = request.get_json() or {}
+                directory = request_data.get('directory', self.calibration_data_dir)
+                directory = os.path.expanduser(directory)
+                image_number = request_data.get('image_number')
+                delete_all = request_data.get('delete_all', False)
+                
+                if not os.path.exists(directory):
+                    return jsonify({
+                        'success': False,
+                        'message': 'Directory does not exist'
+                    })
+                
+                # Get all JSON files
+                json_files = glob.glob(os.path.join(directory, '*.json'))
+                
+                if delete_all:
+                    # Delete all images and JSON files
+                    jpg_files = glob.glob(os.path.join(directory, '*.jpg'))
+                    total_deleted = len(json_files) + len(jpg_files)
+                    
+                    for file in json_files + jpg_files:
+                        try:
+                            os.remove(file)
+                        except Exception as e:
+                            self.get_logger().error(f"Error deleting {file}: {e}")
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': f'Successfully deleted all {total_deleted} files'
+                    })
+                
+                # Delete specific image
+                json_file = os.path.join(directory, f"{image_number}.json")
+                jpg_file = os.path.join(directory, f"{image_number}.jpg")
+                
+                if not os.path.exists(json_file) and not os.path.exists(jpg_file):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Image #{image_number} does not exist'
+                    })
+                
+                # Delete the specific files
+                deleted_files = []
+                if os.path.exists(json_file):
+                    os.remove(json_file)
+                    deleted_files.append(f"{image_number}.json")
+                if os.path.exists(jpg_file):
+                    os.remove(jpg_file)
+                    deleted_files.append(f"{image_number}.jpg")
+                
+                # Get all remaining files and renumber them
+                json_files = glob.glob(os.path.join(directory, '*.json'))
+                jpg_files = glob.glob(os.path.join(directory, '*.jpg'))
+                
+                # Extract numbers from filenames
+                def extract_number(filepath):
+                    filename = os.path.basename(filepath)
+                    match = re.match(r'^(\d+)\.(json|jpg)$', filename)
+                    return int(match.group(1)) if match else None
+                
+                # Create list of (number, json_path, jpg_path) tuples
+                file_pairs = {}
+                for json_file in json_files:
+                    num = extract_number(json_file)
+                    if num is not None:
+                        if num not in file_pairs:
+                            file_pairs[num] = {'json': None, 'jpg': None}
+                        file_pairs[num]['json'] = json_file
+                
+                for jpg_file in jpg_files:
+                    num = extract_number(jpg_file)
+                    if num is not None:
+                        if num not in file_pairs:
+                            file_pairs[num] = {'json': None, 'jpg': None}
+                        file_pairs[num]['jpg'] = jpg_file
+                
+                # Sort by number and renumber sequentially
+                sorted_numbers = sorted(file_pairs.keys())
+                for new_number, old_number in enumerate(sorted_numbers):
+                    if new_number != old_number:
+                        pair = file_pairs[old_number]
+                        
+                        # Rename JSON file
+                        if pair['json']:
+                            new_json_path = os.path.join(directory, f"{new_number}.json")
+                            os.rename(pair['json'], new_json_path)
+                        
+                        # Rename JPG file
+                        if pair['jpg']:
+                            new_jpg_path = os.path.join(directory, f"{new_number}.jpg")
+                            os.rename(pair['jpg'], new_jpg_path)
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Successfully deleted image #{image_number} ({", ".join(deleted_files)}) and renumbered {len(sorted_numbers)} remaining files'
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error deleting calibration image: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        @self.app.route('/auto_collect_data', methods=['POST'])
+        def auto_collect_data():
+            """Execute auto collect calibration data script."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                # Get the scripts directory using common workspace utilities
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Could not find scripts directory'
+                    })
+                
+                script_path = os.path.join(scripts_dir, 'ur_auto_collect_data.py')
+                
+                # Check if script exists
+                if not os.path.exists(script_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Script not found: {script_path}'
+                    })
+                
+                # Prepare command with parameters
+                cmd = ['python3', script_path]
+                
+                # Add robot IP parameter
+                if hasattr(self, 'ur15_ip') and self.ur15_ip:
+                    cmd.extend(['--robot-ip', self.ur15_ip])
+                
+                # Add data directory parameter (only pass data-dir, no positions-file)
+                if hasattr(self, 'calibration_data_dir') and self.calibration_data_dir:
+                    cmd.extend(['--data-dir', self.calibration_data_dir])
+                
+                self.get_logger().info(f"Auto collect command: {' '.join(cmd)}")
+                self.get_logger().info(f"Robot IP: {self.ur15_ip if hasattr(self, 'ur15_ip') else 'default'}")
+                self.get_logger().info(f"Data directory: {self.calibration_data_dir if hasattr(self, 'calibration_data_dir') else 'default'}")
+                self.get_logger().info("Will use existing JSON files in data directory for positions")
+                
+                # Prepare log file path
+                log_file_path = os.path.join(self.calibration_data_dir if hasattr(self, 'calibration_data_dir') else '/tmp', 'auto_collect_log.txt')
+                
+                # Define a function to monitor the auto collection process
+                def monitor_auto_collect():
+                    """Monitor auto collect process and report completion status."""
+                    try:
+                        # Execute the script and wait for completion
+                        with open(log_file_path, 'w') as log_file:
+                            process = subprocess.Popen(
+                                cmd,
+                                cwd=os.path.dirname(script_path),
+                                stdout=log_file,
+                                stderr=subprocess.STDOUT
+                            )
+                            
+                            # Track this process for cleanup
+                            with self.process_lock:
+                                self.child_processes.append(process)
+                            
+                            self.get_logger().info(f"Started auto collect data script with PID: {process.pid}")
+                            
+                            # Wait for the process to complete
+                            return_code = process.wait()
+                            
+                            self.get_logger().info(f"Auto collect script finished with return code: {return_code}")
+                            
+                            # Push completion message to web log
+                            if return_code == 0:
+                                self.push_web_log("📸 Auto collection completed successfully!", 'success')
+                                # Update pose count and notify
+                                try:
+                                    import glob
+                                    image_count = len(glob.glob(os.path.join(self.calibration_data_dir, '*.jpg')))
+                                    self.push_web_log(f"📊 Total images collected: {image_count}", 'info')
+                                except:
+                                    pass
+                                self.push_web_log("✅ Ready for calibration", 'success')
+                            else:
+                                self.push_web_log(f"❌ Auto collection failed with return code: {return_code}", 'error')
+                                self.push_web_log(f"📄 Check log file: {self._simplify_path(log_file_path)}", 'info')
+                    
+                    except Exception as e:
+                        self.get_logger().error(f"Error in auto collect monitor thread: {e}")
+                        self.push_web_log(f"❌ Auto collection error: {str(e)}", 'error')
+                
+                # Start monitoring in a background thread
+                monitor_thread = threading.Thread(target=monitor_auto_collect, daemon=True)
+                monitor_thread.start()
+                
+                self.get_logger().info(f"Started auto collect monitoring thread")
+                self.get_logger().info(f"Script output will be logged to: {log_file_path}")
+                
+                # Push start message to web log
+                self.push_web_log("🤖 Starting auto collection process...", 'info')
+                self.push_web_log(f"🎯 Robot IP: {self.ur15_ip if hasattr(self, 'ur15_ip') else 'default'}", 'info')
+                self.push_web_log(f"📁 Data directory: {self._simplify_path(self.calibration_data_dir)}", 'info')
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Auto collect data script started',
+                    'log_file': self._simplify_path(log_file_path)
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error starting auto collect script: {e}")
+                self.push_web_log(f"❌ Failed to start auto collection: {str(e)}", 'error')
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        @self.app.route('/calibrate_cam', methods=['POST'])
+        def calibrate_cam():
+            """Execute camera calibration script."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                # Get the scripts directory using common workspace utilities
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Could not find scripts directory'
+                    })
+                
+                script_path = os.path.join(scripts_dir, 'ur_cam_calibrate.py')
+                
+                # Check if script exists
+                if not os.path.exists(script_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Script not found: {script_path}'
+                    })
+                
+                # Calculate output directory: CalibData path's parent directory + '/ur15_cam_calibration_result'
+                calib_data_parent = os.path.dirname(self.calibration_data_dir)
+                output_dir = os.path.join(calib_data_parent, 'ur15_cam_calibration_result')
+                
+                self.get_logger().info(f"Calibration data dir: {self.calibration_data_dir}")
+                self.get_logger().info(f"Output dir: {output_dir}")
+                
+                # Prepare log file path
+                log_file_path = os.path.join(self.calibration_data_dir if hasattr(self, 'calibration_data_dir') else '/tmp', 'calibrate_cam_log.txt')
+                
+                # Use chessboard config from parameter
+                config_file_path = self.chessboard_config if hasattr(self, 'chessboard_config') else os.path.join(self.calibration_data_dir, 'chessboard_config.json')
+                
+                # Prepare command with config-file parameter
+                cmd = ['python3', script_path, 
+                       '--data-dir', self.calibration_data_dir,
+                       '--output-dir', output_dir,
+                       '--config-file', config_file_path,
+                       '--verbose']
+                
+                self.get_logger().info(f"Camera calibration command: {' '.join(cmd)}")
+                
+                # Define a function to monitor the calibration process
+                def monitor_calibration():
+                    """Monitor calibration process and auto-load results when done."""
+                    try:
+                        # Execute the script and wait for completion
+                        with open(log_file_path, 'w') as log_file:
+                            process = subprocess.Popen(
+                                cmd,
+                                cwd=os.path.dirname(script_path),
+                                stdout=log_file,
+                                stderr=subprocess.STDOUT
+                            )
+                            
+                            # Track this process for cleanup
+                            with self.process_lock:
+                                self.child_processes.append(process)
+                            
+                            self.get_logger().info(f"Started camera calibration script with PID: {process.pid}")
+                            
+                            # Wait for the process to complete
+                            return_code = process.wait()
+                            
+                            self.get_logger().info(f"Calibration script finished with return code: {return_code}")
+                            
+                            # Push calibration completion message to web log
+                            if return_code == 0:
+                                self.push_web_log("🎯 Camera calibration completed successfully!", 'success')
+                            else:
+                                self.push_web_log(f"❌ Camera calibration failed with return code: {return_code}", 'error')
+                            
+                            # If successful, auto-load the calibration results
+                            if return_code == 0:
+                                self.get_logger().info("Calibration successful, auto-loading results...")
+                                self.push_web_log("📥 Auto-loading calibration parameters...", 'info')
+                                
+                                # Load intrinsic parameters
+                                camera_params_dir = os.path.join(output_dir, 'ur15_camera_parameters')
+                                intrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
+                                extrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
+                                
+                                intrinsic_loaded = False
+                                extrinsic_loaded = False
+                                
+                                # Load intrinsic calibration result
+                                if os.path.exists(intrinsic_file):
+                                    try:
+                                        with open(intrinsic_file, 'r') as f:
+                                            intrinsic_data = json.load(f)
+                                        
+                                        if intrinsic_data.get('success', False):
+                                            camera_matrix = np.array(intrinsic_data['camera_matrix'], dtype=np.float64)
+                                            distortion_coeffs = np.array(intrinsic_data['distortion_coefficients'], dtype=np.float64)
+                                            
+                                            with self.calibration_lock:
+                                                self.camera_matrix = camera_matrix
+                                                self.distortion_coefficients = distortion_coeffs
+                                            
+                                            rms_error = intrinsic_data.get('rms_error', 'N/A')
+                                            self.get_logger().info("✅ Auto-loaded intrinsic parameters")
+                                            self.push_web_log(f"✅ Intrinsic parameters loaded (RMS: {rms_error} pixels)", 'success')
+                                            intrinsic_loaded = True
+                                        else:
+                                            self.get_logger().warning("Intrinsic calibration result indicates failure")
+                                            self.push_web_log("⚠️ Intrinsic calibration failed", 'warning')
+                                    except Exception as e:
+                                        self.get_logger().error(f"Failed to auto-load intrinsic parameters: {e}")
+                                        self.push_web_log(f"❌ Failed to load intrinsic parameters: {e}", 'error')
+                                else:
+                                    self.get_logger().warning(f"Intrinsic result file not found: {intrinsic_file}")
+                                    self.push_web_log("⚠️ Intrinsic result file not found", 'warning')
+                                
+                                # Load extrinsic calibration result (eye-in-hand)
+                                if os.path.exists(extrinsic_file):
+                                    try:
+                                        with open(extrinsic_file, 'r') as f:
+                                            extrinsic_data = json.load(f)
+                                        
+                                        if extrinsic_data.get('success', False):
+                                            cam2end_matrix = np.array(extrinsic_data['cam2end_matrix'], dtype=np.float64)
+                                            target2base_matrix = np.array(extrinsic_data['target2base_matrix'], dtype=np.float64)
+                                            
+                                            with self.calibration_lock:
+                                                self.cam2end_matrix = cam2end_matrix
+                                                self.target2base_matrix = target2base_matrix
+                                            
+                                            rms_error = extrinsic_data.get('rms_error', 'N/A')
+                                            self.get_logger().info("✅ Auto-loaded extrinsic parameters (eye-in-hand)")
+                                            self.push_web_log(f"✅ Extrinsic parameters loaded (RMS: {rms_error} pixels)", 'success')
+                                            extrinsic_loaded = True
+                                        else:
+                                            self.get_logger().warning("Extrinsic calibration result indicates failure")
+                                            self.push_web_log("⚠️ Extrinsic calibration failed", 'warning')
+                                    except Exception as e:
+                                        self.get_logger().error(f"Failed to auto-load extrinsic parameters: {e}")
+                                        self.push_web_log(f"❌ Failed to load extrinsic parameters: {e}", 'error')
+                                else:
+                                    self.get_logger().warning(f"Extrinsic result file not found: {extrinsic_file}")
+                                    self.push_web_log("⚠️ Extrinsic result file not found", 'warning')
+                                
+                                # Final summary
+                                if intrinsic_loaded and extrinsic_loaded:
+                                    self.push_web_log("🎉 Calibration completed! All parameters loaded successfully", 'success')
+                                elif intrinsic_loaded or extrinsic_loaded:
+                                    self.push_web_log("⚠️ Calibration partially completed", 'warning')
+                                else:
+                                    self.push_web_log("❌ Calibration completed but failed to load parameters", 'error')
+                                
+                                self.get_logger().info("🎉 Calibration completed and parameters auto-loaded!")
+                            else:
+                                self.get_logger().error(f"Calibration script failed with return code: {return_code}")
+                                self.get_logger().info(f"Check log file for details: {log_file_path}")
+                                self.push_web_log(f"📄 Check log file: {self._simplify_path(log_file_path)}", 'info')
+                    
+                    except Exception as e:
+                        self.get_logger().error(f"Error in calibration monitor thread: {e}")
+                
+                # Start monitoring in a background thread
+                monitor_thread = threading.Thread(target=monitor_calibration, daemon=True)
+                monitor_thread.start()
+                
+                self.get_logger().info(f"Started camera calibration monitoring thread")
+                self.get_logger().info(f"  Data directory: {self.calibration_data_dir}")
+                self.get_logger().info(f"  Config file: {config_file_path}")
+                self.get_logger().info(f"  Output directory: {output_dir}")
+                self.get_logger().info(f"  Script output will be logged to: {log_file_path}")
+                
+                # Push start message to web log
+                self.push_web_log("🚀 Starting camera calibration process...", 'info')
+                self.push_web_log(f"📁 Data directory: {self._simplify_path(self.calibration_data_dir)}", 'info')
+                self.push_web_log(f"⚙️ Config file: {self._simplify_path(config_file_path)}", 'info')
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Camera calibration script started. Results will be auto-loaded when complete.',
+                    'config_file': self._simplify_path(config_file_path),
+                    'output_dir': self._simplify_path(output_dir),
+                    'log_file': self._simplify_path(log_file_path)
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error starting camera calibration script: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        @self.app.route('/movej', methods=['POST'])
+        def movej():
+            """Move robot to specified joint positions."""
+            from flask import jsonify, request
+            
+            try:
+                # Get joint positions from request
+                request_data = request.get_json()
+                if not request_data:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No data provided'
+                    })
+                
+                joint_positions = request_data.get('joint_positions')
+                if not joint_positions:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Joint positions not provided'
+                    })
+                
+                # Validate joint positions
+                if not isinstance(joint_positions, list) or len(joint_positions) != 6:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Joint positions must be a list of 6 values'
+                    })
+                
+                # Convert to radians and validate range
+                try:
+                    joint_positions_rad = []
+                    for i, pos in enumerate(joint_positions):
+                        pos_rad = float(pos)
+                        # Basic joint limits check (approximate UR15 limits)
+                        if abs(pos_rad) > 6.28:  # About 2*pi radians
+                            return jsonify({
+                                'success': False,
+                                'message': f'Joint {i+1} position {pos_rad:.3f} rad is out of range'
+                            })
+                        joint_positions_rad.append(pos_rad)
+                except (ValueError, TypeError):
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid joint position values'
+                    })
+                
+                # Check robot connection
+                with self.ur15_lock:
+                    if self.ur15_robot is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Robot not connected'
+                        })
+                    
+                    # Check if robot is in freedrive mode
+                    if self.freedrive_active:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Cannot move robot while in freedrive mode'
+                        })
+                    
+                    # Send movej command
+                    try:
+                        self.get_logger().info(f"Moving robot to joint positions: {joint_positions_rad}")
+                        result = self.ur15_robot.movej(
+                            joint_positions_rad,
+                            a=0.5,  # acceleration 0.5 rad/s^2
+                            v=0.3,  # velocity 0.3 rad/s
+                            blocking=False  # Don't block web interface
+                        )
+                        
+                        if result == 0:
+                            self.push_web_log(f"🤖 Moving to joints: {[f'{pos:.3f}' for pos in joint_positions_rad]}", 'info')
+                            return jsonify({
+                                'success': True,
+                                'message': 'Robot movement started',
+                                'joint_positions': joint_positions_rad
+                            })
+                        else:
+                            return jsonify({
+                                'success': False,
+                                'message': 'Failed to send movement command'
+                            })
+                    except Exception as e:
+                        self.get_logger().error(f"Error sending movej command: {e}")
+                        return jsonify({
+                            'success': False,
+                            'message': f'Robot movement error: {str(e)}'
+                        })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error in movej endpoint: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        @self.app.route('/movel', methods=['POST'])
+        def movel():
+            """Move robot to specified TCP pose."""
+            from flask import jsonify, request
+            
+            try:
+                # Get TCP pose from request
+                request_data = request.get_json()
+                if not request_data:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No data provided'
+                    })
+                
+                tcp_pose = request_data.get('tcp_pose')
+                if not tcp_pose:
+                    return jsonify({
+                        'success': False,
+                        'message': 'TCP pose not provided'
+                    })
+                
+                # Validate TCP pose
+                if not isinstance(tcp_pose, list) or len(tcp_pose) != 6:
+                    return jsonify({
+                        'success': False,
+                        'message': 'TCP pose must be a list of 6 values [x,y,z,rx,ry,rz]'
+                    })
+                
+                # Validate and convert units
+                try:
+                    tcp_pose_meters_radians = []
+                    for i, value in enumerate(tcp_pose):
+                        val = float(value)
+                        if i < 3:  # Position values (x, y, z)
+                            # Convert from mm to meters
+                            val_m = val / 1000.0
+                            # Basic position limits check (approximate workspace limits)
+                            if abs(val_m) > 2.0:  # 2 meter workspace limit
+                                return jsonify({
+                                    'success': False,
+                                    'message': f'Position {"XYZ"[i]} value {val}mm is out of workspace range'
+                                })
+                            tcp_pose_meters_radians.append(val_m)
+                        else:  # Rotation values (rx, ry, rz)
+                            # Convert from degrees to radians
+                            val_rad = val * np.pi / 180.0
+                            # Basic rotation limits check
+                            if abs(val_rad) > 6.28:  # About 2*pi radians
+                                return jsonify({
+                                    'success': False,
+                                    'message': f'Rotation {"XYZ"[i-3]} value {val}° is out of range'
+                                })
+                            tcp_pose_meters_radians.append(val_rad)
+                            
+                except (ValueError, TypeError):
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid TCP pose values'
+                    })
+                
+                # Check robot connection
+                with self.ur15_lock:
+                    if self.ur15_robot is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Robot not connected'
+                        })
+                    
+                    # Check if robot is in freedrive mode
+                    if self.freedrive_active:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Cannot move robot while in freedrive mode'
+                        })
+                    
+                    # Send movel command
+                    try:
+                        self.get_logger().info(f"Moving robot to TCP pose: {tcp_pose_meters_radians}")
+                        result = self.ur15_robot.movel(
+                            tcp_pose_meters_radians,
+                            a=0.5,  # acceleration 0.5 m/s^2
+                            v=0.1,  # velocity 0.1 m/s
+                            blocking=False  # Don't block web interface
+                        )
+                        
+                        if result == 0:
+                            # Convert back for display (meters to mm, radians to degrees)
+                            display_pose = []
+                            for i, val in enumerate(tcp_pose_meters_radians):
+                                if i < 3:
+                                    display_pose.append(f'{val * 1000:.1f}mm')  # Position in mm
+                                else:
+                                    display_pose.append(f'{val * 180 / np.pi:.2f}°')  # Rotation in degrees
+                            
+                            self.push_web_log(f"🎯 Moving to TCP pose: [{', '.join(display_pose)}]", 'info')
+                            return jsonify({
+                                'success': True,
+                                'message': 'TCP movement started',
+                                'tcp_pose': tcp_pose_meters_radians
+                            })
+                        else:
+                            return jsonify({
+                                'success': False,
+                                'message': 'Failed to send movement command'
+                            })
+                    except Exception as e:
+                        self.get_logger().error(f"Error sending movel command: {e}")
+                        return jsonify({
+                            'success': False,
+                            'message': f'TCP movement error: {str(e)}'
+                        })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error in movel endpoint: {e}")
                 return jsonify({
                     'success': False,
                     'message': str(e)
@@ -1047,6 +1995,7 @@ class UR15WebNode(Node):
 def main(args=None):
     """Main function."""
     rclpy.init(args=args)
+    node = None
     
     try:
         node = UR15WebNode()
@@ -1059,7 +2008,9 @@ def main(args=None):
         import traceback
         traceback.print_exc()
     finally:
-        if 'node' in locals():
+        if node is not None:
+            print("Cleaning up child processes...")
+            node.cleanup()
             node.destroy_node()
         rclpy.shutdown()
 

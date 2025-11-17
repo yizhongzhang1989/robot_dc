@@ -20,11 +20,7 @@ Usage:
 Options:
     --data-dir DIR          Directory containing calibration data (default: ../temp/ur15_cam_calibration_data)
     --output-dir DIR        Directory to save results (default: ../temp/ur15_calibration_result)
-    --charuco-width INT     ChArUco board width in squares (default: 12)
-    --charuco-height INT    ChArUco board height in squares (default: 9)
-    --square-size FLOAT     Square size in meters (default: 0.03)
-    --marker-size FLOAT     Marker size in meters (default: 0.0225)
-    --dictionary-id INT     ArUco dictionary ID (default: 10 for DICT_6X6_250)
+    --config-file FILE      Path to chessboard_config.json (default: ../temp/ur15_cam_calibration_data/chessboard_config.json)
     --min-images INT        Minimum number of valid images required (default: 5)
     --verbose              Enable verbose output
 """
@@ -75,43 +71,8 @@ def parse_arguments():
     parser.add_argument(
         '--config-file',
         type=str,
-        default=None,
-        help='Path to chessboard_config.json file (default: <data-dir>/chessboard_config.json)'
-    )
-    
-    parser.add_argument(
-        '--charuco-width',
-        type=int,
-        default=None,
-        help='ChArUco board width (number of squares) - overrides config file'
-    )
-    
-    parser.add_argument(
-        '--charuco-height',
-        type=int,
-        default=None,
-        help='ChArUco board height (number of squares) - overrides config file'
-    )
-    
-    parser.add_argument(
-        '--square-size',
-        type=float,
-        default=None,
-        help='ChArUco square size in meters - overrides config file'
-    )
-    
-    parser.add_argument(
-        '--marker-size',
-        type=float,
-        default=None,
-        help='ChArUco marker size in meters - overrides config file'
-    )
-    
-    parser.add_argument(
-        '--dictionary-id',
-        type=int,
-        default=None,
-        help='ArUco dictionary ID - overrides config file'
+        default='../temp/ur15_cam_calibration_data/chessboard_config.json',
+        help='Path to chessboard_config.json file'
     )
     
     parser.add_argument(
@@ -130,13 +91,12 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def load_pattern_config(config_file, args, verbose=False):
+def load_pattern_config(config_file, verbose=False):
     """
     Load calibration pattern configuration from JSON file.
     
     Args:
         config_file: Path to chessboard_config.json file
-        args: Command line arguments (used for overrides)
         verbose: Whether to print loading information
         
     Returns:
@@ -158,13 +118,13 @@ def load_pattern_config(config_file, args, verbose=False):
     # Extract parameters with defaults
     params = config_data.get('parameters', {})
     
-    # Apply command line overrides or use config values
+    # Use config values directly
     pattern_params = {
-        'width': args.charuco_width if args.charuco_width is not None else params.get('width', 9),
-        'height': args.charuco_height if args.charuco_height is not None else params.get('height', 12),
-        'square_size': args.square_size if args.square_size is not None else params.get('square_size', 0.03),
-        'marker_size': args.marker_size if args.marker_size is not None else params.get('marker_size', 0.0225),
-        'dictionary_id': args.dictionary_id if args.dictionary_id is not None else params.get('dictionary_id', 7),
+        'width': params.get('width', 9),
+        'height': params.get('height', 12),
+        'square_size': params.get('square_size', 0.03),
+        'marker_size': params.get('marker_size', 0.0225),
+        'dictionary_id': params.get('dictionary_id', 7),
         'name': config_data.get('name', 'ChArUco Board'),
         'description': config_data.get('description', '')
     }
@@ -550,14 +510,11 @@ def main():
     print("="*70)
     
     try:
-        # Determine config file path
-        if args.config_file is None:
-            config_file = os.path.join(args.data_dir, 'chessboard_config.json')
-        else:
-            config_file = args.config_file
+        # Use the config file path from arguments (already has default value)
+        config_file = args.config_file
         
         # Load pattern configuration
-        pattern_params = load_pattern_config(config_file, args, verbose=args.verbose)
+        pattern_params = load_pattern_config(config_file, verbose=args.verbose)
         
         # Load calibration data
         images, end2base_matrices, image_filenames = load_calibration_data(
