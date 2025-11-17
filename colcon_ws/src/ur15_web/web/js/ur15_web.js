@@ -2,6 +2,7 @@
 
 let freedriveActive = false;
 let validationActive = false;
+let currentOperationPath = ''; // Store the full operation path
 
 // Web Log Functions
 function logToWeb(message, type = 'info') {
@@ -193,14 +194,18 @@ function confirmDataDirChange() {
     });
 }
 
-// Operation Path Functions
-function changeOperationPath() {
-    const currentPath = document.getElementById('operationPath').value;
+// Operation Name Functions
+function changeOperationName() {
+    const currentName = document.getElementById('operationName').value;
     const modal = document.getElementById('operationPathModal');
     const input = document.getElementById('operationPathInput');
     
-    // Set current path as default value
-    input.value = currentPath;
+    // Set current name as default value (if not default text)
+    if (currentName !== 'input operation name') {
+        input.value = currentName;
+    } else {
+        input.value = '';
+    }
     
     // Show modal
     modal.classList.remove('hidden');
@@ -212,7 +217,7 @@ function changeOperationPath() {
     // Handle Enter key
     input.onkeypress = function(e) {
         if (e.key === 'Enter') {
-            confirmOperationPathChange();
+            confirmOperationNameChange();
         }
     };
 }
@@ -223,20 +228,37 @@ function closeOperationPathModal() {
     modal.style.display = 'none';
 }
 
+// Alias for backward compatibility
+function changeOperationPath() {
+    changeOperationName();
+}
+
 function confirmOperationPathChange() {
-    const currentPath = document.getElementById('operationPath').value;
+    confirmOperationNameChange();
+}
+
+function confirmOperationNameChange() {
+    const currentName = document.getElementById('operationName').value;
     const input = document.getElementById('operationPathInput');
-    const newPath = input.value.trim();
+    const newName = input.value.trim();
     
-    if (newPath === '' || newPath === currentPath) {
+    if (newName === '' || newName === currentName) {
         closeOperationPathModal();
         return;
     }
     
-    logToWeb(`Changing operation path to: ${newPath}`, 'info');
+    // Get dataset directory
+    const datasetDir = document.getElementById('datasetDirPath').value;
     
-    // Update the path immediately for better user experience
-    document.getElementById('operationPath').value = newPath;
+    // Construct full operation path
+    const fullOperationPath = `${datasetDir}/${newName}`;
+    
+    logToWeb(`Setting operation: ${newName}`, 'info');
+    logToWeb(`Full operation path: ${fullOperationPath}`, 'info');
+    
+    // Update the display name and store the full path
+    document.getElementById('operationName').value = newName;
+    currentOperationPath = fullOperationPath;
     
     // Send to server (if needed for backend persistence)
     fetch('/change_operation_path', {
@@ -244,45 +266,41 @@ function confirmOperationPathChange() {
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ operation_path: newPath })
+        body: JSON.stringify({ operation_path: fullOperationPath })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            logToWeb(`Operation path changed successfully to: ${data.operation_path}`, 'success');
+            logToWeb(`Operation set successfully: ${newName}`, 'success');
             closeOperationPathModal();
         } else {
-            console.error('Failed to change operation path:', data.message || 'Unknown error');
-            logToWeb(`Failed to change operation path: ${data.message || 'Unknown error'}`, 'error');
+            console.error('Failed to set operation:', data.message || 'Unknown error');
+            logToWeb(`Failed to set operation: ${data.message || 'Unknown error'}`, 'error');
         }
     })
     .catch(error => {
-        console.error('Failed to change operation path:', error);
-        logToWeb(`Failed to change operation path: ${error}`, 'error');
+        console.error('Failed to set operation:', error);
+        logToWeb(`Failed to set operation: ${error}`, 'error');
     });
 }
 
 function updateAllTaskPaths(datasetDir) {
-    // Update operation path if it's empty or follows default pattern
-    const operationPathInput = document.getElementById('operationPath');
-    if (operationPathInput) {
-        const currentPath = operationPathInput.value;
-        
-        // Update operation path to match dataset directory if empty or default
-        if (!currentPath || currentPath === '' || currentPath === document.getElementById('datasetDirPath').value) {
-            operationPathInput.value = datasetDir;
-            logToWeb(`Updated operation path to: ${datasetDir}`, 'info');
-        }
+    // Reset operation name when dataset directory changes
+    const operationNameInput = document.getElementById('operationName');
+    if (operationNameInput) {
+        operationNameInput.value = 'input operation name';
+        currentOperationPath = '';
+        logToWeb(`Operation name reset due to dataset directory change`, 'info');
     }
 }
 
 function captureTaskData(taskName) {
-    const operationPath = document.getElementById('operationPath').value;
+    const operationName = document.getElementById('operationName').value;
     const calibrationDataDir = document.getElementById('calibrationDirPath').value;
     
-    if (!operationPath || operationPath.trim() === '') {
-        logToWeb(`Please set an operation path before capturing`, 'warning');
-        showMessage(`Please set an operation path before capturing`, 'warning');
+    if (!operationName || operationName === 'input operation name' || !currentOperationPath) {
+        logToWeb(`Please set an operation name before capturing`, 'warning');
+        showMessage(`Please set an operation name before capturing`, 'warning');
         return;
     }
     
@@ -292,7 +310,7 @@ function captureTaskData(taskName) {
         return;
     }
     
-    logToWeb(`Starting capture for task "${taskName}"...`, 'info');
+    logToWeb(`Starting capture for task "${taskName}" to: ${currentOperationPath}`, 'info');
     
     // Send capture request to server
     fetch('/capture_task_data', {
@@ -302,7 +320,7 @@ function captureTaskData(taskName) {
         },
         body: JSON.stringify({ 
             task_name: taskName,
-            task_path: operationPath.trim(),
+            task_path: currentOperationPath.trim(),
             calibration_data_dir: calibrationDataDir.trim()
         })
     })
@@ -1309,6 +1327,13 @@ window.onload = function() {
     updatePoseNumber();
     setupJointInputListeners(); // Setup joint input event listeners
     setupTcpInputListeners(); // Setup TCP pose input event listeners
+    
+    // Initialize operation name display
+    const operationNameElement = document.getElementById('operationName');
+    if (operationNameElement && operationNameElement.value === '{{ data_dir }}') {
+        operationNameElement.value = 'input operation name';
+    }
+    
     logToWeb('UR15 Web Interface loaded', 'success');
     logToWeb('System ready for operation', 'info');
     logToWeb('Joint angles and TCP pose are now editable - press Enter or click away to move robot', 'info');
