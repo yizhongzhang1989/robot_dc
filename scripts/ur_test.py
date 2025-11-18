@@ -184,8 +184,8 @@ def main():
 
     # Open RS485 socket connection
     rs485_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # rs485_start_res = rs485_socket.connect((ur15_ip, rs485_port)) TODOLIZA temporarily commented out
-    # print(f"RS485 socket connection result: {rs485_start_res}")
+    rs485_start_res = rs485_socket.connect((ur15_ip, rs485_port))
+    print(f"RS485 socket connection result: {rs485_start_res}")
 
     # =====================================Program===========================
     if ur15_start_res == 0:
