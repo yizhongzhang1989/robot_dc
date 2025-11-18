@@ -600,9 +600,24 @@ class LiftRobotWeb(Node):
                         else:
                             self.overshoot_samples_down.append(sample)
                     
+                    # Display normalization: for DOWN direction ensure positive heights in response (do not alter stored raw sample)
+                    if direction == 'down':
+                        sample_display = dict(sample)
+                        if sample_display['actual'] is not None:
+                            sample_display['actual'] = abs(sample_display['actual'])
+                        if sample_display['target'] is not None:
+                            sample_display['target'] = abs(sample_display['target'])
+                        if sample_display['stop_height'] is not None:
+                            sample_display['stop_height'] = abs(sample_display['stop_height'])
+                        # Normalize overshoot for DOWN so UI scatter & fit treat it as positive magnitude
+                        if sample_display.get('overshoot') is not None:
+                            sample_display['overshoot'] = abs(sample_display['overshoot'])
+                    else:
+                        sample_display = sample
+
                     return JSONResponse({
                         'success': True,
-                        'sample': sample,
+                        'sample': sample_display,
                         'direction': direction,
                         'count_up': len(self.overshoot_samples_up),
                         'count_down': len(self.overshoot_samples_down)
@@ -615,9 +630,26 @@ class LiftRobotWeb(Node):
             async def get_overshoot_samples():
                 """Get all overshoot samples"""
                 with self.overshoot_lock:
+                    # Display normalization: ensure DOWN direction heights are positive for plotting
+                    # We do NOT modify stored raw samples; only transform in response.
+                    samples_up = self.overshoot_samples_up.copy()
+                    raw_down = self.overshoot_samples_down.copy()
+                    samples_down = []
+                    for s in raw_down:
+                        # Clone and normalize height-like fields to positive values
+                        nd = dict(s)
+                        if 'actual' in nd and nd['actual'] is not None:
+                            nd['actual'] = abs(nd['actual'])
+                        if 'target' in nd and nd['target'] is not None:
+                            nd['target'] = abs(nd['target'])
+                        if 'stop_height' in nd and nd['stop_height'] is not None:
+                            nd['stop_height'] = abs(nd['stop_height'])
+                        if 'overshoot' in nd and nd['overshoot'] is not None:
+                            nd['overshoot'] = abs(nd['overshoot'])
+                        samples_down.append(nd)
                     return JSONResponse({
-                        'samples_up': self.overshoot_samples_up.copy(),
-                        'samples_down': self.overshoot_samples_down.copy()
+                        'samples_up': samples_up,
+                        'samples_down': samples_down
                     })
             
             @app.delete('/api/overshoot/samples/{direction}/{index}')
@@ -793,6 +825,51 @@ class LiftRobotWeb(Node):
 
                         return JSONResponse(result)
                 except Exception as e:
+                    return JSONResponse({'success': False, 'error': str(e)})
+
+            @app.post('/api/overshoot/normalize_file')
+            async def normalize_overshoot_file():
+                """Normalize stored JSON file: make all DOWN direction overshoot values positive (absolute).
+
+                This rewrites platform_overshoot_calibration.json in-place so plotting tools reading
+                directly from the file will see positive Y values. In-memory samples are ALSO updated
+                to stay consistent (their overshoot for DOWN set to abs). Heights remain unchanged.
+                """
+                try:
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    changed = 0
+                    total_down = 0
+                    # Load file
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    samples = data.get('samples', [])
+                    for s in samples:
+                        if s.get('direction') == 'down':
+                            total_down += 1
+                            ov = s.get('overshoot')
+                            if isinstance(ov, (int, float)) and ov < 0:
+                                s['overshoot'] = abs(ov)
+                                changed += 1
+                    # Write back
+                    data['normalized_at'] = time.time()
+                    data['normalized_note'] = 'DOWN overshoot values converted to absolute'
+                    with open(config_path, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                    # Update in-memory lists
+                    with self.overshoot_lock:
+                        for s in self.overshoot_samples_down:
+                            ov = s.get('overshoot')
+                            if isinstance(ov, (int, float)) and ov < 0:
+                                s['overshoot'] = abs(ov)
+                    return JSONResponse({
+                        'success': True,
+                        'file': config_path,
+                        'total_down_samples': total_down,
+                        'changed_count': changed,
+                        'message': 'Normalization complete'
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Normalize overshoot file error: {e}")
                     return JSONResponse({'success': False, 'error': str(e)})
             
             @app.delete('/api/overshoot/config')
@@ -2102,9 +2179,9 @@ class LiftRobotWeb(Node):
                     
                     # Extract data arrays
                     heights_up = np.array([s['height'] for s in samples_up])
-                    overshoots_up = np.array([s['overshoot'] for s in samples_up])
+                    overshoots_up = np.array([abs(s['overshoot']) for s in samples_up])  # ensure positive
                     heights_down = np.array([s['height'] for s in samples_down])
-                    overshoots_down = np.array([s['overshoot'] for s in samples_down])
+                    overshoots_down = np.array([abs(s['overshoot']) for s in samples_down])  # ensure positive
                     
                     # Determine plot ranges
                     all_heights = np.concatenate([heights_up, heights_down]) if len(heights_up) > 0 and len(heights_down) > 0 else (heights_up if len(heights_up) > 0 else heights_down)
@@ -2114,6 +2191,9 @@ class LiftRobotWeb(Node):
                     x_max = float(np.max(all_heights))
                     y_min = float(np.min(all_overshoots))
                     y_max = float(np.max(all_overshoots))
+                    # If all positive, anchor y_min at 0 for clearer axis
+                    if y_min > 0:
+                        y_min = 0.0
                     
                     # Add margins
                     x_range = x_max - x_min
