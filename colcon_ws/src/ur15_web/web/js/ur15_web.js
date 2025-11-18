@@ -253,7 +253,7 @@ function confirmOperationNameChange() {
     // Construct full operation path
     const fullOperationPath = `${datasetDir}/${newName}`;
     
-    logToWeb(`Setting operation: ${newName}`, 'info');
+    logToWeb(`Setting operation name: ${newName}`, 'info');
     logToWeb(`Full operation path: ${fullOperationPath}`, 'info');
     
     // Update the display name and store the full path
@@ -305,12 +305,12 @@ function captureTaskData(taskName) {
     }
     
     if (!calibrationDataDir || calibrationDataDir.trim() === '') {
-        logToWeb(`Please set calibration data directory before capturing`, 'warning');
+        logToWeb(`Please set correct calibration data directory before capturing`, 'warning');
         showMessage(`Please set calibration data directory before capturing`, 'warning');
         return;
     }
     
-    logToWeb(`Starting capture to: ${currentOperationPath}`, 'info');
+    logToWeb(`Starting capture...`, 'info');
     
     // Send capture request to server
     fetch('/capture_task_data', {
@@ -327,23 +327,7 @@ function captureTaskData(taskName) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            logToWeb(`Capture completed`, 'success');
-            logToWeb(`✓ Saved: ${data.image_file}`, 'success');
-            logToWeb(`✓ Saved: ${data.pose_file}`, 'success');
-            
-            // Show calibration source information
-            if (data.calibration_source) {
-                logToWeb(`📷 Camera params from: ${data.calibration_source}`, 'info');
-            }
-            
-            showMessage(
-                `Successfully captured image and pose data:\n` +
-                `• Image: ${data.image_file}\n` +
-                `• Pose & Camera params: ${data.pose_file}` +
-                (data.calibration_source ? `\n• Source: ${data.calibration_source}` : ''), 
-                'success', 
-                '📷 Capture Complete'
-            );
+            logToWeb(`Captured image and pose data: ${data.image_file}, ${data.pose_file}`, 'success');
         } else {
             console.error(`Failed to capture data:`, data.message || 'Unknown error');
             logToWeb(`Failed to capture data: ${data.message || 'Unknown error'}`, 'error');
@@ -418,18 +402,18 @@ function confirmCalibDirChange() {
         if (data.success) {
             // Update the path panel
             document.getElementById('calibrationDirPath').value = data.calibration_data_dir;
-            logToWeb(`Calibration directory changed successfully to: ${data.calibration_data_dir}`, 'success');
+            logToWeb(`Calibration data directory changed successfully to: ${data.calibration_data_dir}`, 'success');
             closeCalibDirModal();
             // Update pose number after changing directory
             updatePoseNumber();
         } else {
-            console.error('Failed to change calibration directory:', data.message || 'Unknown error');
-            logToWeb(`Failed to change calibration directory: ${data.message || 'Unknown error'}`, 'error');
+            console.error('Failed to change calibration data directory:', data.message || 'Unknown error');
+            logToWeb(`Failed to change calibration data directory: ${data.message || 'Unknown error'}`, 'error');
         }
     })
     .catch(error => {
-        console.error('Failed to change calibration directory:', error);
-        logToWeb(`Failed to change calibration directory: ${error}`, 'error');
+        console.error('Failed to change calibration data directory:', error);
+        logToWeb(`Failed to change calibration data directory: ${error}`, 'error');
     });
 }
 
@@ -467,7 +451,7 @@ function confirmChessboardConfigChange() {
         return;
     }
     
-    logToWeb(`Changing chessboard config to: ${newPath}`, 'info');
+    logToWeb(`Changing chessboard config path to: ${newPath}`, 'info');
     
     fetch('/change_chessboard_config', {
         method: 'POST',
@@ -481,16 +465,16 @@ function confirmChessboardConfigChange() {
         if (data.success) {
             // Update the path display
             document.getElementById('chessboardConfigPath').value = data.chessboard_config;
-            logToWeb(`Chessboard config changed successfully to: ${data.chessboard_config}`, 'success');
+            logToWeb(`Chessboard config path changed successfully to: ${data.chessboard_config}`, 'success');
             closeChessboardConfigModal();
         } else {
             console.error('Failed to change chessboard config:', data.message || 'Unknown error');
-            logToWeb(`Failed to change chessboard config: ${data.message || 'Unknown error'}`, 'error');
+            logToWeb(`Failed to change chessboard config path : ${data.message || 'Unknown error'}`, 'error');
         }
     })
     .catch(error => {
-        console.error('Failed to change chessboard config:', error);
-        logToWeb(`Failed to change chessboard config: ${error}`, 'error');
+        console.error('Failed to change chessboard config path:', error);
+        logToWeb(`Failed to change chessboard config path: ${error}`, 'error');
     });
 }
 
@@ -551,7 +535,7 @@ function toggleFreedrive() {
             // Update status bar
             statusValue.textContent = mode;
             
-            logToWeb(`Freedrive mode changed to: ${mode}`, 'success');
+            logToWeb(`Drive mode changed to: ${mode}`, 'success');
         }
         // Re-enable button
         btn.disabled = false;
@@ -600,72 +584,6 @@ function toggleValidation() {
         console.error('Failed to toggle validation:', error);
         btn.disabled = false;
         btn.style.opacity = '1';
-    });
-}
-
-function uploadIntrinsic() {
-    const fileInput = document.getElementById('intrinsicFile');
-    const file = fileInput.files[0];
-    
-    if (!file) {
-        return;
-    }
-    
-    logToWeb(`Uploading intrinsic parameters: ${file.name}`, 'info');
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    fetch('/upload_intrinsic', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb('Intrinsic parameters loaded successfully', 'success');
-            updateStatus();
-        } else {
-            console.error('Failed to load intrinsic parameters:', data.message);
-            logToWeb(`Failed to load intrinsic parameters: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Upload failed:', error);
-        logToWeb(`Intrinsic upload failed: ${error}`, 'error');
-    });
-}
-
-function uploadExtrinsic() {
-    const fileInput = document.getElementById('extrinsicFile');
-    const file = fileInput.files[0];
-    
-    if (!file) {
-        return;
-    }
-    
-    logToWeb(`Uploading extrinsic parameters: ${file.name}`, 'info');
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    fetch('/upload_extrinsic', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb('Extrinsic parameters loaded successfully', 'success');
-            updateStatus();
-        } else {
-            console.error('Failed to load extrinsic parameters:', data.message);
-            logToWeb(`Failed to load extrinsic parameters: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Upload failed:', error);
-        logToWeb(`Extrinsic upload failed: ${error}`, 'error');
     });
 }
 
@@ -729,7 +647,7 @@ function autoCollectData() {
             console.log('Auto collect data script started successfully');
             showMessage('Collecting calibration data automatically!', 'success');
             if (data.log_file) {
-                logToWeb(`Log file: ${data.log_file}`, 'info');
+                logToWeb(`Log file will be saved as: ${data.log_file}`, 'info');
             }
         } else {
             console.error('Failed to start auto collect:', data.message);
@@ -754,7 +672,7 @@ function calibrateCam() {
     const calibDataDir = document.getElementById('calibrationDirPath').value;
     logToWeb('Starting camera calibration script...', 'info');
     logToWeb(`Data directory: ${calibDataDir}`, 'info');
-    logToWeb(`Log file: ${calibDataDir}/calibrate_cam_log.txt`, 'info');
+    logToWeb(`Log file will be saved as: ${calibDataDir}/calibrate_cam_log.txt`, 'info');
     
     fetch('/calibrate_cam', {
         method: 'POST',
