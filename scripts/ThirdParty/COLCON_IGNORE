@@ -1,0 +1,2 @@
+# This file tells colcon to ignore this directory and its subdirectories during build
+# Third-party packages should not be built as part of the main workspace

@@ -1,13 +1,8 @@
-from ur15_robot_arm.ur15 import UR15Robot, safe_callback
+from ur15_robot_arm.ur15 import UR15Robot
 import time
 import socket
 import math
 import numpy as np
-
-
-# ============================================================================
-# 简单阻塞移动测试 - 只需要基本的命令
-# ============================================================================
 
 
 def rotvec_to_matrix(rx, ry, rz):
@@ -170,6 +165,7 @@ def tcp_normalize(robot, x_axis=[0, -1, 0], y_axis=[-1, 0, 0], z_axis=[0, 0, -1]
     result = robot.movel(target_pose, a=a, v=v)
     
     if result == 0:
+        print("✅ TCP normalized successfully")
         return 0
     else:
         print(f"❌ Failed to normalize TCP (result: {result})")
@@ -203,41 +199,16 @@ def main():
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
-        # ============================================================================
-        # BLOCKING MOVEMENT TESTS
-        # ============================================================================
-        
-        # ============================================================================
-        # 简单的阻塞移动命令测试
-        # ============================================================================
-        
-        # 移动序列 - 每个命令都会自动打印状态信息
-        # Position order: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3
-        # Original order from topic: shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, shoulder_pan
-        robot.movej_blocking([-5.041802231465475, -1.1728989642909546, 0.7841227690326136, -1.3259332937053223, -0.3949468771563929, 3.143082857131958], a=0.1, v=0.1)
-        time.sleep(1)  # Wait 1 second after movement completes
-        
-        robot.movej_blocking([-5.041795913373129, -1.149646059875824, 0.9319852034198206, -1.3259395223907013, -0.39494496980776006, 3.1430823802948], a=0.1, v=0.1)
-        time.sleep(1)  # Wait 1 second after movement completes
-        
-        robot.movej_blocking([-5.041794482861654, -1.1485870641520997, 1.1808584372149866, -1.3259599965861817, -0.3949525992022913, 3.1430914402008057], a=0.1, v=0.1)
-        time.sleep(1)  # Wait 1 second after movement completes
-
-        
-        # ============================================================================
-        # ORIGINAL TESTS (commented out during blocking tests)
-        # ============================================================================
-        
         # #  2.1 move to task pose
-        # res = robot.movej([-0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822], a=0.8, v=1.05)
+        # res = robot.movej([-0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822], a=0.5, v=0.3)
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
-        # # 3. enter freedrive mode f
-        # freedrive_duration = 20 #seconds
-        # robot.freedrive_mode(duration=freedrive_duration)
-        # # wait for freedrive_duration seconds to end freedrive mode
-        # robot.end_freedrive_mode()
+        # 3. enter freedrive mode f
+        freedrive_duration = 30 #seconds
+        robot.freedrive_mode(duration=freedrive_duration)
+        # wait for freedrive_duration seconds to end freedrive mode
+        robot.end_freedrive_mode()
 
         # # 4. get target TCP pose and joint positions
         # pose = robot.get_target_tcp_pose()
@@ -345,7 +316,7 @@ def main():
         # time.sleep(0.5)
         
         # # 10. set active tool offset, it will not be affected by the configuration in installation-TCP
-        # toolPullPush_offset = [0.0, 0.0, 0.2265, 0.0, 0.0, 0.0] 
+        # toolPullPush_offset = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
         # res = robot.set_tcp(toolPullPush_offset,tcp_name="toolPullPush")
         # time.sleep(1)
 
@@ -355,8 +326,6 @@ def main():
         # res = robot.move_tcp([0, 0, 0, -0.5236/2, 0, 0], a=0.2, v=0.2)
         # time.sleep(1)
         # print(f"Move TCP with tool offset result: {res}")
-
-
     else:
         print(f"Failed to connect to robot at {ur15_ip}:{ur15_port}")
     
