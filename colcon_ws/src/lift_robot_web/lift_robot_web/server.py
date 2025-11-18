@@ -47,6 +47,13 @@ class LiftRobotWeb(Node):
         self.overshoot_up = None
         self.overshoot_down = None
         self.overshoot_lock = threading.Lock()
+        
+        # Systematic overshoot calibration state (new workflow)
+        self.systematic_samples = []  # List of {'height': float, 'overshoot': float, 'direction': 'up'|'down', 'timestamp': float}
+        self.safe_range_min = None    # Safe range minimum (actual_min + 50mm)
+        self.safe_range_max = None    # Safe range maximum (actual_max - 50mm)
+        self.actual_range_min = None  # Detected absolute minimum height
+        self.actual_range_max = None  # Detected absolute maximum height
 
         # Force sensor calibration state (dual-channel)
         self.force_calib_samples_right = []  # device_id=52, List of {'sensor': float, 'force': float, 'timestamp': float}
@@ -299,6 +306,11 @@ class LiftRobotWeb(Node):
                         'current_height': self.platform_status.get('current_height'),
                         'target_height': self.platform_status.get('target_height'),
                         'limit_exceeded': self.platform_status.get('limit_exceeded', False),
+                        'last_goto_target': self.platform_status.get('last_goto_target'),
+                        'last_goto_actual': self.platform_status.get('last_goto_actual'),
+                        'last_goto_stop_height': self.platform_status.get('last_goto_stop_height'),
+                        'last_goto_direction': self.platform_status.get('last_goto_direction'),
+                        'last_goto_timestamp': self.platform_status.get('last_goto_timestamp'),
                     }
                 if self.pushrod_status:
                     response['pushrod'] = {
@@ -869,19 +881,19 @@ class LiftRobotWeb(Node):
                         
                         for d in range(1, min(6, n)):  # Test degrees 1 to min(5, n-1)
                             try:
-                                # Fit both curves
-                                cu_test = np.polyfit(x, y_up, d)
-                                cd_test = np.polyfit(x, y_dn, d)
+                                # Fit both curves (using absolute values)
+                                cu_test = np.polyfit(x, np.abs(y_up), d)
+                                cd_test = np.polyfit(x, np.abs(y_dn), d)
                                 # Evaluate
                                 y_up_pred = np.polyval(cu_test, x)
                                 y_dn_pred = np.polyval(cd_test, x)
-                                # R² for both
-                                r2_up = compute_r2(y_up, y_up_pred)
-                                r2_dn = compute_r2(y_dn, y_dn_pred)
+                                # R² for both (compare with absolute values)
+                                r2_up = compute_r2(np.abs(y_up), y_up_pred)
+                                r2_dn = compute_r2(np.abs(y_dn), y_dn_pred)
                                 avg_r2 = (r2_up + r2_dn) / 2
                                 # MSE for AIC
-                                mse_up = np.mean((y_up - y_up_pred) ** 2)
-                                mse_dn = np.mean((y_dn - y_dn_pred) ** 2)
+                                mse_up = np.mean((np.abs(y_up) - y_up_pred) ** 2)
+                                mse_dn = np.mean((np.abs(y_dn) - y_dn_pred) ** 2)
                                 avg_mse = (mse_up + mse_dn) / 2
                                 # AIC penalty (lower is better)
                                 aic = compute_aic(n, avg_mse, d)
@@ -906,8 +918,9 @@ class LiftRobotWeb(Node):
                         degree = len(xs) - 1
                         self.get_logger().warn(f"Reduced degree to {degree} due to insufficient points")
                     
-                    cu = np.polyfit(x, y_up, degree).tolist()  # highest power first
-                    cd = np.polyfit(x, y_dn, degree).tolist()
+                    # CRITICAL: Fit to absolute values to ensure positive overshoot
+                    cu = np.polyfit(x, np.abs(y_up), degree).tolist()  # highest power first
+                    cd = np.polyfit(x, np.abs(y_dn), degree).tolist()
                     # Save into config
                     fit_block = {
                         'type': 'poly',
@@ -1535,6 +1548,859 @@ class LiftRobotWeb(Node):
                         'success': False,
                         'error': f'Exception: {str(e)}'
                     })
+
+            # ═══════════════════════════════════════════════════════════════
+            # Platform Range Detection API (Separate from Overshoot Calibration)
+            # ═══════════════════════════════════════════════════════════════
+            
+            @app.get('/api/range/get')
+            async def get_platform_range():
+                """Get platform range from config file.
+                Returns: {has_range, actual_min, actual_max, safe_min, safe_max, detected_at_iso}
+                """
+                try:
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_range.json'
+                    
+                    if not os.path.exists(config_path):
+                        # Create default file
+                        config_dir = os.path.dirname(config_path)
+                        if not os.path.exists(config_dir):
+                            os.makedirs(config_dir)
+                        default_config = {
+                            'actual_min': None,
+                            'actual_max': None,
+                            'safe_min': None,
+                            'safe_max': None,
+                            'detected_at': None,
+                            'detected_at_iso': None
+                        }
+                        with open(config_path, 'w') as f:
+                            json.dump(default_config, f, indent=2)
+                        return JSONResponse({
+                            'has_range': False,
+                            'actual_min': None,
+                            'actual_max': None,
+                            'safe_min': None,
+                            'safe_max': None,
+                            'detected_at_iso': None
+                        })
+                    
+                    # Read existing config
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    
+                    has_range = (config.get('actual_min') is not None and 
+                                 config.get('actual_max') is not None and
+                                 config.get('safe_min') is not None and
+                                 config.get('safe_max') is not None)
+                    
+                    return JSONResponse({
+                        'has_range': has_range,
+                        'actual_min': config.get('actual_min'),
+                        'actual_max': config.get('actual_max'),
+                        'safe_min': config.get('safe_min'),
+                        'safe_max': config.get('safe_max'),
+                        'detected_at_iso': config.get('detected_at_iso')
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Get platform range error: {e}")
+                    return JSONResponse({'success': False, 'error': str(e)})
+            
+            @app.post('/api/range/set')
+            async def set_platform_range(payload: dict):
+                """Set platform range to config file.
+                Expects: {actual_min, actual_max, safe_min, safe_max}
+                """
+                try:
+                    actual_min = payload.get('actual_min')
+                    actual_max = payload.get('actual_max')
+                    safe_min = payload.get('safe_min')
+                    safe_max = payload.get('safe_max')
+                    
+                    if any(v is None for v in [actual_min, actual_max, safe_min, safe_max]):
+                        return JSONResponse({
+                            'success': False,
+                            'error': 'Missing required fields: actual_min, actual_max, safe_min, safe_max'
+                        })
+                    
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_range.json'
+                    config_dir = os.path.dirname(config_path)
+                    
+                    if not os.path.exists(config_dir):
+                        os.makedirs(config_dir)
+                    
+                    config = {
+                        'actual_min': float(actual_min),
+                        'actual_max': float(actual_max),
+                        'safe_min': float(safe_min),
+                        'safe_max': float(safe_max),
+                        'detected_at': time.time(),
+                        'detected_at_iso': time.strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    
+                    self.get_logger().info(f"Saved platform range: [{actual_min:.2f}, {actual_max:.2f}]mm, safe: [{safe_min:.2f}, {safe_max:.2f}]mm")
+                    
+                    return JSONResponse({
+                        'success': True,
+                        'actual_min': config['actual_min'],
+                        'actual_max': config['actual_max'],
+                        'safe_min': config['safe_min'],
+                        'safe_max': config['safe_max'],
+                        'detected_at_iso': config['detected_at_iso']
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Set platform range error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return JSONResponse({'success': False, 'error': str(e)})
+
+            # ═══════════════════════════════════════════════════════════════
+            # Systematic Overshoot Calibration API (New Workflow)
+            # ═══════════════════════════════════════════════════════════════
+            
+            @app.post('/api/systematic/detect_safe_range')
+            async def detect_safe_range():
+                """Detect platform range and compute safe range (min+50mm to max-50mm).
+                Returns: {success, actual_min, actual_max, safe_min, safe_max}
+                """
+                try:
+                    # This should call the same range detection logic as before
+                    # But here we just set the ranges - actual detection happens in frontend
+                    # For now, return structure to be filled by frontend
+                    return JSONResponse({
+                        'success': True,
+                        'message': 'Range detection should be called from frontend'
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Detect safe range error: {e}")
+                    return JSONResponse({'success': False, 'error': str(e)})
+            
+            @app.post('/api/systematic/set_range')
+            async def set_safe_range(payload: dict):
+                """Set detected range values and save to config immediately.
+                Expects: {actual_min, actual_max, safe_min, safe_max}
+                """
+                try:
+                    with self.overshoot_lock:
+                        self.actual_range_min = payload.get('actual_min')
+                        self.actual_range_max = payload.get('actual_max')
+                        self.safe_range_min = payload.get('safe_min')
+                        self.safe_range_max = payload.get('safe_max')
+                    
+                    # Save range to config file immediately
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_dir = os.path.dirname(config_path)
+                    
+                    if not os.path.exists(config_dir):
+                        os.makedirs(config_dir)
+                    
+                    # Load existing config or create new
+                    config = {}
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                config = json.load(f)
+                        except Exception as e:
+                            self.get_logger().warn(f"Failed to load existing config: {e}")
+                    
+                    # Ensure basic fields exist
+                    if 'enable' not in config:
+                        config['enable'] = True
+                    if 'format_version' not in config:
+                        config['format_version'] = 2
+                    
+                    # Update range block (only updates range, preserves other fields)
+                    config['range'] = {
+                        'actual_min': self.actual_range_min,
+                        'actual_max': self.actual_range_max,
+                        'safe_min': self.safe_range_min,
+                        'safe_max': self.safe_range_max,
+                        'detected_at': time.time(),
+                        'detected_at_iso': time.strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    
+                    # Write config
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    
+                    self.get_logger().info(f"Saved range to config: [{self.actual_range_min:.2f}, {self.actual_range_max:.2f}]mm")
+                    
+                    return JSONResponse({
+                        'success': True,
+                        'actual_min': self.actual_range_min,
+                        'actual_max': self.actual_range_max,
+                        'safe_min': self.safe_range_min,
+                        'safe_max': self.safe_range_max
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Set safe range error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return JSONResponse({'success': False, 'error': str(e)})
+            
+            @app.get('/api/systematic/range')
+            async def get_range_status():
+                """Get current range values."""
+                with self.overshoot_lock:
+                    return JSONResponse({
+                        'actual_min': self.actual_range_min,
+                        'actual_max': self.actual_range_max,
+                        'safe_min': self.safe_range_min,
+                        'safe_max': self.safe_range_max,
+                        'has_range': self.safe_range_min is not None and self.safe_range_max is not None
+                    })
+            
+            @app.post('/api/systematic/start_calibration')
+            async def start_systematic_calibration():
+                """Prepare for calibration by clearing samples in memory and config file."""
+                try:
+                    with self.overshoot_lock:
+                        self.systematic_samples.clear()
+                    
+                    # Clear samples from config file
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_dir = os.path.dirname(config_path)
+                    
+                    if not os.path.exists(config_dir):
+                        os.makedirs(config_dir)
+                    
+                    # Load existing config or create new with defaults
+                    config = {}
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                config = json.load(f)
+                        except Exception as e:
+                            self.get_logger().warn(f"Failed to load existing config: {e}")
+                    
+                    # Ensure all required fields exist with proper defaults
+                    if 'enable' not in config:
+                        config['enable'] = True
+                    if 'format_version' not in config:
+                        config['format_version'] = 2
+                    if 'default' not in config:
+                        config['default'] = {
+                            'overshoot_up': 2.7999999999999545,
+                            'overshoot_down': 3.0139999999999985
+                        }
+                    if 'regions' not in config:
+                        config['regions'] = []
+                    if 'generated_at' not in config:
+                        config['generated_at'] = time.time()
+                        config['generated_at_iso'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Clear samples array (only updates samples, preserves other fields)
+                    config['samples'] = []
+                    
+                    # Write config
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    
+                    self.get_logger().info("Cleared samples, ready for new calibration")
+                    
+                    return JSONResponse({'success': True, 'message': 'Calibration started, samples cleared'})
+                except Exception as e:
+                    self.get_logger().error(f"Start calibration error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return JSONResponse({'success': False, 'error': str(e)})
+            
+            @app.post('/api/systematic/add_sample')
+            async def add_systematic_sample(payload: dict):
+                """Add a systematic calibration sample.
+                Expects: {height: float, overshoot: float, direction: 'up'|'down'}
+                """
+                try:
+                    height = payload.get('height')
+                    overshoot = payload.get('overshoot')
+                    direction = payload.get('direction')
+                    
+                    if height is None or overshoot is None or direction is None:
+                        return JSONResponse({
+                            'success': False,
+                            'error': 'Missing required fields: height, overshoot, direction'
+                        })
+                    
+                    if direction not in ['up', 'down']:
+                        return JSONResponse({
+                            'success': False,
+                            'error': 'Direction must be "up" or "down"'
+                        })
+                    
+                    sample = {
+                        'height': float(height),
+                        'overshoot': float(overshoot),
+                        'direction': direction,
+                        'timestamp': time.time()
+                    }
+                    
+                    with self.overshoot_lock:
+                        self.systematic_samples.append(sample)
+                        samples_copy = self.systematic_samples.copy()
+                    
+                    # Save sample to config file immediately
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_dir = os.path.dirname(config_path)
+                    
+                    if not os.path.exists(config_dir):
+                        os.makedirs(config_dir)
+                    
+                    # Load existing config or create new with defaults
+                    config = {}
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                config = json.load(f)
+                        except Exception as e:
+                            self.get_logger().warn(f"Failed to load existing config: {e}")
+                    
+                    # Ensure all required fields exist with proper defaults
+                    if 'enable' not in config:
+                        config['enable'] = True
+                    if 'format_version' not in config:
+                        config['format_version'] = 2
+                    if 'default' not in config:
+                        config['default'] = {
+                            'overshoot_up': 2.7999999999999545,
+                            'overshoot_down': 3.0139999999999985
+                        }
+                    if 'regions' not in config:
+                        config['regions'] = []
+                    if 'generated_at' not in config:
+                        config['generated_at'] = time.time()
+                        config['generated_at_iso'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Update samples array (only updates samples, preserves other fields)
+                    config['samples'] = samples_copy
+                    
+                    # Write config
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    
+                    self.get_logger().info(
+                        f"Added systematic sample: height={height:.2f}mm, "
+                        f"overshoot={overshoot:.2f}mm, direction={direction}"
+                    )
+                    
+                    return JSONResponse({
+                        'success': True,
+                        'sample': sample,
+                        'total_count': len(self.systematic_samples)
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Add systematic sample error: {e}")
+                    return JSONResponse({'success': False, 'error': str(e)})
+            
+            @app.get('/api/systematic/samples')
+            async def get_systematic_samples():
+                """Get all systematic calibration samples from config file."""
+                config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                
+                samples = []
+                generated_at = None
+                generated_at_iso = None
+                fit_generated_at = None
+                fit_generated_at_iso = None
+                
+                if os.path.exists(config_path):
+                    try:
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                            samples = config.get('samples', [])
+                            generated_at = config.get('generated_at')
+                            generated_at_iso = config.get('generated_at_iso')
+                            
+                            # Get fit timestamp if available (higher priority)
+                            fit = config.get('fit')
+                            if fit and isinstance(fit, dict):
+                                fit_generated_at = fit.get('generated_at')
+                                fit_generated_at_iso = fit.get('generated_at_iso')
+                    except Exception as e:
+                        self.get_logger().warn(f"Failed to load samples from config: {e}")
+                
+                # Separate by direction for convenience
+                samples_up = [s for s in samples if s.get('direction') == 'up']
+                samples_down = [s for s in samples if s.get('direction') == 'down']
+                
+                return JSONResponse({
+                    'samples_all': samples,
+                    'samples_up': samples_up,
+                    'samples_down': samples_down,
+                    'count_total': len(samples),
+                    'count_up': len(samples_up),
+                    'count_down': len(samples_down),
+                    'generated_at': generated_at,
+                    'generated_at_iso': generated_at_iso,
+                    'fit_generated_at': fit_generated_at,
+                    'fit_generated_at_iso': fit_generated_at_iso
+                })
+            
+            @app.delete('/api/systematic/samples/{index}')
+            async def delete_systematic_sample(index: int):
+                """Delete a specific systematic calibration sample by index."""
+                try:
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    
+                    # Load samples from config file
+                    if not os.path.exists(config_path):
+                        return JSONResponse({
+                            'success': False,
+                            'error': 'No calibration data found'
+                        })
+                    
+                    try:
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                    except Exception as e:
+                        return JSONResponse({
+                            'success': False,
+                            'error': f'Failed to load config: {e}'
+                        })
+                    
+                    samples = config.get('samples', [])
+                    
+                    # Validate index
+                    if not (0 <= index < len(samples)):
+                        return JSONResponse({
+                            'success': False,
+                            'error': f'Invalid index: {index} (total samples in file: {len(samples)})'
+                        })
+                    
+                    # Delete sample
+                    deleted_sample = samples.pop(index)
+                    
+                    # Also update memory if applicable
+                    with self.overshoot_lock:
+                        if 0 <= index < len(self.systematic_samples):
+                            self.systematic_samples.pop(index)
+                    
+                    # Ensure all required fields exist
+                    if 'enable' not in config:
+                        config['enable'] = True
+                    if 'format_version' not in config:
+                        config['format_version'] = 2
+                    if 'default' not in config:
+                        config['default'] = {
+                            'overshoot_up': 2.7999999999999545,
+                            'overshoot_down': 3.0139999999999985
+                        }
+                    if 'regions' not in config:
+                        config['regions'] = []
+                    if 'generated_at' not in config:
+                        config['generated_at'] = time.time()
+                        config['generated_at_iso'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Update samples array
+                    config['samples'] = samples
+                    
+                    # Write config
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    
+                    self.get_logger().info(f"Deleted sample #{index}: {deleted_sample}")
+                    
+                    return JSONResponse({
+                        'success': True,
+                        'deleted_sample': deleted_sample,
+                        'remaining_count': len(samples)
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Delete systematic sample error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return JSONResponse({'success': False, 'error': str(e)})
+            
+            @app.delete('/api/systematic/samples')
+            async def clear_systematic_samples():
+                """Clear all systematic calibration samples from memory and config file."""
+                with self.overshoot_lock:
+                    count = len(self.systematic_samples)
+                    self.systematic_samples.clear()
+                
+                # Clear samples from config file
+                config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                if os.path.exists(config_path):
+                    try:
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                        
+                        # Ensure all required fields exist with proper defaults before clearing
+                        if 'enable' not in config:
+                            config['enable'] = True
+                        if 'format_version' not in config:
+                            config['format_version'] = 2
+                        if 'default' not in config:
+                            config['default'] = {
+                                'overshoot_up': 2.7999999999999545,
+                                'overshoot_down': 3.0139999999999985
+                            }
+                        if 'regions' not in config:
+                            config['regions'] = []
+                        if 'generated_at' not in config:
+                            config['generated_at'] = time.time()
+                            config['generated_at_iso'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Clear samples array (preserves all other fields)
+                        config['samples'] = []
+                        
+                        with open(config_path, 'w') as f:
+                            json.dump(config, f, indent=2)
+                        
+                        self.get_logger().info(f"Cleared {count} systematic samples from config")
+                    except Exception as e:
+                        self.get_logger().warn(f"Failed to clear samples from config: {e}")
+                
+                return JSONResponse({
+                    'success': True,
+                    'cleared_count': count
+                })
+            
+            @app.post('/api/systematic/plot')
+            async def plot_systematic_data(payload: dict = None):
+                """Generate scatter plot of systematic calibration data with optional polynomial fit.
+                Payload: {degree: int (optional, 1-6)}
+                Returns: {success, plot_url, fit_coeffs_up, fit_coeffs_down}
+                """
+                try:
+                    import numpy as np
+                    import cv2
+                except Exception as e:
+                    return JSONResponse({'success': False, 'error': f'OpenCV/Numpy not available: {e}'})
+                
+                try:
+                    degree = None
+                    if payload and 'degree' in payload:
+                        try:
+                            degree = int(payload['degree'])
+                            degree = max(1, min(degree, 6))
+                        except Exception:
+                            degree = None
+                    
+                    # Load samples from config file
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    samples = []
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                config = json.load(f)
+                                samples = config.get('samples', [])
+                        except Exception as e:
+                            self.get_logger().warn(f"Failed to load samples from config: {e}")
+                    
+                    if not samples:
+                        return JSONResponse({'success': False, 'error': 'No samples to plot'})
+                    
+                    # Separate samples by direction
+                    samples_up = [s for s in samples if s['direction'] == 'up']
+                    samples_down = [s for s in samples if s['direction'] == 'down']
+                    
+                    if not samples_up and not samples_down:
+                        return JSONResponse({'success': False, 'error': 'No valid samples'})
+                    
+                    # Extract data arrays
+                    heights_up = np.array([s['height'] for s in samples_up])
+                    overshoots_up = np.array([s['overshoot'] for s in samples_up])
+                    heights_down = np.array([s['height'] for s in samples_down])
+                    overshoots_down = np.array([s['overshoot'] for s in samples_down])
+                    
+                    # Determine plot ranges
+                    all_heights = np.concatenate([heights_up, heights_down]) if len(heights_up) > 0 and len(heights_down) > 0 else (heights_up if len(heights_up) > 0 else heights_down)
+                    all_overshoots = np.concatenate([overshoots_up, overshoots_down]) if len(overshoots_up) > 0 and len(overshoots_down) > 0 else (overshoots_up if len(overshoots_up) > 0 else overshoots_down)
+                    
+                    x_min = float(np.min(all_heights))
+                    x_max = float(np.max(all_heights))
+                    y_min = float(np.min(all_overshoots))
+                    y_max = float(np.max(all_overshoots))
+                    
+                    # Add margins
+                    x_range = x_max - x_min
+                    y_range = y_max - y_min
+                    x_min -= x_range * 0.1
+                    x_max += x_range * 0.1
+                    y_min -= y_range * 0.1
+                    y_max += y_range * 0.1
+                    
+                    # Create plot image
+                    img_width = 1000
+                    img_height = 700
+                    margin_left = 70
+                    margin_right = 30
+                    margin_top = 50
+                    margin_bottom = 60
+                    
+                    plot_width = img_width - margin_left - margin_right
+                    plot_height = img_height - margin_top - margin_bottom
+                    
+                    img = np.ones((img_height, img_width, 3), dtype=np.uint8) * 255
+                    
+                    # Helper function to map data coordinates to pixel coordinates
+                    def to_pixel(h, o):
+                        px = int(margin_left + (h - x_min) / (x_max - x_min) * plot_width)
+                        py = int(margin_top + plot_height - (o - y_min) / (y_max - y_min) * plot_height)
+                        return (px, py)
+                    
+                    # Draw axes
+                    plot_x0 = margin_left
+                    plot_x1 = margin_left + plot_width
+                    plot_y0 = margin_top
+                    plot_y1 = margin_top + plot_height
+                    
+                    cv2.line(img, (plot_x0, plot_y1), (plot_x1, plot_y1), (0, 0, 0), 2)  # X-axis
+                    cv2.line(img, (plot_x0, plot_y0), (plot_x0, plot_y1), (0, 0, 0), 2)  # Y-axis
+                    
+                    # Draw X-axis ticks and labels
+                    num_x_ticks = 6
+                    for i in range(num_x_ticks):
+                        val = x_min + (x_max - x_min) * i / (num_x_ticks - 1)
+                        px = int(margin_left + (val - x_min) / (x_max - x_min) * plot_width)
+                        cv2.line(img, (px, plot_y1), (px, plot_y1 + 5), (0, 0, 0), 1)
+                        label = f'{val:.1f}'
+                        cv2.putText(img, label, (px - 20, plot_y1 + 20), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+                    
+                    # Draw Y-axis ticks and labels
+                    num_y_ticks = 6
+                    for i in range(num_y_ticks):
+                        val = y_min + (y_max - y_min) * i / (num_y_ticks - 1)
+                        py = int(margin_top + plot_height - (val - y_min) / (y_max - y_min) * plot_height)
+                        cv2.line(img, (plot_x0 - 5, py), (plot_x0, py), (0, 0, 0), 1)
+                        label = f'{val:.2f}'
+                        cv2.putText(img, label, (plot_x0 - 60, py + 5), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+                    
+                    # Axis labels
+                    cv2.putText(img, 'Height (mm)', (img_width // 2 - 50, img_height - 10), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    
+                    # Y-axis label (vertical text simulated with multiple characters)
+                    y_label = 'Overshoot (mm)'
+                    for idx, char in enumerate(y_label):
+                        cv2.putText(img, char, (10, margin_top + 20 + idx * 15), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+                    
+                    # Plot scatter points
+                    for h, o in zip(heights_up, overshoots_up):
+                        px, py = to_pixel(h, o)
+                        cv2.circle(img, (px, py), 4, (0, 0, 255), -1)  # Red for UP
+                    
+                    for h, o in zip(heights_down, overshoots_down):
+                        px, py = to_pixel(h, o)
+                        cv2.circle(img, (px, py), 4, (255, 0, 0), -1)  # Blue for DOWN
+                    
+                    # Polynomial fit if degree specified
+                    fit_coeffs_up = None
+                    fit_coeffs_down = None
+                    
+                    if degree is not None:
+                        # Fit UP samples
+                        if len(heights_up) >= degree + 1:
+                            # CRITICAL: Fit to absolute values to ensure positive overshoot
+                            coeffs_up = np.polyfit(heights_up, np.abs(overshoots_up), degree)
+                            fit_coeffs_up = coeffs_up.tolist()
+                            
+                            # Draw fitted curve
+                            h_curve = np.linspace(x_min, x_max, 200)
+                            o_curve = np.polyval(coeffs_up, h_curve)
+                            
+                            points = []
+                            for h, o in zip(h_curve, o_curve):
+                                if y_min <= o <= y_max:  # Only draw within range
+                                    points.append(to_pixel(h, o))
+                            
+                            if len(points) > 1:
+                                points = np.array(points, dtype=np.int32)
+                                cv2.polylines(img, [points], False, (200, 0, 0), 2)  # Dark red for UP fit
+                        
+                        # Fit DOWN samples
+                        if len(heights_down) >= degree + 1:
+                            # CRITICAL: Fit to absolute values to ensure positive overshoot
+                            coeffs_down = np.polyfit(heights_down, np.abs(overshoots_down), degree)
+                            fit_coeffs_down = coeffs_down.tolist()
+                            
+                            # Draw fitted curve
+                            h_curve = np.linspace(x_min, x_max, 200)
+                            o_curve = np.polyval(coeffs_down, h_curve)
+                            
+                            points = []
+                            for h, o in zip(h_curve, o_curve):
+                                if y_min <= o <= y_max:  # Only draw within range
+                                    points.append(to_pixel(h, o))
+                            
+                            if len(points) > 1:
+                                points = np.array(points, dtype=np.int32)
+                                cv2.polylines(img, [points], False, (150, 0, 0), 2)  # Dark blue for DOWN fit
+                    
+                    # Title and legend
+                    title = 'Systematic Overshoot Calibration'
+                    if degree is not None:
+                        title += f' (Degree {degree} fit)'
+                    cv2.putText(img, title, (margin_left, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv2.LINE_AA)
+                    
+                    # Legend
+                    legend_x = plot_x1 - 200
+                    legend_y = plot_y0 + 20
+                    cv2.circle(img, (legend_x, legend_y), 4, (0, 0, 255), -1)
+                    cv2.putText(img, 'UP samples', (legend_x + 10, legend_y + 5), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+                    
+                    cv2.circle(img, (legend_x, legend_y + 20), 4, (255, 0, 0), -1)
+                    cv2.putText(img, 'DOWN samples', (legend_x + 10, legend_y + 25), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+                    
+                    if degree is not None:
+                        cv2.line(img, (legend_x, legend_y + 40), (legend_x + 30, legend_y + 40), (200, 0, 0), 2)
+                        cv2.putText(img, 'UP fit', (legend_x + 35, legend_y + 45), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+                        
+                        cv2.line(img, (legend_x, legend_y + 55), (legend_x + 30, legend_y + 55), (150, 0, 0), 2)
+                        cv2.putText(img, 'DOWN fit', (legend_x + 35, legend_y + 60), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+                    
+                    # Save plot
+                    try:
+                        web_dir = os.path.join(get_package_share_directory('lift_robot_web'), 'web')
+                    except Exception:
+                        web_dir = os.path.join(os.path.dirname(__file__), '..', 'web')
+                    
+                    plot_path = os.path.join(web_dir, 'systematic_overshoot_plot.png')
+                    cv2.imwrite(plot_path, img)
+                    plot_url = '/static/systematic_overshoot_plot.png'
+                    
+                    return JSONResponse({
+                        'success': True,
+                        'plot_url': plot_url,
+                        'fit_coeffs_up': fit_coeffs_up,
+                        'fit_coeffs_down': fit_coeffs_down,
+                        'degree': degree,
+                        'sample_count_up': len(heights_up),
+                        'sample_count_down': len(heights_down),
+                        'x_range': [x_min, x_max],
+                        'y_range': [y_min, y_max]
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Plot systematic data error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return JSONResponse({'success': False, 'error': str(e)})
+            
+            @app.post('/api/systematic/save_fit')
+            async def save_systematic_fit(payload: dict):
+                """Save polynomial fit coefficients to config file.
+                Payload: {degree: int, coeffs_up: list, coeffs_down: list}
+                """
+                try:
+                    degree = payload.get('degree')
+                    coeffs_up = payload.get('coeffs_up')
+                    coeffs_down = payload.get('coeffs_down')
+                    
+                    if degree is None or coeffs_up is None or coeffs_down is None:
+                        return JSONResponse({
+                            'success': False,
+                            'error': 'Missing required fields: degree, coeffs_up, coeffs_down'
+                        })
+                    
+                    # Load samples from config file
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    samples = []
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                config = json.load(f)
+                                samples = config.get('samples', [])
+                        except Exception as e:
+                            self.get_logger().warn(f"Failed to load samples from config: {e}")
+                    
+                    if not samples:
+                        return JSONResponse({'success': False, 'error': 'No samples available'})
+                    
+                    heights = [s['height'] for s in samples]
+                    x_min = min(heights)
+                    x_max = max(heights)
+                    
+                    # Create fit block
+                    fit_block = {
+                        'type': 'poly',
+                        'degree': int(degree),
+                        'coeffs_up': coeffs_up,
+                        'coeffs_down': coeffs_down,
+                        'x_min': x_min,
+                        'x_max': x_max,
+                        'generated_at': time.time(),
+                        'generated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    
+                    # Create range block with detected range information
+                    range_block = None
+                    with self.overshoot_lock:
+                        if self.actual_range_min is not None and self.actual_range_max is not None:
+                            range_block = {
+                                'actual_min': self.actual_range_min,
+                                'actual_max': self.actual_range_max,
+                                'safe_min': self.safe_range_min,
+                                'safe_max': self.safe_range_max,
+                                'detected_at': time.time(),
+                                'detected_at_iso': time.strftime('%Y-%m-%d %H:%M:%S')
+                            }
+                    
+                    # Save to config file
+                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_dir = os.path.dirname(config_path)
+                    
+                    if not os.path.exists(config_dir):
+                        os.makedirs(config_dir)
+                    
+                    # Load existing config or create new
+                    config = {
+                        'enable': True,
+                        'generated_at': time.time(),
+                        'generated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'format_version': 2
+                    }
+                    
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                existing = json.load(f)
+                                # Preserve existing fields
+                                config.update(existing)
+                        except Exception as e:
+                            self.get_logger().warn(f"Failed to load existing config: {e}")
+                    
+                    # Ensure regions field exists
+                    if 'regions' not in config:
+                        config['regions'] = []
+                    
+                    # Update fit block and range block
+                    config['fit'] = fit_block
+                    if range_block is not None:
+                        config['range'] = range_block
+                    
+                    # Remove 'default' when fit is saved (fit takes priority)
+                    # This forces the system to use fitted polynomial instead of default values
+                    if 'default' in config:
+                        self.get_logger().info("Removing 'default' from config - using fitted polynomial")
+                        del config['default']
+                    
+                    # Write config
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    
+                    self.get_logger().info(f"Saved systematic fit: degree={degree}, range=[{x_min:.2f}, {x_max:.2f}]mm")
+                    
+                    return JSONResponse({
+                        'success': True,
+                        'config_path': config_path,
+                        'fit': fit_block
+                    })
+                except Exception as e:
+                    self.get_logger().error(f"Save systematic fit error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return JSONResponse({'success': False, 'error': str(e)})
 
             @app.websocket('/ws')
             async def ws_endpoint(ws: WebSocket):

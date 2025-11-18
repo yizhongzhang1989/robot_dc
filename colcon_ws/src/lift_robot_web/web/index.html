@@ -412,116 +412,121 @@
       </div>
     </div>
     
-    <!-- Row 3: Platform Overshoot Calibration (Left column only) -->
+    <!-- Row 3: Range Detection & Overshoot Calibration (Two Columns) -->
     <div class="grid grid-cols-2 gap-4">
-      
-      <!-- LEFT: Platform Overshoot Calibration -->
-      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
+      <!-- Left: Platform Range Detection Card -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="font-bold text-lg text-orange-700 flex items-center gap-2">
-            ⚙️ Platform Overshoot Calibration
+          <h2 class="font-bold text-lg text-blue-700 flex items-center gap-2">
+            📏 Platform Range Detection
           </h2>
-          <span id="overshootCalibStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">Loading...</span>
+          <span id="rangeStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">Default</span>
         </div>
 
-        <!-- Detected Range & Calibrated Regions Display -->
-        <div class="mb-2 text-xs space-y-1">
-          <div id="detectedRangeDisplay" class="text-slate-600 italic">Range: --</div>
-          <div id="overshootRegionsContainer" class="space-y-1">
-            <div class="text-slate-400">No regions calibrated</div>
+        <!-- Detected Range Display -->
+        <div class="mb-3 grid grid-cols-2 gap-2 text-xs">
+          <div class="bg-slate-100 rounded p-2">
+            <div class="font-semibold text-slate-600">Actual Min</div>
+            <div id="rangeActualMin" class="font-mono font-bold text-blue-700">--</div>
           </div>
-          <div class="mt-2">
-            <span id="overshootFitEq" class="text-slate-700 text-xs font-semibold"></span>
+          <div class="bg-slate-100 rounded p-2">
+            <div class="font-semibold text-slate-600">Actual Max</div>
+            <div id="rangeActualMax" class="font-mono font-bold text-blue-700">--</div>
           </div>
-          <div class="mt-2">
-            <img id="overshootFitImg" src="" alt="Overshoot fit" class="w-full border border-slate-200 rounded hidden"/>
+          <div class="bg-green-50 border border-green-200 rounded p-2">
+            <div class="font-semibold text-green-700">Safe Min</div>
+            <div id="rangeSafeMin" class="font-mono font-bold text-green-900">--</div>
+          </div>
+          <div class="bg-green-50 border border-green-200 rounded p-2">
+            <div class="font-semibold text-green-700">Safe Max</div>
+            <div id="rangeSafeMax" class="font-mono font-bold text-green-900">--</div>
           </div>
         </div>
 
-        <!-- Full-auto range + multi-region calibration single button -->
+        <!-- Detect Button -->
         <div class="mb-3">
-          <button id="overshootFullAutoBtn" class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded font-semibold transition">
-            � Full Auto Range + Region Calibration
+          <button id="rangeDetectBtn" class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded font-semibold transition">
+            🔍 Detect Range & Set Safe Bounds (±50mm)
           </button>
         </div>
-        
-      <div class="space-y-3">
-        
-        <!-- Hidden Calibration Range Inputs (kept for internal logic compatibility) -->
-        <div class="grid grid-cols-2 gap-2 hidden">
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">Lower Bound (mm)</label>
-            <input id="overshootLowerBound" type="number" placeholder="910" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" value="910">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">Upper Bound (mm)</label>
-            <input id="overshootUpperBound" type="number" placeholder="945" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" value="945">
-          </div>
+
+        <!-- Status Message -->
+        <div id="rangeStatusMsg" class="text-xs text-slate-500"></div>
+      </div>
+
+      <!-- Right: Overshoot Calibration Card -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-lg text-purple-700 flex items-center gap-2">
+            🔬 Overshoot Calibration
+          </h2>
+          <span id="overshootStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">Default</span>
         </div>
-        
-        <!-- Start Calibration Button -->
-        <button id="overshootStartBtn" 
-                class="w-full px-3 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 font-semibold transition">
-          ▶️ Start Auto Calibration
-        </button>
-        
+
         <!-- Sample Lists -->
-        <div class="grid grid-cols-2 gap-2">
+        <div class="mb-3 grid grid-cols-2 gap-2">
           <div class="bg-slate-50 rounded p-2 border border-slate-200">
-            <div class="font-semibold text-xs text-orange-600 mb-1">Up Samples</div>
-            <div id="overshootSamplesUpList" class="text-xs space-y-1 max-h-24 overflow-auto">
+            <div class="font-semibold text-xs text-green-600 mb-1">⬇️ DOWN Samples</div>
+            <div id="overshootSamplesDownList" class="text-xs space-y-1 max-h-40 overflow-auto">
               <div class="text-slate-400">No samples</div>
             </div>
           </div>
           <div class="bg-slate-50 rounded p-2 border border-slate-200">
-            <div class="font-semibold text-xs text-orange-600 mb-1">Down Samples</div>
-            <div id="overshootSamplesDownList" class="text-xs space-y-1 max-h-24 overflow-auto">
+            <div class="font-semibold text-xs text-blue-600 mb-1">⬆️ UP Samples</div>
+            <div id="overshootSamplesUpList" class="text-xs space-y-1 max-h-40 overflow-auto">
               <div class="text-slate-400">No samples</div>
             </div>
           </div>
         </div>
-        
+
+        <!-- Workflow Buttons -->
+        <div class="space-y-2 mb-3">
+          <div class="flex items-center gap-2">
+            <button id="overshootStartCalibrationBtn" disabled class="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+              ▶️ Start Calibration
+            </button>
+            <button id="overshootAbortBtn" disabled class="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+              ⏹️ Abort
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="overshootShowPlotBtn" disabled class="flex-1 px-3 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+              📊 Show Plot
+            </button>
+            <select id="overshootFitDegree" class="px-2 py-2 border border-slate-300 rounded text-sm">
+              <option value="1">Deg 1</option>
+              <option value="2">Deg 2</option>
+              <option value="3" selected>Deg 3</option>
+              <option value="4">Deg 4</option>
+              <option value="5">Deg 5</option>
+              <option value="6">Deg 6</option>
+            </select>
+            <button id="overshootFitBtn" disabled class="px-3 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+              📈 Fit
+            </button>
+          </div>
+        </div>
+
+        <!-- Plot Image -->
+        <img id="overshootPlotImg" src="" alt="Overshoot plot" class="w-full border border-slate-200 rounded hidden mb-3"/>
+
         <!-- Action Buttons -->
-        <div class="grid grid-cols-2 gap-2">
-          <button id="overshootSaveBtn" class="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 font-semibold transition">
-            💾 Save
+        <div class="grid grid-cols-3 gap-2 mb-2">
+          <button id="overshootSaveFitBtn" disabled class="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+            💾 Save Fit
           </button>
-          <button id="overshootClearBtn" class="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 transition">
+          <button id="overshootRemoveOutliersBtn" disabled class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+            🧹 Remove Outliers
+          </button>
+          <button id="overshootClearBtn" class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm rounded font-semibold transition">
             🗑️ Clear
           </button>
         </div>
-        
-        <!-- Results Display -->
-        <div id="overshootResults" class="bg-slate-50 rounded p-2 border border-slate-200">
-          <div class="font-semibold text-xs text-orange-600 mb-2">
-            🧮 Result
-          </div>
-          <div class="grid grid-cols-2 gap-1 text-xs">
-            <div class="col-span-2 bg-green-50 border border-green-200 rounded px-2 py-1">
-              <strong class="text-green-700">Upward Overshoot:</strong> 
-              <span id="overshootResEmaUp" class="font-mono font-bold text-green-900">--</span> mm
-            </div>
-            <div class="col-span-2 bg-blue-50 border border-blue-200 rounded px-2 py-1">
-              <strong class="text-blue-700">Downward Overshoot:</strong> 
-              <span id="overshootResEmaDown" class="font-mono font-bold text-blue-900">--</span> mm
-            </div>
-          </div>
-        </div>
-        
-        <div class="text-xs text-slate-500 italic">
-          <strong>Tip:</strong> Enter range and click Start. System will test 6 points automatically.
-        </div>
-        
+
+        <!-- Status Message -->
         <div id="overshootStatusMsg" class="text-xs text-slate-500"></div>
       </div>
-      </div>
-      
-      <!-- RIGHT: Empty placeholder -->
-      <div></div>
     </div>
-    
-    <!-- Raw JSON Data -->
-    <div class="bg-white rounded-lg shadow">
       <details>
         <summary class="p-3 font-semibold cursor-pointer hover:bg-slate-50 rounded-t-lg">📄 Raw JSON Data</summary>
         <div class="p-3 border-t">
@@ -623,8 +628,8 @@ function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
       activeStatus = platformStatus || pushrodStatus;
     }
   } else {
-    // Both idle - don't show idle unless initial launch
-    mergedState = 'completed';
+    // Both idle - show idle state normally
+    mergedState = 'idle';
     activeStatus = platformStatus || pushrodStatus;
   }
   
@@ -986,896 +991,734 @@ $('calibHeightInput').addEventListener('keypress', (e) => {
 setInterval(updateCalibrationStatus, 1000);
 
 // ═══════════════════════════════════════════════════════════════
-// Platform Overshoot Calibration Functions
+// Range Detection Functions (Separate from Overshoot Calibration)
 // ═══════════════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════════════
-// Platform Overshoot Calibration Functions
-// ═══════════════════════════════════════════════════════════════
+let rangeDetectionAborted = false;
+let regionMinHeight = null;
+let regionMaxHeight = null;
 
-// Track last processed goto measurement to avoid duplicate samples
-let lastProcessedGotoTimestamp = null;
-let autoAddedSampleCount = 0;  // Track total auto-added samples
-let overshootCalibrationActive = false;  // Calibration mode toggle
-let autoCalibrationRunning = false;  // Auto calibration in progress
-let autoCalibrationAborted = false;  // Flag to abort calibration
-
-// Generate 6 calibration points with alternating upper/lower half ranges
-function generateCalibrationPoints(lowerBound, upperBound, currentHeight) {
-  const minSpacing = 4; // Minimum spacing between consecutive points in mm
-  const midPoint = (lowerBound + upperBound) / 2;
-  const lowerHalf = { min: lowerBound, max: midPoint };
-  const upperHalf = { min: midPoint, max: upperBound };
-  
-  console.log(`[Auto Calib] Generating points: lower=${lowerBound}mm, upper=${upperBound}mm, mid=${midPoint}mm, current=${currentHeight}mm`);
-  
-  const points = [];
-  let currentRange, nextRange;
-  
-  // Determine starting range based on current position
-  if (currentHeight >= lowerBound && currentHeight <= upperBound) {
-    // Current position is within range
-    if (currentHeight >= midPoint) {
-      // In upper half, start from lower half
-      console.log('[Auto Calib] Current in upper half, first point from lower half');
-      currentRange = lowerHalf;
-      nextRange = upperHalf;
-    } else {
-      // In lower half, start from upper half
-      console.log('[Auto Calib] Current in lower half, first point from upper half');
-      currentRange = upperHalf;
-      nextRange = lowerHalf;
-    }
-  } else if (currentHeight > upperBound) {
-    // Above range, start from lower half
-    console.log('[Auto Calib] Current above range, first point from lower half');
-    currentRange = lowerHalf;
-    nextRange = upperHalf;
-  } else {
-    // Below range, start from upper half
-    console.log('[Auto Calib] Current below range, first point from upper half');
-    currentRange = upperHalf;
-    nextRange = lowerHalf;
+// Detect platform range
+async function detectPlatformRange(){
+  if (regionMinHeight !== null && regionMaxHeight !== null) {
+    if(!confirm('Range already detected. Redetect?')) return;
   }
-  
-  // Generate 6 points, alternating between ranges
-  let lastPoint = currentHeight;
-  const maxAttempts = 100;
-  
-  for (let i = 0; i < 6; i++) {
-    let validPoint = null;
-    
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      // Generate random point in current range
-      const candidate = currentRange.min + Math.random() * (currentRange.max - currentRange.min);
-      
-      // Check spacing from last point
-      if (Math.abs(candidate - lastPoint) >= minSpacing) {
-        validPoint = candidate;
+  const statusMsg = $('rangeStatusMsg');
+  $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-blue-500 text-white';
+  statusMsg.textContent='🔁 Detecting platform range...';
+  try {
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'timed_down',target:'pushrod',duration:7.0})});
+    statusMsg.textContent='⏳ Waiting for pushrod down...';
+    await new Promise(r=>setTimeout(r,2000));
+
+    statusMsg.textContent='⬇️ Moving platform DOWN (waiting for stall)...';
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'down',target:'platform'})});
+    const STALL_MS = 2000;
+    const RESET_DELTA = 0.005;
+    const STABLE_DELTA = 0.02;
+    let firstHeight = null; let prevHeight = null; let lastChangeTime = Date.now();
+    while(true){
+      await new Promise(r=>setTimeout(r,100));
+      const res = await fetch('/api/status');
+      if(!res.ok) continue;
+      const current = (await res.json()).platform?.current_height;
+      if(current===null || current===undefined) continue;
+      if(firstHeight===null) firstHeight=current;
+      if(Math.abs(current-firstHeight)<RESET_DELTA){lastChangeTime=Date.now();prevHeight=current;continue;}
+      if(prevHeight!==null && Math.abs(current-prevHeight)>STABLE_DELTA){lastChangeTime=Date.now();}
+      if(Date.now()-lastChangeTime>STALL_MS){
+        regionMinHeight=current;
+        await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'stop',target:'platform'})});
         break;
       }
+      prevHeight=current;
     }
-    
-    if (validPoint === null) {
-      // Fallback: use range center or boundary
-      if (Math.abs(currentRange.min - lastPoint) >= minSpacing) {
-        validPoint = currentRange.min + 0.1;
-      } else if (Math.abs(currentRange.max - lastPoint) >= minSpacing) {
-        validPoint = currentRange.max - 0.1;
-      } else {
-        validPoint = (currentRange.min + currentRange.max) / 2;
+    if(regionMinHeight===null){
+      statusMsg.textContent='❌ Failed to detect minimum height';
+      $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+      return;
+    }
+    statusMsg.textContent=`✅ Min: ${regionMinHeight.toFixed(2)}mm | ⬆️ Detecting max...`;    
+
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'up',target:'platform'})});
+    let upStartHeight = null; let prevUp = null; let lastUpChange = Date.now();
+    while(true){
+      await new Promise(r=>setTimeout(r,100));
+      const res = await fetch('/api/status');
+      if(!res.ok) continue;
+      const current = (await res.json()).platform?.current_height;
+      if(current===null || current===undefined) continue;
+      if(upStartHeight===null){
+        if(Math.abs(current-regionMinHeight)>5.0){upStartHeight=current;lastUpChange=Date.now();}
+        prevUp=current;
+        continue;
       }
-      console.log(`[Auto Calib] Point ${i + 1}: fallback to ${validPoint.toFixed(1)}mm`);
+      if(prevUp!==null && Math.abs(current-prevUp)>STABLE_DELTA){lastUpChange=Date.now();}
+      if(Date.now()-lastUpChange>STALL_MS){
+        regionMaxHeight=current;
+        await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'stop',target:'platform'})});
+        break;
+      }
+      prevUp=current;
+    }
+    if(regionMaxHeight===null){
+      statusMsg.textContent='❌ Failed to detect maximum height';
+      $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+      return;
     }
     
-    points.push(validPoint);
-    lastPoint = validPoint;
+    // Calculate safe bounds
+    const actualMin = regionMinHeight;
+    const actualMax = regionMaxHeight;
+    const safeMin = actualMin + 50.0;
+    const safeMax = actualMax - 50.0;
     
-    console.log(`[Auto Calib] Point ${i + 1}: ${validPoint.toFixed(1)}mm from ${currentRange.min === lowerHalf.min ? 'lower' : 'upper'} half, distance from last: ${Math.abs(validPoint - (i === 0 ? currentHeight : points[i-1])).toFixed(1)}mm`);
+    if (safeMax <= safeMin) {
+      statusMsg.textContent = '❌ Range too small for 50mm margins';
+      $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+      return;
+    }
     
-    // Swap ranges for next iteration
-    [currentRange, nextRange] = [nextRange, currentRange];
+    // Save to backend
+    const res = await fetch('/api/range/set', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({actual_min: actualMin, actual_max: actualMax, safe_min: safeMin, safe_max: safeMax})
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed to save range');
+    
+    statusMsg.textContent = `✅ Range saved: ${safeMin.toFixed(1)} ~ ${safeMax.toFixed(1)}mm`;
+    $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+    await updateRangeStatus();
+  } catch(e){
+    statusMsg.textContent='❌ Detection failed: '+e.message;
+    $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
   }
-  
-  return points;
 }
 
-// Wait for platform movement to complete by checking task status
+async function updateRangeStatus() {
+  try {
+    const res = await fetch('/api/range/get');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.has_range) {
+        $('rangeActualMin').textContent = data.actual_min?.toFixed(1) || '--';
+        $('rangeActualMax').textContent = data.actual_max?.toFixed(1) || '--';
+        $('rangeSafeMin').textContent = data.safe_min?.toFixed(1) || '--';
+        $('rangeSafeMax').textContent = data.safe_max?.toFixed(1) || '--';
+        
+        const timestamp = data.detected_at_iso || '';
+        $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+        $('rangeStatusBadge').textContent = timestamp ? `Calibrated ${timestamp}` : 'Calibrated';
+        
+        // Enable overshoot calibration
+        $('overshootStartCalibrationBtn').disabled = false;
+      } else {
+        $('rangeActualMin').textContent = '--';
+        $('rangeActualMax').textContent = '--';
+        $('rangeSafeMin').textContent = '--';
+        $('rangeSafeMax').textContent = '--';
+        $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+        $('rangeStatusBadge').textContent = 'Default';
+        
+        // Disable overshoot calibration
+        $('overshootStartCalibrationBtn').disabled = true;
+      }
+    }
+  } catch (e) {
+    console.error('Range status update error:', e);
+  }
+}
+
+$('rangeDetectBtn').addEventListener('click', detectPlatformRange);
+setInterval(updateRangeStatus, 2000);
+
+// ═══════════════════════════════════════════════════════════════
+// Overshoot Calibration Functions (Separate from Range Detection)
+// ═══════════════════════════════════════════════════════════════
+
+let overshootCalibrationAborted = false;
+let overshootLastFitCoeffs = null;
+
 async function waitForMovementComplete() {
-  const maxWaitTime = 30000; // 30 seconds max
-  const pollInterval = 200; // Check every 200ms
+  const maxWaitTime = 60000;
+  const pollInterval = 20;  // 50Hz polling (20ms interval)
   const startTime = Date.now();
   
-  // Phase 1: Wait for task to START (task_type becomes 'goto_height')
-  console.log('[Auto Calib] Waiting for goto_height task to start...');
-  let taskStarted = false;
-  let waitCount = 0;
+  // Step 1: Wait for task to start (optional - task may already be running)
+  let taskSeen = false;
+  for (let i = 0; i < 10; i++) {
+    const res = await fetch('/api/status');
+    if (!res.ok) { await new Promise(r => setTimeout(r, pollInterval)); continue; }
+    const platform = (await res.json()).platform;
+    if (platform?.task_type === 'goto_height') {
+      taskSeen = true;
+      break;
+    }
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
   
+  // Step 2: Wait for task to complete (task_state becomes 'idle' or 'completed')
+  // Polling at 50Hz (20ms interval) for fast response
   while (Date.now() - startTime < maxWaitTime) {
-    try {
-      const res = await fetch('/api/status');
-      if (!res.ok) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        continue;
-      }
-      
-      const data = await res.json();
-      const platform = data.platform;
-      
-      waitCount++;
-      if (waitCount % 10 === 0) { // Log every 2 seconds
-        console.log(`[Auto Calib] Waiting for start... task_state="${platform?.task_state}" task_type="${platform?.task_type}"`);
-      }
-      
-      // Task started if task_type is 'goto_height' and task_state is 'running' or 'active'
-      if (platform?.task_type === 'goto_height' && 
-          (platform?.task_state === 'running' || platform?.task_state === 'active')) {
-        console.log('[Auto Calib] Task started:', platform.task_state, platform.task_type);
-        taskStarted = true;
-        break;
-      }
-      
-    } catch (e) {
-      console.error('[Auto Calib] Error fetching status:', e);
-    }
+    const res = await fetch('/api/status');
+    if (!res.ok) { await new Promise(r => setTimeout(r, pollInterval)); continue; }
+    const platform = (await res.json()).platform;
     
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-  
-  if (!taskStarted) {
-    throw new Error('Task did not start (timeout)');
-  }
-  
-  // Phase 2: Wait for task to COMPLETE (task_state becomes 'completed' or 'idle')
-  console.log('[Auto Calib] Waiting for goto_height task to complete...');
-  waitCount = 0;
-  
-  while (Date.now() - startTime < maxWaitTime) {
-    try {
-      const res = await fetch('/api/status');
-      if (!res.ok) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        continue;
-      }
-      
-      const data = await res.json();
-      const platform = data.platform;
-      
-      waitCount++;
-      if (waitCount % 10 === 0) { // Log every 2 seconds
-        console.log(`[Auto Calib] Waiting for completion... task_state="${platform?.task_state}" task_type="${platform?.task_type}"`);
-      }
-      
-      // Task completed if task_state is 'completed', 'idle', or task_type is no longer goto_height
-      if (platform?.task_state === 'completed' || 
-          platform?.task_state === 'idle' ||
-          (platform?.task_type !== 'goto_height' && platform?.task_state !== 'running')) {
-        console.log('[Auto Calib] Task completed:', platform.task_state, 'reason:', platform.completion_reason);
-        return true;
-      }
-      
-    } catch (e) {
-      console.error('[Auto Calib] Error fetching status:', e);
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-  
-  throw new Error('Task completion timeout');
-}
-
-// Reset auto calibration state
-function resetAutoCalibration() {
-  console.log('[Auto Calib] Resetting calibration state');
-  autoCalibrationRunning = false;
-  autoCalibrationAborted = false;
-  overshootCalibrationActive = false;
-  lastProcessedGotoTimestamp = null;
-  
-  const startBtn = $('overshootStartBtn');
-  startBtn.textContent = '▶️ Start Auto Calibration';
-  startBtn.className = 'w-full px-3 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 font-semibold transition';
-  startBtn.onclick = startAutoCalibration;
-}
-
-// Start auto calibration
-async function startAutoCalibration() {
-  const lowerBound = parseFloat($('overshootLowerBound').value);
-  const upperBound = parseFloat($('overshootUpperBound').value);
-  
-  if (isNaN(lowerBound) || isNaN(upperBound)) {
-    $('overshootStatusMsg').textContent = '❌ Please enter valid bounds';
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-    return;
-  }
-  
-  if (lowerBound >= upperBound) {
-    $('overshootStatusMsg').textContent = '❌ Lower bound must be less than upper bound';
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-    return;
-  }
-  
-  if (upperBound - lowerBound < 10) {
-    $('overshootStatusMsg').textContent = '❌ Range too small (min 10mm required)';
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-    return;
-  }
-  
-  if (autoCalibrationRunning) {
-    $('overshootStatusMsg').textContent = '⚠️ Calibration already running';
-    return;
-  }
-  
-  try {
-    // Step 1: Get current platform height
-    $('overshootStatusMsg').textContent = '📏 Reading current platform height...';
-    const statusRes = await fetch('/api/status');
-    if (!statusRes.ok) {
-      throw new Error('Failed to get platform status');
-    }
-    const statusData = await statusRes.json();
-    const currentHeight = statusData.platform?.current_height;
-    
-    if (currentHeight === undefined || currentHeight === null) {
-      throw new Error('Could not read current platform height');
-    }
-    
-    console.log('[Auto Calib] Current platform height:', currentHeight);
-    
-    // Step 2: Generate points based on current position
-    const points = generateCalibrationPoints(lowerBound, upperBound, currentHeight);
-    console.log('[Auto Calib] Generated points:', points);
-    
-    if (!points || points.length === 0) {
-      throw new Error('Failed to generate calibration points');
-    }
-    
-    // Step 3: Initialize calibration state
-    autoCalibrationRunning = true;
-    autoCalibrationAborted = false;
-    overshootCalibrationActive = true;  // Enable auto sample recording
-    lastProcessedGotoTimestamp = null;  // Reset timestamp tracking
-    
-    console.log('[Auto Calib] Calibration initialized');
-    
-    // Update UI
-    const startBtn = $('overshootStartBtn');
-    startBtn.textContent = '⏹️ Stop Calibration';
-    startBtn.className = 'w-full px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 font-semibold transition';
-    startBtn.onclick = stopAutoCalibration;
-  
-  $('overshootStatusMsg').textContent = `🚀 Starting auto calibration with ${points.length} points...`;
-  
-  // Execute goto for each point
-  for (let i = 0; i < points.length; i++) {
-    if (autoCalibrationAborted) {
-      $('overshootStatusMsg').textContent = '🛑 Calibration aborted by user';
-      console.log('[Auto Calib] Aborted by user');
+    // Task complete when state is idle or completed
+    if (platform?.task_state === 'idle' || platform?.task_state === 'completed') {
+      console.log(`Movement complete: task_state=${platform.task_state}, task_type=${platform.task_type}`);
       break;
     }
     
-    const target = points[i];
-    console.log(`[Auto Calib] Point ${i + 1}/${points.length}: Sending goto ${target.toFixed(1)}mm`);
-    $('overshootStatusMsg').textContent = `📍 Moving to point ${i + 1}/${points.length}: ${target.toFixed(1)}mm`;
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+  
+  // Step 3: Wait for height to stabilize and overshoot measurement
+  // Platform needs: stop relay (100ms) + OVERSHOOT_SETTLE_DELAY (500ms) + measurement + status publish
+  // Total: ~1.0s minimum, use 2.0s for safety
+  await new Promise(r => setTimeout(r, 2000));
+  
+  // Step 4: Verify we have valid goto data, retry if needed
+  let retries = 0;
+  const maxRetries = 5;
+  let finalData = null;
+  
+  while (retries < maxRetries) {
+    const finalRes = await fetch('/api/status');
+    finalData = await finalRes.json();
     
-    try {
-      // Send goto command
-      const res = await fetch('/api/cmd', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          command: 'goto_height',
-          target: 'platform',
-          target_height: target
-        })
-      });
-      
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to send goto command');
-      }
-      
-      console.log(`[Auto Calib] Goto command sent, waiting for movement...`);
-      
-  // Wait for movement to complete (poll status) with stall recovery
-  await waitForMovementComplete(target);
-      
-      console.log(`[Auto Calib] Movement complete, waiting 1s for stabilization and sample recording...`);
-      
-      // Delay for measurement stabilization and auto-sample recording
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      console.log(`[Auto Calib] Point ${i + 1} completed`);
-      
-    } catch (e) {
-      console.error('[Auto Calib] Error at point', i, e);
-      $('overshootStatusMsg').textContent = `❌ Error at point ${i + 1}: ${e.message}`;
+    if (finalData.platform?.last_goto_actual !== null && 
+        finalData.platform?.last_goto_actual !== undefined &&
+        finalData.platform?.last_goto_stop_height !== null && 
+        finalData.platform?.last_goto_stop_height !== undefined) {
+      console.log(`Valid goto data found: stop=${finalData.platform.last_goto_stop_height.toFixed(2)}, actual=${finalData.platform.last_goto_actual.toFixed(2)}`);
       break;
     }
+    
+    console.warn(`Retry ${retries + 1}/${maxRetries}: Waiting for valid goto data...`);
+    await new Promise(r => setTimeout(r, 500));
+    retries++;
   }
   
-  // Finish calibration
-  if (!autoCalibrationAborted) {
-    console.log('[Auto Calib] Calibration loop completed, calculating and saving...');
-    
-    // Auto calculate and save
-    $('overshootStatusMsg').textContent = '🧮 Calculating overshoot values...';
-    await calculateOvershoot();
-    
-    $('overshootStatusMsg').textContent = '💾 Saving calibration...';
-    await saveOvershoot();
-    
-    $('overshootStatusMsg').textContent = '✅ Auto calibration completed and saved!';
-    console.log('[Auto Calib] All done!');
+  if (retries >= maxRetries) {
+    console.error('Failed to get valid goto data after movement');
   }
   
-  // Reset UI
-  resetAutoCalibration();
-  
-  setTimeout(() => {
-    if ($('overshootStatusMsg').textContent.includes('completed')) {
-      $('overshootStatusMsg').textContent = '';
-    }
-  }, 5000);
-  
-  } catch (error) {
-    console.error('[Auto Calib] Fatal error:', error);
-    $('overshootStatusMsg').textContent = `❌ Calibration failed: ${error.message}`;
-    resetAutoCalibration();
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 5000);
-  }
+  return true;
 }
 
-function stopAutoCalibration() {
-  autoCalibrationAborted = true;
-  $('overshootStatusMsg').textContent = '⏳ Stopping calibration...';
-  // Reset will happen when the loop exits
+function renderOvershootSamples(samples) {
+  const downList = $('overshootSamplesDownList');
+  const upList = $('overshootSamplesUpList');
+  
+  const downSamples = samples.filter(s => s.direction === 'down');
+  const upSamples = samples.filter(s => s.direction === 'up');
+  
+  if (downSamples.length === 0) {
+    downList.innerHTML = '<div class="text-slate-400">No samples</div>';
+  } else {
+    downList.innerHTML = downSamples.map((s, i) => 
+      `<div class="bg-white p-1 rounded border border-slate-200 text-xs flex items-center justify-between">
+        <div>
+          <span class="font-semibold text-green-700">#${i+1}</span> 
+          ${s.height.toFixed(1)}mm → 
+          <span class="font-bold text-green-700">${Math.abs(s.overshoot).toFixed(2)}mm</span>
+        </div>
+        <button onclick="deleteSample(${i}, 'down')" class="px-2 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded text-xs">✕</button>
+      </div>`
+    ).join('');
+  }
+  
+  if (upSamples.length === 0) {
+    upList.innerHTML = '<div class="text-slate-400">No samples</div>';
+  } else {
+    upList.innerHTML = upSamples.map((s, i) => 
+      `<div class="bg-white p-1 rounded border border-slate-200 text-xs flex items-center justify-between">
+        <div>
+          <span class="font-semibold text-blue-700">#${i+1}</span> 
+          ${s.height.toFixed(1)}mm → 
+          <span class="font-bold text-blue-700">${Math.abs(s.overshoot).toFixed(2)}mm</span>
+        </div>
+        <button onclick="deleteSample(${i}, 'up')" class="px-2 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded text-xs">✕</button>
+      </div>`
+    ).join('');
+  }
 }
-
-// (Old waitForMovementComplete removed; now defined above with stall recovery and expectedTarget)
 
 async function updateOvershootStatus() {
   try {
-    const res = await fetch('/api/overshoot/status');
-    if (!res.ok) return;
-    const data = await res.json();
-    
-    // Update status badge
-    const badge = $('overshootCalibStatusBadge');
-    if (data.calibrated_at) {
-      badge.textContent = `Calibrated ${data.calibrated_at}`;
-      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700';
-    } else if (data.calibrated_up || data.calibrated_down) {
-      badge.textContent = 'Default';
-      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-yellow-100 text-yellow-700';
-    } else {
-      badge.textContent = 'Not Calibrated';
-      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
-    }
-    
-    // Auto-add sample if new goto measurement detected AND calibration is active
-    console.log('[Overshoot Debug] calibrationActive:', overshootCalibrationActive, 
-                'target:', data.last_goto_target, 
-                'actual:', data.last_goto_actual, 
-                'direction:', data.last_goto_direction,
-                'timestamp:', data.last_goto_timestamp);
-    
-    if (overshootCalibrationActive && 
-        data.last_goto_target !== undefined && 
-        data.last_goto_actual !== undefined && 
-        data.last_goto_direction && 
-        data.last_goto_timestamp) {
+    const samplesRes = await fetch('/api/systematic/samples');
+    if (samplesRes.ok) {
+      const samplesData = await samplesRes.json();
+      const hasSamples = samplesData.count_total > 0;
+      const hasEnoughSamples = samplesData.count_total >= 3;
       
-      console.log('[Overshoot Debug] Conditions met! Last processed:', lastProcessedGotoTimestamp, 'New:', data.last_goto_timestamp);
+      $('overshootShowPlotBtn').disabled = !hasSamples;
+      $('overshootFitBtn').disabled = !hasSamples;
+      $('overshootRemoveOutliersBtn').disabled = !hasEnoughSamples;
       
-      // Check if this is a new measurement
-      if (lastProcessedGotoTimestamp === null || data.last_goto_timestamp > lastProcessedGotoTimestamp) {
-        lastProcessedGotoTimestamp = data.last_goto_timestamp;
-        
-        // Auto-add the sample
-        const direction = data.last_goto_direction;
-        const target = data.last_goto_target;
-        const actual = data.last_goto_actual;
-        const stop_height = data.last_goto_stop_height;  // Stop position (for residual overshoot)
-        
-        console.log('[Overshoot Debug] Auto-adding sample:', {direction, target, actual, stop_height});
-        
-        try {
-          const addRes = await fetch('/api/overshoot/add_sample', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ direction, target, actual, stop_height })
-          });
-          
-          const addData = await addRes.json();
-          console.log('[Overshoot Debug] Add result:', addData);
-          
-          if (addData.success) {
-            autoAddedSampleCount++;
-            $('overshootStatusMsg').textContent = `✓ Auto-added ${direction} sample #${autoAddedSampleCount}: residual overshoot=${addData.sample.overshoot.toFixed(2)}mm`;
-            
-            // Auto-calculate after 3 samples
-            const totalSamples = addData.count_up + addData.count_down;
-            if (totalSamples >= 3 && (addData.count_up >= 2 || addData.count_down >= 2)) {
-              await calculateOvershoot();
-              $('overshootStatusMsg').textContent += ' (Auto-calculated)';
-            }
-            
-            setTimeout(() => $('overshootStatusMsg').textContent = '', 5000);
-          }
-        } catch (e) {
-          console.error('Auto-add sample error:', e);
+      // Update badge status
+      if (hasSamples) {
+        // Priority 1: Use fit timestamp if available (most recent calibration)
+        // Priority 2: Use config generated_at (when calibration started)
+        // Priority 3: Use first sample timestamp
+        const timestamp = samplesData.fit_generated_at || samplesData.generated_at || samplesData.samples_all?.[0]?.timestamp;
+        if (timestamp) {
+          const date = new Date(timestamp * 1000);
+          const prefix = samplesData.fit_generated_at ? 'Fitted' : 'Calibration';
+          $('overshootStatusBadge').textContent = `${prefix} ${date.toLocaleString()}`;
+        } else {
+          $('overshootStatusBadge').textContent = `Calibration (${samplesData.count_total} samples)`;
         }
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-purple-500 text-white';
+      } else {
+        $('overshootStatusBadge').textContent = 'Default';
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+      }
+      
+      // Render sample lists
+      if (samplesData.samples_all && samplesData.samples_all.length > 0) {
+        renderOvershootSamples(samplesData.samples_all);
+      } else {
+        // Clear sample lists when no samples
+        $('overshootSamplesDownList').innerHTML = '<div class="text-slate-400">No samples</div>';
+        $('overshootSamplesUpList').innerHTML = '<div class="text-slate-400">No samples</div>';
       }
     }
-    
-    // Update sample lists
-    await updateOvershootSamples();
-
-  // Render regions & detected range
-  renderOvershootRegions(data);
-    
   } catch (e) {
     console.error('Overshoot status update error:', e);
   }
 }
 
-async function updateOvershootSamples() {
+async function overshootStartCalibration() {
   try {
-    const res = await fetch('/api/overshoot/samples');
-    if (!res.ok) return;
-    const data = await res.json();
+    // Get range data
+    const rangeRes = await fetch('/api/range/get');
+    const rangeData = await rangeRes.json();
+    if (!rangeData.has_range) throw new Error('Please detect range first');
     
-    // Update up samples list
-    const upList = $('overshootSamplesUpList');
-    if (data.samples_up && data.samples_up.length > 0) {
-      upList.innerHTML = data.samples_up.map((s, i) => {
-        // Display: Stop position → Stable position (residual drift)
-        const stopH = s.stop_height !== null && s.stop_height !== undefined ? s.stop_height.toFixed(1) : '?';
-        const actualH = s.actual.toFixed(1);
-        const overshoot = s.overshoot.toFixed(2);
-        return `
-        <div class="flex justify-between items-center bg-slate-50 px-2 py-1 rounded">
-          <span>Stop:${stopH} → Stable:${actualH} (${overshoot}mm)</span>
-          <button onclick="deleteOvershootSample('up', ${i})" class="text-red-500 hover:text-red-700 text-xs">✕</button>
-        </div>
-      `;
-      }).join('');
-    } else {
-      upList.innerHTML = '<div class="text-slate-400">No samples</div>';
-    }
+    const safeMin = rangeData.safe_min;
+    const safeMax = rangeData.safe_max;
+    const interval = 6.0;
     
-    // Update down samples list
-    const downList = $('overshootSamplesDownList');
-    if (data.samples_down && data.samples_down.length > 0) {
-      downList.innerHTML = data.samples_down.map((s, i) => {
-        const stopH = s.stop_height !== null && s.stop_height !== undefined ? s.stop_height.toFixed(1) : '?';
-        const actualH = s.actual.toFixed(1);
-        const overshoot = s.overshoot.toFixed(2);
-        return `
-        <div class="flex justify-between items-center bg-slate-50 px-2 py-1 rounded">
-          <span>Stop:${stopH} → Stable:${actualH} (${overshoot}mm)</span>
-          <button onclick="deleteOvershootSample('down', ${i})" class="text-red-500 hover:text-red-700 text-xs">✕</button>
-        </div>
-      `;
-      }).join('');
-    } else {
-      downList.innerHTML = '<div class="text-slate-400">No samples</div>';
-    }
+    // Clear previous samples
+    const clearRes = await fetch('/api/systematic/start_calibration', {method: 'POST'});
+    const clearData = await clearRes.json();
+    if (!clearData.success) throw new Error('Failed to clear samples');
     
-  } catch (e) {
-    console.error('Overshoot samples update error:', e);
-  }
-}
-
-async function addOvershootSample() {
-  const direction = $('overshootDirection').value;
-  const target = parseFloat($('overshootTarget').value);
-  const actual = parseFloat($('overshootActual').value);
-  
-  if (isNaN(target) || isNaN(actual)) {
-    $('overshootStatusMsg').textContent = '❌ Please enter valid target and actual heights';
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-    return;
-  }
-  
-  try {
-    const res = await fetch('/api/overshoot/add_sample', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ direction, target, actual })
-    });
+    overshootCalibrationAborted = false;
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-indigo-500 text-white';
     
-    const data = await res.json();
-    if (data.success) {
-      $('overshootStatusMsg').textContent = `✓ Added ${direction} sample (overshoot: ${data.sample.overshoot.toFixed(2)}mm)`;
-      $('overshootTarget').value = '';
-      $('overshootActual').value = '';
+    // Enable abort button, disable start button
+    $('overshootAbortBtn').disabled = false;
+    $('overshootStartCalibrationBtn').disabled = true;
+    
+    // Phase 1: DOWN calibration
+    const targetsDown = [];
+    for (let h = safeMax; h >= safeMin; h -= interval) targetsDown.push(h);
+    
+    // Move to starting position (10mm above safeMax) - DO NOT measure this point
+    $('overshootStatusMsg').textContent = `⬇️ Moving to DOWN starting position (${(safeMax + 10).toFixed(1)}mm)...`;
+    await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: safeMax + 10})});
+    await waitForMovementComplete();
+    console.log(`📍 DOWN starting position reached: ${(safeMax + 10).toFixed(1)}mm (not measured)`);
+    
+    $('overshootStatusMsg').textContent = `⬇️ Calibrating ${targetsDown.length} DOWN points...`;
+    
+    let completedDown = 0;
+    for (const targetHeight of targetsDown) {
+      if (overshootCalibrationAborted) {
+        $('overshootStatusMsg').textContent = '🛑 Calibration aborted';
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;
+      }
+      
+      $('overshootStatusMsg').textContent = `⬇️ DOWN ${completedDown + 1}/${targetsDown.length}: ${targetHeight.toFixed(1)}mm`;
+      
+      await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: targetHeight})});
+      
+      await waitForMovementComplete();
+      
+      const statusRes = await fetch('/api/status');
+      const platform = (await statusRes.json()).platform;
+      
+      if (platform?.last_goto_actual !== null && platform?.last_goto_actual !== undefined &&
+          platform?.last_goto_stop_height !== null && platform?.last_goto_stop_height !== undefined) {
+        const overshoot = platform.last_goto_actual - platform.last_goto_stop_height;
+        
+        const addRes = await fetch('/api/systematic/add_sample', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({height: platform.last_goto_stop_height, overshoot: overshoot, direction: 'down'})});
+        const addData = await addRes.json();
+        
+        if (addData.success) {
+          console.log(`✅ DOWN #${completedDown + 1}: stop=${platform.last_goto_stop_height.toFixed(2)}, actual=${platform.last_goto_actual.toFixed(2)}, overshoot=${overshoot.toFixed(3)} [saved]`);
+        } else {
+          console.error(`❌ DOWN #${completedDown + 1}: Failed to save sample - ${addData.error || 'unknown error'}`);
+          $('overshootStatusMsg').textContent = `❌ Save failed at DOWN #${completedDown + 1}: ${addData.error || 'unknown error'}`;
+          $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+          
+          // Re-enable start button, disable abort button
+          $('overshootAbortBtn').disabled = true;
+          await updateOvershootStatus();
+          return;  // Abort calibration on save failure
+        }
+      } else {
+        console.warn(`⚠️  DOWN #${completedDown + 1}: No valid overshoot data (stop=${platform?.last_goto_stop_height}, actual=${platform?.last_goto_actual})`);
+        $('overshootStatusMsg').textContent = `⚠️  No valid data at DOWN #${completedDown + 1} - aborting`;
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;  // Abort calibration if no valid data
+      }
+      
+      completedDown++;
       await updateOvershootStatus();
-    } else {
-      $('overshootStatusMsg').textContent = '❌ ' + (data.error || 'Failed to add sample');
     }
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
+    
+    // Phase 2: UP calibration
+    const targetsUp = [];
+    for (let h = safeMin; h <= safeMax; h += interval) targetsUp.push(h);
+    
+    // Move to starting position (10mm below safeMin) - DO NOT measure this point
+    $('overshootStatusMsg').textContent = `⬆️ Moving to UP starting position (${(safeMin - 10).toFixed(1)}mm)...`;
+    await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: safeMin - 10})});
+    await waitForMovementComplete();
+    console.log(`📍 UP starting position reached: ${(safeMin - 10).toFixed(1)}mm (not measured)`);
+    
+    $('overshootStatusMsg').textContent = `⬆️ Calibrating ${targetsUp.length} UP points...`;
+    
+    let completedUp = 0;
+    for (const targetHeight of targetsUp) {
+      if (overshootCalibrationAborted) {
+        $('overshootStatusMsg').textContent = '🛑 Calibration aborted';
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;
+      }
+      
+      $('overshootStatusMsg').textContent = `⬆️ UP ${completedUp + 1}/${targetsUp.length}: ${targetHeight.toFixed(1)}mm`;
+      
+      await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: targetHeight})});
+      
+      await waitForMovementComplete();
+      
+      const statusRes = await fetch('/api/status');
+      const platform = (await statusRes.json()).platform;
+      
+      if (platform?.last_goto_actual !== null && platform?.last_goto_actual !== undefined &&
+          platform?.last_goto_stop_height !== null && platform?.last_goto_stop_height !== undefined) {
+        const overshoot = platform.last_goto_actual - platform.last_goto_stop_height;
+        
+        const addRes = await fetch('/api/systematic/add_sample', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({height: platform.last_goto_stop_height, overshoot: overshoot, direction: 'up'})});
+        const addData = await addRes.json();
+        
+        if (addData.success) {
+          console.log(`✅ UP #${completedUp + 1}: stop=${platform.last_goto_stop_height.toFixed(2)}, actual=${platform.last_goto_actual.toFixed(2)}, overshoot=${overshoot.toFixed(3)} [saved]`);
+        } else {
+          console.error(`❌ UP #${completedUp + 1}: Failed to save sample - ${addData.error || 'unknown error'}`);
+          $('overshootStatusMsg').textContent = `❌ Save failed at UP #${completedUp + 1}: ${addData.error || 'unknown error'}`;
+          $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+          
+          // Re-enable start button, disable abort button
+          $('overshootAbortBtn').disabled = true;
+          await updateOvershootStatus();
+          return;  // Abort calibration on save failure
+        }
+      } else {
+        console.warn(`⚠️  UP #${completedUp + 1}: No valid overshoot data (stop=${platform?.last_goto_stop_height}, actual=${platform?.last_goto_actual})`);
+        $('overshootStatusMsg').textContent = `⚠️  No valid data at UP #${completedUp + 1} - aborting`;
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;  // Abort calibration if no valid data
+      }
+      
+      completedUp++;
+      await updateOvershootStatus();
+    }
+    
+    const now = new Date().toLocaleString();
+    $('overshootStatusMsg').textContent = `✅ Complete: ${completedDown} DOWN + ${completedUp} UP = ${completedDown + completedUp} points`;
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+    $('overshootStatusBadge').textContent = `Calibration ${now}`;
+    
+    // Re-enable start button, disable abort button
+    $('overshootAbortBtn').disabled = true;
+    await updateOvershootStatus();  // This will re-enable start button if range exists
   } catch (e) {
     $('overshootStatusMsg').textContent = '❌ Error: ' + e.message;
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-  }
-}
-
-async function deleteOvershootSample(direction, index) {
-  try {
-    const res = await fetch(`/api/overshoot/samples/${direction}/${index}`, {
-      method: 'DELETE'
-    });
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
     
-    const data = await res.json();
-    if (data.success) {
-      $('overshootStatusMsg').textContent = '✓ Sample deleted';
-      await updateOvershootStatus();
-    } else {
-      $('overshootStatusMsg').textContent = '❌ ' + (data.error || 'Failed to delete');
-    }
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-  } catch (e) {
-    $('overshootStatusMsg').textContent = '❌ Error: ' + e.message;
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
+    // Re-enable start button, disable abort button
+    $('overshootAbortBtn').disabled = true;
+    await updateOvershootStatus();
   }
 }
 
-async function clearOvershootSamples() {
-  // Auto clear without confirmation per new requirement
+async function overshootShowPlot() {
   try {
-    const res = await fetch('/api/overshoot/samples', { method: 'DELETE' });
+    const res = await fetch('/api/systematic/plot', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
     const data = await res.json();
-    if (data.success) {
-      $('overshootStatusMsg').textContent = '✓ Samples cleared';
-      await updateOvershootStatus();
-    } else {
-      $('overshootStatusMsg').textContent = '❌ ' + (data.error || 'Failed to clear');
+    if (!data.success) throw new Error(data.error || 'Plot failed');
+    const plotImg = $('overshootPlotImg');
+    plotImg.src = data.plot_url + '?' + Date.now();
+    plotImg.classList.remove('hidden');
+    $('overshootFitBtn').disabled = false;
+    $('overshootStatusMsg').textContent = `✅ Plot (${data.sample_count_up} UP, ${data.sample_count_down} DOWN)`;
+  } catch (e) {
+    $('overshootStatusMsg').textContent = '❌ Plot error: ' + e.message;
+  }
+}
+
+async function overshootFitCurve() {
+  try {
+    const degree = parseInt($('overshootFitDegree').value);
+    const res = await fetch('/api/systematic/plot', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({degree: degree})});
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Fit failed');
+    const plotImg = $('overshootPlotImg');
+    plotImg.src = data.plot_url + '?' + Date.now();
+    plotImg.classList.remove('hidden');
+    overshootLastFitCoeffs = {degree: data.degree, coeffs_up: data.fit_coeffs_up, coeffs_down: data.fit_coeffs_down};
+    $('overshootSaveFitBtn').disabled = false;
+    $('overshootStatusMsg').textContent = `✅ Fitted degree ${degree}`;
+  } catch (e) {
+    $('overshootStatusMsg').textContent = '❌ Fit error: ' + e.message;
+  }
+}
+
+async function overshootSaveFit() {
+  try {
+    if (!overshootLastFitCoeffs) throw new Error('No fit data. Please fit first.');
+    const res = await fetch('/api/systematic/save_fit', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(overshootLastFitCoeffs)});
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Save failed');
+    const now = new Date().toLocaleString();
+    $('overshootStatusMsg').textContent = `✅ Saved (degree ${data.fit.degree})`;
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+    $('overshootStatusBadge').textContent = `Calibration ${now}`;
+  } catch (e) {
+    $('overshootStatusMsg').textContent = '❌ Save error: ' + e.message;
+  }
+}
+
+async function deleteSample(index, direction) {
+  try {
+    // Get all samples first
+    const samplesRes = await fetch('/api/systematic/samples');
+    const samplesData = await samplesRes.json();
+    
+    // Find the actual sample index in the full list
+    const allSamples = samplesData.samples_all;
+    const filteredSamples = allSamples.filter(s => s.direction === direction);
+    const sampleToDelete = filteredSamples[index];
+    
+    // Find its index in the full list
+    const fullIndex = allSamples.findIndex(s => 
+      s.height === sampleToDelete.height && 
+      s.overshoot === sampleToDelete.overshoot && 
+      s.direction === sampleToDelete.direction &&
+      s.timestamp === sampleToDelete.timestamp
+    );
+    
+    if (fullIndex === -1) {
+      throw new Error('Sample not found');
     }
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 2500);
+    
+    // Delete via backend API
+    const res = await fetch(`/api/systematic/samples/${fullIndex}`, {method: 'DELETE'});
+    const data = await res.json();
+    
+    if (!data.success) throw new Error(data.error || 'Delete failed');
+    
+    console.log(`✅ Deleted ${direction.toUpperCase()} sample #${index + 1}`);
+    await updateOvershootStatus();
+  } catch (e) {
+    console.error('Delete sample error:', e);
+    $('overshootStatusMsg').textContent = '❌ Delete error: ' + e.message;
+  }
+}
+
+async function overshootRemoveOutliers() {
+  try {
+    const samplesRes = await fetch('/api/systematic/samples');
+    const samplesData = await samplesRes.json();
+    const allSamples = samplesData.samples_all;
+    
+    if (allSamples.length < 3) {
+      $('overshootStatusMsg').textContent = 'Need at least 3 samples to detect outliers';
+      return;
+    }
+    
+    // Separate by direction
+    const downSamples = allSamples.filter(s => s.direction === 'down');
+    const upSamples = allSamples.filter(s => s.direction === 'up');
+    
+    const outlierIndices = [];
+    
+    // Check DOWN samples for outliers (compare adjacent overshoot values)
+    for (let i = 0; i < downSamples.length; i++) {
+      const current = downSamples[i];
+      
+      // Compare with previous sample
+      if (i > 0) {
+        const prev = downSamples[i - 1];
+        const diff = Math.abs(current.overshoot - prev.overshoot);
+        const avgAbs = (Math.abs(current.overshoot) + Math.abs(prev.overshoot)) / 2;
+        
+        if (avgAbs > 0 && diff / avgAbs > 1.0) {  // >100% difference
+          // Find index in full list
+          const fullIdx = allSamples.findIndex(s => 
+            s.height === current.height && s.overshoot === current.overshoot && 
+            s.direction === current.direction && s.timestamp === current.timestamp
+          );
+          if (fullIdx !== -1 && !outlierIndices.includes(fullIdx)) {
+            outlierIndices.push(fullIdx);
+          }
+        }
+      }
+      
+      // Compare with next sample
+      if (i < downSamples.length - 1) {
+        const next = downSamples[i + 1];
+        const diff = Math.abs(current.overshoot - next.overshoot);
+        const avgAbs = (Math.abs(current.overshoot) + Math.abs(next.overshoot)) / 2;
+        
+        if (avgAbs > 0 && diff / avgAbs > 1.0) {  // >100% difference
+          const fullIdx = allSamples.findIndex(s => 
+            s.height === current.height && s.overshoot === current.overshoot && 
+            s.direction === current.direction && s.timestamp === current.timestamp
+          );
+          if (fullIdx !== -1 && !outlierIndices.includes(fullIdx)) {
+            outlierIndices.push(fullIdx);
+          }
+        }
+      }
+    }
+    
+    // Check UP samples for outliers
+    for (let i = 0; i < upSamples.length; i++) {
+      const current = upSamples[i];
+      
+      if (i > 0) {
+        const prev = upSamples[i - 1];
+        const diff = Math.abs(current.overshoot - prev.overshoot);
+        const avgAbs = (Math.abs(current.overshoot) + Math.abs(prev.overshoot)) / 2;
+        
+        if (avgAbs > 0 && diff / avgAbs > 1.0) {
+          const fullIdx = allSamples.findIndex(s => 
+            s.height === current.height && s.overshoot === current.overshoot && 
+            s.direction === current.direction && s.timestamp === current.timestamp
+          );
+          if (fullIdx !== -1 && !outlierIndices.includes(fullIdx)) {
+            outlierIndices.push(fullIdx);
+          }
+        }
+      }
+      
+      if (i < upSamples.length - 1) {
+        const next = upSamples[i + 1];
+        const diff = Math.abs(current.overshoot - next.overshoot);
+        const avgAbs = (Math.abs(current.overshoot) + Math.abs(next.overshoot)) / 2;
+        
+        if (avgAbs > 0 && diff / avgAbs > 1.0) {
+          const fullIdx = allSamples.findIndex(s => 
+            s.height === current.height && s.overshoot === current.overshoot && 
+            s.direction === current.direction && s.timestamp === current.timestamp
+          );
+          if (fullIdx !== -1 && !outlierIndices.includes(fullIdx)) {
+            outlierIndices.push(fullIdx);
+          }
+        }
+      }
+    }
+    
+    if (outlierIndices.length === 0) {
+      $('overshootStatusMsg').textContent = '✅ No outliers detected (>100% difference from neighbors)';
+      return;
+    }
+    
+    if (!confirm(`Found ${outlierIndices.length} outlier(s). Delete them?`)) return;
+    
+    // Delete outliers in reverse order to maintain indices
+    outlierIndices.sort((a, b) => b - a);
+    
+    for (const idx of outlierIndices) {
+      const res = await fetch(`/api/systematic/samples/${idx}`, {method: 'DELETE'});
+      const data = await res.json();
+      if (!data.success) {
+        console.error(`Failed to delete outlier at index ${idx}`);
+      }
+    }
+    
+    $('overshootStatusMsg').textContent = `🧹 Removed ${outlierIndices.length} outlier(s)`;
+    await updateOvershootStatus();
+  } catch (e) {
+    console.error('Remove outliers error:', e);
+    $('overshootStatusMsg').textContent = '❌ Remove outliers error: ' + e.message;
+  }
+}
+
+async function overshootClearAll() {
+  try {
+    if (!confirm('Clear all overshoot calibration data?')) return;
+    const res = await fetch('/api/systematic/samples', {method: 'DELETE'});
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Clear failed');
+    $('overshootPlotImg').classList.add('hidden');
+    $('overshootPlotImg').src = '';
+    overshootLastFitCoeffs = null;
+    $('overshootShowPlotBtn').disabled = true;
+    $('overshootFitBtn').disabled = true;
+    $('overshootSaveFitBtn').disabled = true;
+    await updateOvershootStatus();
+    $('overshootStatusMsg').textContent = `✅ Cleared ${data.cleared_count} samples`;
+    $('overshootStatusBadge').textContent = 'Default';
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
   } catch (e) {
     $('overshootStatusMsg').textContent = '❌ Clear error: ' + e.message;
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
   }
 }
 
-async function calculateOvershoot() {
-  try {
-    const res = await fetch('/api/overshoot/calculate', {
-      method: 'POST'
-    });
-    
-    const data = await res.json();
-    if (data.success) {
-      // Update EMA results (primary values - used for control)
-      if (data.ema_up !== null && data.ema_up !== undefined) {
-        $('overshootResEmaUp').textContent = data.ema_up.toFixed(3);
-      } else {
-        $('overshootResEmaUp').textContent = '--';
-      }
-      
-      if (data.ema_down !== null && data.ema_down !== undefined) {
-        $('overshootResEmaDown').textContent = data.ema_down.toFixed(3);
-      } else {
-        $('overshootResEmaDown').textContent = '--';
-      }
-      
-      // Update simple average and std (reference values)
-      if (data.avg_up !== null && data.avg_up !== undefined) {
-        $('overshootResAvgUp').textContent = data.avg_up.toFixed(3);
-        $('overshootResStdUp').textContent = data.std_up.toFixed(3);
-      } else {
-        $('overshootResAvgUp').textContent = '--';
-        $('overshootResStdUp').textContent = '--';
-      }
-      
-      if (data.avg_down !== null && data.avg_down !== undefined) {
-        $('overshootResAvgDown').textContent = data.avg_down.toFixed(3);
-        $('overshootResStdDown').textContent = data.std_down.toFixed(3);
-      } else {
-        $('overshootResAvgDown').textContent = '--';
-        $('overshootResStdDown').textContent = '--';
-      }
-      
-      // Don't show status message for auto-calculations to avoid clutter
-      // $('overshootStatusMsg').textContent = '✓ Calibration calculated';
-      await updateOvershootStatus();
-    } else {
-      $('overshootStatusMsg').textContent = '❌ ' + (data.error || 'Calculation failed');
-      setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-    }
-  } catch (e) {
-    $('overshootStatusMsg').textContent = '❌ Error: ' + e.message;
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-  }
-}
+$('overshootStartCalibrationBtn').addEventListener('click', overshootStartCalibration);
+$('overshootAbortBtn').addEventListener('click', () => {
+  overshootCalibrationAborted = true;
+  console.log('🛑 Abort button clicked - calibration will stop after current point');
+});
+$('overshootShowPlotBtn').addEventListener('click', overshootShowPlot);
+$('overshootFitBtn').addEventListener('click', overshootFitCurve);
+$('overshootSaveFitBtn').addEventListener('click', overshootSaveFit);
+$('overshootRemoveOutliersBtn').addEventListener('click', overshootRemoveOutliers);
+$('overshootClearBtn').addEventListener('click', overshootClearAll);
+setInterval(updateOvershootStatus, 2000);
 
-async function saveOvershoot() {
-  try {
-    const res = await fetch('/api/overshoot/save', {
-      method: 'POST'
-    });
-    
-    const data = await res.json();
-    if (data.success) {
-      $('overshootStatusMsg').textContent = `✓ Saved to ${data.filepath.split('/').pop()}. ${data.message}`;
-      await updateOvershootStatus(); // Refresh status badge
-    } else {
-      $('overshootStatusMsg').textContent = '❌ ' + (data.error || 'Save failed');
-    }
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-  } catch (e) {
-    $('overshootStatusMsg').textContent = '❌ Error: ' + e.message;
-    setTimeout(() => $('overshootStatusMsg').textContent = '', 3000);
-  }
-}
-
-// Overshoot calibration button event listeners
-$('overshootStartBtn').addEventListener('click', startAutoCalibration);
-$('overshootSaveBtn').addEventListener('click', saveOvershoot);
-$('overshootClearBtn').addEventListener('click', clearOvershootSamples);
-
-// ─────────────────────────────────────────────────────────────
-// Region-based overshoot calibration workflow additions
-// ─────────────────────────────────────────────────────────────
-let regionMinHeight = null;
-let regionMaxHeight = null;
-let calibrationRangeDetected = false;
-let regionCalibAbort = false;
-let overshootFullAutoMode = false; // Indicates one-click full-auto workflow is running
-// Render calibrated regions and detected range summary
-function renderOvershootRegions(data){
-  try{
-    const container = $('overshootRegionsContainer');
-    const regions = Array.isArray(data.regions)? data.regions: [];
-    if(!container) return;
-    if(regions.length===0){
-      container.innerHTML = '<div class="text-slate-400 text-xs">No regions calibrated</div>';
-    } else {
-      container.innerHTML = regions.map((r,i)=>{
-        const up = (r.overshoot_up!==undefined && r.overshoot_up!==null)? Number(r.overshoot_up).toFixed(2): '--';
-        const down = (r.overshoot_down!==undefined && r.overshoot_down!==null)? Number(r.overshoot_down).toFixed(2): '--';
-        return `<div class="flex justify-between items-center text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1"><span class="font-mono">#${i+1} [${r.lower.toFixed(1)}, ${r.upper.toFixed(1)}]</span><span class="text-slate-700">up:${up} / down:${down}</span></div>`;
-      }).join('');
-    }
-    // Range display priority: detected variables; fallback to region aggregate
-    const rangeEl = $('detectedRangeDisplay');
-    if(rangeEl){
-      let minDisplay = regionMinHeight!=null? regionMinHeight.toFixed(2): (regions.length? Math.min(...regions.map(r=>r.lower)).toFixed(2): '--');
-      let maxDisplay = regionMaxHeight!=null? regionMaxHeight.toFixed(2): (regions.length? Math.max(...regions.map(r=>r.upper)).toFixed(2): '--');
-      rangeEl.textContent = `Range: ${minDisplay} mm → ${maxDisplay} mm`;
-    }
-  }catch(e){ console.error('Render regions error:', e); }
-}
-
-async function computeAndShowOvershootFit(autoMode = true){
-  try{
-    const payload = {auto: true};
-    const res = await fetch('/api/overshoot/fit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const data = await res.json();
-    if(!data.success){ $('overshootStatusMsg').textContent = '❌ Fit error: '+(data.error||'unknown'); setTimeout(()=>$('overshootStatusMsg').textContent='',4000); return; }
-    const fit = data.fit;
-    const cu = fit.coeffs_up; const cd = fit.coeffs_down;
-    const degreeText = `Degree ${fit.degree}:`;
-    const eqUp = `up(h) = ${cu.map((c,i)=>`${Number(c).toFixed(4)}·h^${cu.length-1-i}`).join(' + ')}`;
-    const eqDn = `down(h) = ${cd.map((c,i)=>`${Number(c).toFixed(4)}·h^${cd.length-1-i}`).join(' + ')}`;
-    $('overshootFitEq').textContent = degreeText + ' ' + eqUp + ' ; ' + eqDn;
-    if(data.plot_url){ const img=$('overshootFitImg'); img.src = data.plot_url+'?ts='+Date.now(); img.classList.remove('hidden'); }
-    if (!autoMode) {
-      $('overshootStatusMsg').textContent = '✓ Fit computed and saved'; 
-      setTimeout(()=>$('overshootStatusMsg').textContent='',3000);
-    }
-  }catch(e){ 
-    $('overshootStatusMsg').textContent='❌ Fit error: '+e.message; 
-    setTimeout(()=>$('overshootStatusMsg').textContent='',3000); 
-  }
-}
-
-async function detectPlatformRange(){
-  // In full-auto mode always re-detect silently
-  if (!overshootFullAutoMode && calibrationRangeDetected) {
-    if(!confirm('Range already detected. Redetect?')) return;
-  }
-  $('overshootStatusMsg').textContent='🔁 Detecting platform range (down → up stall)...';
-  try {
-    // Phase 1: Pushrod timed down (initialize)
-    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'timed_down',target:'pushrod',duration:7.0})});
-    $('overshootStatusMsg').textContent='⏳ Waiting 2s for pushrod down...';
-    await new Promise(r=>setTimeout(r,2000));
-
-    // Phase 2: Platform down until STALL (no meaningful change for 2s) with refined logic
-    $('overshootStatusMsg').textContent='⬇️ Moving platform DOWN (waiting for true stall)...';
-    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'down',target:'platform'})});
-    const STALL_MS = 2000; // duration of stability
-    const RESET_DELTA = 0.005; // tiny delta still counts as movement (resets timer)
-    const STABLE_DELTA = 0.02; // must be below this to be considered stable
-  let firstHeight = null; let prevHeight = null; let lastChangeTime = Date.now();
-  // Removed fixed timeout: loop until stall condition met. WARNING: could wait indefinitely if sensors freeze.
-  while(true){
-      const st = await fetch('/api/status');
-      const data = await st.json();
-      const h = data.platform?.current_height;
-      if(h!==undefined && h!==null){
-        if(firstHeight===null) firstHeight = h;
-        if(prevHeight!==null){
-          const delta = Math.abs(h - prevHeight);
-          // Any movement over RESET_DELTA considered progress
-          if(delta > RESET_DELTA){ lastChangeTime = Date.now(); }
-          // Accept stall only if descent moved >=5mm AND no delta > RESET_DELTA for STALL_MS AND latest delta < STABLE_DELTA
-          const movedEnough = firstHeight!==null && (firstHeight - h) >= 5;
-          if(movedEnough && (Date.now() - lastChangeTime) >= STALL_MS && delta < STABLE_DELTA){
-            regionMinHeight = h;
-            console.log('[RangeDetect] MIN stall detected at', h, 'firstHeight', firstHeight, 'total descent', (firstHeight-h));
-            await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'stop',target:'platform'})});
-            break;
-          }
-        }
-        prevHeight = h;
-      }
-      await new Promise(r=>setTimeout(r,300));
-    }
-    // If still null (e.g., never broke), fetch one last reading and continue (rare edge case)
-    if(regionMinHeight===null){
-      const st2 = await fetch('/api/status');
-      const data2 = await st2.json();
-      regionMinHeight = data2.platform?.current_height;
-      $('overshootStatusMsg').textContent='⚠️ Min stall not detected; using last height.';
-    }
-    if(regionMinHeight===undefined || regionMinHeight===null){ throw new Error('Failed to read min height'); }
-    $('overshootStatusMsg').textContent=`✅ Min height: ${regionMinHeight.toFixed(2)}mm | ⬆️ Ascending to detect max...`;    
-
-  // Phase 3: Manual UP until stall (2s stability) with refined logic
-    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'up',target:'platform'})});
-  let upStartHeight = null; let prevUp = null; let lastUpChange = Date.now();
-  // Removed fixed timeout: loop until upward stall condition met.
-  while(true){
-      const st = await fetch('/api/status');
-      const data = await st.json();
-      const h = data.platform?.current_height;
-      if(h!==undefined && h!==null){
-        if(upStartHeight===null) upStartHeight = h;
-        if(prevUp!==null){
-          const delta = Math.abs(h - prevUp);
-          if(delta > RESET_DELTA){ lastUpChange = Date.now(); }
-          const movedEnoughUp = upStartHeight!==null && (h - upStartHeight) >= 5;
-          if(movedEnoughUp && (Date.now() - lastUpChange) >= STALL_MS && delta < STABLE_DELTA){
-            regionMaxHeight = h;
-            console.log('[RangeDetect] MAX stall detected at', h, 'startHeight', upStartHeight, 'total ascent', (h-upStartHeight));
-            await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'stop',target:'platform'})});
-            break;
-          }
-          // Early stall recovery: UP command may not have engaged (no ascent progress)
-          if((Date.now() - lastUpChange) > 1500 && (h - upStartHeight) < 5){
-            console.log('[RangeDetect] No ascent progress for 1.5s (<5mm). Resending UP command. Current delta=', (h-upStartHeight));
-            await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'up',target:'platform'})});
-            lastUpChange = Date.now();
-          }
-        }
-        prevUp = h;
-      }
-      await new Promise(r=>setTimeout(r,300));
-    }
-    if(regionMaxHeight===null){
-      const st3 = await fetch('/api/status');
-      const data3 = await st3.json();
-      regionMaxHeight = data3.platform?.current_height;
-      $('overshootStatusMsg').textContent='⚠️ Max stall not detected; using last height.';
-    }
-    calibrationRangeDetected = true;
-    $('overshootLowerBound').value = regionMinHeight.toFixed(2);
-    $('overshootUpperBound').value = regionMaxHeight.toFixed(2);
-    $('overshootStatusMsg').textContent = `✅ Range detected: ${regionMinHeight.toFixed(2)}mm → ${regionMaxHeight.toFixed(2)}mm`;
-    renderOvershootRegions({regions: []}); // Update range display even before regions
-  } catch(e){
-    $('overshootStatusMsg').textContent='❌ Range detection failed: '+e.message;
-  }
-  setTimeout(()=>{ if($('overshootStatusMsg').textContent.startsWith('✅')) $('overshootStatusMsg').textContent=''; },8000);
-}
-
-async function saveOvershootRegion(lower, upper){
-  try{
-    const res = await fetch('/api/overshoot/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lower_bound:lower,upper_bound:upper,overwrite:true})});
-    const data = await res.json();
-    if(!data.success){ throw new Error(data.error||'Save region failed'); }
-    $('overshootStatusMsg').textContent = `💾 Saved region [${lower.toFixed(1)}, ${upper.toFixed(1)}] overshoot_up=${data.overshoot_up?.toFixed?.(2)} down=${data.overshoot_down?.toFixed?.(2)}`;
-    // Refresh regions list
-    await updateOvershootStatus();
-    return true;
-  }catch(e){
-    $('overshootStatusMsg').textContent='❌ '+e.message;
-    return false;
-  }
-}
-
-async function multiRegionCalibrate(){
-  if(!calibrationRangeDetected){ $('overshootStatusMsg').textContent='❌ Please detect range first'; return; }
-  if(regionCalibAbort){ regionCalibAbort=false; }
-  const span = 50.0; // mm per region
-  const minH = regionMinHeight; const maxH = regionMaxHeight;
-  const regions = [];
-  for(let lb=minH; lb<maxH; lb+=span){ const ub=Math.min(maxH, lb+span); regions.push({lower:lb, upper:ub}); }
-  if(regions.length===0){ $('overshootStatusMsg').textContent='❌ No regions computed'; return; }
-  if(!confirm(`Start multi-region calibration (${regions.length} regions of ~${span}mm)?`)) return;
-  $('overshootStatusMsg').textContent=`🚀 Starting multi-region calibration (${regions.length} regions)...`;
-  for(let i=0;i<regions.length;i++){
-    if(regionCalibAbort){ $('overshootStatusMsg').textContent='🛑 Aborted by user'; break; }
-    const {lower, upper} = regions[i];
-    $('overshootLowerBound').value = lower.toFixed(2);
-    $('overshootUpperBound').value = upper.toFixed(2);
-    $('overshootStatusMsg').textContent = `🧪 Region ${i+1}/${regions.length}: ${lower.toFixed(1)}-${upper.toFixed(1)}mm calibrating...`;
-    // Clear previous samples to avoid cross-region contamination
-    try { await clearOvershootSamples(); } catch(e){}
-    // Run auto calibration for this region
-    try { await startAutoCalibration(); } catch(e){ $('overshootStatusMsg').textContent='❌ Auto calibration error: '+e.message; break; }
-    // Save region overshoot values
-    const ok = await saveOvershootRegion(lower, upper);
-    if(!ok){ break; }
-    await new Promise(r=>setTimeout(r,1000));
-  }
-  $('overshootStatusMsg').textContent+=' ✔️ Done.';
-  setTimeout(()=>{ $('overshootStatusMsg').textContent=''; },10000);
-}
-
-// One-click full auto workflow
-async function fullAutoOvershootCalibration(){
-  try {
-    overshootFullAutoMode = true;
-    regionCalibAbort = false;
-    calibrationRangeDetected = false; // force fresh detection
-    // Clear previous region calibration file before starting
-    $('overshootStatusMsg').textContent='🧹 Clearing previous overshoot config...';
-    try { await fetch('/api/overshoot/config',{method:'DELETE'}); } catch(e){ console.warn('Clear overshoot config error', e); }
-    renderOvershootRegions({regions: []});
-    $('overshootStatusMsg').textContent='🚀 Full-auto calibration: detecting range...';
-    await detectPlatformRange();
-    if(!calibrationRangeDetected || regionMinHeight===null || regionMaxHeight===null){
-      throw new Error('Range detection failed');
-    }
-    const span = 50.0;
-    const minH = regionMinHeight; const maxH = regionMaxHeight;
-    // Build regions top-down (descending) so calibration proceeds from highest region to lowest
-    const regions = [];
-    for(let ub=maxH; ub>minH; ub-=span){ const lb = max( minH, ub - span ); regions.push({lower:lb, upper:Math.min(ub, maxH)}); }
-    // Helper since we are inside browser, define max function
-    function max(a,b){ return a>b?a:b; }
-    if(regions.length===0){ throw new Error('No regions computed'); }
-    $('overshootStatusMsg').textContent=`📐 Detected range ${minH.toFixed(1)}-${maxH.toFixed(1)}mm. ${regions.length} regions (~${span}mm each). Starting...`;
-    for(let i=0;i<regions.length;i++){
-      if(regionCalibAbort){ $('overshootStatusMsg').textContent='🛑 Aborted'; break; }
-      const {lower, upper} = regions[i];
-      $('overshootLowerBound').value = lower.toFixed(2);
-      $('overshootUpperBound').value = upper.toFixed(2);
-      $('overshootStatusMsg').textContent = `🧪 Region ${i+1}/${regions.length}: ${lower.toFixed(1)}-${upper.toFixed(1)}mm calibrating...`;
-      try { await clearOvershootSamples(); } catch(e){}
-      try { await startAutoCalibration(); } catch(e){ $('overshootStatusMsg').textContent='❌ Auto calibration error: '+e.message; break; }
-      const ok = await saveOvershootRegion(lower, upper);
-      if(!ok){ break; }
-      await new Promise(r=>setTimeout(r,500));
-    }
-    if(!$('overshootStatusMsg').textContent.startsWith('❌') && !$('overshootStatusMsg').textContent.startsWith('🛑')){
-      // Auto-fit and plot after successful region calibration
-      $('overshootStatusMsg').textContent='🔬 Auto-selecting optimal fit degree and plotting...';
-      await computeAndShowOvershootFit(true); // Pass true for auto mode
-      $('overshootStatusMsg').textContent+=' ✔️ Full-auto done with fit.';
-    }
-  } catch(e){
-    $('overshootStatusMsg').textContent='❌ Full-auto failed: '+e.message;
-  } finally {
-    overshootFullAutoMode = false;
-    setTimeout(()=>{ if($('overshootStatusMsg').textContent.includes('Full-auto')) $('overshootStatusMsg').textContent=''; },12000);
-  }
-}
-document.getElementById('overshootFullAutoBtn').addEventListener('click', fullAutoOvershootCalibration);
-
-// ═══════════════════════════════════════════════════════════════
 // Force Sensor Calibration Functions (Single Channel Mode)
 // ═══════════════════════════════════════════════════════════════
 
 async function updateForceCalibStatus() {
   try {
     const res = await fetch('/api/force_calib/status');
-    if (!res.ok) return;
+    if (!res.ok) { console.error('Force calib status fetch failed:', res.status); return; }
     const data = await res.json();
     
     const channel = $('forceCalibChannel').value;
@@ -2170,9 +2013,6 @@ async function initializePage() {
 
 // Call initialization when page loads
 document.addEventListener('DOMContentLoaded', initializePage);
-
-// Update overshoot status every second (includes auto-add logic)
-setInterval(updateOvershootStatus, 1000);
 
 // Update force calibration status every second (for real-time sensor readings)
 setInterval(updateForceCalibStatus, 1000);

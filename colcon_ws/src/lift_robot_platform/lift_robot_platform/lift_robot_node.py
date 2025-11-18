@@ -89,6 +89,55 @@ class LiftRobotNode(Node):
         self.overshoot_regions = []
         # Polynomial fit (optional): dict with type='poly', degree, coeffs_up, coeffs_down, x_min, x_max
         self.overshoot_fit = None
+        
+        # Create default config file if it doesn't exist
+        if not os.path.exists(config_path):
+            try:
+                config_dir = os.path.dirname(config_path)
+                if not os.path.exists(config_dir):
+                    os.makedirs(config_dir)
+                
+                # Default polynomial fit (degree 2, based on empirical data)
+                # These coefficients provide reasonable estimates for typical platforms
+                # NOTE: All overshoot values MUST be ABSOLUTE VALUES (positive)
+                # UP: stop at (target - overshoot_up), DOWN: stop at (target + overshoot_down)
+                default_config = {
+                    'enable': True,
+                    'format_version': 2,
+                    'regions': [],
+                    'samples': [],
+                    'fit': {
+                        'type': 'poly',
+                        'degree': 2,
+                        'coeffs_up': [
+                            2.2091788116272794e-06,    # x^2 coefficient
+                            -0.008710729042700554,      # x coefficient
+                            8.728348317269088           # constant (outputs positive overshoot)
+                        ],
+                        'coeffs_down': [
+                            3.4745013091926766e-06,     # x^2 coefficient (NEGATED to output positive)
+                            -0.012317707321611337,      # x coefficient (NEGATED to output positive)
+                            11.240744855681426          # constant (NEGATED to output positive)
+                        ],
+                        'x_min': 800.0,   # Typical min height
+                        'x_max': 1400.0,  # Typical max height
+                        'generated_at': time.time(),
+                        'generated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                }
+                
+                with open(config_path, 'w') as f:
+                    json.dump(default_config, f, indent=2)
+                
+                self.get_logger().info(
+                    f"[lift_robot_platform] Created default overshoot config with polynomial fit at {config_path}"
+                )
+            except Exception as e:
+                self.get_logger().warn(
+                    f"[lift_robot_platform] Failed to create default config: {e}"
+                )
+        
+        # Load config file
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
@@ -1067,7 +1116,8 @@ class LiftRobotNode(Node):
 
     def _get_fitted_or_region_overshoot(self, height):
         """Prefer polynomial fit if available; otherwise use region selection.
-        Returns (overshoot_up, overshoot_down). Clips x to fit range.
+        Returns (overshoot_up, overshoot_down) as ABSOLUTE VALUES (positive).
+        Clips x to fit range.
         """
         if self.overshoot_fit:
             x_min = self.overshoot_fit.get('x_min', height)
@@ -1076,7 +1126,9 @@ class LiftRobotNode(Node):
             upv = self._eval_poly(self.overshoot_fit['coeffs_up'], x)
             dnv = self._eval_poly(self.overshoot_fit['coeffs_down'], x)
             if (upv is not None) and (dnv is not None):
-                return (float(upv), float(dnv))
+                # CRITICAL: Ensure absolute values (positive) for control logic
+                # Control uses: UP stop at (target - overshoot), DOWN stop at (target + overshoot)
+                return (abs(float(upv)), abs(float(dnv)))
         # Fallback to region-based
         return self._get_region_overshoot(height)
     def _get_region_overshoot(self, height):
