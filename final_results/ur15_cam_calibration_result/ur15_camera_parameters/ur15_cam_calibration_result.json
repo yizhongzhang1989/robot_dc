@@ -1,0 +1,31 @@
+{
+  "success": true,
+  "rms_error": 0.3168762249916322,
+  "camera_matrix": [
+    [
+      749.0642160434697,
+      0.0,
+      637.0448890215524
+    ],
+    [
+      0.0,
+      748.2987361895574,
+      369.0828227904352
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "distortion_coefficients": [
+    0.06584460168177965,
+    -0.08501230588908557,
+    0.00017472605595981046,
+    0.0031611614083195522,
+    0.02602857405615894
+  ],
+  "image_count": 21,
+  "report_html": "/home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_result/ur15_intrinsic_calibration_report/calibration_report.html",
+  "report_json": "/home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_result/ur15_intrinsic_calibration_report/calibration_data.json"
+}

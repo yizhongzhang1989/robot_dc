@@ -1,0 +1,69 @@
+[INFO] [1763501302.370191921] [ur_auto_collect_data]: No positions file provided, loading from existing JSON files in /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data
+[INFO] [1763501302.371166275] [ur_auto_collect_data]: Loaded position 0 from /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data/0.json
+[INFO] [1763501302.371714779] [ur_auto_collect_data]: Loaded position 1 from /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data/1.json
+[INFO] [1763501302.372224723] [ur_auto_collect_data]: Loaded position 2 from /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data/2.json
+[INFO] [1763501302.372727660] [ur_auto_collect_data]: Loaded position 3 from /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data/3.json
+[INFO] [1763501302.373211876] [ur_auto_collect_data]: Loaded position 4 from /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data/4.json
+[INFO] [1763501302.373728157] [ur_auto_collect_data]: Loaded position 5 from /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data/5.json
+[INFO] [1763501302.374145526] [ur_auto_collect_data]: Loaded 6 positions from existing JSON files in /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data
+[INFO] [1763501302.422956033] [ur_auto_collect_data]: UR Auto Collect Data Node started
+[INFO] [1763501302.423529400] [ur_auto_collect_data]: Save directory: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data
+[INFO] [1763501302.424008017] [ur_auto_collect_data]: Connecting to UR robot at 192.168.12.161:30002...
+[INFO] [1763501302.425432188] [ur_auto_collect_data]: Successfully connected to UR robot
+[INFO] [1763501302.427209442] [ur_auto_collect_data]: Waiting for camera image...
+[INFO] [1763501304.430361766] [ur_auto_collect_data]: Starting data collection for 6 positions...
+[INFO] [1763501304.431239641] [ur_auto_collect_data]: 
+--- Position 0/5 ---
+[INFO] [1763501304.432016174] [ur_auto_collect_data]: Target joint angles: ['4.2550', '-2.2901', '-0.9246', '-4.4463', '-1.4947', '1.6642']
+[INFO] [1763501304.432719172] [ur_auto_collect_data]: Moving to position 0...
+[INFO] [1763501307.713005945] [ur_auto_collect_data]: Waiting for robot to stabilize...
+[WARN] [1763501313.742858720] [ur_auto_collect_data]: Timeout waiting for camera image
+[ERROR] [1763501313.743536887] [ur_auto_collect_data]: Failed to get camera image for position 0
+[WARN] [1763501313.744115344] [ur_auto_collect_data]: Failed to save data for position 0
+[INFO] [1763501314.246798340] [ur_auto_collect_data]: 
+--- Position 1/5 ---
+[INFO] [1763501314.248440048] [ur_auto_collect_data]: Target joint angles: ['4.7114', '-2.2905', '-0.9248', '-4.4463', '-1.4947', '1.6642']
+[INFO] [1763501314.249872670] [ur_auto_collect_data]: Moving to position 1...
+[INFO] [1763501316.556406182] [ur_auto_collect_data]: Waiting for robot to stabilize...
+[WARN] [1763501322.586908869] [ur_auto_collect_data]: Timeout waiting for camera image
+[ERROR] [1763501322.587832283] [ur_auto_collect_data]: Failed to get camera image for position 1
+[WARN] [1763501322.588704210] [ur_auto_collect_data]: Failed to save data for position 1
+[INFO] [1763501323.090588996] [ur_auto_collect_data]: 
+--- Position 2/5 ---
+[INFO] [1763501323.091653945] [ur_auto_collect_data]: Target joint angles: ['5.0161', '-2.3739', '-1.2699', '-4.1233', '-1.1875', '1.6641']
+[INFO] [1763501323.092546863] [ur_auto_collect_data]: Moving to position 2...
+[INFO] [1763501325.028336205] [ur_auto_collect_data]: Waiting for robot to stabilize...
+[WARN] [1763501331.058043542] [ur_auto_collect_data]: Timeout waiting for camera image
+[ERROR] [1763501331.058702704] [ur_auto_collect_data]: Failed to get camera image for position 2
+[WARN] [1763501331.059284939] [ur_auto_collect_data]: Failed to save data for position 2
+[INFO] [1763501331.560665835] [ur_auto_collect_data]: 
+--- Position 3/5 ---
+[INFO] [1763501331.561274853] [ur_auto_collect_data]: Target joint angles: ['4.6595', '-2.3731', '-1.2697', '-4.1233', '-1.1875', '1.6641']
+[INFO] [1763501331.561756577] [ur_auto_collect_data]: Moving to position 3...
+[INFO] [1763501333.550314664] [ur_auto_collect_data]: Waiting for robot to stabilize...
+[WARN] [1763501339.580905968] [ur_auto_collect_data]: Timeout waiting for camera image
+[ERROR] [1763501339.581982184] [ur_auto_collect_data]: Failed to get camera image for position 3
+[WARN] [1763501339.583052512] [ur_auto_collect_data]: Failed to save data for position 3
+[INFO] [1763501340.084818422] [ur_auto_collect_data]: 
+--- Position 4/5 ---
+[INFO] [1763501340.085853263] [ur_auto_collect_data]: Target joint angles: ['3.8220', '-2.3254', '-1.2977', '-3.6927', '-2.3048', '0.9428']
+[INFO] [1763501340.086733928] [ur_auto_collect_data]: Moving to position 4...
+[INFO] [1763501344.623377195] [ur_auto_collect_data]: Waiting for robot to stabilize...
+[WARN] [1763501350.665417600] [ur_auto_collect_data]: Timeout waiting for camera image
+[ERROR] [1763501350.666515033] [ur_auto_collect_data]: Failed to get camera image for position 4
+[WARN] [1763501350.667505844] [ur_auto_collect_data]: Failed to save data for position 4
+[INFO] [1763501351.170207740] [ur_auto_collect_data]: 
+--- Position 5/5 ---
+[INFO] [1763501351.171532340] [ur_auto_collect_data]: Target joint angles: ['4.1371', '-2.3190', '-1.0261', '-4.2195', '-1.5244', '1.5548']
+[INFO] [1763501351.172527726] [ur_auto_collect_data]: Moving to position 5...
+[INFO] [1763501354.571405388] [ur_auto_collect_data]: Waiting for robot to stabilize...
+[WARN] [1763501360.616740934] [ur_auto_collect_data]: Timeout waiting for camera image
+[ERROR] [1763501360.618278271] [ur_auto_collect_data]: Failed to get camera image for position 5
+[WARN] [1763501360.619771480] [ur_auto_collect_data]: Failed to save data for position 5
+[INFO] [1763501361.121509914] [ur_auto_collect_data]: 
+=== Collection Complete ===
+[INFO] [1763501361.122804148] [ur_auto_collect_data]: Successfully collected: 0/6 positions
+[INFO] [1763501361.123625361] [ur_auto_collect_data]: Data saved to: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data
+[INFO] [1763501361.124295950] [ur_auto_collect_data]: Shutting down...
+[INFO] Connecting to UR15 robot at 192.168.12.161:30002 ...
+[OK] Successfully connected to UR15 robot!

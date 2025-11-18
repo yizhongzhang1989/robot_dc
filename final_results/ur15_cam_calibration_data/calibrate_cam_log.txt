@@ -1,0 +1,225 @@
+======================================================================
+🤖 UR15 EYE-IN-HAND CAMERA CALIBRATION
+======================================================================
+Data directory: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data
+Output directory: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_result
+======================================================================
+
+📋 Loading pattern configuration from: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data/chessboard_config.json
+   Pattern: ChArUco Board
+   Board size: 12×9 squares
+   Square size: 0.066m (66.0mm)
+   Marker size: 0.0495m (49.5mm)
+   Dictionary ID: 1
+📁 Loading calibration data from: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_data
+   Found 21 image files
+   ✅ Loaded: 0
+   ✅ Loaded: 1
+   ✅ Loaded: 10
+   ✅ Loaded: 11
+   ✅ Loaded: 12
+   ✅ Loaded: 13
+   ✅ Loaded: 14
+   ✅ Loaded: 15
+   ✅ Loaded: 16
+   ✅ Loaded: 17
+   ✅ Loaded: 18
+   ✅ Loaded: 19
+   ✅ Loaded: 2
+   ✅ Loaded: 20
+   ✅ Loaded: 3
+   ✅ Loaded: 4
+   ✅ Loaded: 5
+   ✅ Loaded: 6
+   ✅ Loaded: 7
+   ✅ Loaded: 8
+   ✅ Loaded: 9
+   Successfully loaded 21 image-pose pairs
+🔍 Discovered pattern: charuco_board (CharucoBoard)
+🔍 Discovered pattern: standard_chessboard (StandardChessboard)
+🔍 Discovered pattern: grid_board (GridBoard)
+
+🎯 Creating ChArUco Board Pattern:
+   Board size: 12×9 squares
+   Square size: 0.066m (66.0mm)
+   Marker size: 0.0495m (49.5mm)
+   Dictionary ID: 1
+   ✅ ChArUco pattern created successfully
+
+🔧 Step 1: Intrinsic Calibration
+   Processing 21 images...
+Image and object points not calculated yet. Running pattern detection...
+Detecting patterns in 21 images...
+Image 0: ✅ Detected 48 features
+Image 1: ✅ Detected 54 features
+Image 2: ✅ Detected 35 features
+Image 3: ✅ Detected 69 features
+Image 4: ✅ Detected 88 features
+Image 5: ✅ Detected 79 features
+Image 6: ✅ Detected 63 features
+Image 7: ✅ Detected 63 features
+Image 8: ✅ Detected 83 features
+Image 9: ✅ Detected 52 features
+Image 10: ✅ Detected 58 features
+Image 11: ✅ Detected 18 features
+Image 12: ✅ Detected 23 features
+Image 13: ✅ Detected 36 features
+Image 14: ✅ Detected 83 features
+Image 15: ✅ Detected 82 features
+Image 16: ✅ Detected 76 features
+Image 17: ✅ Detected 74 features
+Image 18: ✅ Detected 61 features
+Image 19: ✅ Detected 38 features
+Image 20: ✅ Detected 52 features
+Successfully detected pattern in 21/21 images
+Running calibration with 21 point correspondences
+Image size: (1280, 720)
+Calibration flags: 0
+✅ Calibration successful!
+RMS reprojection error: 0.3169 pixels
+Camera matrix:
+  fx: 749.06, fy: 748.30
+  cx: 637.04, cy: 369.08
+Distortion coefficients: [ 0.0658446  -0.08501231  0.00017473  0.00316116  0.02602857]
+Per-image errors: ['0.2021', '0.3286', '0.3679', '0.2233', '0.2309', '0.2534', '0.2752', '0.2967', '0.2309', '0.5413', '0.4264', '0.4032', '0.1975', '0.4231', '0.2684', '0.2944', '0.5412', '0.1940', '0.2121', '0.2138', '0.3059']
+   ✅ Intrinsic calibration completed
+   RMS Error: 0.3169 pixels
+   Valid images: N/A
+
+🤖 Step 2: Eye-in-Hand Calibration
+   Using 21 image-pose pairs...
+Set 21 images from arrays
+Detecting patterns in 21 images...
+Image 0: ✅ Detected 48 features
+Image 1: ✅ Detected 54 features
+Image 2: ✅ Detected 35 features
+Image 3: ✅ Detected 69 features
+Image 4: ✅ Detected 88 features
+Image 5: ✅ Detected 79 features
+Image 6: ✅ Detected 63 features
+Image 7: ✅ Detected 63 features
+Image 8: ✅ Detected 83 features
+Image 9: ✅ Detected 52 features
+Image 10: ✅ Detected 58 features
+Image 11: ✅ Detected 18 features
+Image 12: ✅ Detected 23 features
+Image 13: ✅ Detected 36 features
+Image 14: ✅ Detected 83 features
+Image 15: ✅ Detected 82 features
+Image 16: ✅ Detected 76 features
+Image 17: ✅ Detected 74 features
+Image 18: ✅ Detected 61 features
+Image 19: ✅ Detected 38 features
+Image 20: ✅ Detected 52 features
+Successfully detected pattern in 21/21 images
+📐 Calculating target-to-camera matrices for all detected patterns...
+   ✅ Image 0: Valid target2cam matrix calculated
+   ✅ Image 1: Valid target2cam matrix calculated
+   ✅ Image 2: Valid target2cam matrix calculated
+   ✅ Image 3: Valid target2cam matrix calculated
+   ✅ Image 4: Valid target2cam matrix calculated
+   ✅ Image 5: Valid target2cam matrix calculated
+   ✅ Image 6: Valid target2cam matrix calculated
+   ✅ Image 7: Valid target2cam matrix calculated
+   ✅ Image 8: Valid target2cam matrix calculated
+   ✅ Image 9: Valid target2cam matrix calculated
+   ✅ Image 10: Valid target2cam matrix calculated
+   ✅ Image 11: Valid target2cam matrix calculated
+   ✅ Image 12: Valid target2cam matrix calculated
+   ✅ Image 13: Valid target2cam matrix calculated
+   ✅ Image 14: Valid target2cam matrix calculated
+   ✅ Image 15: Valid target2cam matrix calculated
+   ✅ Image 16: Valid target2cam matrix calculated
+   ✅ Image 17: Valid target2cam matrix calculated
+   ✅ Image 18: Valid target2cam matrix calculated
+   ✅ Image 19: Valid target2cam matrix calculated
+   ✅ Image 20: Valid target2cam matrix calculated
+📊 Target2Cam Matrix Calculation Summary:
+   • Successful matrices: 21
+   • Failed calculations: 0
+   • Total images: 21
+🤖 Running eye-in-hand calibration with 21 image-pose pairs
+🔍 No method specified, testing all available methods...
+
+🧪 Testing method: TSAI (0)
+   ✅ New best method: TSAI with RMS error 1.0519
+
+🧪 Testing method: PARK (1)
+   ✅ Method PARK succeeded with RMS error 1.0519
+
+🧪 Testing method: HORAUD (2)
+   ✅ Method HORAUD succeeded with RMS error 1.0519
+
+🧪 Testing method: ANDREFF (3)
+   ✅ Method ANDREFF succeeded with RMS error 1.0519
+
+🧪 Testing method: DANIILIDIS (4)
+   ✅ Method DANIILIDIS succeeded with RMS error 1.0519
+
+🎉 Best method selected: TSAI with RMS error 1.0519
+Camera to end-effector transformation matrix:
+[[ 0.99939069 -0.03113387  0.01577724  0.03278846]
+ [ 0.02581661  0.96358395  0.26615685 -0.08104528]
+ [-0.02348919 -0.26558737  0.96380061  0.04464854]
+ [ 0.          0.          0.          1.        ]]
+⚠️ nlopt not available, skipping optimization
+   ✅ Eye-in-hand calibration completed
+   RMS Error: 1.0519 pixels
+   Method: Unknown
+
+💾 Saving calibration results
+   ✅ Generated intrinsic report: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_result/ur15_intrinsic_calibration_report/
+      - calibration_report.html
+      - calibration_data.json
+   ✅ Generated eye-in-hand report: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_result/ur15_eye_in_hand_calibration_report/
+      - calibration_report.html
+      - calibration_data.json
+   ✅ Saved: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_result/ur15_camera_parameters/ur15_cam_calibration_result.json
+   ✅ Saved: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_result/ur15_camera_parameters/ur15_cam_eye_in_hand_result.json
+
+======================================================================
+🎉 UR15 EYE-IN-HAND CALIBRATION COMPLETED SUCCESSFULLY!
+======================================================================
+
+📊 CALIBRATION RESULTS:
+----------------------------------------------------------------------
+
+🔧 Intrinsic Calibration:
+   RMS Error: 0.3169 pixels
+   Valid Images: N/A
+
+🤖 Eye-in-Hand Calibration:
+   RMS Error: 1.0519 pixels
+   Method: Unknown
+   Valid Images: N/A
+
+✨ Optimization:
+   Initial Error: 1.0519 pixels
+   Final Error: 1.0519 pixels
+   Improvement: 0.0000 pixels (0.0%)
+
+📁 Results saved to: /home/a3r/liza_2_4_testing/robot_dc/temp/ur15_cam_calibration_result/
+   ├── ur15_intrinsic_calibration_report/
+   │   ├── calibration_report.html   (Intrinsic calibration HTML report)
+   │   ├── calibration_data.json     (Intrinsic calibration data)
+   │   ├── original_images/          (Original calibration images)
+   │   ├── pattern_detection/        (Pattern detection visualization)
+   │   ├── reprojection/             (Reprojection error visualization)
+   │   ├── undistorted/              (Undistorted images)
+   │   └── analysis/                 (Analysis charts)
+   ├── ur15_eye_in_hand_calibration_report/
+   │   ├── calibration_report.html   (Eye-in-hand calibration HTML report)
+   │   ├── calibration_data.json     (Eye-in-hand calibration data)
+   │   ├── original_images/          (Original calibration images)
+   │   ├── pattern_detection/        (Pattern detection visualization)
+   │   ├── reprojection/             (Reprojection error visualization)
+   │   ├── undistorted/              (Undistorted images)
+   │   └── analysis/                 (Analysis charts)
+   └── ur15_camera_parameters/
+       ├── ur15_cam_calibration_result.json        (Intrinsic calibration results)
+       └── ur15_cam_eye_in_hand_result.json        (Eye-in-hand calibration results)
+
+======================================================================
+✅ Calibration completed! You can now use the results for your application.
+======================================================================
+

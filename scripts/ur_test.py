@@ -173,7 +173,7 @@ def tcp_normalize(robot, x_axis=[0, -1, 0], y_axis=[-1, 0, 0], z_axis=[0, 0, -1]
 
 def main():
     # Definition of robot IP and port
-    ur15_ip = "192.168.1.15"
+    ur15_ip = "192.168.12.161"
     ur15_port = 30002
     rs485_port = 54321
 
@@ -184,8 +184,8 @@ def main():
 
     # Open RS485 socket connection
     rs485_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    rs485_start_res = rs485_socket.connect((ur15_ip, rs485_port))
-    print(f"RS485 socket connection result: {rs485_start_res}")
+    # rs485_start_res = rs485_socket.connect((ur15_ip, rs485_port)) TODOLIZA temporarily commented out
+    # print(f"RS485 socket connection result: {rs485_start_res}")
 
     # =====================================Program===========================
     if ur15_start_res == 0:
