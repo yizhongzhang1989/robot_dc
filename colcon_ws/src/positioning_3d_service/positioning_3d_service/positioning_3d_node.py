@@ -87,10 +87,6 @@ class Positioning3DServiceNode(Node):
         self.get_logger().info(f"  Working Dir: {self.working_dir}")
         self.get_logger().info("=" * 60)
         
-        # Register signal handlers
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        
         # Start the web service
         self.start_service()
         
@@ -114,14 +110,15 @@ class Positioning3DServiceNode(Node):
             
             self.get_logger().info(f"Starting service: {' '.join(cmd)}")
             
-            # Start the process
+            # Start the process (create new process group for proper signal handling)
             self.process = subprocess.Popen(
                 cmd,
                 cwd=str(self.working_dir),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
-                bufsize=1
+                bufsize=1,
+                preexec_fn=os.setsid  # Create new session to handle signals properly
             )
             
             self.get_logger().info(f"Service started with PID: {self.process.pid}")
@@ -155,26 +152,29 @@ class Positioning3DServiceNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error monitoring output: {e}")
     
-    def _signal_handler(self, signum, frame):
-        """Handle termination signals."""
-        self.get_logger().info(f"Received signal {signum}, shutting down...")
-        self.cleanup()
-        sys.exit(0)
-    
     def cleanup(self):
         """Clean up the web service process."""
-        if self.process:
+        if self.process and self.process.poll() is None:
             try:
                 self.get_logger().info("Stopping positioning_3d service...")
-                self.process.terminate()
                 
-                # Wait for graceful shutdown
+                # Send SIGTERM to the entire process group
                 try:
-                    self.process.wait(timeout=5)
+                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    # Process already terminated
+                    return
+                
+                # Wait for graceful shutdown with shorter timeout
+                try:
+                    self.process.wait(timeout=2)
                     self.get_logger().info("Service stopped successfully")
                 except subprocess.TimeoutExpired:
                     self.get_logger().warn("Service did not stop gracefully, killing...")
-                    self.process.kill()
+                    try:
+                        os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                     self.process.wait()
                     self.get_logger().info("Service killed")
             except Exception as e:
