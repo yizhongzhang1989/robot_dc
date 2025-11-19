@@ -273,105 +273,105 @@ class URLocate(URCapture):
             
             self.get_logger().info(f"✓ Successfully, reference data to '{operation_name}' is loaded")
             
-            # Step 4: Initialize session
-            self.get_logger().info(f">>> IV: Initializing a web session to execute...")
-            
-            session_result = self.positioning_client.init_session(reference_name=operation_name)
-            
-            if not session_result.get('success'):
-                self.get_logger().error(f"✗ Failed to initialize session: {session_result.get('error')}")
-                return None
-            
-            session_id = session_result['session_id']
-            self.get_logger().info(f"✓ Web session created: {session_id}")
-            
-            # Step 5: Upload camera views
-            self.get_logger().info(f">>> V: Uploading {len(image_files)} camera views from {test_image_path}...")
-            
-            for idx, img_file in enumerate(image_files):
-                # Find corresponding pose file
-                pose_file = img_file.parent / f"{img_file.stem}_pose.json"
+            session_id = None
+            try:
+                # Step 4: Initialize session
+                self.get_logger().info(f">>> IV: Initializing a web session to execute...")
                 
-                if not pose_file.exists():
-                    self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: pose file not found")
-                    continue
+                session_result = self.positioning_client.init_session(reference_name=operation_name)
                 
-                # Load image
-                image = cv2.imread(str(img_file))
-                if image is None:
-                    self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: failed to load image")
-                    continue
+                if not session_result.get('success'):
+                    self.get_logger().error(f"✗ Failed to initialize session: {session_result.get('error')}")
+                    return None
                 
-                # Load camera parameters
-                try:
-                    intrinsic, distortion, extrinsic = load_camera_params_from_json(str(pose_file))
-                except Exception as e:
-                    self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: failed to load pose - {e}")
-                    continue
+                session_id = session_result['session_id']
+                self.get_logger().info(f"✓ Web session created: {session_id}")
                 
-                # Upload view              
-                result = self.positioning_client.upload_view(
-                    session_id=session_id,
-                    image=image,
-                    intrinsic=intrinsic,
-                    distortion=distortion,
-                    extrinsic=extrinsic
-                )
+                # Step 5: Upload camera views
+                self.get_logger().info(f">>> V: Uploading {len(image_files)} camera views from {test_image_path}...")
                 
-                if result.get('success'):
-                    self.get_logger().info(f"   ✓ View {idx+1}/{len(image_files)} uploaded, queue position: {result.get('queue_position', 'N/A')}")
-                else:
-                    self.get_logger().error(f"   ✗ {result.get('error')}")
-            
-            # Step 6: Wait for triangulation result
-            self.get_logger().info(">>> VI: Waiting for positioning results (timeout: 30s)...")
-            
-            result = self.positioning_client.get_result(session_id, timeout=30000)  # 30 seconds
-            
-            if not result.get('success'):
-                self.get_logger().error(f"✗ Failed to get result: {result.get('error')}")
-                # Cleanup before returning
-                self.positioning_client.terminate_session(session_id)
-                return None
-            
-            # Check if we got the final result or timed out
-            if 'result' not in result:
-                if result.get('timeout'):
-                    self.get_logger().error("\n✗ Timeout waiting for triangulation")
-                else:
-                    session_info = result.get('session', {})
-                    session_status = session_info.get('status')
-                    if session_status == 'failed':
-                        self.get_logger().error(f"\n✗ Session failed: {session_info.get('error_message', 'Unknown error')}")
+                for idx, img_file in enumerate(image_files):
+                    # Find corresponding pose file
+                    pose_file = img_file.parent / f"{img_file.stem}_pose.json"
+                    
+                    if not pose_file.exists():
+                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: pose file not found")
+                        continue
+                    
+                    # Load image
+                    image = cv2.imread(str(img_file))
+                    if image is None:
+                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: failed to load image")
+                        continue
+                    
+                    # Load camera parameters
+                    try:
+                        intrinsic, distortion, extrinsic = load_camera_params_from_json(str(pose_file))
+                    except Exception as e:
+                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: failed to load pose - {e}")
+                        continue
+                    
+                    # Upload view              
+                    result = self.positioning_client.upload_view(
+                        session_id=session_id,
+                        image=image,
+                        intrinsic=intrinsic,
+                        distortion=distortion,
+                        extrinsic=extrinsic
+                    )
+                    
+                    if result.get('success'):
+                        self.get_logger().info(f"   ✓ View {idx+1}/{len(image_files)} uploaded, queue position: {result.get('queue_position', 'N/A')}")
                     else:
-                        self.get_logger().error(f"\n✗ Triangulation not completed (status: {session_status})")
-                # Cleanup before returning
-                self.positioning_client.terminate_session(session_id)
-                return None
-            
-            self.get_logger().info("✓ Triangulation completed!")
-            
-            triangulation_result = result['result']
-            points_3d = np.array(triangulation_result['points_3d'])
-            mean_error = triangulation_result['mean_error']
-            processing_time = triangulation_result.get('processing_time', 0)
-            views_data = result.get('views', [])
-            
-            self.get_logger().info(f"   Number of 3D points: {len(points_3d)}")
-            self.get_logger().info(f"   Mean reprojection error: {mean_error:.3f} pixels")
-            self.get_logger().info(f"   Processing time: {processing_time:.2f} seconds")
-            self.get_logger().info(f"   Number of views: {len(views_data)}")
-            
-            # Step 7: Terminate session and cleanup
-            self.get_logger().info(">>> VII Terminating session...")
-
-            term_result = self.positioning_client.terminate_session(session_id)
-            if term_result.get('success'):
-                self.get_logger().info(f"✓ Session {session_id} terminated and cleaned up")
-            else:
-                self.get_logger().warn(f"⚠️  Failed to terminate session: {term_result.get('error')}")
-            
-            return result
+                        self.get_logger().error(f"   ✗ {result.get('error')}")
+                
+                # Step 6: Wait for triangulation result
+                self.get_logger().info(">>> VI: Waiting for positioning results (timeout: 30s)...")
+                
+                result = self.positioning_client.get_result(session_id, timeout=30000)  # 30 seconds
+                
+                if not result.get('success'):
+                    self.get_logger().error(f"✗ Failed to get result: {result.get('error')}")
+                    return None
+                
+                # Check if we got the final result or timed out
+                if 'result' not in result:
+                    if result.get('timeout'):
+                        self.get_logger().error("\n✗ Timeout waiting for triangulation")
+                    else:
+                        session_info = result.get('session', {})
+                        session_status = session_info.get('status')
+                        if session_status == 'failed':
+                            self.get_logger().error(f"\n✗ Session failed: {session_info.get('error_message', 'Unknown error')}")
+                        else:
+                            self.get_logger().error(f"\n✗ Triangulation not completed (status: {session_status})")
+                    return None
+                
+                self.get_logger().info("✓ Triangulation completed!")
+                
+                triangulation_result = result['result']
+                points_3d = np.array(triangulation_result['points_3d'])
+                mean_error = triangulation_result['mean_error']
+                processing_time = triangulation_result.get('processing_time', 0)
+                views_data = result.get('views', [])
+                
+                self.get_logger().info(f"   Number of 3D points: {len(points_3d)}")
+                self.get_logger().info(f"   Mean reprojection error: {mean_error:.3f} pixels")
+                self.get_logger().info(f"   Processing time: {processing_time:.2f} seconds")
+                self.get_logger().info(f"   Number of views: {len(views_data)}")
+                
+                return result
+                
+            finally:
+                # Step 7: Terminate session and cleanup
+                if session_id is not None:
+                    self.get_logger().info(">>> VII: Terminating session...")
+                    
+                    term_result = self.positioning_client.terminate_session(session_id)
+                    if term_result.get('success'):
+                        self.get_logger().info(f"✓ Session {session_id} terminated and cleaned up")
+                    else:
+                        self.get_logger().warn(f"⚠️  Failed to terminate session: {term_result.get('error')}")
                 
         except Exception as e:
             self.get_logger().error(f"Error during triangulation: {e}")
@@ -593,13 +593,9 @@ class URLocate(URCapture):
                         v_reproj = fy * (y_cam / z_cam) + cy
                     
                     # Plot reprojected point (red x marker)
-                    ax.plot(u_reproj, v_reproj, 'rx', markersize=10,
+                    ax.plot(u_reproj, v_reproj, 'rx', markersize=6,
                            markeredgewidth=2,
                            label='Reprojected' if pt_idx == 0 else '')
-                    
-                    # Add point index label
-                    ax.text(u_reproj + 5, v_reproj - 5, f'{pt_idx}',
-                           color='red', fontsize=8, fontweight='bold')
                     
                     # Calculate reprojection error
                     if pt_idx < len(keypoints_2d):
@@ -615,6 +611,12 @@ class URLocate(URCapture):
                                 'point_index': pt_idx,
                                 'error_pixels': float(error)
                             })
+                            
+                            # Add point index label (only once, at midpoint between tracked and reprojected)
+                            mid_u = (u_track + u_reproj) / 2
+                            mid_v = (v_track + v_reproj) / 2
+                            ax.text(mid_u, mid_v + 50, f'{pt_idx}',
+                                   color='red', fontsize=8, fontweight='bold', ha='center')
                 
                 # Plot tracked keypoints (green filled circles)
                 for pt_idx, kp in enumerate(keypoints_2d):
@@ -622,13 +624,9 @@ class URLocate(URCapture):
                     v_track = kp.get('y')
                     
                     if u_track is not None and v_track is not None:
-                        ax.plot(u_track, v_track, 'go', markersize=6,
+                        ax.plot(u_track, v_track, 'go', markersize=2,
                                markerfacecolor='green', markeredgewidth=2,
                                label='Tracked' if pt_idx == 0 else '')
-                        
-                        # Add point index label
-                        ax.text(u_track + 5, v_track + 5, f'{pt_idx}',
-                               color='green', fontsize=8, fontweight='bold')
                 
                 # Set title
                 ax.set_title(f'View {view_idx}\n{img_file.name}', fontsize=10)

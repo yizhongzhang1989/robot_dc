@@ -68,7 +68,6 @@ class URCapture(Node):
         # Create callback group for thread safety
         self.callback_group = ReentrantCallbackGroup()
         # =============================== Other variables ==============================      
-        # Collect start position (will be loaded from operation_config.json)
         # Default fallback values if config file not found
         self.collect_start_position = None
         
@@ -121,9 +120,6 @@ class URCapture(Node):
         # Parent directory of data_dir (operation directory)
         self.data_parent_dir = os.path.dirname(self.data_dir)
         
-        # Operation config file path (in parent directory of data_dir)
-        self.operation_config_file = os.path.join(self.data_parent_dir, 'operation_config.json')
-        
         # Camera calibration parameters path
         if not os.path.isabs(camera_params_path):
             camera_params_dir = os.path.join(self.script_dir, camera_params_path)
@@ -138,28 +134,29 @@ class URCapture(Node):
     
     def _load_collect_position_from_config(self):
         """
-        Load collect start position from operation_config.json file
+        Load collect start position from ref_img_1_pose.json file
         If file doesn't exist or key is missing, collect_start_position will remain None
         """
         try:
-            if os.path.exists(self.operation_config_file):
-                with open(self.operation_config_file, 'r') as f:
-                    config = json.load(f)
+            ref_pose_path = os.path.join(self.data_parent_dir, 'ref_img_1_pose.json')
+            if os.path.exists(ref_pose_path):
+                with open(ref_pose_path, 'r') as f:
+                    ref_pose = json.load(f)
                     
-                if 'collect_start_position' in config:
-                    position = config['collect_start_position']
+                if 'joint_angles' in ref_pose:
+                    position = ref_pose['joint_angles']
                     if isinstance(position, list) and len(position) == 6:
                         self.collect_start_position = position
-                        self.get_logger().info(f"✓ Loaded collect_start_position from config: {self.operation_config_file}")
+                        self.get_logger().info(f"✓ Loaded collect_start_position from ref_img_1_pose: {ref_pose_path}")
                         self.get_logger().info(f"  Position: {[f'{j:.4f}' for j in position]}")
                     else:
-                        self.get_logger().error(f"✗ Invalid collect_start_position format in config (expected list of 6 values)")
+                        self.get_logger().error(f"✗ Invalid joint_angles format in ref_img_1_pose (expected list of 6 values)")
                 else:
-                    self.get_logger().error(f"✗ collect_start_position not found in config file: {self.operation_config_file}")
+                    self.get_logger().error(f"✗ joint_angles not found in ref_img_1_pose file: {ref_pose_path}")
             else:
-                self.get_logger().error(f"✗ Operation config file not found: {self.operation_config_file}")
+                self.get_logger().error(f"✗ Reference pose file not found: {ref_pose_path}")
         except Exception as e:
-            self.get_logger().error(f"✗ Error loading collect position from config: {e}")
+            self.get_logger().error(f"✗ Error loading collect position from ref_img_1_pose: {e}")
     
     def _initialize_robot(self):
         """Initialize UR15 robot instance and establish connection"""
