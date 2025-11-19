@@ -246,6 +246,27 @@ class LiftRobotNode(Node):
         self.stall_check_start_position = None  # Position when movement command was sent
         self.stall_check_duration = 0.5     # seconds - how long to wait before checking for stall
         self.position_change_tolerance = 0.01  # mm - positions within this range considered identical
+
+        # ═══════════════════════════════════════════════════════════════
+        # Range Scan (Stall-Based Endpoint Detection)
+        # Only used during explicit range detection commands. Old generic
+        # stall recovery removed. Logic: while scanning in a direction, if
+        # movement_state stays 'down' or 'up' and height does not change beyond
+        # tolerance for 5s, declare endpoint.
+        # Commands to activate: 'range_scan_down', 'range_scan_up', 'range_scan_cancel'
+        # Timer runs at 10Hz.
+        # ═══════════════════════════════════════════════════════════════
+        self.range_scan_active = False
+        self.range_scan_direction = None      # 'down' | 'up'
+        self.range_scan_low_reached = False
+        self.range_scan_high_reached = False
+        self.range_scan_reference_height = None
+        self.range_scan_stall_start_time = None
+        self.range_scan_duration_required = 5.0  # seconds of no movement
+        self.range_scan_height_tolerance = 0.05  # mm change threshold to reset stall timer
+        self.range_scan_timer = self.create_timer(0.1, self._range_scan_check)  # 10Hz
+        self.range_scan_low_height = None   # Measured low endpoint height
+        self.range_scan_high_height = None  # Measured high endpoint height
         
         # Create controller
         self.controller = LiftRobotController(
@@ -357,11 +378,21 @@ class LiftRobotNode(Node):
                 if self.force_control_active:
                     self.force_control_active = False
                     self.get_logger().info(f"[SEQ {seq_id_str}] Manual up - force control disabled")
-                
-                self.controller.up(seq_id=seq_id)
-                self.movement_state = 'up'
-                # Start manual up task
-                self._start_task('manual_up')
+                # 若当前仍有异步闪络脉冲在执行，延迟排队执行，避免被忽略
+                if getattr(self.controller, 'flash_active', False):
+                    relay_busy = None
+                    try:
+                        ctx = getattr(self.controller, 'flash_context', None)
+                        if ctx:
+                            relay_busy = ctx.get('relay')
+                    except Exception:
+                        pass
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Flash busy (relay={relay_busy}), schedule UP after 0.18s")
+                    threading.Timer(0.18, lambda: self._queued_direction_pulse('up', seq_id)).start()
+                else:
+                    self.controller.up(seq_id=seq_id)
+                    self.movement_state = 'up'
+                    self._start_task('manual_up')
                 
             elif command == 'down':
                 # If interrupting a running closed-loop task, complete it first
@@ -377,11 +408,20 @@ class LiftRobotNode(Node):
                 if self.force_control_active:
                     self.force_control_active = False
                     self.get_logger().info(f"[SEQ {seq_id_str}] Manual down - force control disabled")
-                
-                self.controller.down(seq_id=seq_id)
-                self.movement_state = 'down'
-                # Start manual down task
-                self._start_task('manual_down')
+                if getattr(self.controller, 'flash_active', False):
+                    relay_busy = None
+                    try:
+                        ctx = getattr(self.controller, 'flash_context', None)
+                        if ctx:
+                            relay_busy = ctx.get('relay')
+                    except Exception:
+                        pass
+                    self.get_logger().info(f"[SEQ {seq_id_str}] Flash busy (relay={relay_busy}), schedule DOWN after 0.18s")
+                    threading.Timer(0.18, lambda: self._queued_direction_pulse('down', seq_id)).start()
+                else:
+                    self.controller.down(seq_id=seq_id)
+                    self.movement_state = 'down'
+                    self._start_task('manual_down')
                 
             elif command == 'timed_up':
                 # If interrupting a running closed-loop task, complete it first
@@ -624,6 +664,75 @@ class LiftRobotNode(Node):
                     self.reset_in_progress = False
                     self.get_logger().info(f"[SEQ {seq_id_str}] Step 6: Reset complete, system ready (system_busy=False)")
                 
+            elif command == 'range_scan_down':
+                # Start range scan moving downward to find LOW endpoint
+                if self.range_scan_active:
+                    self.get_logger().warning(f"[SEQ {seq_id_str}] range_scan_down rejected - scan already active")
+                    return
+                if self.system_busy and self.active_control_owner not in [None, 'platform']:
+                    self.get_logger().warning(f"[SEQ {seq_id_str}] range_scan_down rejected - system busy by {self.active_control_owner}")
+                    return
+                # Disable other control modes
+                if self.control_enabled:
+                    self.control_enabled = False
+                if self.force_control_active:
+                    self.force_control_active = False
+                # Initialize scan state
+                self.range_scan_active = True
+                self.range_scan_direction = 'down'
+                self.range_scan_low_reached = False
+                self.range_scan_high_reached = False
+                self.range_scan_reference_height = None
+                self.range_scan_stall_start_time = None
+                self.range_scan_low_height = None
+                self.range_scan_high_height = None
+                self._start_task('range_scan', owner='platform')
+                # Send initial downward pulse
+                self.controller.down(seq_id=seq_id)
+                self.movement_state = 'down'
+                self.get_logger().info(f"[SEQ {seq_id_str}] ▶️ Range scan DOWN started (tolerance={self.range_scan_height_tolerance}mm, duration={self.range_scan_duration_required}s)")
+            elif command == 'range_scan_up':
+                # Start range scan moving upward to find HIGH endpoint
+                if self.range_scan_active:
+                    self.get_logger().warning(f"[SEQ {seq_id_str}] range_scan_up rejected - scan already active")
+                    return
+                if self.system_busy and self.active_control_owner not in [None, 'platform']:
+                    self.get_logger().warning(f"[SEQ {seq_id_str}] range_scan_up rejected - system busy by {self.active_control_owner}")
+                    return
+                if self.control_enabled:
+                    self.control_enabled = False
+                if self.force_control_active:
+                    self.force_control_active = False
+                self.range_scan_active = True
+                self.range_scan_direction = 'up'
+                self.range_scan_low_reached = False
+                self.range_scan_high_reached = False
+                self.range_scan_reference_height = None
+                self.range_scan_stall_start_time = None
+                self.range_scan_low_height = None
+                self.range_scan_high_height = None
+                self._start_task('range_scan', owner='platform')
+                self.controller.up(seq_id=seq_id)
+                self.movement_state = 'up'
+                self.get_logger().info(f"[SEQ {seq_id_str}] ▶️ Range scan UP started (tolerance={self.range_scan_height_tolerance}mm, duration={self.range_scan_duration_required}s)")
+            elif command == 'range_scan_cancel':
+                # Cancel any active range scan
+                if not self.range_scan_active:
+                    self.get_logger().info(f"[SEQ {seq_id_str}] range_scan_cancel - no active scan")
+                else:
+                    self.range_scan_active = False
+                    self.range_scan_direction = None
+                    self.range_scan_reference_height = None
+                    self.range_scan_stall_start_time = None
+                    self.get_logger().info(f"[SEQ {seq_id_str}] ⏹️ Range scan cancelled")
+                # Stop motion safely
+                try:
+                    self.controller.stop(seq_id=seq_id)
+                except Exception as e:
+                    self.get_logger().error(f"[SEQ {seq_id_str}] Range scan cancel stop error: {e}")
+                self.movement_state = 'stop'
+                if self.task_state == 'running' and self.task_type == 'range_scan':
+                    self._complete_task('manual_stop')
             else:
                 self.get_logger().warning(f"Unknown command: {command}")
                 
@@ -883,36 +992,48 @@ class LiftRobotNode(Node):
         
         # ═══════════════════════════════════════════════════════════════
         # Priority 2.5: Motion Stall Detection
-        # If movement_state is 'up' or 'down' but position hasn't changed after 0.5s,
-        # reset to 'stop' to trigger re-sending command (hardware failure recovery)
+        # (Generic stall recovery removed. Stall semantics now limited to
+        # range scan endpoint detection inside _range_scan_check.)
         # ═══════════════════════════════════════════════════════════════
-        if self.movement_state in ['up', 'down']:
-            # Check if we've been in this movement state long enough
-            if self.stall_check_start_time is not None:
-                elapsed = time.time() - self.stall_check_start_time
-                
-                if elapsed >= self.stall_check_duration:
-                    # Check if position has changed since movement started
-                    position_change = abs(self.current_height - self.stall_check_start_position)
-                    
-                    if position_change <= self.position_change_tolerance:
-                        # Motor stalled - position not changing despite movement command
+        # Limited resend fallback (only when NOT in range scan):
+        # If after stall_check_duration the height has not changed beyond
+        # position_change_tolerance, re-send the movement command to guard
+        # against a lost relay pulse. Do not reset movement_state to 'stop'
+        # (keeps semantic simpler). Disabled during range scan to avoid
+        # disturbing endpoint detection.
+        if (not self.range_scan_active and
+            self.movement_state in ['up','down'] and
+            self.stall_check_start_time is not None):
+            elapsed = time.time() - self.stall_check_start_time
+            if elapsed >= self.stall_check_duration:
+                position_change = abs(self.current_height - self.stall_check_start_position)
+                if position_change <= self.position_change_tolerance:
+                    try:
+                        if self.movement_state == 'up':
+                            self.controller.up()
+                        elif self.movement_state == 'down':
+                            self.controller.down()
                         self.get_logger().warning(
-                            f"[Control] ⚠️  STALL DETECTED: movement_state={self.movement_state} "
-                            f"but position unchanged at {self.current_height:.2f}mm for {self.stall_check_duration}s. "
-                            f"Resetting to 'stop' to re-send command."
+                            f"[Control] 🔁 Resend {self.movement_state.upper()} pulse (no movement Δ≤{self.position_change_tolerance}mm in {elapsed:.2f}s)"
                         )
-                        self.movement_state = 'stop'
-                        self.stall_check_start_time = None
-                        self.stall_check_start_position = None
-                        # Next control cycle will detect error and re-send movement command
-        else:
-            # Not in active movement - clear stall detection state
-            self.stall_check_start_time = None
-            self.stall_check_start_position = None
+                    except Exception as e:
+                        self.get_logger().error(f"[Control] Resend {self.movement_state} failed: {e}")
+                    # Refresh stall baseline
+                    self.stall_check_start_time = time.time()
+                    self.stall_check_start_position = self.current_height
         
         # Priority 3: Send movement command based on error direction
         try:
+            """10Hz timer callback: Detect stationary endpoints during range scan.
+            Logic:
+            - Active only when range_scan_active=True.
+            - Track reference height. If movement exceeds tolerance, refresh reference & timer.
+            - If height remains within tolerance for range_scan_duration_required seconds:
+                * Mark endpoint for current direction.
+                * Record height.
+                * If scanning DOWN and HIGH not yet found, automatically start UP scan.
+                * If both endpoints found, stop scan and complete task.
+            """
             if error > POSITION_TOLERANCE:
                 # Need to move up - only send command if not already moving up
                 if self.movement_state != 'up':
@@ -972,6 +1093,31 @@ class LiftRobotNode(Node):
                 'avg_overshoot_down': round(self.avg_overshoot_down, 3),
                 'status': 'online'
             }
+            # Relay flash / range scan diagnostic (helps verify UP pulse actually issued)
+            try:
+                status['flash_active'] = bool(getattr(self.controller, 'flash_active', False))
+                ctx = getattr(self.controller, 'flash_context', None)
+                if ctx:
+                    status['flash_relay'] = ctx.get('relay')  # 0 STOP / 1 UP / 2 DOWN
+                    status['flash_phase'] = ctx.get('phase')
+                    status['flash_on_attempts'] = ctx.get('on_attempts')
+                    status['flash_off_attempts'] = ctx.get('off_attempts')
+                    # expose start time age for debugging long flashes
+                    st = ctx.get('start_time')
+                    if st:
+                        status['flash_age'] = round(time.time() - st, 3)
+            except Exception:
+                pass
+            # Range scan status (to disambiguate web脚本 vs 内部扫描)
+            if self.range_scan_active:
+                status['range_scan_active'] = True
+                status['range_scan_direction'] = self.range_scan_direction
+                status['range_scan_low_reached'] = self.range_scan_low_reached
+                status['range_scan_high_reached'] = self.range_scan_high_reached
+                if self.range_scan_low_height is not None:
+                    status['range_scan_low_height'] = round(self.range_scan_low_height, 2)
+                if self.range_scan_high_height is not None:
+                    status['range_scan_high_height'] = round(self.range_scan_high_height, 2)
             if self.force_control_active:
                 status['force_control_active'] = True
                 status['target_force'] = self.target_force
@@ -1019,6 +1165,32 @@ class LiftRobotNode(Node):
         self.controller.cleanup()
         
         super().destroy_node()
+
+    # ─────────────────────────────────────────────────────────────
+    # Queued direction pulse helper (for delayed up/down when flash busy)
+    # ─────────────────────────────────────────────────────────────
+    def _queued_direction_pulse(self, direction, seq_id):
+        try:
+            # 若仍忙，继续短延时重排队（最多尝试几次可扩展：这里简单递归限制深度）
+            if getattr(self.controller, 'flash_active', False):
+                # 简单的最多 3 次重试：在 lambda 中不追踪次数会无限，这里直接放弃后续
+                # 可扩展为带计数，但保持最小改动先不复杂化。
+                self.get_logger().debug(f"[SEQ {seq_id}] Deferred {direction} still busy, give up this queued attempt")
+                return
+            if direction == 'up':
+                self.controller.up(seq_id=seq_id)
+                self.movement_state = 'up'
+                if self.task_state != 'running':
+                    self._start_task('manual_up')
+            elif direction == 'down':
+                self.controller.down(seq_id=seq_id)
+                self.movement_state = 'down'
+                if self.task_state != 'running':
+                    self._start_task('manual_down')
+            else:
+                self.get_logger().warn(f"[SEQ {seq_id}] Unknown queued direction: {direction}")
+        except Exception as e:
+            self.get_logger().error(f"Queued pulse error ({direction}): {e}")
 
     # ─────────────────────────────────────────────────────────────
     # Overshoot helper methods
@@ -1099,6 +1271,121 @@ class LiftRobotNode(Node):
             
         except Exception as e:
             self.get_logger().error(f"Overshoot measurement error: {e}")
+
+    # ─────────────────────────────────────────────────────────────
+    # Range Scan Endpoint Detection (10Hz timer)
+    # ─────────────────────────────────────────────────────────────
+    def _range_scan_check(self):
+        """检测上下行机械端点（范围扫描模式）。
+
+        核心思想: 利用“位置在容差内保持不动的持续时间”判定到达端点，避免依赖固定高度；
+        并提供一个快速底部阈值 (height < 832mm) 的提前判定，用于硬件已自动停下时立即确认低端点。
+
+        状态字段:
+        - range_scan_active: 是否处于扫描模式
+        - range_scan_direction: 当前扫描方向 'down' 或 'up'
+        - range_scan_reference_height: 最近一次显著移动后记录的基准高度
+        - range_scan_stall_start_time: 进入“停滞”观察窗口的起始时间
+        - range_scan_height_tolerance: 高度变化 ≤ 该值视为未移动
+        - range_scan_duration_required: 连续停滞达到该秒数判定端点
+        - range_scan_low_reached / range_scan_high_reached: 已完成端点标记
+
+        判定流程:
+        1. 初始化 reference_height 与 stall_start_time。
+        2. 若高度变化 > tolerance → 认为仍在运动，刷新 reference 与 stall_start_time。
+        3. 若高度变化 ≤ tolerance：计算停滞时间；达到 duration_required → 判定端点。
+        4. 向下扫描时增加快速阈值 (832mm) 判底逻辑。
+        5. 低端点确认后自动切换为向上扫描；高端点确认后结束扫描并完成任务。
+        """
+        try:
+            if not self.range_scan_active:
+                return
+
+            h = self.current_height
+            direction = self.range_scan_direction
+
+            # 初始化基准
+            if self.range_scan_reference_height is None:
+                self.range_scan_reference_height = h
+                self.range_scan_stall_start_time = time.time()
+
+            delta = abs(h - self.range_scan_reference_height)
+            now_ts = time.time()
+
+            # 向下扫描阶段（寻找 LOW）
+            if direction == 'down' and not self.range_scan_low_reached:
+                # 快速底部阈值：硬件已自动停住时立即认定低端点
+                if h < 832.0:
+                    self.range_scan_low_reached = True
+                    self.range_scan_low_height = h
+                    self.get_logger().info(
+                        f"[RangeScan] ✅ LOW endpoint (fast threshold) height={h:.2f}mm < 832mm"
+                    )
+                    # 自动转为向上扫描
+                    self.range_scan_direction = 'up'
+                    try:
+                        self.controller.up()
+                        self.movement_state = 'up'
+                    except Exception as e:
+                        self.get_logger().error(f"[RangeScan] Start UP after LOW error: {e}")
+                    # 重置参考用于上行端点判定
+                    self.range_scan_reference_height = h
+                    self.range_scan_stall_start_time = time.time()
+                    return
+
+                # 正常停滞判定逻辑
+                if delta > self.range_scan_height_tolerance:
+                    # 仍在移动 → 刷新基准
+                    self.range_scan_reference_height = h
+                    self.range_scan_stall_start_time = now_ts
+                else:
+                    stall_elapsed = now_ts - self.range_scan_stall_start_time
+                    if stall_elapsed >= self.range_scan_duration_required:
+                        self.range_scan_low_reached = True
+                        self.range_scan_low_height = h
+                        self.get_logger().info(
+                            f"[RangeScan] ✅ LOW endpoint detected: height={h:.2f}mm stall={stall_elapsed:.2f}s tolerance={self.range_scan_height_tolerance}mm"
+                        )
+                        # 自动开始向上扫描
+                        self.range_scan_direction = 'up'
+                        try:
+                            self.controller.up()
+                            self.movement_state = 'up'
+                        except Exception as e:
+                            self.get_logger().error(f"[RangeScan] Start UP after LOW error: {e}")
+                        self.range_scan_reference_height = h
+                        self.range_scan_stall_start_time = time.time()
+                        return
+
+            # 向上扫描阶段（寻找 HIGH）
+            if direction == 'up' and not self.range_scan_high_reached:
+                if delta > self.range_scan_height_tolerance:
+                    self.range_scan_reference_height = h
+                    self.range_scan_stall_start_time = now_ts
+                else:
+                    stall_elapsed = now_ts - self.range_scan_stall_start_time
+                    if stall_elapsed >= self.range_scan_duration_required:
+                        self.range_scan_high_reached = True
+                        self.range_scan_high_height = h
+                        self.get_logger().info(
+                            f"[RangeScan] ✅ HIGH endpoint detected: height={h:.2f}mm stall={stall_elapsed:.2f}s tolerance={self.range_scan_height_tolerance}mm"
+                        )
+                        # 若已找到 LOW → 完成扫描
+                        if self.range_scan_low_reached:
+                            self.range_scan_active = False
+                            try:
+                                self.controller.stop()
+                            except Exception as e:
+                                self.get_logger().error(f"[RangeScan] Stop after HIGH error: {e}")
+                            self.movement_state = 'stop'
+                            if self.task_state == 'running' and self.task_type == 'range_scan':
+                                self._complete_task('target_reached')
+                            self.get_logger().info(
+                                f"[RangeScan] 🏁 Range scan complete: low={self.range_scan_low_height:.2f}mm high={self.range_scan_high_height:.2f}mm"
+                            )
+                            return
+        except Exception as e:
+            self.get_logger().error(f"[RangeScan] Check error: {e}")
 
     # ─────────────────────────────────────────────────────────────
     # Region overshoot helpers
