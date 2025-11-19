@@ -327,7 +327,7 @@ function captureTaskData(taskName) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            logToWeb(`Captured image and pose data: ${data.image_file}, ${data.pose_file}`, 'success');
+            logToWeb(`Captured image and pose data successfully`, 'success');
         } else {
             console.error(`Failed to capture data:`, data.message || 'Unknown error');
             logToWeb(`Failed to capture data: ${data.message || 'Unknown error'}`, 'error');

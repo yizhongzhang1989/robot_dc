@@ -21,18 +21,11 @@ from scipy.spatial.transform import Rotation as R
 from ur_capture import URCapture
 
 # Add ThirdParty robot_vision to path for Web API client
-third_party_path = os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vision')
-if os.path.exists(third_party_path):
-    sys.path.insert(0, third_party_path)
+sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vision'))
 
 # Import Web API client (with error handling)
-try:
-    from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_params_from_json
-except ImportError as e:
-    print(f"Warning: Could not import positioning web API client: {e}")
-    print("3D positioning functionality will not be available")
-    Positioning3DWebAPIClient = None
-    load_camera_params_from_json = None
+from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_params_from_json
+
 
 # Robot control imports
 from ur15_robot_arm.ur15 import UR15Robot
@@ -97,11 +90,8 @@ class URLocate(URCapture):
         """
         Set up required directories for URLocate operations
         """
-        # Get parent directory of data_dir (one level up from the dataset operation directory)
-        data_parent_dir = os.path.dirname(self.data_dir)
-        
         # Result directory path for storing location results
-        self.result_dir = os.path.join(data_parent_dir, "result")
+        self.result_dir = os.path.join(self.data_parent_dir, "result")
         
         # Create result directory if it doesn't exist
         if not os.path.exists(self.result_dir):
@@ -111,9 +101,9 @@ class URLocate(URCapture):
             self.get_logger().info(f"✓ Result directory exists: {self.result_dir}")
         
         # Reference data file paths with specified names
-        self.ref_img_path = os.path.join(data_parent_dir, 'ref_img_1.jpg')
-        self.ref_keypoints_path = os.path.join(data_parent_dir, 'ref_img_1.json') 
-        self.ref_pose_path = os.path.join(data_parent_dir, 'ref_img_1_pose.json')
+        self.ref_img_path = os.path.join(self.data_parent_dir, 'ref_img_1.jpg')
+        self.ref_keypoints_path = os.path.join(self.data_parent_dir, 'ref_img_1.json') 
+        self.ref_pose_path = os.path.join(self.data_parent_dir, 'ref_img_1_pose.json')
 
     def _load_reference_data(self):
         """
@@ -190,6 +180,7 @@ class URLocate(URCapture):
             self.get_logger().error(f"Failed to initialize positioning client: {e}")
             self.positioning_client = None
 
+    # =================================== functions for 3d positioning ===================================
     def upload_reference_data_to_ffpp_web(self):
         """
         Upload reference images toffppweb, which is the first step before performing 3D triangulation.
@@ -724,9 +715,10 @@ class URLocate(URCapture):
             traceback.print_exc()
             return False
 
+    # =================================== functions for wobj frame building ===================================
     def perform_wobj_frame_building(self, session_result_dir=None, kp_index_for_wobj_x_axis=[0, 1]):
         """
-        Build a workpiece coordinate system based on 3D positioning keypoints.
+        Build a wobj coordinate system based on 3D positioning keypoints.
         
         The coordinate system is defined as follows:
         - Origin: at keypoint[kp_index_for_wobj_x_axis[0]]
@@ -1000,7 +992,7 @@ class URLocate(URCapture):
             z_axis = np.array(coord_system['axes']['z_axis']['vector'])
                         
             # Define arrow length in 3D space (meters)
-            arrow_length = 0.05  # 5cm arrows
+            arrow_length = 0.10  # 5cm arrows
             
             # Calculate 3D endpoints of axes
             x_end_3d = origin_3d + x_axis * arrow_length

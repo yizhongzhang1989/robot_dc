@@ -48,21 +48,6 @@ class URCapture(Node):
         # Get the script directory for relative paths
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # Data directory path (for storing collected data)
-        self.data_dir = os.path.join(self.script_dir, '..', 'dataset', operation_name, 'test')
-        
-        # Camera calibration parameters path
-        if not os.path.isabs(camera_params_path):
-            camera_params_dir = os.path.join(self.script_dir, camera_params_path)
-        else:
-            camera_params_dir = camera_params_path
-        
-        # Camera intrinsic parameters file path
-        self.camera_intrinsic_path = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
-        
-        # Camera extrinsic parameters file path (eye-in-hand calibration)
-        self.camera_extrinsic_path = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
-        
         # IP address and port for UR15 robot
         self.robot_ip = robot_ip
         self.robot_port = robot_port
@@ -72,21 +57,20 @@ class URCapture(Node):
         
         # Operation name for data organization
         self.operation_name = operation_name
-
+        
         # ============================= Instance variables ==============================
         # robot arm instance
         self.robot = None
-        
+        # Camera-related attributes
+        self.cv_bridge = CvBridge()
+        self.latest_image = None      
+
+        # Create callback group for thread safety
+        self.callback_group = ReentrantCallbackGroup()
         # =============================== Other variables ==============================      
-        # Predefined collect position joint angles (radians)
-        self.collect_start_position = [
-            1.475162148475647,
-            -0.7454956334880372,
-            2.228308979664938,
-            3.157601996059082,
-            -0.7743623892413538,
-            -1.3792231718646448
-        ]
+        # Collect start position (will be loaded from operation_config.json)
+        # Default fallback values if config file not found
+        self.collect_start_position = None
         
         # Collection movement offsets (in base coordinate system, unit: meters)
         self.movements = {
@@ -100,13 +84,10 @@ class URCapture(Node):
         # ============================ Initialization =================================
         # Initialize the robot connection
         self._initialize_robot()
-
-        # Camera-related attributes
-        self.cv_bridge = CvBridge()
-        self.latest_image = None      
-
-        # Create callback group for thread safety
-        self.callback_group = ReentrantCallbackGroup()
+        # Setup paths for data and camera parameters
+        self._setup_paths(operation_name, camera_params_path)
+        # Load collect start position from config file
+        self._load_collect_position_from_config()
 
         # Subscribe to camera topic
         self.image_subscription = self.create_subscription(
@@ -125,6 +106,60 @@ class URCapture(Node):
             msg: ROS Image message from camera
         """
         self.latest_image = msg
+    
+    def _setup_paths(self, operation_name, camera_params_path):
+        """
+        Setup data directory and camera parameter paths
+        
+        Args:
+            operation_name (str): Name of the operation for data directory
+            camera_params_path (str): Path to camera calibration parameters directory
+        """
+        # Data directory path (for storing collected data)
+        self.data_dir = os.path.join(self.script_dir, '..', 'dataset', operation_name, 'test')
+        
+        # Parent directory of data_dir (operation directory)
+        self.data_parent_dir = os.path.dirname(self.data_dir)
+        
+        # Operation config file path (in parent directory of data_dir)
+        self.operation_config_file = os.path.join(self.data_parent_dir, 'operation_config.json')
+        
+        # Camera calibration parameters path
+        if not os.path.isabs(camera_params_path):
+            camera_params_dir = os.path.join(self.script_dir, camera_params_path)
+        else:
+            camera_params_dir = camera_params_path
+        
+        # Camera intrinsic parameters file path
+        self.camera_intrinsic_path = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
+        
+        # Camera extrinsic parameters file path (eye-in-hand calibration)
+        self.camera_extrinsic_path = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
+    
+    def _load_collect_position_from_config(self):
+        """
+        Load collect start position from operation_config.json file
+        If file doesn't exist or key is missing, collect_start_position will remain None
+        """
+        try:
+            if os.path.exists(self.operation_config_file):
+                with open(self.operation_config_file, 'r') as f:
+                    config = json.load(f)
+                    
+                if 'collect_start_position' in config:
+                    position = config['collect_start_position']
+                    if isinstance(position, list) and len(position) == 6:
+                        self.collect_start_position = position
+                        self.get_logger().info(f"✓ Loaded collect_start_position from config: {self.operation_config_file}")
+                        self.get_logger().info(f"  Position: {[f'{j:.4f}' for j in position]}")
+                    else:
+                        self.get_logger().error(f"✗ Invalid collect_start_position format in config (expected list of 6 values)")
+                else:
+                    self.get_logger().error(f"✗ collect_start_position not found in config file: {self.operation_config_file}")
+            else:
+                self.get_logger().error(f"✗ Operation config file not found: {self.operation_config_file}")
+        except Exception as e:
+            self.get_logger().error(f"✗ Error loading collect position from config: {e}")
     
     def _initialize_robot(self):
         """Initialize UR15 robot instance and establish connection"""
@@ -229,8 +264,13 @@ class URCapture(Node):
             print("Error: Robot not initialized")
             return False
         
+        if self.collect_start_position is None:
+            print("Error: collect_start_position not loaded from config file")
+            return False
+        
         try:
             print(">>> Moving robot to collect start position...")
+            print(f"    Target position: {[f'{j:.4f}' for j in self.collect_start_position]}")
                 
             # Move robot using movej function (joint movement)
             # Parameters: joint_positions, acceleration, velocity
