@@ -81,32 +81,32 @@ class LiftRobotNode(Node):
         # ═══════════════════════════════════════════════════════════════
         # Load Overshoot Calibration from Config File (portable path resolution)
         # Priority: ENV LIFT_ROBOT_CONFIG_DIR -> ancestor colcon_ws -> CWD/config
+        # NOTE: Auto-creates config directory and default files if missing (needed for calibration)
+        # ═══════════════════════════════════════════════════════════════
         env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
-        def _resolve_config_dir():
-            if env_dir:
-                base = os.path.abspath(env_dir)
-                parts = base.split(os.sep)
-                if base.endswith('config'):
-                    return base
+        if env_dir:
+            self.config_dir = os.path.abspath(env_dir)
+        else:
+            try:
+                # Walk up from this file to find colcon_ws
+                here = os.path.abspath(os.path.dirname(__file__))
+                parts = here.split(os.sep)
                 if 'colcon_ws' in parts:
                     idx = parts.index('colcon_ws')
-                    return os.path.join(os.sep.join(parts[:idx+1]), 'config')
-                candidate = os.path.join(base, 'colcon_ws', 'config')
-                if os.path.isdir(candidate):
-                    return candidate
-                return os.path.join(base, 'config')
-            # walk up from this file
-            cur = os.path.abspath(os.path.dirname(__file__))
-            while cur and cur != os.sep:
-                if os.path.basename(cur) == 'colcon_ws':
-                    return os.path.join(cur, 'config')
-                cur = os.path.dirname(cur)
-            return os.path.join(os.getcwd(), 'config')
-        self.config_dir = _resolve_config_dir()
+                    colcon_ws_path = os.sep.join(parts[:idx+1])
+                    self.config_dir = os.path.join(colcon_ws_path, 'config')
+                else:
+                    self.config_dir = os.path.join(os.getcwd(), 'config')
+            except Exception:
+                self.config_dir = os.path.join(os.getcwd(), 'config')
+        
+        # Auto-create config directory for overshoot calibration (writable config)
         try:
             os.makedirs(self.config_dir, exist_ok=True)
         except Exception as e:
             self.get_logger().warn(f"Cannot create config dir '{self.config_dir}': {e}")
+        
+        # Helper function to get config file path
         def _cfg(name):
             return os.path.join(self.config_dir, name)
         config_path = _cfg('platform_overshoot_calibration.json')
@@ -276,6 +276,47 @@ class LiftRobotNode(Node):
         self.stall_check_duration = 0.5     # seconds - how long to wait before checking for stall
         self.position_change_tolerance = 0.01  # mm - positions within this range considered identical
 
+        # ═══════════════════════════════════════════════════════════════
+        # Platform Range Limits (loaded from platform_range.json)
+        # ═══════════════════════════════════════════════════════════════
+        self.platform_range_min = None  # Actual minimum height from config
+        self.platform_range_max = None  # Actual maximum height from config
+        self.platform_range_enabled = False  # Whether range limits are active
+        
+        # Load platform range from config file (using same portable path resolution)
+        range_config_path = _cfg('platform_range.json')
+        if os.path.exists(range_config_path):
+            try:
+                with open(range_config_path, 'r') as f:
+                    range_data = json.load(f)
+                    actual_min = range_data.get('actual_min')
+                    actual_max = range_data.get('actual_max')
+                    
+                    # Only enable if both values are valid (not None)
+                    if actual_min is not None and actual_max is not None:
+                        self.platform_range_min = float(actual_min)
+                        self.platform_range_max = float(actual_max)
+                        self.platform_range_enabled = True
+                        self.get_logger().info(
+                            f"[lift_robot_platform] Platform range limits loaded: "
+                            f"min={self.platform_range_min:.2f}mm, max={self.platform_range_max:.2f}mm"
+                        )
+                    else:
+                        self.get_logger().info(
+                            f"[lift_robot_platform] Platform range config exists but values are null - "
+                            f"range limits DISABLED (run range detection to enable)"
+                        )
+            except Exception as e:
+                self.get_logger().warn(
+                    f"[lift_robot_platform] Failed to load platform range config: {e} - "
+                    f"range limits DISABLED"
+                )
+        else:
+            self.get_logger().info(
+                f"[lift_robot_platform] No platform range config found at {range_config_path} - "
+                f"range limits DISABLED (will be created automatically)"
+            )
+        
         # ═══════════════════════════════════════════════════════════════
         # Range Scan (Stall-Based Endpoint Detection)
         # Only used during explicit range detection commands. Old generic
@@ -830,17 +871,53 @@ class LiftRobotNode(Node):
                 return
         
         # ─────────────────────────────────────────────────────────────
-        # Manual down task: check if reached bottom (height < 832mm)
-        # Hardware auto-stops, so we just mark task as completed
+        # Manual down task: check if reached bottom (dynamic range limit)
+        # Only active if platform_range is enabled and configured
         # ─────────────────────────────────────────────────────────────
         if self.task_state == 'running' and self.task_type == 'manual_down':
-            if self.current_height < 832.0:
-                # Reached bottom, mark as completed (don't send stop, hardware auto-stops)
-                self._complete_task('target_reached')
-                self.movement_state = 'stop'  # Update state to reflect hardware stop
-                self.get_logger().info(
-                    f"[ManualDown] Bottom reached: height={self.current_height:.2f}mm < 832mm (hardware auto-stop)"
+            # Debug: Log check conditions every cycle when moving down
+            if self.movement_state == 'down':
+                self.get_logger().debug(
+                    f"[ManualDown] Check: enabled={self.platform_range_enabled}, "
+                    f"min={self.platform_range_min}, current={self.current_height:.2f}mm"
                 )
+            
+            if self.platform_range_enabled and self.platform_range_min is not None:
+                # Dynamic bottom limit: actual_min + 1mm safety margin
+                bottom_limit = self.platform_range_min + 1.0
+                if self.current_height < bottom_limit:
+                    # Reached bottom - send stop and complete task
+                    self.get_logger().info(
+                        f"[ManualDown] Bottom limit reached: height={self.current_height:.2f}mm < "
+                        f"limit={bottom_limit:.2f}mm (actual_min+1mm) - sending stop"
+                    )
+                    try:
+                        self.controller.stop()
+                    except Exception as e:
+                        self.get_logger().error(f"[ManualDown] Stop failed: {e}")
+                    self.movement_state = 'stop'
+                    self._complete_task('target_reached')
+        
+        # ─────────────────────────────────────────────────────────────
+        # Manual up task: check if reached top (dynamic range limit)
+        # Only active if platform_range is enabled and configured
+        # ─────────────────────────────────────────────────────────────
+        if self.task_state == 'running' and self.task_type == 'manual_up':
+            if self.platform_range_enabled and self.platform_range_max is not None:
+                # Dynamic top limit: actual_max - 1mm safety margin
+                top_limit = self.platform_range_max - 1.0
+                if self.current_height > top_limit:
+                    # Reached top - send stop and complete task
+                    self.get_logger().info(
+                        f"[ManualUp] Top limit reached: height={self.current_height:.2f}mm > "
+                        f"limit={top_limit:.2f}mm (actual_max-1mm) - sending stop"
+                    )
+                    try:
+                        self.controller.stop()
+                    except Exception as e:
+                        self.get_logger().error(f"[ManualUp] Stop failed: {e}")
+                    self.movement_state = 'stop'
+                    self._complete_task('target_reached')
         
         # ─────────────────────────────────────────────────────────────
         # Force control branch (independent of height auto control)
