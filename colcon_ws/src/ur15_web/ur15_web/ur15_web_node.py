@@ -1896,6 +1896,211 @@ class UR15WebNode(Node):
                 self.push_web_log(error_msg, 'error')
                 return jsonify({'success': False, 'message': error_msg})
         
+        @self.app.route('/capture_task_data_x3', methods=['POST'])
+        def capture_task_data_x3():
+            """Capture images at 3 different positions using move_tcp to offset along x and y axes."""
+            from flask import jsonify, request
+            import time
+            import json
+            
+            try:
+                data = request.get_json()
+                task_name = data.get('task_name')
+                task_path = data.get('task_path')
+                calibration_data_dir = data.get('calibration_data_dir')
+                
+                if not task_name or not task_path:
+                    return jsonify({
+                        'success': False, 
+                        'message': 'Missing task_name or task_path'
+                    })
+                
+                if not calibration_data_dir:
+                    return jsonify({
+                        'success': False, 
+                        'message': 'Missing calibration_data_dir'
+                    })
+                
+                # Expand ~ in paths and ensure task directory exists
+                expanded_task_path = os.path.expanduser(task_path)
+                os.makedirs(expanded_task_path, exist_ok=True)
+                
+                # Check if robot is connected
+                with self.ur15_lock:
+                    if self.ur15_robot is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Robot not connected'
+                        })
+                
+                # Check if freedrive mode is active
+                if self.freedrive_active:
+                    error_msg = 'Cannot execute Capture x3 while freedrive mode is active. Please disable freedrive mode first.'
+                    self.push_web_log(error_msg, 'warning')
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg
+                    })
+                
+                # Define offsets: current position, +1cm in x, +1cm in y (in TCP coordinate frame)
+                # offset format: [x, y, z, rx, ry, rz]
+                offsets = [
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],     # Current position
+                    [0.01, 0.0, 0.0, 0.0, 0.0, 0.0],    # +1cm in x
+                    [0.0, 0.01, 0.0, 0.0, 0.0, 0.0]     # +1cm in y
+                ]
+                
+                captured_files = []
+                initial_pose = None
+                
+                # Save initial pose to return to it later
+                with self.ur15_lock:
+                    initial_pose = self.ur15_robot.get_actual_tcp_pose()
+                    if initial_pose is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Failed to get initial robot pose'
+                        })
+                
+                self.push_web_log('Starting Capture x3: capturing at 3 positions...', 'info')
+                
+                # Capture at each offset position
+                for i, offset in enumerate(offsets):
+                    try:
+                        # Move to offset position
+                        if i == 0:
+                            # First position: current position, just wait for stability
+                            self.push_web_log(f'Position {i+1}/3: Current position', 'info')
+                            time.sleep(0.5)
+                        else:
+                            # Return to initial position first (except for first iteration)
+                            self.push_web_log(f'Returning to initial position before moving to position {i+1}/3...', 'info')
+                            with self.ur15_lock:
+                                result = self.ur15_robot.movel(initial_pose, a=0.5, v=0.5)
+                                if result == -1:
+                                    raise Exception(f'Failed to return to initial position before position {i+1}')
+                            time.sleep(0.5)
+                            
+                            # Now move to the offset position from initial pose
+                            self.push_web_log(f'Moving to position {i+1}/3 (offset: {offset[:3]})...', 'info')
+                            with self.ur15_lock:
+                                result = self.ur15_robot.move_tcp(offset, a=0.5, v=0.5)
+                                if result == -1:
+                                    raise Exception(f'Failed to move to offset position {i+1}')
+                            
+                            # Wait for robot to settle and stabilize
+                            self.push_web_log(f'Waiting for robot to stabilize...', 'info')
+                            time.sleep(0.5)
+                        
+                        # Get next available file number
+                        capture_number = self._get_next_capture_file_number(expanded_task_path)
+                        
+                        # Capture current image
+                        with self.image_lock:
+                            if self.current_image is None:
+                                raise Exception('No camera image available')
+                            
+                            image_filename = f'ref_img_{capture_number}.jpg'
+                            image_path = os.path.join(expanded_task_path, image_filename)
+                            cv2.imwrite(image_path, self.current_image)
+                        
+                        # Get current robot pose
+                        with self.ur15_lock:
+                            joint_positions = self.ur15_robot.get_actual_joint_positions()
+                            if joint_positions is None:
+                                raise Exception('Failed to read joint positions')
+                            
+                            tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                            if tcp_pose is None:
+                                raise Exception('Failed to read TCP pose')
+                            
+                            # Calculate end2base transformation matrix
+                            end2base = self._pose_to_matrix(tcp_pose)
+                            
+                            # Format pose data
+                            from datetime import datetime
+                            current_tcp_pose = {
+                                "joint_angles": list(joint_positions),
+                                "end_xyzrpy": {
+                                    "x": tcp_pose[0],
+                                    "y": tcp_pose[1],
+                                    "z": tcp_pose[2],
+                                    "rx": tcp_pose[3],
+                                    "ry": tcp_pose[4],
+                                    "rz": tcp_pose[5]
+                                },
+                                "end2base": end2base.tolist(),
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        
+                        # Get camera parameters
+                        camera_params = self._get_camera_parameters_from_calibration(calibration_data_dir)
+                        if not camera_params['success']:
+                            raise Exception(camera_params['message'])
+                        
+                        # Merge all data and save
+                        combined_data = {}
+                        pose_data_without_timestamp = {k: v for k, v in current_tcp_pose.items() if k != 'timestamp'}
+                        combined_data.update(pose_data_without_timestamp)
+                        
+                        camera_data = camera_params['data']
+                        if 'intrinsics' in camera_data:
+                            combined_data.update(camera_data['intrinsics'])
+                        if 'extrinsics' in camera_data:
+                            combined_data.update(camera_data['extrinsics'])
+                        
+                        if 'timestamp' in current_tcp_pose:
+                            combined_data['timestamp'] = current_tcp_pose['timestamp']
+                        
+                        pose_filename = f'ref_img_{capture_number}_pose.json'
+                        pose_path = os.path.join(expanded_task_path, pose_filename)
+                        with open(pose_path, 'w') as f:
+                            json.dump(combined_data, f, indent=2)
+                        
+                        captured_files.append({
+                            'image': image_filename,
+                            'pose': pose_filename
+                        })
+                        
+                        self.push_web_log(f'Captured position {i+1}/3: {image_filename}, {pose_filename}', 'success')
+                        
+                    except Exception as e:
+                        error_msg = f'Failed to capture at position {i+1}: {str(e)}'
+                        self.push_web_log(error_msg, 'error')
+                        # Continue with next position even if one fails
+                        continue
+                
+                # Return to initial position
+                try:
+                    self.push_web_log('Returning to initial position...', 'info')
+                    with self.ur15_lock:
+                        result = self.ur15_robot.movel(initial_pose, a=0.5, v=0.5)
+                        if result == -1:
+                            self.push_web_log('Warning: Failed to return to initial position', 'warning')
+                except Exception as e:
+                    self.push_web_log(f'Warning: Error returning to initial position: {str(e)}', 'warning')
+                
+                if len(captured_files) == 0:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Failed to capture any images'
+                    })
+                
+                self.push_web_log(f'Capture x3 completed: {len(captured_files)} images captured', 'success')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Successfully captured {len(captured_files)} images at different positions',
+                    'captured_count': len(captured_files),
+                    'captured_files': captured_files
+                })
+                
+            except Exception as e:
+                error_msg = f'Failed to capture task data x3: {str(e)}'
+                self.get_logger().error(error_msg)
+                self.push_web_log(error_msg, 'error')
+                return jsonify({'success': False, 'message': error_msg})
+        
         @self.app.route('/set_task_path', methods=['POST'])
         def set_task_path():
             """Set path for a specific task."""
@@ -2117,7 +2322,7 @@ class UR15WebNode(Node):
                         result = self.ur15_robot.movel(
                             tcp_pose_meters_radians,
                             a=0.5,  # acceleration 0.5 m/s^2
-                            v=0.1,  # velocity 0.1 m/s
+                            v=0.5,  # velocity 0.1 m/s
                             blocking=False  # Don't block web interface
                         )
                         

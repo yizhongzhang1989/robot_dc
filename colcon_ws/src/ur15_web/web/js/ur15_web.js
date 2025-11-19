@@ -300,7 +300,6 @@ function captureTaskData(taskName) {
     const calibrationDataDir = document.getElementById('calibrationDirPath').value;
     
     if (!operationName || operationName === 'input operation name' || !currentOperationPath) {
-        logToWeb(`Please set an operation name before capturing`, 'warning');
         showMessage(`Please set an operation name before capturing`, 'warning');
         return;
     }
@@ -347,6 +346,78 @@ function captureTaskData(taskName) {
             'error', 
             '❌ Capture Error'
         );
+    });
+}
+
+function updateCaptureX3ButtonState() {
+    const captureX3Btn = document.getElementById('captureX3Btn');
+    if (!captureX3Btn) return;
+    
+    if (freedriveActive) {
+        // Disable button when freedrive is active
+        captureX3Btn.disabled = true;
+        captureX3Btn.style.opacity = '0.5';
+        captureX3Btn.style.cursor = 'not-allowed';
+        captureX3Btn.title = 'Cannot use while freedrive mode is active. Please disable freedrive mode first.';
+        captureX3Btn.classList.remove('hover:bg-orange-600');
+    } else {
+        // Enable button when freedrive is inactive
+        captureX3Btn.disabled = false;
+        captureX3Btn.style.opacity = '1';
+        captureX3Btn.style.cursor = 'pointer';
+        captureX3Btn.title = 'Capture 3 images at different positions (x, y offsets)';
+        captureX3Btn.classList.add('hover:bg-orange-600');
+    }
+}
+
+function captureTaskDataX3() {
+    const operationName = document.getElementById('operationName').value;
+    const calibrationDataDir = document.getElementById('calibrationDirPath').value;
+    
+    // Check if freedrive is active
+    if (freedriveActive) {
+        logToWeb(`Cannot execute Capture x3 while freedrive mode is active`, 'warning');
+        showMessage(`Please disable freedrive mode before using Capture x3`, 'warning');
+        return;
+    }
+    
+    if (!operationName || operationName === 'input operation name' || !currentOperationPath) {
+        showMessage(`Please set an operation name before capturing`, 'warning');
+        return;
+    }
+    
+    if (!calibrationDataDir || calibrationDataDir.trim() === '') {
+        logToWeb(`Please set correct calibration data directory before capturing`, 'warning');
+        showMessage(`Please set calibration data directory before capturing`, 'warning');
+        return;
+    }
+    
+    logToWeb(`Starting Capture x3 (capturing at 3 different positions)...`, 'info');
+    
+    // Send capture x3 request to server
+    fetch('/capture_task_data_x3', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            task_name: 'crack',
+            task_path: currentOperationPath.trim(),
+            calibration_data_dir: calibrationDataDir.trim()
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`Captured ${data.captured_count} images at different positions successfully`, 'success');
+        } else {
+            console.error(`Failed to capture data x3:`, data.message || 'Unknown error');
+            logToWeb(`Failed to capture data x3: ${data.message || 'Unknown error'}`, 'error');
+        }
+    })
+    .catch(error => {
+        console.error(`Failed to capture data x3:`, error);
+        logToWeb(`Failed to capture data x3: ${error}`, 'error');
     });
 }
 
@@ -535,6 +606,9 @@ function toggleFreedrive() {
             
             // Update status bar
             statusValue.textContent = mode;
+            
+            // Update Capture x3 button state
+            updateCaptureX3ButtonState();
             
             logToWeb(`Drive mode changed to: ${mode}`, 'success');
         }
@@ -855,6 +929,9 @@ function updateStatus() {
                 statusBarFreedriveElement.textContent = 'Normal';
                 statusBarFreedriveElement.className = 'status-bar-value';
             }
+            
+            // Update Capture x3 button state
+            updateCaptureX3ButtonState();
         }
     })
     .catch(error => {
@@ -1407,6 +1484,9 @@ window.onload = function() {
     if (operationNameElement && operationNameElement.value === '{{ data_dir }}') {
         operationNameElement.value = 'input operation name';
     }
+    
+    // Initialize Capture x3 button state
+    updateCaptureX3ButtonState();
     
     logToWeb('UR15 Web Interface loaded', 'success');
     logToWeb('System ready for operation', 'info');
