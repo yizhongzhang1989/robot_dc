@@ -1990,7 +1990,7 @@ class UR15WebNode(Node):
                             
                             # Wait for robot to settle and stabilize
                             self.push_web_log(f'Waiting for robot to stabilize...', 'info')
-                            time.sleep(0.5)
+                            time.sleep(2.0)
                         
                         # Get next available file number
                         capture_number = self._get_next_capture_file_number(expanded_task_path)

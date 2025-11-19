@@ -645,11 +645,11 @@ function toggleValidation() {
             if (validationActive) {
                 btn.classList.remove('bg-purple-500', 'hover:bg-purple-600');
                 btn.classList.add('bg-red-500', 'hover:bg-red-600');
-                btn.querySelector('span:last-child').textContent = 'Hide Validation Result';
+                btn.querySelector('span:last-child').textContent = 'Stop Check';
             } else {
                 btn.classList.remove('bg-red-500', 'hover:bg-red-600');
                 btn.classList.add('bg-purple-500', 'hover:bg-purple-600');
-                btn.querySelector('span:last-child').textContent = 'Validate Calibration Result';
+                btn.querySelector('span:last-child').textContent = 'Check Calibration';
             }
         }
         btn.disabled = false;
@@ -759,7 +759,6 @@ function calibrateCam() {
     .then(data => {
         if (data.success) {
             console.log('Camera calibration script started successfully');
-            showMessage('Camera calibration script is running!', 'success');
             if (data.config_file) {
                 logToWeb(`Config file: ${data.config_file}`, 'info');
             }
@@ -768,14 +767,14 @@ function calibrateCam() {
             }
         } else {
             console.error('Failed to start camera calibration:', data.message);
-            showMessage('Failed to start camera calibration: ' + data.message, 'error');
+            logToWeb(`Failed to start camera calibration: ${data.message}`, 'error');
         }
         btn.disabled = false;
         btn.style.opacity = '1';
     })
     .catch(error => {
         console.error('Failed to start camera calibration:', error);
-        showMessage('Failed to start camera calibration: ' + error, 'error');
+        logToWeb(`Failed to start camera calibration: ${error}`, 'error');
         btn.disabled = false;
         btn.style.opacity = '1';
     });

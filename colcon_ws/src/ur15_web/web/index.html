@@ -656,12 +656,12 @@
                             </span>
                         </div>
                         
-                        <!-- Row 1: Screenshot and Delete Image -->
+                        <!-- Row 1: Take Picture and Delete Image -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <!-- Screenshot Button -->
+                            <!-- Take Picture Button -->
                             <button id="screenshotBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="takeScreenshot()">
                                 <span>📸</span>
-                                <span>Screenshot</span>
+                                <span>Take Picture</span>
                             </button>
                             
                             <!-- Delete Image Button -->
@@ -671,12 +671,12 @@
                             </button>
                         </div>
                         
-                        <!-- Row 2: Auto Collect and Calibrate Cam -->
+                        <!-- Row 2: Auto Capture and Calibrate Cam -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <!-- Auto Collect Calibration Data -->
+                            <!-- Auto Capture Calibration Data -->
                             <button id="autoCollectBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="autoCollectData()">
                                 <span>🎥</span>
-                                <span>Auto Collect</span>
+                                <span>Auto Capture</span>
                             </button>
                             
                             <!-- Calibrate Cam Button -->
@@ -691,7 +691,7 @@
                             <!-- Validate Calibration Result -->
                             <button id="validateCalibrationBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleValidation()">
                                 <span>🎯</span>
-                                <span>Validate Result</span>
+                                <span>Check Calibration</span>
                             </button>
                             <!-- Corner Detection -->
                             <button id="cornerDetectBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleCornerDetect()">
@@ -732,7 +732,7 @@
                         <div style="display: flex; gap: 0.5rem;">
                             <button onclick="captureTaskData('crack')" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Save data to operation path">
                                 <span>📷</span>
-                                <span>Capture x1</span>
+                                <span>Capture Only One</span>
                             </button>
                             <button id="captureX3Btn" onclick="captureTaskDataX3()" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Capture 3 images at different positions (x, y offsets)">
                                 <span>📸</span>
