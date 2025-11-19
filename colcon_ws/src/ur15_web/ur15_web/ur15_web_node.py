@@ -31,6 +31,19 @@ from flask import Flask, render_template_string, Response
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
 
+# Add scripts directory to path for camera calibration toolkit
+scripts_dir = get_scripts_directory()
+if scripts_dir and scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
+
+# Import camera calibration toolkit
+try:
+    from ThirdParty.camera_calibration_toolkit.core.calibration_patterns import create_pattern_from_json
+    CALIBRATION_TOOLKIT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Camera calibration toolkit not available: {e}")
+    CALIBRATION_TOOLKIT_AVAILABLE = False
+
 # Add ur15_robot_arm to Python path
 try:
     # Try to find the package in the workspace
@@ -184,6 +197,8 @@ class UR15WebNode(Node):
         self.ur15_robot = None
         self.freedrive_active = False
         self.validation_active = False
+        self.corner_detection_enabled = False
+        self.corner_detection_params = {}
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
@@ -643,6 +658,29 @@ class UR15WebNode(Node):
             joint_data_valid = last_joint_update and (current_time - last_joint_update) < 2.0
             tcp_data_valid = last_tcp_update and (current_time - last_tcp_update) < 2.0
             
+            # Read board type from chessboard config
+            board_type = None
+            board_type_display = 'Unloaded'
+            board_type_loaded = False
+            try:
+                if os.path.exists(self.chessboard_config):
+                    with open(self.chessboard_config, 'r') as f:
+                        import json
+                        config_data = json.load(f)
+                        pattern_id = config_data.get('pattern_id', '')
+                        if pattern_id:  # Only mark as loaded if pattern_id exists
+                            # Map pattern_id to display name
+                            pattern_map = {
+                                'standard_chessboard': 'ChessBoard',
+                                'charuco_board': 'CharUco',
+                                'grid_board': 'GridBoard'
+                            }
+                            board_type = pattern_id
+                            board_type_display = pattern_map.get(pattern_id, pattern_id.replace('_', ' ').title())
+                            board_type_loaded = True
+            except Exception as e:
+                self.get_logger().debug(f"Could not read board type from config: {e}")
+            
             return jsonify({
                 'has_image': has_image,
                 'camera_topic': self.camera_topic,
@@ -653,7 +691,10 @@ class UR15WebNode(Node):
                 'joint_positions': joint_positions if joint_data_valid else [],
                 'tcp_pose': tcp_pose if tcp_data_valid else None,
                 'freedrive_active': freedrive_active,
-                'robot_connected': robot_connected
+                'robot_connected': robot_connected,
+                'board_type': board_type,
+                'board_type_display': board_type_display,
+                'board_type_loaded': board_type_loaded
             })
         
         @self.app.route('/get_web_logs', methods=['GET'])
@@ -891,6 +932,51 @@ class UR15WebNode(Node):
                 self.get_logger().error(f"Error changing chessboard config: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
+        @self.app.route('/load_chessboard_config', methods=['POST'])
+        def load_chessboard_config():
+            """Load chessboard configuration from file."""
+            from flask import request, jsonify
+            import json
+            
+            try:
+                data = request.get_json()
+                config_path = data.get('config_path', self.chessboard_config)
+                
+                # Expand user home directory if needed
+                config_path = os.path.expanduser(config_path)
+                
+                if not os.path.exists(config_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Config file not found: {config_path}'
+                    })
+                
+                # Read and parse the config file
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                
+                self.get_logger().info(f"Loaded chessboard config from: {config_path}")
+                self.get_logger().info(f"Pattern ID: {config_data.get('pattern_id')}")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Config loaded successfully',
+                    'config': config_data
+                })
+                
+            except json.JSONDecodeError as e:
+                self.get_logger().error(f"Invalid JSON in config file: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': f'Invalid JSON format: {str(e)}'
+                })
+            except Exception as e:
+                self.get_logger().error(f"Error loading chessboard config: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
         @self.app.route('/change_operation_path', methods=['POST'])
         def change_operation_path():
             """Change operation path."""
@@ -1049,6 +1135,59 @@ class UR15WebNode(Node):
                     'success': False,
                     'message': str(e),
                     'validation_active': self.validation_active
+                })
+        
+        @self.app.route('/toggle_corner_detection', methods=['POST'])
+        def toggle_corner_detection():
+            """Toggle corner detection mode."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                if enable:
+                    # Get pattern JSON configuration
+                    pattern_json = data.get('pattern_json', None)
+                    
+                    if pattern_json is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'No pattern_json provided',
+                            'enabled': False
+                        })
+                    
+                    # Store corner detection parameters
+                    self.corner_detection_enabled = True
+                    self.corner_detection_params = {
+                        'pattern_json': pattern_json
+                    }
+                    
+                    pattern_name = pattern_json.get('name', 'Pattern')
+                    self.get_logger().info(f"Corner detection enabled: {pattern_name}")
+                    return jsonify({
+                        'success': True,
+                        'message': f'Corner detection enabled: {pattern_name}',
+                        'enabled': True
+                    })
+                else:
+                    # Disable corner detection
+                    self.corner_detection_enabled = False
+                    self.corner_detection_params = {}
+                    
+                    self.get_logger().info("Corner detection disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Corner detection disabled',
+                        'enabled': False
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error toggling corner detection: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
                 })
         
         @self.app.route('/take_screenshot', methods=['POST'])
@@ -1757,6 +1896,211 @@ class UR15WebNode(Node):
                 self.push_web_log(error_msg, 'error')
                 return jsonify({'success': False, 'message': error_msg})
         
+        @self.app.route('/capture_task_data_x3', methods=['POST'])
+        def capture_task_data_x3():
+            """Capture images at 3 different positions using move_tcp to offset along x and y axes."""
+            from flask import jsonify, request
+            import time
+            import json
+            
+            try:
+                data = request.get_json()
+                task_name = data.get('task_name')
+                task_path = data.get('task_path')
+                calibration_data_dir = data.get('calibration_data_dir')
+                
+                if not task_name or not task_path:
+                    return jsonify({
+                        'success': False, 
+                        'message': 'Missing task_name or task_path'
+                    })
+                
+                if not calibration_data_dir:
+                    return jsonify({
+                        'success': False, 
+                        'message': 'Missing calibration_data_dir'
+                    })
+                
+                # Expand ~ in paths and ensure task directory exists
+                expanded_task_path = os.path.expanduser(task_path)
+                os.makedirs(expanded_task_path, exist_ok=True)
+                
+                # Check if robot is connected
+                with self.ur15_lock:
+                    if self.ur15_robot is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Robot not connected'
+                        })
+                
+                # Check if freedrive mode is active
+                if self.freedrive_active:
+                    error_msg = 'Cannot execute Capture x3 while freedrive mode is active. Please disable freedrive mode first.'
+                    self.push_web_log(error_msg, 'warning')
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg
+                    })
+                
+                # Define offsets: current position, +1cm in x, +1cm in y (in TCP coordinate frame)
+                # offset format: [x, y, z, rx, ry, rz]
+                offsets = [
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],     # Current position
+                    [0.01, 0.0, 0.0, 0.0, 0.0, 0.0],    # +1cm in x
+                    [0.0, 0.01, 0.0, 0.0, 0.0, 0.0]     # +1cm in y
+                ]
+                
+                captured_files = []
+                initial_pose = None
+                
+                # Save initial pose to return to it later
+                with self.ur15_lock:
+                    initial_pose = self.ur15_robot.get_actual_tcp_pose()
+                    if initial_pose is None:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Failed to get initial robot pose'
+                        })
+                
+                self.push_web_log('Starting Capture x3: capturing at 3 positions...', 'info')
+                
+                # Capture at each offset position
+                for i, offset in enumerate(offsets):
+                    try:
+                        # Move to offset position
+                        if i == 0:
+                            # First position: current position, just wait for stability
+                            self.push_web_log(f'Position {i+1}/3: Current position', 'info')
+                            time.sleep(0.5)
+                        else:
+                            # Return to initial position first (except for first iteration)
+                            self.push_web_log(f'Returning to initial position before moving to position {i+1}/3...', 'info')
+                            with self.ur15_lock:
+                                result = self.ur15_robot.movel(initial_pose, a=0.5, v=0.5)
+                                if result == -1:
+                                    raise Exception(f'Failed to return to initial position before position {i+1}')
+                            time.sleep(0.5)
+                            
+                            # Now move to the offset position from initial pose
+                            self.push_web_log(f'Moving to position {i+1}/3 (offset: {offset[:3]})...', 'info')
+                            with self.ur15_lock:
+                                result = self.ur15_robot.move_tcp(offset, a=0.5, v=0.5)
+                                if result == -1:
+                                    raise Exception(f'Failed to move to offset position {i+1}')
+                            
+                            # Wait for robot to settle and stabilize
+                            self.push_web_log(f'Waiting for robot to stabilize...', 'info')
+                            time.sleep(2.0)
+                        
+                        # Get next available file number
+                        capture_number = self._get_next_capture_file_number(expanded_task_path)
+                        
+                        # Capture current image
+                        with self.image_lock:
+                            if self.current_image is None:
+                                raise Exception('No camera image available')
+                            
+                            image_filename = f'ref_img_{capture_number}.jpg'
+                            image_path = os.path.join(expanded_task_path, image_filename)
+                            cv2.imwrite(image_path, self.current_image)
+                        
+                        # Get current robot pose
+                        with self.ur15_lock:
+                            joint_positions = self.ur15_robot.get_actual_joint_positions()
+                            if joint_positions is None:
+                                raise Exception('Failed to read joint positions')
+                            
+                            tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                            if tcp_pose is None:
+                                raise Exception('Failed to read TCP pose')
+                            
+                            # Calculate end2base transformation matrix
+                            end2base = self._pose_to_matrix(tcp_pose)
+                            
+                            # Format pose data
+                            from datetime import datetime
+                            current_tcp_pose = {
+                                "joint_angles": list(joint_positions),
+                                "end_xyzrpy": {
+                                    "x": tcp_pose[0],
+                                    "y": tcp_pose[1],
+                                    "z": tcp_pose[2],
+                                    "rx": tcp_pose[3],
+                                    "ry": tcp_pose[4],
+                                    "rz": tcp_pose[5]
+                                },
+                                "end2base": end2base.tolist(),
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        
+                        # Get camera parameters
+                        camera_params = self._get_camera_parameters_from_calibration(calibration_data_dir)
+                        if not camera_params['success']:
+                            raise Exception(camera_params['message'])
+                        
+                        # Merge all data and save
+                        combined_data = {}
+                        pose_data_without_timestamp = {k: v for k, v in current_tcp_pose.items() if k != 'timestamp'}
+                        combined_data.update(pose_data_without_timestamp)
+                        
+                        camera_data = camera_params['data']
+                        if 'intrinsics' in camera_data:
+                            combined_data.update(camera_data['intrinsics'])
+                        if 'extrinsics' in camera_data:
+                            combined_data.update(camera_data['extrinsics'])
+                        
+                        if 'timestamp' in current_tcp_pose:
+                            combined_data['timestamp'] = current_tcp_pose['timestamp']
+                        
+                        pose_filename = f'ref_img_{capture_number}_pose.json'
+                        pose_path = os.path.join(expanded_task_path, pose_filename)
+                        with open(pose_path, 'w') as f:
+                            json.dump(combined_data, f, indent=2)
+                        
+                        captured_files.append({
+                            'image': image_filename,
+                            'pose': pose_filename
+                        })
+                        
+                        self.push_web_log(f'Captured position {i+1}/3: {image_filename}, {pose_filename}', 'success')
+                        
+                    except Exception as e:
+                        error_msg = f'Failed to capture at position {i+1}: {str(e)}'
+                        self.push_web_log(error_msg, 'error')
+                        # Continue with next position even if one fails
+                        continue
+                
+                # Return to initial position
+                try:
+                    self.push_web_log('Returning to initial position...', 'info')
+                    with self.ur15_lock:
+                        result = self.ur15_robot.movel(initial_pose, a=0.5, v=0.5)
+                        if result == -1:
+                            self.push_web_log('Warning: Failed to return to initial position', 'warning')
+                except Exception as e:
+                    self.push_web_log(f'Warning: Error returning to initial position: {str(e)}', 'warning')
+                
+                if len(captured_files) == 0:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Failed to capture any images'
+                    })
+                
+                self.push_web_log(f'Capture x3 completed: {len(captured_files)} images captured', 'success')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Successfully captured {len(captured_files)} images at different positions',
+                    'captured_count': len(captured_files),
+                    'captured_files': captured_files
+                })
+                
+            except Exception as e:
+                error_msg = f'Failed to capture task data x3: {str(e)}'
+                self.get_logger().error(error_msg)
+                self.push_web_log(error_msg, 'error')
+                return jsonify({'success': False, 'message': error_msg})
+        
         @self.app.route('/set_task_path', methods=['POST'])
         def set_task_path():
             """Set path for a specific task."""
@@ -1978,7 +2322,7 @@ class UR15WebNode(Node):
                         result = self.ur15_robot.movel(
                             tcp_pose_meters_radians,
                             a=0.5,  # acceleration 0.5 m/s^2
-                            v=0.1,  # velocity 0.1 m/s
+                            v=0.5,  # velocity 0.1 m/s
                             blocking=False  # Don't block web interface
                         )
                         
@@ -2158,6 +2502,65 @@ class UR15WebNode(Node):
         
         return frame
     
+    def apply_corner_detection(self, frame):
+        """Apply corner detection visualization to frame using calibration toolkit."""
+        if not CALIBRATION_TOOLKIT_AVAILABLE:
+            cv2.putText(frame, 'Calibration toolkit not available', (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            return frame
+        
+        try:
+            # Get the pattern JSON configuration
+            pattern_json = self.corner_detection_params.get('pattern_json', None)
+            
+            if pattern_json is None:
+                cv2.putText(frame, 'No pattern configuration', (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                return frame
+            
+            # Create or reuse pattern instance from JSON
+            if not hasattr(self, '_current_pattern') or \
+               getattr(self, '_current_pattern_json', None) != pattern_json:
+                
+                self._current_pattern = create_pattern_from_json(pattern_json)
+                self._current_pattern_json = pattern_json
+                
+                pattern_id = pattern_json.get('pattern_id', 'unknown')
+                params = pattern_json.get('parameters', {})
+                self.get_logger().info(f"Created pattern from JSON: {pattern_id}, params: {params}")
+            
+            # Detect corners using toolkit
+            ret, corners, point_ids = self._current_pattern.detect_corners(frame)
+            
+            if ret and corners is not None:
+                # Draw corners using toolkit
+                frame = self._current_pattern.draw_corners(frame, corners, point_ids)
+                
+                # Add status text
+                pattern_id = pattern_json.get('pattern_id', 'Unknown')
+                pattern_name = pattern_json.get('name', pattern_id)
+                corner_count = len(corners) if corners is not None else 0
+                cv2.putText(frame, f'{pattern_name}: {corner_count} points FOUND', (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                if pattern_id == 'charuco_board' and point_ids is not None:
+                    cv2.putText(frame, f'ChArUco IDs: {len(point_ids)}', (10, 60),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                elif pattern_id == 'grid_board' and point_ids is not None:
+                    cv2.putText(frame, f'ArUco Markers: {len(point_ids)//4}', (10, 60),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            else:
+                pattern_name = pattern_json.get('name', 'Pattern')
+                cv2.putText(frame, f'{pattern_name}: NOT FOUND', (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                           
+        except Exception as e:
+            self.get_logger().error(f'Error in toolkit corner detection: {e}')
+            cv2.putText(frame, f'Detection error: {str(e)[:40]}', (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        
+        return frame
+    
     def generate_frames(self):
         """Generate video frames for streaming."""
         while True:
@@ -2165,6 +2568,10 @@ class UR15WebNode(Node):
                 with self.image_lock:
                     if self.current_image is not None:
                         frame = self.current_image.copy()
+                        
+                        # Apply corner detection if enabled
+                        if self.corner_detection_enabled:
+                            frame = self.apply_corner_detection(frame)
                         
                         # Only project validation if validation is active
                         if self.validation_active:

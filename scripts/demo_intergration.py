@@ -502,116 +502,55 @@ def ur15_get_frame():
         return -1
 
 
-def ur15_locate_handle1():
+def ur15_locate(task_name):
     """
-    Locate handle 1 by running ur_locate_handle1.py script.
-    """
-    print("\n🔍 UR Locate Handle 1")
-    print("   Running ur_locate_handle1.py script...")
+    Generic function to locate tasks by running ur_locate_{task_name}.py script.
     
-    script_path = os.path.join(script_dir, "ur_locate_handle1.py")
+    Args:
+        task_name (str): The task name (e.g., 'handle1', 'handle2', 'frame', 'base', 'knob', etc.)
+    
+    Returns:
+        int: 0 for success, -1 for failure
+    """
+    task_display = task_name.replace('_', ' ').title()
+    print(f"\n🔍 UR Locate {task_display}")
+    print(f"   Running ur_locate_{task_name}.py script...")
+    
+    script_path = os.path.join(script_dir, f"ur_locate_{task_name}.py")
     result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
     if result.returncode == 0:
-        print("✅ UR locate handle 1 completed successfully")
+        print(f"✅ UR locate {task_name} completed successfully")
         return 0
     else:
-        print(f"❌ UR locate handle 1 failed")
+        print(f"❌ UR locate {task_name} failed")
         if result.stderr:
             print(f"   Error: {result.stderr}")
         return -1
 
-def ur15_locate_handle2():
-    """
-    Locate handle 2 by running ur_locate_handle2.py script.
-    """
-    print("\n🔍 UR Locate Handle 2")
-    print("   Running ur_locate_handle2.py script...")
-    
-    script_path = os.path.join(script_dir, "ur_locate_handle2.py")
-    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        print("✅ UR locate handle 2 completed successfully")
-        return 0
-    else:
-        print(f"❌ UR locate handle 2 failed")
-        if result.stderr:
-            print(f"   Error: {result.stderr}")
-        return -1
 
-def ur15_locate_frame():
+def ur15_execute(task_name):
     """
-    Locate frame by running ur_locate_frame.py script.
-    """
-    print("\n🔍 UR Locate Frame")
-    print("   Running ur_locate_frame.py script...")
+    Generic function to execute tasks by running ur_execute_{task_name}.py script.
     
-    script_path = os.path.join(script_dir, "ur_locate_frame.py")
+    Args:
+        task_name (str): The task name (e.g., 'handle1', 'handle2', 'frame', 'knob', etc.)
+    
+    Returns:
+        int: 0 for success, -1 for failure
+    """
+    task_display = task_name.replace('_', ' ').title()
+    print(f"\n🎯 UR Execute {task_display}")
+    print(f"   Running ur_execute_{task_name}.py script...")
+    
+    script_path = os.path.join(script_dir, f"ur_execute_{task_name}.py")
     result = subprocess.run(["python3", script_path], capture_output=True, text=True)
     
     if result.returncode == 0:
-        print("✅ UR locate frame completed successfully")
+        print(f"✅ UR execute {task_name} completed successfully")
         return 0
     else:
-        print(f"❌ UR locate frame failed")
-        if result.stderr:
-            print(f"   Error: {result.stderr}")
-        return -1
-
-def ur15_execute_handle1():
-    """
-    Execute handle 1 by running ur_execute_handle1.py script.
-    """
-    print("\n🔍 UR Execute Handle 1")
-    print("   Running ur_execute_handle1.py script...")
-    
-    script_path = os.path.join(script_dir, "ur_execute_handle1.py")
-    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        print("✅ UR execute handle 1 completed successfully")
-        return 0
-    else:
-        print(f"❌ UR execute handle 1 failed")
-        if result.stderr:
-            print(f"   Error: {result.stderr}")
-        return -1
-
-def ur15_execute_handle2():
-    """
-    Execute handle 2 by running ur_execute_handle2.py script.
-    """
-    print("\n🔍 UR Execute Handle 2")
-    print("   Running ur_execute_handle1.py script...")
-    
-    script_path = os.path.join(script_dir, "ur_execute_handle2.py")
-    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        print("✅ UR execute handle 2 completed successfully")
-        return 0
-    else:
-        print(f"❌ UR execute handle 2 failed")
-        if result.stderr:
-            print(f"   Error: {result.stderr}")
-        return -1
-
-def ur15_execute_frame():
-    """
-    Execute frame by running ur_execute_frame.py script.
-    """
-    print("\n🔍 UR Execute Frame")
-    print("   Running ur_execute_frame.py script...")
-    
-    script_path = os.path.join(script_dir, "ur_execute_frame.py")
-    result = subprocess.run(["python3", script_path], capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        print("✅ UR execute frame completed successfully")
-        return 0
-    else:
-        print(f"❌ UR execute frame failed")
+        print(f"❌ UR execute {task_name} failed")
         if result.stderr:
             print(f"   Error: {result.stderr}")
         return -1
@@ -626,21 +565,34 @@ def run():
     
     try:
 
-        # step1 : locate handle1 
-        ur15_locate_handle1()
+        # step1
+        ur15_locate('base')
         time.sleep(0.5)
 
-        # step2 : amr courier dock2rack
-        amr_courier_dock2rack1()
+        # step2
+        ur15_locate('knob')
+        time.sleep(0.5)
+        ur15_execute('knob')
         time.sleep(0.5)
 
-        # step3 : execute handle1 to extract server
-        ur15_execute_handle1()
+        # step3
+        ur15_locate('prepull')
+        time.sleep(0.5)
+        ur15_execute('prepull')
         time.sleep(0.5)
 
-        # step4 : execute amr courier rack2dock
-        amr_courier_rack2dock1()
+        # step4
+        ur15_locate('close_left')
         time.sleep(0.5)
+        ur15_execute('close_left')
+        time.sleep(0.5)        
+
+        # step5
+        ur15_locate('close_right')
+        time.sleep(0.5)
+        ur15_execute('close_right')
+        time.sleep(0.5)
+
                 
     
     except Exception as e:

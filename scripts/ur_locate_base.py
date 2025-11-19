@@ -456,6 +456,9 @@ class URLocateBase(Node):
                     "rz": tcp_pose[5]
                 },
                 "end2base": end2base.tolist(),
+                "camera_matrix": self.camera_matrix.tolist() if self.camera_matrix is not None else None,
+                "distortion_coefficients": self.distortion_coefficients.tolist() if self.distortion_coefficients is not None else None,
+                "cam2end_matrix": self.cam2end_matrix.tolist() if self.cam2end_matrix is not None else None,
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -631,15 +634,8 @@ class URLocateBase(Node):
                     img_filename = f"{movement['index']}.jpg"
                     pose_filename = f"{movement['index']}.json"
                     
-                    metadata = {
-                        "movement_type": movement['name'],
-                        "movement_offset": movement['offset'],
-                        "reference_tcp_pose": current_tcp_pose,
-                        "movement_index": movement['index']
-                    }
-                    
                     if self.capture_image_and_pose(self.data_dir, img_filename, 
-                                                 pose_filename, metadata, robot=robot):
+                                                 pose_filename, metadata=None, robot=robot):
                         print(f"✓ Successfully collected data for {movement['name']}")
                         success_count += 1
                         time.sleep(0.2)  

@@ -1,4 +1,5 @@
 import os
+import json
 from ur_execute_base import URExecuteBase
 import time
 import numpy as np
@@ -29,6 +30,55 @@ class URExecuteKnob2(URExecuteBase):
         self._load_ref_joint_angles()
         self._load_task_position_information()
         self._load_crack_local_coordinate_system()
+
+    def load_task_position_information2(self):
+        """
+        Load task position offset information from task_position_information2.json
+        The offsets are represented in the local coordinate system
+        Returns: Dictionary with offset information if successful, None otherwise
+        """
+        task_position_file2 = os.path.join(
+            self.data_dir,
+            "task_position_information2.json"
+        )
+        
+        try:
+            with open(task_position_file2, 'r') as f:
+                data = json.load(f)
+            
+            required_fields = ['x_offset_in_local', 'y_offset_in_local', 'z_offset_in_local']
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                print(f"Missing fields in task position information2 file: {missing_fields}")
+                return None
+            
+            # Update the task position offset with new values
+            self.task_position_offset = {
+                'x': data['x_offset_in_local'],
+                'y': data['y_offset_in_local'],
+                'z': data['z_offset_in_local']
+            }
+            
+            print(f"Task position information2 loaded successfully")
+            print(f"New offset (in local coordinate system): x={self.task_position_offset['x']:.6f}, "
+                  f"y={self.task_position_offset['y']:.6f}, "
+                  f"z={self.task_position_offset['z']:.6f}")
+            
+            return self.task_position_offset
+            
+        except FileNotFoundError:
+            print(f"Task position information2 file not found: {task_position_file2}")
+            print("Keeping current task position offset values")
+            return None
+        except json.JSONDecodeError as e:
+            print(f"Error parsing task position information2 JSON file: {e}")
+            print("Keeping current task position offset values")
+            return None
+        except Exception as e:
+            print(f"Unexpected error loading task position information2: {e}")
+            print("Keeping current task position offset values")
+            return None
 
 # ================================= Movement Functions ================================
     def movel_to_correct_tool_tcp(self):
@@ -659,6 +709,40 @@ class URExecuteKnob2(URExecuteBase):
         time.sleep(0.5)
         return result
 
+    def force_task_push_server_to_end(self):
+        """
+        Execute force control task to push the server using TCP coordinate system.
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        # Get current TCP pose to use as task frame (for force control in TCP coordinate system)
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters
+        task_frame = tcp_pose  # Use TCP coordinate system instead of base
+        selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to TCP)
+        wrench = [0, 0, 50, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task...")
+        
+        # Execute force control task with manual termination (end_type=0)
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.1,
+            end_type=1,
+            end_time=5
+        )
+        time.sleep(0.5)
+        return result
+
+
 if __name__ == "__main__":
     # Create URExecuteKnob2 instance
     ur_knob2 = URExecuteKnob2()
@@ -751,7 +835,7 @@ if __name__ == "__main__":
 
     # move away from the knob2
     print("\n" + "="*50)
-    ur_knob2.movel_in_crack_frame([0, -0.1, 0])
+    ur_knob2.movel_in_crack_frame([0, -0.05, 0])
     time.sleep(0.5)
 
     # move back to reference joint positions
@@ -806,7 +890,22 @@ if __name__ == "__main__":
     ur_knob2.movel_in_crack_frame([0, -0.1, 0])
     time.sleep(0.5)
 
-    # move away from the right knob
+    # # push server to end
+    print("\n" + "="*50)
+    ur_knob2.load_task_position_information2()
+    time.sleep(0.5)
+
+    # move to new target position using linear movement
+    print("\n" + "="*50)
+    ur_knob2.movel_to_target_position()
+    time.sleep(0.5)
+
+    # force task to push the server to the end
+    print("\n" + "="*50)
+    ur_knob2.force_task_push_server_to_end()
+    time.sleep(0.5)
+
+    # move away from the knob2
     print("\n" + "="*50)
     ur_knob2.movel_in_crack_frame([0, -0.1, 0])
     time.sleep(0.5)

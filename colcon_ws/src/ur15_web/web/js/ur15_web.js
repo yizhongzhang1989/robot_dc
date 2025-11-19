@@ -2,6 +2,7 @@
 
 let freedriveActive = false;
 let validationActive = false;
+let cornerDetectionEnabled = false;
 let currentOperationPath = ''; // Store the full operation path
 
 // Web Log Functions
@@ -253,7 +254,7 @@ function confirmOperationNameChange() {
     // Construct full operation path
     const fullOperationPath = `${datasetDir}/${newName}`;
     
-    logToWeb(`Setting operation: ${newName}`, 'info');
+    logToWeb(`Setting operation name: ${newName}`, 'info');
     logToWeb(`Full operation path: ${fullOperationPath}`, 'info');
     
     // Update the display name and store the full path
@@ -299,18 +300,17 @@ function captureTaskData(taskName) {
     const calibrationDataDir = document.getElementById('calibrationDirPath').value;
     
     if (!operationName || operationName === 'input operation name' || !currentOperationPath) {
-        logToWeb(`Please set an operation name before capturing`, 'warning');
         showMessage(`Please set an operation name before capturing`, 'warning');
         return;
     }
     
     if (!calibrationDataDir || calibrationDataDir.trim() === '') {
-        logToWeb(`Please set calibration data directory before capturing`, 'warning');
+        logToWeb(`Please set correct calibration data directory before capturing`, 'warning');
         showMessage(`Please set calibration data directory before capturing`, 'warning');
         return;
     }
     
-    logToWeb(`Starting capture to: ${currentOperationPath}`, 'info');
+    logToWeb(`Starting capture...`, 'info');
     
     // Send capture request to server
     fetch('/capture_task_data', {
@@ -327,23 +327,7 @@ function captureTaskData(taskName) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            logToWeb(`Capture completed`, 'success');
-            logToWeb(`✓ Saved: ${data.image_file}`, 'success');
-            logToWeb(`✓ Saved: ${data.pose_file}`, 'success');
-            
-            // Show calibration source information
-            if (data.calibration_source) {
-                logToWeb(`📷 Camera params from: ${data.calibration_source}`, 'info');
-            }
-            
-            showMessage(
-                `Successfully captured image and pose data:\n` +
-                `• Image: ${data.image_file}\n` +
-                `• Pose & Camera params: ${data.pose_file}` +
-                (data.calibration_source ? `\n• Source: ${data.calibration_source}` : ''), 
-                'success', 
-                '📷 Capture Complete'
-            );
+            logToWeb(`Captured image and pose data successfully`, 'success');
         } else {
             console.error(`Failed to capture data:`, data.message || 'Unknown error');
             logToWeb(`Failed to capture data: ${data.message || 'Unknown error'}`, 'error');
@@ -362,6 +346,78 @@ function captureTaskData(taskName) {
             'error', 
             '❌ Capture Error'
         );
+    });
+}
+
+function updateCaptureX3ButtonState() {
+    const captureX3Btn = document.getElementById('captureX3Btn');
+    if (!captureX3Btn) return;
+    
+    if (freedriveActive) {
+        // Disable button when freedrive is active
+        captureX3Btn.disabled = true;
+        captureX3Btn.style.opacity = '0.5';
+        captureX3Btn.style.cursor = 'not-allowed';
+        captureX3Btn.title = 'Cannot use while freedrive mode is active. Please disable freedrive mode first.';
+        captureX3Btn.classList.remove('hover:bg-orange-600');
+    } else {
+        // Enable button when freedrive is inactive
+        captureX3Btn.disabled = false;
+        captureX3Btn.style.opacity = '1';
+        captureX3Btn.style.cursor = 'pointer';
+        captureX3Btn.title = 'Capture 3 images at different positions (x, y offsets)';
+        captureX3Btn.classList.add('hover:bg-orange-600');
+    }
+}
+
+function captureTaskDataX3() {
+    const operationName = document.getElementById('operationName').value;
+    const calibrationDataDir = document.getElementById('calibrationDirPath').value;
+    
+    // Check if freedrive is active
+    if (freedriveActive) {
+        logToWeb(`Cannot execute Capture x3 while freedrive mode is active`, 'warning');
+        showMessage(`Please disable freedrive mode before using Capture x3`, 'warning');
+        return;
+    }
+    
+    if (!operationName || operationName === 'input operation name' || !currentOperationPath) {
+        showMessage(`Please set an operation name before capturing`, 'warning');
+        return;
+    }
+    
+    if (!calibrationDataDir || calibrationDataDir.trim() === '') {
+        logToWeb(`Please set correct calibration data directory before capturing`, 'warning');
+        showMessage(`Please set calibration data directory before capturing`, 'warning');
+        return;
+    }
+    
+    logToWeb(`Starting Capture x3 (capturing at 3 different positions)...`, 'info');
+    
+    // Send capture x3 request to server
+    fetch('/capture_task_data_x3', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            task_name: 'crack',
+            task_path: currentOperationPath.trim(),
+            calibration_data_dir: calibrationDataDir.trim()
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`Captured ${data.captured_count} images at different positions successfully`, 'success');
+        } else {
+            console.error(`Failed to capture data x3:`, data.message || 'Unknown error');
+            logToWeb(`Failed to capture data x3: ${data.message || 'Unknown error'}`, 'error');
+        }
+    })
+    .catch(error => {
+        console.error(`Failed to capture data x3:`, error);
+        logToWeb(`Failed to capture data x3: ${error}`, 'error');
     });
 }
 
@@ -418,18 +474,18 @@ function confirmCalibDirChange() {
         if (data.success) {
             // Update the path panel
             document.getElementById('calibrationDirPath').value = data.calibration_data_dir;
-            logToWeb(`Calibration directory changed successfully to: ${data.calibration_data_dir}`, 'success');
+            logToWeb(`Calibration data directory changed successfully to: ${data.calibration_data_dir}`, 'success');
             closeCalibDirModal();
             // Update pose number after changing directory
             updatePoseNumber();
         } else {
-            console.error('Failed to change calibration directory:', data.message || 'Unknown error');
-            logToWeb(`Failed to change calibration directory: ${data.message || 'Unknown error'}`, 'error');
+            console.error('Failed to change calibration data directory:', data.message || 'Unknown error');
+            logToWeb(`Failed to change calibration data directory: ${data.message || 'Unknown error'}`, 'error');
         }
     })
     .catch(error => {
-        console.error('Failed to change calibration directory:', error);
-        logToWeb(`Failed to change calibration directory: ${error}`, 'error');
+        console.error('Failed to change calibration data directory:', error);
+        logToWeb(`Failed to change calibration data directory: ${error}`, 'error');
     });
 }
 
@@ -467,7 +523,7 @@ function confirmChessboardConfigChange() {
         return;
     }
     
-    logToWeb(`Changing chessboard config to: ${newPath}`, 'info');
+    logToWeb(`Changing chessboard config path to: ${newPath}`, 'info');
     
     fetch('/change_chessboard_config', {
         method: 'POST',
@@ -481,16 +537,16 @@ function confirmChessboardConfigChange() {
         if (data.success) {
             // Update the path display
             document.getElementById('chessboardConfigPath').value = data.chessboard_config;
-            logToWeb(`Chessboard config changed successfully to: ${data.chessboard_config}`, 'success');
+            logToWeb(`Chessboard config path changed successfully to: ${data.chessboard_config}`, 'success');
             closeChessboardConfigModal();
         } else {
             console.error('Failed to change chessboard config:', data.message || 'Unknown error');
-            logToWeb(`Failed to change chessboard config: ${data.message || 'Unknown error'}`, 'error');
+            logToWeb(`Failed to change chessboard config path : ${data.message || 'Unknown error'}`, 'error');
         }
     })
     .catch(error => {
-        console.error('Failed to change chessboard config:', error);
-        logToWeb(`Failed to change chessboard config: ${error}`, 'error');
+        console.error('Failed to change chessboard config path:', error);
+        logToWeb(`Failed to change chessboard config path: ${error}`, 'error');
     });
 }
 
@@ -551,7 +607,10 @@ function toggleFreedrive() {
             // Update status bar
             statusValue.textContent = mode;
             
-            logToWeb(`Freedrive mode changed to: ${mode}`, 'success');
+            // Update Capture x3 button state
+            updateCaptureX3ButtonState();
+            
+            logToWeb(`Drive mode changed to: ${mode}`, 'success');
         }
         // Re-enable button
         btn.disabled = false;
@@ -586,11 +645,11 @@ function toggleValidation() {
             if (validationActive) {
                 btn.classList.remove('bg-purple-500', 'hover:bg-purple-600');
                 btn.classList.add('bg-red-500', 'hover:bg-red-600');
-                btn.querySelector('span:last-child').textContent = 'Hide Validation Result';
+                btn.querySelector('span:last-child').textContent = 'Stop Check';
             } else {
                 btn.classList.remove('bg-red-500', 'hover:bg-red-600');
                 btn.classList.add('bg-purple-500', 'hover:bg-purple-600');
-                btn.querySelector('span:last-child').textContent = 'Validate Calibration Result';
+                btn.querySelector('span:last-child').textContent = 'Check Calibration';
             }
         }
         btn.disabled = false;
@@ -600,72 +659,6 @@ function toggleValidation() {
         console.error('Failed to toggle validation:', error);
         btn.disabled = false;
         btn.style.opacity = '1';
-    });
-}
-
-function uploadIntrinsic() {
-    const fileInput = document.getElementById('intrinsicFile');
-    const file = fileInput.files[0];
-    
-    if (!file) {
-        return;
-    }
-    
-    logToWeb(`Uploading intrinsic parameters: ${file.name}`, 'info');
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    fetch('/upload_intrinsic', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb('Intrinsic parameters loaded successfully', 'success');
-            updateStatus();
-        } else {
-            console.error('Failed to load intrinsic parameters:', data.message);
-            logToWeb(`Failed to load intrinsic parameters: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Upload failed:', error);
-        logToWeb(`Intrinsic upload failed: ${error}`, 'error');
-    });
-}
-
-function uploadExtrinsic() {
-    const fileInput = document.getElementById('extrinsicFile');
-    const file = fileInput.files[0];
-    
-    if (!file) {
-        return;
-    }
-    
-    logToWeb(`Uploading extrinsic parameters: ${file.name}`, 'info');
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    fetch('/upload_extrinsic', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb('Extrinsic parameters loaded successfully', 'success');
-            updateStatus();
-        } else {
-            console.error('Failed to load extrinsic parameters:', data.message);
-            logToWeb(`Failed to load extrinsic parameters: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Upload failed:', error);
-        logToWeb(`Extrinsic upload failed: ${error}`, 'error');
     });
 }
 
@@ -729,7 +722,7 @@ function autoCollectData() {
             console.log('Auto collect data script started successfully');
             showMessage('Collecting calibration data automatically!', 'success');
             if (data.log_file) {
-                logToWeb(`Log file: ${data.log_file}`, 'info');
+                logToWeb(`Log file will be saved as: ${data.log_file}`, 'info');
             }
         } else {
             console.error('Failed to start auto collect:', data.message);
@@ -754,7 +747,7 @@ function calibrateCam() {
     const calibDataDir = document.getElementById('calibrationDirPath').value;
     logToWeb('Starting camera calibration script...', 'info');
     logToWeb(`Data directory: ${calibDataDir}`, 'info');
-    logToWeb(`Log file: ${calibDataDir}/calibrate_cam_log.txt`, 'info');
+    logToWeb(`Log file will be saved as: ${calibDataDir}/calibrate_cam_log.txt`, 'info');
     
     fetch('/calibrate_cam', {
         method: 'POST',
@@ -766,7 +759,6 @@ function calibrateCam() {
     .then(data => {
         if (data.success) {
             console.log('Camera calibration script started successfully');
-            showMessage('Camera calibration script is running!', 'success');
             if (data.config_file) {
                 logToWeb(`Config file: ${data.config_file}`, 'info');
             }
@@ -775,14 +767,14 @@ function calibrateCam() {
             }
         } else {
             console.error('Failed to start camera calibration:', data.message);
-            showMessage('Failed to start camera calibration: ' + data.message, 'error');
+            logToWeb(`Failed to start camera calibration: ${data.message}`, 'error');
         }
         btn.disabled = false;
         btn.style.opacity = '1';
     })
     .catch(error => {
         console.error('Failed to start camera calibration:', error);
-        showMessage('Failed to start camera calibration: ' + error, 'error');
+        logToWeb(`Failed to start camera calibration: ${error}`, 'error');
         btn.disabled = false;
         btn.style.opacity = '1';
     });
@@ -832,6 +824,16 @@ function updateStatus() {
         } else {
             statusBarExtrinsicElement.textContent = 'Not Loaded';
             statusBarExtrinsicElement.className = 'status-bar-value disconnected';
+        }
+        
+        // Update board type in status bar
+        const statusBarBoardTypeElement = document.getElementById('statusBarBoardType');
+        if (data.board_type_loaded) {
+            statusBarBoardTypeElement.textContent = data.board_type_display;
+            statusBarBoardTypeElement.className = 'status-bar-value connected';
+        } else {
+            statusBarBoardTypeElement.textContent = 'Unloaded';
+            statusBarBoardTypeElement.className = 'status-bar-value disconnected';
         }
         
         // Update image topic in status bar
@@ -926,6 +928,9 @@ function updateStatus() {
                 statusBarFreedriveElement.textContent = 'Normal';
                 statusBarFreedriveElement.className = 'status-bar-value';
             }
+            
+            // Update Capture x3 button state
+            updateCaptureX3ButtonState();
         }
     })
     .catch(error => {
@@ -1319,6 +1324,153 @@ function processTcpChange(tcpIndex) {
     }
 }
 
+// Corner Detection Functions
+function toggleCornerDetection() {
+    if (!cornerDetectionEnabled) {
+        showCornerDetectionModal();
+    } else {
+        disableCornerDetection();
+    }
+}
+
+async function showCornerDetectionModal() {
+    const boardType = document.getElementById('boardTypeSelect').value;
+    const modal = document.getElementById('cornerDetectionModal');
+    
+    // Define pattern info
+    const patternInfo = {
+        'ChessBoard': { icon: '🏁', name: 'ChessBoard', description: 'Standard chessboard pattern with black and white squares' },
+        'CharucoBoard': { icon: '🎯', name: 'CharUco Board', description: 'CharUco boards combine chessboard and ArUco markers for robust detection' },
+        'GridBoard': { icon: '📐', name: 'ArUco Grid Board', description: 'Grid boards use ArUco markers arranged in a grid pattern' }
+    };
+    
+    const pattern = patternInfo[boardType] || patternInfo['ChessBoard'];
+    
+    // Update modal title
+    const title = document.getElementById('patternModalTitle');
+    if (title) {
+        title.textContent = `${pattern.icon} ${pattern.name} Settings`;
+    }
+    
+    // Update description
+    const description = document.getElementById('patternDescription');
+    if (description) {
+        description.textContent = pattern.description;
+    }
+    
+    // Try to load chessboard config and use it as default values
+    try {
+        const configPath = document.getElementById('chessboardConfigPath').value;
+        const response = await fetch('/load_chessboard_config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ config_path: configPath })
+        });
+        const data = await response.json();
+        
+        if (data.success && data.config) {
+            // Generate parameters with config values
+            generatePatternParametersWithConfig(boardType, data.config);
+        } else {
+            // Generate parameters with default values
+            generatePatternParameters(boardType);
+        }
+    } catch (error) {
+        console.log('Could not load chessboard config, using defaults:', error);
+        // Generate parameters with default values
+        generatePatternParameters(boardType);
+    }
+    
+    modal.classList.remove('hidden');
+}
+
+function closeCornerDetectionModal() {
+    const modal = document.getElementById('cornerDetectionModal');
+    modal.classList.add('hidden');
+}
+
+async function confirmCornerDetection() {
+    const width = parseInt(document.getElementById('detectionWidth').value);
+    const height = parseInt(document.getElementById('detectionHeight').value);
+    const boardTypeSelect = document.getElementById('boardTypeSelect');
+    const boardType = boardTypeSelect ? boardTypeSelect.value : 'ChessBoard';
+    
+    if (isNaN(width) || isNaN(height) || width < 3 || height < 3) {
+        showMessage('Invalid detection parameters. Width and height must be at least 3.', 'error');
+        return;
+    }
+    
+    try {
+        const requestData = {
+            enable: true,
+            pattern_type: boardType,
+            chessboard_width: width - 1,  // Convert to corners (internal corners = squares - 1)
+            chessboard_height: height - 1,
+            grid_width: width,
+            grid_height: height
+        };
+        
+        logToWeb(`Enabling corner detection: ${boardType} ${width}x${height}`, 'info');
+        
+        const response = await fetch('/api/calibration/corner-detection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData)
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            cornerDetectionEnabled = true;
+            document.getElementById('cornerDetectionBtn').innerHTML = '<span>🛑</span><span>Stop Detection</span>';
+            document.getElementById('cornerDetectionBtn').className = 'responsive-btn bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
+            
+            closeCornerDetectionModal();
+            showMessage(`Corner detection enabled: ${boardType} ${width}x${height}`, 'success');
+            logToWeb(`Corner detection started successfully`, 'success');
+        } else {
+            showMessage(`Failed to enable corner detection: ${data.message}`, 'error');
+            logToWeb(`Corner detection failed: ${data.message}`, 'error');
+        }
+    } catch (error) {
+        showMessage(`Network error: ${error.message}`, 'error');
+        logToWeb(`Corner detection error: ${error.message}`, 'error');
+    }
+}
+
+async function disableCornerDetection() {
+    try {
+        logToWeb('Disabling corner detection...', 'info');
+        
+        const response = await fetch('/api/calibration/corner-detection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: false })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            cornerDetectionEnabled = false;
+            document.getElementById('cornerDetectionBtn').innerHTML = '<span>🎯</span><span>Corner Detect</span>';
+            document.getElementById('cornerDetectionBtn').className = 'responsive-btn bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
+            
+            showMessage('Corner detection disabled', 'success');
+            logToWeb('Corner detection stopped', 'success');
+        } else {
+            showMessage(`Failed to disable corner detection: ${data.message}`, 'error');
+            logToWeb(`Failed to stop corner detection: ${data.message}`, 'error');
+        }
+    } catch (error) {
+        showMessage(`Network error: ${error.message}`, 'error');
+        logToWeb(`Error stopping corner detection: ${error.message}`, 'error');
+    }
+}
+
 // Update status on page load
 window.onload = function() {
     updateStatus();
@@ -1332,7 +1484,458 @@ window.onload = function() {
         operationNameElement.value = 'input operation name';
     }
     
+    // Initialize Capture x3 button state
+    updateCaptureX3ButtonState();
+    
     logToWeb('UR15 Web Interface loaded', 'success');
     logToWeb('System ready for operation', 'info');
     logToWeb('Joint angles and TCP pose are now editable - press Enter or click away to move robot', 'info');
 };
+
+// Corner Detection Functions
+function toggleCornerDetection() {
+    if (!cornerDetectionEnabled) {
+        showCornerDetectionModal();
+    } else {
+        disableCornerDetection();
+    }
+}
+
+function showCornerDetectionModal() {
+    const boardType = document.getElementById('boardTypeSelect').value;
+    const modal = document.getElementById('cornerDetectionModal');
+    
+    // Define pattern info
+    const patternInfo = {
+        'ChessBoard': { icon: '🏁', name: 'ChessBoard', description: 'Standard chessboard pattern with black and white squares' },
+        'CharucoBoard': { icon: '🎯', name: 'CharUco Board', description: 'CharUco boards combine chessboard and ArUco markers for robust detection' },
+        'GridBoard': { icon: '📐', name: 'ArUco Grid Board', description: 'Grid boards use ArUco markers arranged in a grid pattern' }
+    };
+    
+    const pattern = patternInfo[boardType] || patternInfo['ChessBoard'];
+    
+    // Update modal title
+    const title = document.getElementById('patternModalTitle');
+    if (title) {
+        title.textContent = `${pattern.icon} ${pattern.name} Settings`;
+    }
+    
+    // Update description
+    const description = document.getElementById('patternDescription');
+    if (description) {
+        description.textContent = pattern.description;
+    }
+    
+    // Generate dynamic parameters
+    generatePatternParameters(boardType);
+    
+    modal.classList.remove('hidden');
+}
+
+function generatePatternParameters(boardType) {
+    const container = document.getElementById('patternParametersContainer');
+    if (!container) return;
+    
+    container.innerHTML = ''; // Clear existing content
+    
+    // Define parameter configurations for different pattern types
+    const parameterConfigs = {
+        'ChessBoard': [
+            { id: 'width', label: 'Squares Width', type: 'number', value: 12, min: 3, max: 20, 
+              description: 'Number of squares across the width' },
+            { id: 'height', label: 'Squares Height', type: 'number', value: 9, min: 3, max: 20, 
+              description: 'Number of squares across the height' },
+            { id: 'square_size', label: 'Square Size (m)', type: 'number', value: 0.02, min: 0.001, max: 1.0, step: 0.001,
+              description: 'Physical size of each square in meters (e.g., 0.02 = 20mm)' }
+        ],
+        'CharucoBoard': [
+            { id: 'width', label: 'Squares Width', type: 'number', value: 12, min: 3, max: 15, 
+              description: 'Number of squares across the width' },
+            { id: 'height', label: 'Squares Height', type: 'number', value: 9, min: 3, max: 15, 
+              description: 'Number of squares across the height' },
+            { id: 'square_size', label: 'Square Size (m)', type: 'number', value: 0.03, min: 0.001, max: 1.0, step: 0.001,
+              description: 'Physical size of each square in meters (e.g., 0.03 = 30mm)' },
+            { id: 'marker_size', label: 'Marker Size (m)', type: 'number', value: 0.0225, min: 0.001, max: 1.0, step: 0.0001,
+              description: 'Physical size of ArUco markers in meters (e.g., 0.0225 = 22.5mm)' },
+            { id: 'dictionary_id', label: 'ArUco Dictionary', type: 'select', value: 5, 
+              options: [
+                { value: 0, label: 'DICT_4X4_50' },
+                { value: 1, label: 'DICT_4X4_100' },
+                { value: 2, label: 'DICT_4X4_250' },
+                { value: 3, label: 'DICT_4X4_1000' },
+                { value: 4, label: 'DICT_5X5_50' },
+                { value: 5, label: 'DICT_5X5_100' },
+                { value: 6, label: 'DICT_5X5_250' },
+                { value: 7, label: 'DICT_5X5_1000' },
+                { value: 8, label: 'DICT_6X6_50' },
+                { value: 9, label: 'DICT_6X6_100' },
+                { value: 10, label: 'DICT_6X6_250' },
+                { value: 11, label: 'DICT_6X6_1000' },
+                { value: 12, label: 'DICT_7X7_50' },
+                { value: 13, label: 'DICT_7X7_100' },
+                { value: 14, label: 'DICT_7X7_250' },
+                { value: 15, label: 'DICT_7X7_1000' },
+                { value: 16, label: 'DICT_ARUCO_ORIGINAL' }
+              ],
+              description: 'ArUco dictionary type (DICT_5X5_100 works best for your board)' }
+        ],
+        'GridBoard': [
+            { id: 'width', label: 'Markers Width', type: 'number', value: 6, min: 2, max: 20, 
+              description: 'Number of ArUco markers across the width' },
+            { id: 'height', label: 'Markers Height', type: 'number', value: 6, min: 2, max: 20, 
+              description: 'Number of ArUco markers across the height' },
+            { id: 'marker_size', label: 'Marker Size (m)', type: 'number', value: 0.022, min: 0.001, max: 1.0, step: 0.001,
+              description: 'Physical size of each marker in meters (e.g., 0.022 = 2.2cm)' },
+            { id: 'marker_separation', label: 'Marker Separation (m)', type: 'number', value: 0.0066, min: 0.001, max: 1.0, step: 0.0001,
+              description: 'Physical separation between markers in meters (e.g., 0.0066 = 0.66cm)' },
+            { id: 'dictionary_id', label: 'ArUco Dictionary', type: 'select', value: 20,
+              options: [
+                { value: 0, label: 'DICT_4X4_50' },
+                { value: 1, label: 'DICT_4X4_100' },
+                { value: 2, label: 'DICT_4X4_250' },
+                { value: 3, label: 'DICT_4X4_1000' },
+                { value: 4, label: 'DICT_5X5_50' },
+                { value: 5, label: 'DICT_5X5_100' },
+                { value: 6, label: 'DICT_5X5_250' },
+                { value: 7, label: 'DICT_5X5_1000' },
+                { value: 8, label: 'DICT_6X6_50' },
+                { value: 9, label: 'DICT_6X6_100' },
+                { value: 10, label: 'DICT_6X6_250' },
+                { value: 11, label: 'DICT_6X6_1000' },
+                { value: 12, label: 'DICT_7X7_50' },
+                { value: 13, label: 'DICT_7X7_100' },
+                { value: 14, label: 'DICT_7X7_250' },
+                { value: 15, label: 'DICT_7X7_1000' },
+                { value: 16, label: 'DICT_ARUCO_ORIGINAL' },
+                { value: 17, label: 'DICT_APRILTAG_16H5' },
+                { value: 18, label: 'DICT_APRILTAG_25H9' },
+                { value: 19, label: 'DICT_APRILTAG_36H10' },
+                { value: 20, label: 'DICT_APRILTAG_36H11' },
+                { value: 21, label: 'DICT_ARUCO_MIP_36H12' }
+              ],
+              description: 'ArUco/AprilTag dictionary type (DICT_APRILTAG_36H11 is commonly used)' }
+        ]
+    };
+    
+    const params = parameterConfigs[boardType] || parameterConfigs['ChessBoard'];
+    
+    params.forEach(param => {
+        // Create parameter group
+        const paramGroup = document.createElement('div');
+        paramGroup.className = 'mb-4';
+        
+        // Label
+        const label = document.createElement('label');
+        label.className = 'block text-sm font-medium text-gray-700 mb-2';
+        label.textContent = param.label + ':';
+        
+        // Input or Select
+        let inputElement;
+        if (param.type === 'select') {
+            inputElement = document.createElement('select');
+            inputElement.className = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white';
+            param.options.forEach(option => {
+                const optionElement = document.createElement('option');
+                optionElement.value = option.value;
+                optionElement.textContent = option.label;
+                if (option.value === param.value) {
+                    optionElement.selected = true;
+                }
+                inputElement.appendChild(optionElement);
+            });
+        } else {
+            inputElement = document.createElement('input');
+            inputElement.type = param.type;
+            inputElement.value = param.value;
+            if (param.min !== undefined) inputElement.min = param.min;
+            if (param.max !== undefined) inputElement.max = param.max;
+            if (param.step) inputElement.step = param.step;
+            inputElement.className = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white';
+        }
+        
+        inputElement.id = getPatternInputId(param.id);
+        
+        // Description
+        const desc = document.createElement('p');
+        desc.className = 'text-xs text-gray-500 mt-1';
+        desc.textContent = param.description;
+        
+        // Assemble parameter group
+        paramGroup.appendChild(label);
+        paramGroup.appendChild(inputElement);
+        paramGroup.appendChild(desc);
+        
+        container.appendChild(paramGroup);
+    });
+}
+
+function getPatternInputId(paramId) {
+    const idMapping = {
+        'width': 'patternWidth',
+        'height': 'patternHeight',
+        'square_size': 'squareSize',
+        'marker_size': 'markerSize',
+        'marker_separation': 'markerSeparation',
+        'dictionary_id': 'dictionaryId'
+    };
+    return idMapping[paramId] || paramId;
+}
+
+function closeCornerDetectionModal() {
+    const modal = document.getElementById('cornerDetectionModal');
+    modal.classList.add('hidden');
+}
+
+function confirmCornerDetection() {
+    const boardType = document.getElementById('boardTypeSelect').value;
+    const width = parseInt(document.getElementById('patternWidth').value);
+    const height = parseInt(document.getElementById('patternHeight').value);
+    
+    // Validate basic dimensions
+    if (isNaN(width) || isNaN(height) || width <= 1 || height <= 1) {
+        showMessage('Invalid dimensions. Width and height must be greater than 1.', 'error', 'Validation Error');
+        return;
+    }
+    
+    // Collect pattern-specific parameters
+    const patternParams = collectPatternParameters(boardType);
+    
+    // Validate pattern-specific parameters
+    if (!validatePatternParameters(patternParams, boardType)) {
+        return; // Validation failed, error already shown
+    }
+    
+    // Enable corner detection
+    fetch('/toggle_corner_detection', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            enable: true,
+            board_type: boardType,
+            width: width,
+            height: height,
+            ...patternParams
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            cornerDetectionEnabled = true;
+            const btn = document.getElementById('cornerDetectionBtn');
+            btn.innerHTML = '<span>🛑</span><span>Stop Detection</span>';
+            btn.className = 'responsive-btn bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
+            
+            closeCornerDetectionModal();
+            logToWeb(`Corner detection enabled: ${boardType} ${width}x${height}`, 'success');
+        } else {
+            showMessage('Failed to enable corner detection: ' + data.message, 'error');
+            logToWeb(`Failed to enable corner detection: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Corner detection error:', error);
+        showMessage('Network error: ' + error.message, 'error');
+        logToWeb(`Corner detection error: ${error.message}`, 'error');
+    });
+}
+
+function collectPatternParameters(boardType) {
+    const params = {};
+    
+    // Define which parameters to collect for each pattern type
+    const parameterIds = {
+        'ChessBoard': ['square_size'],
+        'CharucoBoard': ['square_size', 'marker_size', 'dictionary_id'],
+        'GridBoard': ['marker_size', 'marker_separation', 'dictionary_id']
+    };
+    
+    const ids = parameterIds[boardType] || [];
+    
+    ids.forEach(id => {
+        const element = document.getElementById(getPatternInputId(id));
+        if (element) {
+            if (element.tagName === 'SELECT') {
+                params[id] = parseInt(element.value);
+            } else if (element.type === 'number') {
+                params[id] = parseFloat(element.value);
+            }
+        }
+    });
+    
+    return params;
+}
+
+function validatePatternParameters(params, boardType) {
+    // ChessBoard validation
+    if (boardType === 'ChessBoard') {
+        if (params.square_size && params.square_size <= 0) {
+            showMessage('Square size must be greater than 0', 'error', 'Validation Error');
+            return false;
+        }
+    }
+    
+    // CharucoBoard validation
+    if (boardType === 'CharucoBoard') {
+        if (params.square_size && params.marker_size) {
+            if (params.marker_size >= params.square_size) {
+                showMessage(
+                    `Marker size (${params.marker_size}m) must be smaller than square size (${params.square_size}m). Typically, marker size should be 50-80% of square size.`,
+                    'error',
+                    'Invalid CharUco Parameters'
+                );
+                return false;
+            }
+        }
+    }
+    
+    // GridBoard validation
+    if (boardType === 'GridBoard') {
+        if (params.marker_size && params.marker_size <= 0) {
+            showMessage('Marker size must be greater than 0', 'error', 'Validation Error');
+            return false;
+        }
+        if (params.marker_separation && params.marker_separation < 0) {
+            showMessage('Marker separation must be non-negative', 'error', 'Validation Error');
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+function disableCornerDetection() {
+    fetch('/toggle_corner_detection', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            enable: false
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            cornerDetectionEnabled = false;
+            const btn = document.getElementById('cornerDetectionBtn');
+            btn.innerHTML = '<span>🎯</span><span>Corner Detect</span>';
+            btn.className = 'responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
+            
+            showMessage('Corner detection disabled', 'info');
+            logToWeb('Corner detection disabled', 'info');
+        } else {
+            showMessage('Failed to disable corner detection: ' + data.message, 'error');
+            logToWeb(`Failed to disable corner detection: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Corner detection error:', error);
+        showMessage('Network error: ' + error.message, 'error');
+        logToWeb(`Corner detection error: ${error.message}`, 'error');
+    });
+}
+
+// Corner Detect Functions (Calibration Panel)
+let cornerDetectEnabled = false;
+
+async function toggleCornerDetect() {
+    if (!cornerDetectEnabled) {
+        await enableCornerDetect();
+    } else {
+        await disableCornerDetect();
+    }
+}
+
+async function enableCornerDetect() {
+    try {
+        // Read chessboard config path
+        const configPath = document.getElementById('chessboardConfigPath').value;
+        
+        logToWeb('Loading chessboard configuration...', 'info');
+        
+        // Load chessboard config
+        const configResponse = await fetch('/load_chessboard_config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ config_path: configPath })
+        });
+        
+        const configData = await configResponse.json();
+        
+        if (!configData.success || !configData.config) {
+            showMessage('Failed to load chessboard config', 'error');
+            logToWeb('Failed to load chessboard config', 'error');
+            return;
+        }
+        
+        const config = configData.config;
+        const patternName = config.name || 'Unknown Pattern';
+        
+        // Prepare detection parameters with complete JSON config
+        let detectionParams = {
+            enable: true,
+            pattern_json: config
+        };
+        
+        logToWeb(`Enabling corner detection: ${patternName}`, 'info');
+        
+        // Enable corner detection
+        const response = await fetch('/toggle_corner_detection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(detectionParams)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            cornerDetectEnabled = true;
+            const btn = document.getElementById('cornerDetectBtn');
+            btn.innerHTML = '<span>🛑</span><span>Stop Detect</span>';
+            btn.className = 'responsive-btn bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
+            
+            logToWeb('Corner detection enabled', 'success');
+        } else {
+            logToWeb(`Failed to enable corner detection: ${data.message}`, 'error');
+        }
+        
+    } catch (error) {
+        logToWeb(`Error enabling corner detection: ${error.message}`, 'error');
+    }
+}
+
+async function disableCornerDetect() {
+    try {
+        logToWeb('Disabling corner detection...', 'info');
+        
+        const response = await fetch('/toggle_corner_detection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: false })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            cornerDetectEnabled = false;
+            const btn = document.getElementById('cornerDetectBtn');
+            btn.innerHTML = '<span>🔍</span><span>Corner Detect</span>';
+            btn.className = 'responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
+            
+            logToWeb('Corner detection stopped', 'success');
+        } else {
+            logToWeb(`Failed to stop corner detection: ${data.message}`, 'error');
+        }
+        
+    } catch (error) {
+        logToWeb(`Error disabling corner detection: ${error.message}`, 'error');
+    }
+}

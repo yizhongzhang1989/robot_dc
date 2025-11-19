@@ -198,7 +198,7 @@ class URExecuteCloseRight(URExecuteBase):
         print("Step 1 completed successfully")
         
         # Step 2: Move along crack local Y direction to final target
-        final_movement_y = (movement_crack_local_y - 0.4) * crack_local_y
+        final_movement_y = (movement_crack_local_y - 0.40) * crack_local_y
         final_position = intermediate_position + final_movement_y
         
         final_pose = [
@@ -226,8 +226,8 @@ class URExecuteCloseRight(URExecuteBase):
 # ================================ Force Control Functions ================================
     def force_task_touch_right_handle(self):
         """
-        Execute force control task to touch the left handle using TCP coordinate system.
-        The robot will apply a downward force (relative to TCP) to make contact with the left handle.
+        Execute force control task to touch the right handle using TCP coordinate system.
+        The robot will apply a downward force (relative to TCP) to make contact with the right handle.
         Returns: result from force_control_task
         """
         if self.robot is None:
@@ -254,7 +254,7 @@ class URExecuteCloseRight(URExecuteBase):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.02,0.02,0.10,0,0,0]
+            end_distance=[0.02,0.02,0.09,0,0,0]
         )
         time.sleep(0.5)
         return result
@@ -405,7 +405,7 @@ class URExecuteCloseRight(URExecuteBase):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.14,0.05,0.10,0,0,0]
+            end_distance=[0.15,0.05,0.10,0,0,0]
         )
         
         if result1 != 0:
@@ -578,6 +578,158 @@ class URExecuteCloseRight(URExecuteBase):
         
         print("[INFO] CloseRight handle sequence completed successfully")
         return 0
+    
+    def force_task_touch_server(self):
+        """
+        Execute force control task to touch the left handle before prepull3 using TCP coordinate system.
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Reconstruct the task frame BEFORE the 31-degree Z-axis rotation
+        # This is the frame after Step 1 of movel_to_correct_tool_tcp (aligned with local coordinate system)
+        
+        # Extract rotation matrix from local transformation matrix
+        local_rotation = self.local_transformation_matrix[:3, :3]
+        local_x = local_rotation[:, 0]  # Local X+ direction
+        local_y = local_rotation[:, 1]  # Local Y+ direction
+        
+        # Reconstruct the tool rotation before the 31-degree rotation
+        # Tool Z+ is projection of Local Y+ onto base XOY plane
+        tool_z_direction = np.array([local_y[0], local_y[1], 0.0])
+        tool_z_direction = tool_z_direction / np.linalg.norm(tool_z_direction)
+        
+        # Tool Y+ = Tool Z+ × Tool X+
+        tool_y_direction = np.cross(tool_z_direction, local_x)
+        tool_y_direction = tool_y_direction / np.linalg.norm(tool_y_direction)
+        
+        # Construct rotation matrix before Z-axis rotation
+        pre_rotation_matrix = np.column_stack([
+            local_x,           # Tool X+ = Local X+
+            tool_y_direction,  # Tool Y+ 
+            tool_z_direction   # Tool Z+
+        ])
+        
+        # Convert to rotation vector
+        rotation_obj = R.from_matrix(pre_rotation_matrix)
+        rotation_vector = rotation_obj.as_rotvec()
+        
+        # Create task frame with current position but pre-rotation orientation
+        task_frame = [
+            tcp_pose[0],        # x (current position)
+            tcp_pose[1],        # y
+            tcp_pose[2],        # z
+            rotation_vector[0], # rx (orientation before Z-rotation)
+            rotation_vector[1], # ry
+            rotation_vector[2]  # rz
+        ]
+        
+        print(f"[INFO] Task frame (before Z-rotation): {task_frame}")
+        
+        # Set force mode parameters
+        selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
+        wrench = [0, -15, 0, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task...")
+        
+        # Execute force control task with force-based termination
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.1,
+            end_type=2,
+            end_force=[0,2,0,0,0,0]
+        )
+        time.sleep(0.5)
+        return result
+
+    def force_task_prepull_server(self):
+        """
+        Execute force control task to prepull3 the left handle using TCP coordinate system.
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Reconstruct the task frame BEFORE the 31-degree Z-axis rotation
+        # This is the frame after Step 1 of movel_to_correct_tool_tcp (aligned with local coordinate system)
+        
+        # Extract rotation matrix from local transformation matrix
+        local_rotation = self.local_transformation_matrix[:3, :3]
+        local_x = local_rotation[:, 0]  # Local X+ direction
+        local_y = local_rotation[:, 1]  # Local Y+ direction
+        
+        # Reconstruct the tool rotation before the 31-degree rotation
+        # Tool Z+ is projection of Local Y+ onto base XOY plane
+        tool_z_direction = np.array([local_y[0], local_y[1], 0.0])
+        tool_z_direction = tool_z_direction / np.linalg.norm(tool_z_direction)
+        
+        # Tool Y+ = Tool Z+ × Tool X+
+        tool_y_direction = np.cross(tool_z_direction, local_x)
+        tool_y_direction = tool_y_direction / np.linalg.norm(tool_y_direction)
+        
+        # Construct rotation matrix before Z-axis rotation
+        pre_rotation_matrix = np.column_stack([
+            local_x,           # Tool X+ = Local X+
+            tool_y_direction,  # Tool Y+ 
+            tool_z_direction   # Tool Z+
+        ])
+        
+        # Convert to rotation vector
+        rotation_obj = R.from_matrix(pre_rotation_matrix)
+        rotation_vector = rotation_obj.as_rotvec()
+        
+        # Create task frame with current position but pre-rotation orientation
+        task_frame = [
+            tcp_pose[0],        # x (current position)
+            tcp_pose[1],        # y
+            tcp_pose[2],        # z
+            rotation_vector[0], # rx (orientation before Z-rotation)
+            rotation_vector[1], # ry
+            rotation_vector[2]  # rz
+        ]
+        
+        print(f"[INFO] Task frame (before Z-rotation): {task_frame}")
+        
+        # Set force mode parameters
+        selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
+        wrench = [0, 0, -50, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task...")
+        
+        # Execute force control task with force-based termination
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.1,
+            end_type=3,
+            end_distance=[0,0,0.15,0,0,0]
+        )
+        time.sleep(0.5)
+        return result
 
 if __name__ == "__main__":
     # Create URExecuteCloseRight instance
@@ -649,7 +801,38 @@ if __name__ == "__main__":
 
     # # move to leave the handle
     print("\n" + "="*50)
-    ur_close_right.movel_in_crack_frame([0, -0.2, 0])
+    ur_close_right.movel_in_crack_frame([0, -0.10, 0])
+    time.sleep(0.5)
+
+    # # move to leave the handle
+    print("\n" + "="*50)
+    ur_close_right.movel_in_crack_frame([0, 0, -0.03])
+    time.sleep(0.5)
+
+    # # pull the server out of rack
+    # # move to the handle
+    print("\n" + "="*50)
+    ur_close_right.movel_in_crack_frame([-0.11, 0.095, 0])
+    time.sleep(0.5)
+
+    # execute force task to push server to the end
+    print("\n" + "="*50)
+    ur_close_right.force_task_touch_server()
+    time.sleep(0.5)
+
+    # execute force task to pull server out again
+    print("\n" + "="*50)
+    ur_close_right.force_task_prepull_server()
+    time.sleep(0.5)
+    
+    # # move to leave the left handle
+    print("\n" + "="*50)
+    ur_close_right.movel_in_crack_frame([0, -0.015, -0.04])
+    time.sleep(0.5)
+
+    # # move to leave the handle
+    print("\n" + "="*50)
+    ur_close_right.movel_in_crack_frame([0, -0.15, 0])
     time.sleep(0.5)
 
     # move to reference joint positions (commented out for safety)
