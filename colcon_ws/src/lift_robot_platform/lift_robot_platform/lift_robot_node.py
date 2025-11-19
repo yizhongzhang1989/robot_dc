@@ -79,9 +79,38 @@ class LiftRobotNode(Node):
         self.movement_state = 'stop'        # Current movement state: 'up', 'down', or 'stop'
         
         # ═══════════════════════════════════════════════════════════════
-        # Load Overshoot Calibration from Config File
-        # ═══════════════════════════════════════════════════════════════
-        config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+        # Load Overshoot Calibration from Config File (portable path resolution)
+        # Priority: ENV LIFT_ROBOT_CONFIG_DIR -> ancestor colcon_ws -> CWD/config
+        env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
+        def _resolve_config_dir():
+            if env_dir:
+                base = os.path.abspath(env_dir)
+                parts = base.split(os.sep)
+                if base.endswith('config'):
+                    return base
+                if 'colcon_ws' in parts:
+                    idx = parts.index('colcon_ws')
+                    return os.path.join(os.sep.join(parts[:idx+1]), 'config')
+                candidate = os.path.join(base, 'colcon_ws', 'config')
+                if os.path.isdir(candidate):
+                    return candidate
+                return os.path.join(base, 'config')
+            # walk up from this file
+            cur = os.path.abspath(os.path.dirname(__file__))
+            while cur and cur != os.sep:
+                if os.path.basename(cur) == 'colcon_ws':
+                    return os.path.join(cur, 'config')
+                cur = os.path.dirname(cur)
+            return os.path.join(os.getcwd(), 'config')
+        self.config_dir = _resolve_config_dir()
+        try:
+            os.makedirs(self.config_dir, exist_ok=True)
+        except Exception as e:
+            self.get_logger().warn(f"Cannot create config dir '{self.config_dir}': {e}")
+        def _cfg(name):
+            return os.path.join(self.config_dir, name)
+        config_path = _cfg('platform_overshoot_calibration.json')
+        self.get_logger().info(f"Overshoot config path resolved: {config_path}")
         overshoot_up_loaded = OVERSHOOT_INIT_UP
         overshoot_down_loaded = OVERSHOOT_INIT_DOWN
         

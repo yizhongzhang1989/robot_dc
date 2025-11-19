@@ -10,8 +10,29 @@ def generate_launch_description():
     # Default changed to 0.02s (50Hz) for system-wide consistency
     read_interval_arg = DeclareLaunchArgument('read_interval', default_value='0.02', description='Sensor read interval (s, 0.02=50Hz)')
     
-    # Load calibration from JSON config file
-    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/draw_wire_calibration.json'
+    # Portable config path resolution (ENV -> colcon_ws -> CWD)
+    env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
+    def resolve_config_dir():
+        if env_dir:
+            base = os.path.abspath(env_dir)
+            if base.endswith('config'):
+                return base
+            parts = base.split(os.sep)
+            if 'colcon_ws' in parts:
+                return os.path.join(base[:base.index('colcon_ws') + len('colcon_ws')], 'config') if False else os.path.join(os.sep.join(parts[:parts.index('colcon_ws')+1]), 'config')
+            candidate = os.path.join(base, 'colcon_ws', 'config')
+            if os.path.isdir(candidate):
+                return candidate
+            return os.path.join(base, 'config')
+        cur = os.path.abspath(os.path.dirname(__file__))
+        while cur and cur != os.sep:
+            if os.path.basename(cur) == 'colcon_ws':
+                return os.path.join(cur, 'config')
+            cur = os.path.dirname(cur)
+        return os.path.join(os.getcwd(), 'config')
+    config_dir = resolve_config_dir()
+    os.makedirs(config_dir, exist_ok=True)
+    config_path = os.path.join(config_dir, 'draw_wire_calibration.json')
     calib_scale = 0.024537  # Default values
     calib_offset = 681.837575
     calib_enable = True
@@ -28,7 +49,20 @@ def generate_launch_description():
             print(f"[draw_wire_sensor] Warning: Failed to load calibration config: {e}")
             print(f"[draw_wire_sensor] Using default calibration values")
     else:
-        print(f"[draw_wire_sensor] No calibration config found at {config_path}")
+        # Create default file for consistency
+        try:
+            default_data = {
+                'scale': calib_scale,
+                'offset': calib_offset,
+                'enable': calib_enable,
+                'generated_at': None,
+                'generated_at_iso': None
+            }
+            with open(config_path, 'w') as f:
+                json.dump(default_data, f, indent=2)
+            print(f"[draw_wire_sensor] Created default calibration file at {config_path}")
+        except Exception as e:
+            print(f"[draw_wire_sensor] Failed to create default calibration file: {e}")
         print(f"[draw_wire_sensor] Using default calibration values: scale={calib_scale}, offset={calib_offset}")
     
     return LaunchDescription([

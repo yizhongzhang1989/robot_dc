@@ -22,6 +22,31 @@ class LiftRobotWeb(Node):
         self.port = self.get_parameter('port').value
         self.sensor_topic = self.get_parameter('sensor_topic').value
 
+        # Portable config directory resolution
+        env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
+        if env_dir:
+            self.config_dir = os.path.abspath(env_dir)
+        else:
+            try:
+                here = os.path.abspath(os.path.dirname(__file__))
+                parts = here.split(os.sep)
+                if 'colcon_ws' in parts:
+                    idx = parts.index('colcon_ws')
+                    colcon_ws_path = os.sep.join(parts[:idx+1])
+                    self.config_dir = os.path.join(colcon_ws_path, 'config')
+                else:
+                    self.config_dir = os.path.join(os.getcwd(), 'config')
+            except Exception:
+                self.config_dir = os.path.join(os.getcwd(), 'config')
+        try:
+            os.makedirs(self.config_dir, exist_ok=True)
+        except Exception as e:
+            self.get_logger().warn(f"Cannot create config dir '{self.config_dir}': {e}")
+
+        def get_config_path(name):
+            return os.path.join(self.config_dir, name)
+        self.get_config_path = get_config_path
+
         # State holders
         self.latest_raw = None
         self.latest_obj = None
@@ -485,7 +510,7 @@ class LiftRobotWeb(Node):
                     
                     # Load timestamp from config file if exists
                     calibrated_at = None
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/draw_wire_calibration.json'
+                    config_path = self.get_config_path('draw_wire_calibration.json')
                     if os.path.exists(config_path):
                         try:
                             with open(config_path, 'r') as f:
@@ -518,8 +543,8 @@ class LiftRobotWeb(Node):
                     offset = self.calib_offset
                 
                 # Save to colcon_ws/config directory
-                config_dir = '/home/robot/Documents/robot_dc/colcon_ws/config'
-                config_path = os.path.join(config_dir, 'draw_wire_calibration.json')
+                config_dir = self.config_dir
+                config_path = self.get_config_path('draw_wire_calibration.json')
                 
                 try:
                     # Create config directory if it doesn't exist
@@ -809,7 +834,7 @@ class LiftRobotWeb(Node):
                                 result['last_goto_stop_height'] = self.platform_status['last_goto_stop_height']
 
                         # Load timestamp & regions from config file if exists
-                        config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                        config_path = self.get_config_path('platform_overshoot_calibration.json')
                         if os.path.exists(config_path):
                             try:
                                 with open(config_path, 'r') as f:
@@ -836,7 +861,7 @@ class LiftRobotWeb(Node):
                 to stay consistent (their overshoot for DOWN set to abs). Heights remain unchanged.
                 """
                 try:
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
                     changed = 0
                     total_down = 0
                     # Load file
@@ -879,7 +904,7 @@ class LiftRobotWeb(Node):
                 Safe to call before a new full-auto multi-region calibration.
                 """
                 try:
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
                     with self.overshoot_lock:
                         self.overshoot_up = None
                         self.overshoot_down = None
@@ -914,7 +939,7 @@ class LiftRobotWeb(Node):
                             degree = max(1, min(degree, 5))
                         except Exception:
                             degree = 2
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
                     if not os.path.exists(config_path):
                         return JSONResponse({'success': False, 'error': 'No calibration config found'})
                     with open(config_path, 'r') as f:
@@ -1150,8 +1175,8 @@ class LiftRobotWeb(Node):
                     if overshoot_up is None and overshoot_down is None:
                         return JSONResponse({'success': False, 'error': 'No calibration calculated yet. Please calculate first.'})
 
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
-                    config_dir = os.path.dirname(config_path)
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
+                    config_dir = self.config_dir
                     if not os.path.exists(config_dir):
                         os.makedirs(config_dir)
 
@@ -1431,7 +1456,7 @@ class LiftRobotWeb(Node):
                         }
                         
                         # Load timestamp from config files if exist
-                        config_dir = '/home/robot/Documents/robot_dc/colcon_ws/config'
+                        config_dir = self.config_dir
                         config_path_right = os.path.join(config_dir, 'force_sensor_calibration_52.json')
                         config_path_left = os.path.join(config_dir, 'force_sensor_calibration_53.json')
                         
@@ -1471,7 +1496,7 @@ class LiftRobotWeb(Node):
                             'error': 'No calibration calculated yet. Please calculate first.'
                         })
                     
-                    config_dir = '/home/robot/Documents/robot_dc/colcon_ws/config'
+                    config_dir = self.config_dir
                     saved_files = []
                     
                     # Save right channel (device_id=52)
@@ -1636,7 +1661,7 @@ class LiftRobotWeb(Node):
                 Returns: {has_range, actual_min, actual_max, safe_min, safe_max, detected_at_iso}
                 """
                 try:
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_range.json'
+                    config_path = self.get_config_path('platform_range.json')
                     
                     if not os.path.exists(config_path):
                         # Create default file
@@ -1700,8 +1725,8 @@ class LiftRobotWeb(Node):
                             'error': 'Missing required fields: actual_min, actual_max, safe_min, safe_max'
                         })
                     
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_range.json'
-                    config_dir = os.path.dirname(config_path)
+                    config_path = self.get_config_path('platform_range.json')
+                    config_dir = self.config_dir
                     
                     if not os.path.exists(config_dir):
                         os.makedirs(config_dir)
@@ -1768,8 +1793,8 @@ class LiftRobotWeb(Node):
                         self.safe_range_max = payload.get('safe_max')
                     
                     # Save range to config file immediately
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
-                    config_dir = os.path.dirname(config_path)
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
+                    config_dir = self.config_dir
                     
                     if not os.path.exists(config_dir):
                         os.makedirs(config_dir)
@@ -1838,8 +1863,8 @@ class LiftRobotWeb(Node):
                         self.systematic_samples.clear()
                     
                     # Clear samples from config file
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
-                    config_dir = os.path.dirname(config_path)
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
+                    config_dir = self.config_dir
                     
                     if not os.path.exists(config_dir):
                         os.makedirs(config_dir)
@@ -1919,8 +1944,8 @@ class LiftRobotWeb(Node):
                         samples_copy = self.systematic_samples.copy()
                     
                     # Save sample to config file immediately
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
-                    config_dir = os.path.dirname(config_path)
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
+                    config_dir = self.config_dir
                     
                     if not os.path.exists(config_dir):
                         os.makedirs(config_dir)
@@ -1974,7 +1999,7 @@ class LiftRobotWeb(Node):
             @app.get('/api/systematic/samples')
             async def get_systematic_samples():
                 """Get all systematic calibration samples from config file."""
-                config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                config_path = self.get_config_path('platform_overshoot_calibration.json')
                 
                 samples = []
                 generated_at = None
@@ -2019,7 +2044,7 @@ class LiftRobotWeb(Node):
             async def delete_systematic_sample(index: int):
                 """Delete a specific systematic calibration sample by index."""
                 try:
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
                     
                     # Load samples from config file
                     if not os.path.exists(config_path):
@@ -2098,7 +2123,7 @@ class LiftRobotWeb(Node):
                     self.systematic_samples.clear()
                 
                 # Clear samples from config file
-                config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                config_path = self.get_config_path('platform_overshoot_calibration.json')
                 if os.path.exists(config_path):
                     try:
                         with open(config_path, 'r') as f:
@@ -2157,7 +2182,7 @@ class LiftRobotWeb(Node):
                             degree = None
                     
                     # Load samples from config file
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
                     samples = []
                     if os.path.exists(config_path):
                         try:
@@ -2384,7 +2409,7 @@ class LiftRobotWeb(Node):
                         })
                     
                     # Load samples from config file
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
                     samples = []
                     if os.path.exists(config_path):
                         try:
@@ -2427,8 +2452,8 @@ class LiftRobotWeb(Node):
                             }
                     
                     # Save to config file
-                    config_path = '/home/robot/Documents/robot_dc/colcon_ws/config/platform_overshoot_calibration.json'
-                    config_dir = os.path.dirname(config_path)
+                    config_path = self.get_config_path('platform_overshoot_calibration.json')
+                    config_dir = self.config_dir
                     
                     if not os.path.exists(config_dir):
                         os.makedirs(config_dir)
