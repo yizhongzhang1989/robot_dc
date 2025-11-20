@@ -90,14 +90,16 @@ def generate_launch_description():
     camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
-                FindPackageShare('ur15_web'),
+                FindPackageShare('camera_node'),
                 'launch',
                 'ur15_cam_launch.py'
             ])
         ]),
         launch_arguments={
-            'camera_topic': camera_topic,
-            'rtsp_url': rtsp_url
+            'ros_topic_name': camera_topic,
+            'rtsp_url_main': rtsp_url,
+            'camera_name': 'UR15Camera',
+            'server_port': '8019'
         }.items()
     )
     

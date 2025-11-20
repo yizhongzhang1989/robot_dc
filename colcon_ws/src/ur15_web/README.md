@@ -18,13 +18,9 @@ This package provides a web-based interface for controlling and monitoring the U
 - Camera node package
 - Python 3.10+
 
-## Launch Files
+## Complete System Bringup (Beijing Lab Configuration)
 
-The package provides several launch files for different use cases:
-
-### 1. Complete System Bringup
-
-**`ur15_beijing_bringup.py`** - Launches the complete UR15 system
+**`ur15_beijing_bringup.py`** - Launches the complete UR15 system with Beijing Lab's specific hardware setup
 
 ```bash
 ros2 launch ur15_web ur15_beijing_bringup.py
@@ -34,6 +30,8 @@ This sequentially starts:
 1. UR15 robot driver (ur_control) - immediately
 2. UR15 camera node - after 5 seconds
 3. UR15 web interface - after 8 seconds
+
+**Note:** This is optimized for Beijing Lab's hardware configuration. Other sites should use individual launch files to match their specific setup.
 
 **Parameters:**
 ```bash
@@ -53,9 +51,11 @@ ros2 launch ur15_web ur15_beijing_bringup.py \
 - `chessboard_config` - Chessboard config file path (default: `../temp/ur15_cam_calibration_data/chessboard_config.json`)
 - `launch_rviz` - Launch RViz visualization (default: `false`)
 
-### 2. Individual Component Launches
+## Individual Component Launches (For Different Hardware Setups)
 
-#### Robot Control Only
+Different labs have different hardware configurations - different IPs, camera setups, or external control systems. Use individual launch files to adapt to your specific setup without code changes.
+
+### **1. Robot Control Only**
 
 **`ur15_control_launch.py`** - Launches only the UR15 robot driver
 
@@ -63,7 +63,6 @@ ros2 launch ur15_web ur15_beijing_bringup.py \
 ros2 launch ur15_web ur15_control_launch.py
 ```
 
-**Parameters:**
 ```bash
 ros2 launch ur15_web ur15_control_launch.py \
   ur15_ip:=192.168.1.15 \
@@ -71,49 +70,45 @@ ros2 launch ur15_web ur15_control_launch.py \
   launch_rviz:=false
 ```
 
-**Available Arguments:**
+Available Arguments:
 - `ur15_ip` - UR15 robot IP address (default: `192.168.1.15`)
 - `ur_type` - UR robot type (default: `ur15`)
 - `launch_rviz` - Launch RViz visualization (default: `false`)
 
-#### Camera Only
+### **2. Camera Only**
 
-**`ur15_cam_launch.py`** - Launches only the UR15 camera node
+**`ur15_cam_launch.py`** - Launches only the UR15 camera node (from camera_node package). This camera is used in Beijing Lab only.
 
 ```bash
-ros2 launch ur15_web ur15_cam_launch.py
+ros2 launch camera_node ur15_cam_launch.py
 ```
 
-**Parameters:**
 ```bash
-ros2 launch ur15_web ur15_cam_launch.py \
-  rtsp_url:=rtsp://admin:123456@192.168.1.101/stream0 \
-  camera_topic:=/ur15_camera/image_raw \
+ros2 launch camera_node ur15_cam_launch.py \
+  rtsp_url_main:=rtsp://admin:123456@192.168.1.101/stream0 \
+  ros_topic_name:=/ur15_camera/image_raw \
   server_port:=8019
 ```
 
-**Available Arguments:**
-- `camera_topic` - ROS topic name (default: `/ur15_camera/image_raw`)
-- `rtsp_url` - RTSP stream URL (default: `rtsp://admin:123456@192.168.1.101/stream0`)
+Available Arguments:
+- `ros_topic_name` - ROS topic name (default: `/ur15_camera/image_raw`)
+- `rtsp_url_main` - RTSP stream URL (default: `rtsp://admin:123456@192.168.1.101/stream0`)
 - `camera_ip` - Camera IP address (default: `192.168.1.101`)
-- `camera_name` - Camera name (default: `UR15Camera`)
-- `server_port` - HTTP server port (default: `8019`)
+- `camera_name` - Camera name (default: `RobotArmCamera`)
+- `server_port` - HTTP server port (default: `8012`)
 - `stream_fps` - Stream FPS (default: `25`)
-- `jpeg_quality` - JPEG quality 0-100 (default: `75`)
+- `jpeg_quality` - JPEG quality 1-100 (default: `75`)
 - `max_width` - Maximum image width (default: `800`)
 - `publish_ros_image` - Publish to ROS topic (default: `true`)
 
-#### Web Interface Only
+### **3. Web Interface Only**
 
-**`ur15_web_launch.py`** - Launches only the web interface node
+**`ur15_web_launch.py`** - Launches only the web interface node. (**Note:** This assumes ur_control and camera are already running.)
 
 ```bash
 ros2 launch ur15_web ur15_web_launch.py
 ```
 
-**Note:** This assumes ur_control and camera are already running.
-
-**Parameters:**
 ```bash
 ros2 launch ur15_web ur15_web_launch.py \
   ur15_ip:=192.168.1.15 \
@@ -121,7 +116,7 @@ ros2 launch ur15_web ur15_web_launch.py \
   web_port:=8030
 ```
 
-**Available Arguments:**
+Available Arguments:
 - `ur15_ip` - UR15 robot IP address (default: `192.168.1.15`)
 - `camera_topic` - Camera topic name (default: `/ur15_camera/image_raw`)
 - `web_port` - Web server port (default: `8030`)
@@ -130,19 +125,6 @@ ros2 launch ur15_web ur15_web_launch.py \
 - `calib_data_dir` - Calibration data directory
 - `chessboard_config` - Chessboard config file path
 
-### 3. Combined Launches (Without Robot Control)
-
-**`ur15_web_launch_exclude_ur_control.py`** - Launches camera and web interface
-
-```bash
-ros2 launch ur15_web ur15_web_launch_exclude_ur_control.py
-```
-
-This starts:
-1. UR15 camera node - immediately
-2. UR15 web interface - after 3 seconds
-
-**Note:** This assumes ur_control is already running separately.
 
 ## Usage Examples
 
@@ -166,19 +148,12 @@ ros2 launch ur15_web ur15_beijing_bringup.py launch_rviz:=true
 ros2 launch ur15_web ur15_control_launch.py ur15_ip:=192.168.1.15
 
 # Terminal 2: Launch camera (wait for robot to initialize)
-ros2 launch ur15_web ur15_cam_launch.py
+ros2 launch camera_node ur15_cam_launch.py \
+  camera_name:=UR15Camera \
+  server_port:=8019
 
 # Terminal 3: Launch web interface
 ros2 launch ur15_web ur15_web_launch.py
-```
-
-### Launch Without Robot Control
-
-Useful when the robot driver is managed externally:
-
-```bash
-# Assume ur_control is already running
-ros2 launch ur15_web ur15_web_launch_exclude_ur_control.py
 ```
 
 ## Web Interface
@@ -226,12 +201,15 @@ ur15_web/
 ├── launch/
 │   ├── ur15_beijing_bringup.py           # Complete system bringup
 │   ├── ur15_control_launch.py            # Robot control only
-│   ├── ur15_cam_launch.py                # Camera only
-│   ├── ur15_web_launch.py                # Web interface only
-│   └── ur15_web_launch_exclude_ur_control.py  # Camera + Web
+│   └── ur15_web_launch.py                # Web interface only
 ├── ur15_web/
 │   └── ur15_web_node.py                  # Main web node
 └── README.md
+
+camera_node/
+├── launch/
+│   └── ur15_cam_launch.py                # Camera launch (used by ur15_web)
+└── ...
 ```
 
 ## Troubleshooting
