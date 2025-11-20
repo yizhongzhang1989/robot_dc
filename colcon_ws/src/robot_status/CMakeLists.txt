@@ -17,10 +17,12 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
-# Install Python modules manually
-install(DIRECTORY robot_status
-  DESTINATION lib/python3.10/site-packages
-  PATTERN "__pycache__" EXCLUDE
+# Install Python module files to the rosidl generated Python package location
+# This ensures they're in the same location as the service interfaces
+install(FILES
+  robot_status/__init__.py
+  robot_status/client_utils.py
+  DESTINATION local/lib/python3.10/dist-packages/robot_status
 )
 
 # Set PYTHONPATH for the package

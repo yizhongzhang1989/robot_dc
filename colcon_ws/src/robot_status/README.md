@@ -218,9 +218,67 @@ ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
 
 ## Python Client API
 
-Use the `RobotStatusClient` helper class for easy integration:
+### Simple Standalone Functions (Recommended)
 
-### Basic Usage
+The easiest way to use robot_status from any node - just import and call:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+import json
+import numpy as np
+
+# Simply import the utility functions
+from robot_status import get_from_status, set_to_status
+
+
+class MyNode(Node):
+    def __init__(self):
+        super().__init__('my_node')
+        
+        # Save data - just one line!
+        camera_matrix = np.array([[800, 0, 320], [0, 800, 240], [0, 0, 1]])
+        matrix_json = json.dumps(camera_matrix.tolist())
+        
+        if set_to_status(self, 'my_robot', 'camera_matrix', matrix_json):
+            self.get_logger().info("✓ Saved camera_matrix")
+        
+        # Load data - just one line!
+        value = get_from_status(self, 'my_robot', 'camera_matrix')
+        if value:
+            matrix = np.array(json.loads(value))
+            self.get_logger().info(f"✓ Loaded matrix: {matrix.shape}")
+        
+        # Simple values work too
+        set_to_status(self, 'my_robot', 'battery', '85')
+        set_to_status(self, 'my_robot', 'status', 'operational')
+        
+        battery = get_from_status(self, 'my_robot', 'battery')
+        status = get_from_status(self, 'my_robot', 'status')
+```
+
+**Function Signatures:**
+```python
+def get_from_status(node: Node, namespace: str, key: str, timeout: float = 2.0) -> str | None
+    """Get value from robot_status. Returns value string or None."""
+
+def set_to_status(node: Node, namespace: str, key: str, value, timeout: float = 2.0) -> bool
+    """Set value in robot_status. Returns True if successful."""
+```
+
+**Benefits:**
+- ✓ No client instance needed
+- ✓ One-line function calls
+- ✓ Automatic error handling
+- ✓ Works in any ROS2 node
+- ✓ Simple and clean code
+
+See `examples/simple_usage_example.py` for complete examples.
+
+### Advanced: RobotStatusClient Class
+
+For more complex scenarios, use the `RobotStatusClient` helper class:
 
 ```python
 #!/usr/bin/env python3
