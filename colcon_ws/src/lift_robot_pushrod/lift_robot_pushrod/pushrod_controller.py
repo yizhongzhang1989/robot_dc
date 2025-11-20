@@ -1,5 +1,7 @@
 import threading
+import time
 from modbus_devices.base_device import ModbusDevice
+from modbus_driver_interfaces.srv import ModbusRequest as ModbusRequestSrv
 
 
 class PushrodController(ModbusDevice):
@@ -36,8 +38,15 @@ class PushrodController(ModbusDevice):
         self.stop_timer = None
         # Track the timer identity for callback race prevention
         self._stop_timer_id = 0
-        # Callback for when auto-stop completes (for offset tracking)
-        self.on_auto_stop_callback = None
+        
+        # Async flash verification (similar to platform_controller)
+        self.flash_lock = threading.Lock()
+        self.flash_active = False
+        self.flash_context = None
+        
+        # Callbacks
+        self.on_auto_stop_callback = None  # Callback for when auto-stop completes (for offset tracking)
+        self.on_flash_complete_callback = None  # Callback for relay flash verification success
         # Discrete named points (seconds up from base). Base assumed 0.
         # Only 'base' is supported now
         self.points = {
@@ -98,21 +107,21 @@ class PushrodController(ModbusDevice):
         with self.timer_lock:
             self._cancel_stop_timer()
         self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod STOP command (relay 3 pulse)")
-        self.flash_relay(relay_address=self.RELAY_STOP, duration_ms=100, seq_id=seq_id)
+        self.start_flash_async(relay_address=self.RELAY_STOP, seq_id=seq_id)
 
     def up(self, seq_id=None):
         """Move up (pulse relay 5). Cancels any scheduled auto-stop timer."""
         with self.timer_lock:
             self._cancel_stop_timer()
         self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod UP command (relay 5 pulse)")
-        self.flash_relay(relay_address=self.RELAY_UP, duration_ms=100, seq_id=seq_id)
+        self.start_flash_async(relay_address=self.RELAY_UP, seq_id=seq_id)
 
     def down(self, seq_id=None):
         """Move down (pulse relay 4). Cancels any scheduled auto-stop timer."""
         with self.timer_lock:
             self._cancel_stop_timer()
         self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod DOWN command (relay 4 pulse)")
-        self.flash_relay(relay_address=self.RELAY_DOWN, duration_ms=100, seq_id=seq_id)
+        self.start_flash_async(relay_address=self.RELAY_DOWN, seq_id=seq_id)
 
     def _schedule_auto_stop(self, duration, seq_id):
         """Internal: schedule auto-stop timer if duration > 0."""
@@ -239,6 +248,274 @@ class PushrodController(ModbusDevice):
             self._move_timer_duration = None
             self._move_target_seconds = None
 
+    # ─────────────────────────────────────────────────────────────
+    # Async flash (pulse) verification - matches platform_controller
+    # ─────────────────────────────────────────────────────────────
+    def start_flash_async(self, relay_address, seq_id=None, max_attempts=3):
+        """Begin an asynchronous relay pulse with immediate verification & retry.
+        
+        Non-blocking: scheduling is done via futures and threading.Timer so we never
+        spin or sleep inside a ROS callback thread. Only one flash is allowed at a time.
+        If another flash is active, the new request is ignored.
+        """
+        with self.flash_lock:
+            if self.flash_active:
+                self.node.get_logger().warn(f"[SEQ {seq_id}] Flash already active, ignore new request relay={relay_address}")
+                return
+            # Initialize context
+            self.flash_active = True
+            self.flash_context = {
+                'relay': relay_address,
+                'seq_id': seq_id,
+                'phase': 'ON',
+                'on_attempts': 0,
+                'off_attempts': 0,
+                'max': max_attempts,
+                'start_time': time.time(),
+                'on_eval_done': False,
+                'on_inner_read_count': 0,
+                'off_eval_done': False,
+                'off_inner_read_count': 0
+            }
+        relay_name = {3: 'STOP', 5: 'UP', 4: 'DOWN'}.get(relay_address, f'Relay{relay_address}')
+        self.node.get_logger().info(f"[SEQ {seq_id}] Async flash start: {relay_name} (max_attempts={max_attempts})")
+        self._flash_attempt_on()
+
+    def _flash_attempt_on(self):
+        ctx = self.flash_context
+        if ctx is None:
+            return
+        ctx['on_attempts'] += 1
+        attempt = ctx['on_attempts']
+        relay = ctx['relay']
+        seq_id = ctx['seq_id']
+        relay_name = {3: 'STOP', 5: 'UP', 4: 'DOWN'}.get(relay, f'Relay{relay}')
+        self.node.get_logger().info(f"[SEQ {seq_id}] ON attempt {attempt}/{ctx['max']} for {relay_name}")
+        ctx['on_eval_done'] = False
+        ctx['on_inner_read_count'] = 0
+        # Send ON write then schedule read after 10ms
+        self.send(5, relay, [0xFF00], seq_id=seq_id)
+        threading.Timer(0.01, self._flash_read_on_result).start()
+
+    def _flash_read_on_result(self):
+        ctx = self.flash_context
+        if ctx is None or ctx.get('phase') != 'ON':
+            return
+        relay = ctx['relay']
+        seq_id = ctx['seq_id']
+        # Read relay status to verify ON
+        req = ModbusRequestSrv.Request()
+        req.slave_id = self.device_id
+        req.function_code = 1  # Read coils
+        req.address = 0x0000
+        req.count = 6  # Read relays 0-5
+        req.values = []
+        req.seq_id = seq_id if seq_id is not None else 0
+        future = self.cli.call_async(req)
+        def first_done(f):
+            ctx_local = self.flash_context
+            if ctx_local is None or ctx_local.get('phase') != 'ON':
+                return
+            if ctx_local['on_eval_done']:
+                return
+            ctx_local['on_eval_done'] = True
+            self._flash_on_evaluate(f)
+        future.add_done_callback(first_done)
+        # Schedule micro-timeout extra read
+        threading.Timer(0.002, self._flash_on_second_read, args=[future]).start()
+
+    def _flash_on_second_read(self, first_future):
+        ctx = self.flash_context
+        if ctx is None or ctx.get('phase') != 'ON':
+            return
+        if ctx['on_eval_done'] or first_future.done():
+            return
+        if ctx['on_inner_read_count'] >= 2:
+            return
+        ctx['on_inner_read_count'] += 1
+        relay = ctx['relay']
+        seq_id = ctx['seq_id']
+        req = ModbusRequestSrv.Request()
+        req.slave_id = self.device_id
+        req.function_code = 1
+        req.address = 0x0000
+        req.count = 6
+        req.values = []
+        req.seq_id = seq_id if seq_id is not None else 0
+        second_future = self.cli.call_async(req)
+        def second_done(f):
+            ctx_local = self.flash_context
+            if ctx_local is None or ctx_local.get('phase') != 'ON':
+                return
+            if ctx_local['on_eval_done']:
+                return
+            ctx_local['on_eval_done'] = True
+            self._flash_on_evaluate(f)
+        second_future.add_done_callback(second_done)
+        if ctx['on_inner_read_count'] < 2:
+            threading.Timer(0.01, self._flash_on_second_read, args=[first_future]).start()
+
+    def _flash_on_evaluate(self, future):
+        ctx = self.flash_context
+        if ctx is None or ctx.get('phase') != 'ON':
+            return
+        relay = ctx['relay']
+        seq_id = ctx['seq_id']
+        relay_name = {3: 'STOP', 5: 'UP', 4: 'DOWN'}.get(relay, f'Relay{relay}')
+        try:
+            resp = future.result()
+            ok = resp is not None and resp.success and len(resp.response) >= (relay+1)
+            status = None
+            if ok:
+                status = bool(resp.response[relay])
+            if ok and status:
+                elapsed_ms = (time.time() - ctx['start_time']) * 1000
+                self.node.get_logger().info(f"[SEQ {seq_id}] ✅ {relay_name} ON verified at attempt {ctx['on_attempts']} ({elapsed_ms:.1f}ms)")
+                ctx['phase'] = 'OFF'
+                ctx['off_eval_done'] = False
+                ctx['off_inner_read_count'] = 0
+                self._flash_attempt_off()
+            else:
+                self.node.get_logger().warn(f"[SEQ {seq_id}] ⚠️ {relay_name} ON verify failed attempt {ctx['on_attempts']} (status={status})")
+                if ctx['on_attempts'] < ctx['max']:
+                    self._flash_attempt_on()
+                else:
+                    self._flash_fail(f"{relay_name} ON phase failed after {ctx['max']} attempts")
+        except Exception as e:
+            self.node.get_logger().error(f"[SEQ {seq_id}] ON evaluate exception: {e}")
+            if ctx['on_attempts'] < ctx['max']:
+                self._flash_attempt_on()
+            else:
+                self._flash_fail(f"{relay_name} ON exception: {e}")
+
+    def _flash_attempt_off(self):
+        ctx = self.flash_context
+        if ctx is None or ctx.get('phase') != 'OFF':
+            return
+        ctx['off_attempts'] += 1
+        attempt = ctx['off_attempts']
+        relay = ctx['relay']
+        seq_id = ctx['seq_id']
+        relay_name = {3: 'STOP', 5: 'UP', 4: 'DOWN'}.get(relay, f'Relay{relay}')
+        self.node.get_logger().info(f"[SEQ {seq_id}] OFF attempt {attempt}/{ctx['max']} for {relay_name}")
+        ctx['off_eval_done'] = False
+        ctx['off_inner_read_count'] = 0
+        # Send OFF write then schedule read
+        self.send(5, relay, [0x0000], seq_id=seq_id)
+        threading.Timer(0.01, self._flash_read_off_result).start()
+
+    def _flash_read_off_result(self):
+        ctx = self.flash_context
+        if ctx is None or ctx.get('phase') != 'OFF':
+            return
+        relay = ctx['relay']
+        seq_id = ctx['seq_id']
+        req = ModbusRequestSrv.Request()
+        req.slave_id = self.device_id
+        req.function_code = 1
+        req.address = 0x0000
+        req.count = 6
+        req.values = []
+        req.seq_id = seq_id if seq_id is not None else 0
+        future = self.cli.call_async(req)
+        def first_done(f):
+            ctx_local = self.flash_context
+            if ctx_local is None or ctx_local.get('phase') != 'OFF':
+                return
+            if ctx_local['off_eval_done']:
+                return
+            ctx_local['off_eval_done'] = True
+            self._flash_off_evaluate(f)
+        future.add_done_callback(first_done)
+        threading.Timer(0.002, self._flash_off_second_read, args=[future]).start()
+
+    def _flash_off_second_read(self, first_future):
+        ctx = self.flash_context
+        if ctx is None or ctx.get('phase') != 'OFF':
+            return
+        if ctx['off_eval_done'] or first_future.done():
+            return
+        if ctx['off_inner_read_count'] >= 2:
+            return
+        ctx['off_inner_read_count'] += 1
+        relay = ctx['relay']
+        seq_id = ctx['seq_id']
+        req = ModbusRequestSrv.Request()
+        req.slave_id = self.device_id
+        req.function_code = 1
+        req.address = 0x0000
+        req.count = 6
+        req.values = []
+        req.seq_id = seq_id if seq_id is not None else 0
+        second_future = self.cli.call_async(req)
+        def second_done(f):
+            ctx_local = self.flash_context
+            if ctx_local is None or ctx_local.get('phase') != 'OFF':
+                return
+            if ctx_local['off_eval_done']:
+                return
+            ctx_local['off_eval_done'] = True
+            self._flash_off_evaluate(f)
+        second_future.add_done_callback(second_done)
+        if ctx['off_inner_read_count'] < 2:
+            threading.Timer(0.01, self._flash_off_second_read, args=[first_future]).start()
+
+    def _flash_off_evaluate(self, future):
+        ctx = self.flash_context
+        if ctx is None or ctx.get('phase') != 'OFF':
+            return
+        relay = ctx['relay']
+        seq_id = ctx['seq_id']
+        relay_name = {3: 'STOP', 5: 'UP', 4: 'DOWN'}.get(relay, f'Relay{relay}')
+        try:
+            resp = future.result()
+            ok = resp is not None and resp.success and len(resp.response) >= (relay+1)
+            status = None
+            if ok:
+                status = bool(resp.response[relay])
+            if ok and (not status):
+                elapsed_ms = (time.time() - ctx['start_time']) * 1000
+                self.node.get_logger().info(f"[SEQ {seq_id}] ✅ {relay_name} OFF verified at attempt {ctx['off_attempts']} ({elapsed_ms:.1f}ms) total")
+                self._flash_complete()
+            else:
+                self.node.get_logger().warn(f"[SEQ {seq_id}] ⚠️ {relay_name} OFF verify failed attempt {ctx['off_attempts']} (status={status})")
+                if ctx['off_attempts'] < ctx['max']:
+                    self._flash_attempt_off()
+                else:
+                    self._flash_fail(f"{relay_name} OFF phase failed after {ctx['max']} attempts")
+        except Exception as e:
+            self.node.get_logger().error(f"[SEQ {seq_id}] OFF evaluate exception: {e}")
+            if ctx['off_attempts'] < ctx['max']:
+                self._flash_attempt_off()
+            else:
+                self._flash_fail(f"{relay_name} OFF exception: {e}")
+
+    def _flash_complete(self):
+        ctx = self.flash_context
+        if ctx is None:
+            return
+        seq_id = ctx['seq_id']
+        relay = ctx['relay']
+        relay_name = {3: 'STOP', 5: 'UP', 4: 'DOWN'}.get(relay, f'Relay{relay}')
+        total_ms = (time.time() - ctx['start_time']) * 1000
+        self.node.get_logger().info(f"[SEQ {seq_id}] ✅ Async flash SUCCESS {relay_name} total={total_ms:.1f}ms")
+        
+        # Notify node that relay verification succeeded
+        if hasattr(self, 'on_flash_complete_callback') and self.on_flash_complete_callback:
+            try:
+                self.on_flash_complete_callback(relay, seq_id)
+            except Exception as e:
+                self.node.get_logger().error(f"[SEQ {seq_id}] Flash complete callback error: {e}")
+        
+        self.flash_context = None
+        self.flash_active = False
+
+    def _flash_fail(self, reason):
+        ctx = self.flash_context
+        seq_id = ctx['seq_id'] if ctx else None
+        self.node.get_logger().error(f"[SEQ {seq_id}] ❌ Async flash FAILED: {reason}")
+        self.flash_context = None
+        self.flash_active = False
 
     def cleanup(self):
         with self.timer_lock:

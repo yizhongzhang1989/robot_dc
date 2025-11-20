@@ -35,6 +35,9 @@ class PushrodNode(Node):
         self.control_enabled = False
         self.control_mode = 'manual'    # manual | auto | force
         self.movement_state = 'stop'
+        
+        # Movement command duplicate prevention (for high-frequency control loops)
+        self.movement_command_sent = False  # Prevents duplicate flash requests during verification
 
         # Offset tracking
         self.pushrod_offset = 0.0
@@ -53,12 +56,15 @@ class PushrodNode(Node):
         
         # ═══════════════════════════════════════════════════════════════
         # Task State Tracking (for web monitoring)
-        # ═══════════════════════════════════════════════════════════════
+        # ═══════════════════════════════════════════════════════════
         self.task_state = 'idle'           # 'idle' | 'running' | 'completed'
         self.task_type = None              # None | 'goto_height' | 'force_control' | 'manual_up' | 'manual_down'
         self.task_start_time = None        # Unix timestamp (seconds)
         self.task_end_time = None          # Unix timestamp (seconds)
         self.completion_reason = None      # None | 'target_reached' | 'force_reached' | 'manual_stop'
+        
+        # Deferred task completion mechanism (synchronized with STOP relay OFF verification)
+        self.pending_task_completion = None  # Dict with {'reason': str} when task should complete after STOP
         
         # ═══════════════════════════════════════════════════════════════
         # System-wide mutual exclusion (shared with Platform via status)
@@ -73,6 +79,7 @@ class PushrodNode(Node):
             use_ack_patch=self.use_ack_patch
         )
         self.controller.on_auto_stop_callback = self._on_auto_stop_complete
+        self.controller.on_flash_complete_callback = self._on_flash_complete
 
         # Subscriptions
         self.command_sub = self.create_subscription(String, 'lift_robot_pushrod/command', self.command_callback, 10)
@@ -110,7 +117,6 @@ class PushrodNode(Node):
                     self.get_logger().info(f"[SEQ {seq_id_str}] Manual stop - auto control disabled")
                 
                 # Step 2: Wait for control loop to detect flag change and stop sending commands
-                # Wait 1 control cycle (20ms) to ensure control loop has exited
                 time.sleep(CONTROL_RATE)  # 20ms = 1 control cycle
                 
                 # Step 3: Update offset tracking (before sending stop pulse)
@@ -121,13 +127,13 @@ class PushrodNode(Node):
                     self.is_tracking_offset = False
                     self.height_before_movement = None
                 
-                # Step 4: Send hardware STOP pulse (after control loop stopped)
-                self.controller.stop(seq_id=seq_id)
-                self.movement_state = 'stop'
-                
-                # Step 5: Mark task as manually stopped and release system lock
+                # Step 4: Send hardware STOP pulse with deferred task completion
+                # movement_state and task completion will happen in _on_flash_complete callback
                 if self.task_state == 'running':
-                    self._complete_task('manual_stop')
+                    self._issue_stop(reason='manual_stop', disable_control=False, 
+                                   complete_task_on_stop='manual_stop', seq_id=seq_id)
+                else:
+                    self._issue_stop(reason='manual_stop', disable_control=False, seq_id=seq_id)
 
             elif command == 'up':
                 # If interrupting a running closed-loop task, complete it first
@@ -143,8 +149,8 @@ class PushrodNode(Node):
                 
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
+                # Send UP command - movement_state will be set in _on_flash_complete callback
                 self.controller.up(seq_id=seq_id)
-                self.movement_state = 'up'
                 # Start manual up task
                 self._start_task('manual_up')
 
@@ -162,8 +168,8 @@ class PushrodNode(Node):
                 
                 self.height_before_movement = self.current_height
                 self.is_tracking_offset = True
+                # Send DOWN command - movement_state will be set in _on_flash_complete callback
                 self.controller.down(seq_id=seq_id)
-                self.movement_state = 'down'
                 # Start manual down task
                 self._start_task('manual_down')
 
@@ -436,38 +442,36 @@ class PushrodNode(Node):
             # Use raw height value directly (no filtering)
             error = self.target_height - self.current_height
             
-            # In tolerance band - STOP and exit auto mode
+            # In tolerance band - STOP and exit auto mode with deferred task completion
             if abs(error) <= POSITION_TOLERANCE:
-                self.controller.stop()
                 if self.is_tracking_offset and self.height_before_movement is not None:
                     delta = self.current_height - self.height_before_movement
                     self.pushrod_offset += delta
                     self.is_tracking_offset = False
                     self.height_before_movement = None
-                self.control_enabled = False
-                self.movement_state = 'stop'
-                # Mark goto_height task as completed
-                self._complete_task('target_reached')
+                # Use _issue_stop with deferred task completion
+                self._issue_stop(reason='target_reached', disable_control=True, 
+                               complete_task_on_stop='target_reached')
                 self.get_logger().info(
                     f"[Pushrod Height] ✅ TARGET REACHED current={self.current_height:.2f}mm target={self.target_height:.2f}mm"
                 )
                 return
             
-            # Need to move UP
+            # Need to move UP - use duplicate prevention flag
             if error > POSITION_TOLERANCE:
-                if self.movement_state != 'up':
+                if self.movement_state != 'up' and not self.movement_command_sent:
                     self.controller.up()
-                    self.movement_state = 'up'
+                    self.movement_command_sent = True  # Prevent duplicate sends during verification
                     self.get_logger().info(
                         f"[Pushrod Height] ⬆️ UP current={self.current_height:.2f}mm target={self.target_height:.2f}mm err={error:.2f}mm"
                     )
                 return
             
-            # Need to move DOWN
+            # Need to move DOWN - use duplicate prevention flag
             if error < -POSITION_TOLERANCE:
-                if self.movement_state != 'down':
+                if self.movement_state != 'down' and not self.movement_command_sent:
                     self.controller.down()
-                    self.movement_state = 'down'
+                    self.movement_command_sent = True  # Prevent duplicate sends during verification
                     self.get_logger().info(
                         f"[Pushrod Height] ⬇️ DOWN current={self.current_height:.2f}mm target={self.target_height:.2f}mm err={error:.2f}mm"
                     )
@@ -480,41 +484,40 @@ class PushrodNode(Node):
             lower = self.target_force - self.force_threshold
             upper = self.target_force + self.force_threshold
             
-            # In target band - STOP
+            # In target band - STOP with deferred task completion
             if lower <= current_force <= upper:
-                if self.movement_state != 'stop':
-                    self.controller.stop()
-                    self.movement_state = 'stop'
-                    # Mark force control task as completed
-                    self._complete_task('force_reached')
+                if self.movement_state != 'stop' and not self.movement_command_sent:
+                    self._issue_stop(reason='force_reached', disable_control=True,
+                                   complete_task_on_stop='force_reached')
+                    self.movement_command_sent = True  # Prevent duplicate stop during verification
                     self.get_logger().info(
                         f"[Pushrod Force] ✅ IN BAND force={current_force:.2f}N target={self.target_force:.2f}N ±{self.force_threshold:.2f}N -> STOP"
                     )
                 return
             
-            # Below target - need to increase force
+            # Below target - need to increase force with duplicate prevention
             if current_force < lower:
                 desired = 'up' if self.increase_on_up else 'down'
-                if self.movement_state != desired:
+                if self.movement_state != desired and not self.movement_command_sent:
                     if desired == 'up':
                         self.controller.up()
                     else:
                         self.controller.down()
-                    self.movement_state = desired
+                    self.movement_command_sent = True  # Prevent duplicate sends
                     self.get_logger().info(
                         f"[Pushrod Force] ⬆️ INCREASE force={current_force:.2f}N < {lower:.2f}N -> {desired.upper()}"
                     )
                 return
             
-            # Above target - need to decrease force
+            # Above target - need to decrease force with duplicate prevention
             if current_force > upper:
                 desired = 'down' if self.increase_on_up else 'up'
-                if self.movement_state != desired:
+                if self.movement_state != desired and not self.movement_command_sent:
                     if desired == 'up':
                         self.controller.up()
                     else:
                         self.controller.down()
-                    self.movement_state = desired
+                    self.movement_command_sent = True  # Prevent duplicate sends
                     self.get_logger().info(
                         f"[Pushrod Force] ⬇️ DECREASE force={current_force:.2f}N > {upper:.2f}N -> {desired.upper()}"
                     )
@@ -629,6 +632,79 @@ class PushrodNode(Node):
             if (time.time() - self.task_end_time) >= 5.0:
                 return 'idle'
         return self.task_state
+
+    # ═══════════════════════════════════════════════════════════════
+    # Flash Verification Callback (synchronized with hardware)
+    # ═══════════════════════════════════════════════════════════════
+    def _issue_stop(self, reason='unknown', disable_control=True, complete_task_on_stop=None, seq_id=None):
+        """Issue STOP command with optional deferred task completion.
+        
+        Args:
+            reason: Why stop was issued (for logging)
+            disable_control: Whether to disable control_enabled flag
+            complete_task_on_stop: If set, schedules task completion for STOP OFF callback
+            seq_id: Sequence ID for Modbus command
+        """
+        try:
+            if seq_id is None:
+                import uuid
+                seq_id = abs(hash(str(uuid.uuid4())[:8])) % 65536
+            
+            # Schedule task completion to happen in STOP OFF callback
+            if complete_task_on_stop:
+                self.pending_task_completion = {'reason': complete_task_on_stop}
+            
+            # Send hardware STOP command (movement_state will be updated in callback)
+            self.controller.stop(seq_id=seq_id)
+            
+        except Exception as e:
+            self.get_logger().error(f"[Control] Stop command error: {e}")
+            self.pending_task_completion = None
+            return
+            
+        if disable_control:
+            self.control_enabled = False
+        
+        # NOTE: movement_state will be updated to 'stop' in _on_flash_complete callback
+        # after relay OFF verification completes. This ensures synchronization with task completion.
+        # Do NOT update movement_state here - let the callback handle it.
+        
+        self.get_logger().info(
+            f"[Control] 🛑 STOP ({reason}) disable_control={disable_control} pending_completion={complete_task_on_stop}"
+        )
+    
+    def _on_flash_complete(self, relay, seq_id):
+        """Callback when relay flash (pulse) verification completes.
+        
+        CRITICAL: This is called AFTER relay OFF verification succeeds.
+        Updates movement_state and completes pending tasks synchronously with hardware.
+        
+        Args:
+            relay: Relay number (3=STOP, 5=UP, 4=DOWN)
+            seq_id: Sequence ID for logging
+        """
+        relay_name = {3: 'STOP', 4: 'DOWN', 5: 'UP'}.get(relay, f'Relay{relay}')
+        
+        if relay == 3:  # STOP relay OFF verified
+            self.movement_state = 'stop'
+            self.get_logger().info(f"[SEQ {seq_id}] Flash complete: {relay_name} -> movement_state='stop'")
+            
+            # Complete pending task if scheduled
+            if self.pending_task_completion:
+                reason = self.pending_task_completion['reason']
+                self._complete_task(reason)
+                self.pending_task_completion = None
+                self.get_logger().info(f"[SEQ {seq_id}] Completed pending task: {reason}")
+                
+        elif relay == 5:  # UP relay OFF verified
+            self.movement_state = 'up'
+            self.movement_command_sent = False  # Clear flag after verification
+            self.get_logger().info(f"[SEQ {seq_id}] Flash complete: {relay_name} -> movement_state='up', flag cleared")
+            
+        elif relay == 4:  # DOWN relay OFF verified
+            self.movement_state = 'down'
+            self.movement_command_sent = False  # Clear flag after verification
+            self.get_logger().info(f"[SEQ {seq_id}] Flash complete: {relay_name} -> movement_state='down', flag cleared")
 
     def destroy_node(self):
         self.get_logger().info("Stopping pushrod control node ...")
