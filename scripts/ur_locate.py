@@ -38,6 +38,9 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
+# Robot status imports
+from robot_status.client_utils import RobotStatusClient
+
 
 class URLocate(URCapture):
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002, 
@@ -78,6 +81,7 @@ class URLocate(URCapture):
         
         # ===================== Instances =====================
         self.positioning_client = None
+        self.robot_status_client = None
 
         # ===================== Initialize =====================
         # Set up directories and reference data paths
@@ -85,6 +89,7 @@ class URLocate(URCapture):
         # Load reference data automatically
         self._load_reference_data()      
         self._init_positioning_client()
+        self._init_robot_status_client()
 
     def _setup_directories(self):
         """
@@ -179,6 +184,18 @@ class URLocate(URCapture):
         except Exception as e:
             self.get_logger().error(f"Failed to initialize positioning client: {e}")
             self.positioning_client = None
+
+    def _init_robot_status_client(self):
+        """
+        Initialize the RobotStatusClient for data persistence
+        """
+        try:
+            self.robot_status_client = RobotStatusClient(self, timeout_sec=5.0)
+            self.get_logger().info("RobotStatusClient initialized successfully")
+        except Exception as e:
+            self.get_logger().warning(f"Failed to initialize RobotStatusClient: {e}")
+            self.get_logger().warning("Continuing without robot status functionality")
+            self.robot_status_client = None
 
     # =================================== functions for 3d positioning ===================================
     def auto_collect_data(self, save_dir=None, robot=None, session_id=None):
@@ -662,6 +679,16 @@ class URLocate(URCapture):
             
             self.get_logger().info(f"✓ Results saved to: {positioning_result_file_path}")
             
+            # Save points_3d to robot_status
+            if self.robot_status_client:
+                try:
+                    if self.robot_status_client.set_status(self.operation_name, 'points_3d', result['result']['points_3d']):
+                        self.get_logger().info(f"✓ points_3d saved to robot_status (namespace: {self.operation_name})")
+                    else:
+                        self.get_logger().warning("Failed to save points_3d to robot_status")
+                except Exception as e:
+                    self.get_logger().warning(f"Error saving points_3d to robot_status: {e}")
+            
             # Step 7: Validate positioning results
             self.get_logger().info("Step 7: Validating positioning results...")
             
@@ -1144,6 +1171,29 @@ class URLocate(URCapture):
             
             self.get_logger().info(f"💾 Wobj coordinate system saved to: {coord_system_path}")
             self.get_logger().info(f"🎯 Wobj coordinate system established successfully!")
+            
+            # Save wobj coordinate system to robot_status
+            if self.robot_status_client:
+                try:
+                    # Save origin
+                    if self.robot_status_client.set_status(self.operation_name, 'wobj_origin', [float(origin[0]), float(origin[1]), float(origin[2])]):
+                        self.get_logger().info(f"✓ wobj_origin saved to robot_status")
+                    
+                    # Save x_axis
+                    if self.robot_status_client.set_status(self.operation_name, 'wobj_x', [float(x_vec[0]), float(x_vec[1]), float(x_vec[2])]):
+                        self.get_logger().info(f"✓ wobj_x saved to robot_status")
+                    
+                    # Save y_axis
+                    if self.robot_status_client.set_status(self.operation_name, 'wobj_y', [float(y_vec[0]), float(y_vec[1]), float(y_vec[2])]):
+                        self.get_logger().info(f"✓ wobj_y saved to robot_status")
+                    
+                    # Save z_axis
+                    if self.robot_status_client.set_status(self.operation_name, 'wobj_z', [float(z_vec[0]), float(z_vec[1]), float(z_vec[2])]):
+                        self.get_logger().info(f"✓ wobj_z saved to robot_status")
+                    
+                    self.get_logger().info(f"✓ Wobj coordinate system saved to robot_status (namespace: {self.operation_name})")
+                except Exception as e:
+                    self.get_logger().warning(f"Error saving wobj coordinate system to robot_status: {e}")
             
             # Validate wobj frame building results
             self.get_logger().info(">>> Validating wobj frame building results...")
