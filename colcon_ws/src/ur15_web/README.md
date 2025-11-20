@@ -135,7 +135,7 @@ Available Arguments:
 ros2 launch ur15_web ur15_beijing_bringup.py
 
 # Launch with custom robot IP
-ros2 launch ur15_web ur15_beijing_bringup.py ur15_ip:=192.168.1.20
+ros2 launch ur15_web ur15_beijing_bringup.py ur15_ip:=192.168.1.15
 
 # Launch with RViz visualization
 ros2 launch ur15_web ur15_beijing_bringup.py launch_rviz:=true
@@ -150,172 +150,10 @@ ros2 launch ur15_web ur15_control_launch.py ur15_ip:=192.168.1.15
 # Terminal 2: Launch camera (wait for robot to initialize)
 ros2 launch camera_node ur15_cam_launch.py \
   camera_name:=UR15Camera \
+  ros_topic_name:=/mycam/image_raw \
   server_port:=8019
 
 # Terminal 3: Launch web interface
-ros2 launch ur15_web ur15_web_launch.py
+ros2 launch ur15_web ur15_web_launch.py \
+  camera_topic:=/mycam/image_raw
 ```
-
-## Web Interface
-
-After launching, access the web interface at:
-
-```
-http://localhost:8030
-```
-
-Or from another machine:
-
-```
-http://<robot_ip>:8030
-```
-
-Replace `<robot_ip>` with the IP address of the machine running the web node.
-
-## Camera Stream
-
-The camera HTTP stream is available at:
-
-```
-http://localhost:8019
-```
-
-Or:
-
-```
-http://<robot_ip>:8019
-```
-
-## ROS Topics
-
-### Published Topics
-- `/ur15_camera/image_raw` - Camera image stream (sensor_msgs/Image)
-
-### Subscribed Topics
-- Depends on robot driver configuration
-
-## Directory Structure
-
-```
-ur15_web/
-├── launch/
-│   ├── ur15_beijing_bringup.py           # Complete system bringup
-│   ├── ur15_control_launch.py            # Robot control only
-│   └── ur15_web_launch.py                # Web interface only
-├── ur15_web/
-│   └── ur15_web_node.py                  # Main web node
-└── README.md
-
-camera_node/
-├── launch/
-│   └── ur15_cam_launch.py                # Camera launch (used by ur15_web)
-└── ...
-```
-
-## Troubleshooting
-
-### Camera not connecting
-
-Check the RTSP URL and camera IP:
-
-```bash
-# Test RTSP stream
-ffplay rtsp://admin:123456@192.168.1.101/stream0
-```
-
-### Robot not responding
-
-Verify robot IP and network connection:
-
-```bash
-ping 192.168.1.15
-```
-
-Check that the UR15 is powered on and in remote control mode.
-
-### Web interface not accessible
-
-Check if the web server is running:
-
-```bash
-ros2 node list | grep ur15_web_node
-```
-
-Verify port 8030 is not in use:
-
-```bash
-lsof -i:8030
-```
-
-### Camera or web node fails to start
-
-Make sure to wait for previous components to initialize:
-- Robot driver needs ~5 seconds to connect
-- Camera needs ~3 seconds to establish RTSP stream
-
-Use the complete bringup launch file for proper timing:
-
-```bash
-ros2 launch ur15_web ur15_beijing_bringup.py
-```
-
-## Configuration
-
-### Dataset Directory
-
-By default, datasets are stored in `../dataset` relative to the workspace.
-
-To change:
-
-```bash
-ros2 launch ur15_web ur15_beijing_bringup.py \
-  dataset_dir:=/path/to/your/dataset
-```
-
-### Calibration Data
-
-Calibration data is stored in `../temp/ur15_cam_calibration_data` by default.
-
-To change:
-
-```bash
-ros2 launch ur15_web ur15_beijing_bringup.py \
-  calib_data_dir:=/path/to/calibration/data \
-  chessboard_config:=/path/to/chessboard_config.json
-```
-
-## Network Configuration
-
-Default IP addresses and ports:
-
-| Component | IP/Host | Port |
-|-----------|---------|------|
-| UR15 Robot | 192.168.1.15 | 30002 |
-| Camera | 192.168.1.101 | RTSP |
-| Camera Stream | localhost | 8019 |
-| Web Interface | localhost | 8030 |
-
-Modify these in the launch file parameters as needed.
-
-## Dependencies
-
-```bash
-# Install UR robot driver
-sudo apt install ros-humble-ur-robot-driver
-
-# Camera node (if not already installed)
-# Build from source in your workspace
-```
-
-## Support
-
-For issues or questions about this package, check:
-1. Robot network connectivity
-2. Camera RTSP stream accessibility
-3. ROS2 node status: `ros2 node list`
-4. ROS2 topic list: `ros2 topic list`
-5. Node logs in `~/.ros/log/`
-
-## License
-
-See main repository license.
