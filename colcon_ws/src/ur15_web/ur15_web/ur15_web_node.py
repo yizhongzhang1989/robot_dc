@@ -481,6 +481,11 @@ class UR15WebNode(Node):
     def _run_flask_server(self):
         """Run Flask server with proper error handling."""
         try:
+            # Disable Flask access logs
+            import logging
+            log = logging.getLogger('werkzeug')
+            log.setLevel(logging.ERROR)
+            
             self.app.run(
                 host='0.0.0.0', 
                 port=self.web_port, 

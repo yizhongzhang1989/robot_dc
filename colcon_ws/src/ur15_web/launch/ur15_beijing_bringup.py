@@ -3,6 +3,7 @@
 UR15 Beijing Bringup Launch File
 
 This launch file starts the complete UR15 system sequentially:
+0. Robot Status service - starts immediately (first)
 1. UR15 robot driver (ur_control) - starts immediately
 2. UR15 camera node - waits 5 seconds after robot driver
 3. UR15 web node - waits 8 seconds total (5s for robot + 3s for camera)
@@ -71,6 +72,17 @@ def generate_launch_description():
     chessboard_config = LaunchConfiguration('chessboard_config')
     launch_rviz = LaunchConfiguration('launch_rviz')
     
+    # 0. Robot Status launch (first)
+    robot_status_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('robot_status'),
+                'launch',
+                'robot_status_launch.py'
+            ])
+        ])
+    )
+    
     # 1. UR15 robot control launch
     ur_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -115,6 +127,7 @@ def generate_launch_description():
         launch_arguments={
             'ur15_ip': ur15_ip,
             'camera_topic': camera_topic,
+            'web_port': '8030',
             'dataset_dir': dataset_dir,
             'calib_data_dir': calib_data_dir,
             'chessboard_config': chessboard_config
@@ -143,7 +156,8 @@ def generate_launch_description():
         chessboard_config_arg,
         launch_rviz_arg,
         
-        # Sequential launch: control -> camera -> web
+        # Sequential launch: robot_status -> control -> camera -> web
+        robot_status_launch,        # Start first (immediately)
         ur_control_launch,          # Start immediately
         delayed_camera_launch,      # Start after 5 seconds
         delayed_web_launch          # Start after 8 seconds
