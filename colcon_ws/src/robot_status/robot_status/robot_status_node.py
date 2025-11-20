@@ -140,15 +140,15 @@ class RobotStatusNode(Node):
             request.ns: Empty = list all, otherwise filter by namespace
         """
         try:
-            with self.lock:
-                # Get all parameters
-                all_params = self.list_parameters([], depth=10).names
-            
-            # Build status tree
+            # Build status tree by iterating through _parameters
             status_tree = {}
             namespaces = set()
             
-            for param_name in all_params:
+            with self.lock:
+                # Get all parameter names from the node's internal parameter storage
+                param_names = list(self._parameters.keys())
+            
+            for param_name in param_names:
                 # Skip non-hierarchical parameters
                 if '.' not in param_name:
                     continue
@@ -182,7 +182,7 @@ class RobotStatusNode(Node):
             response.status_dict = json.dumps(status_tree, indent=2)
             response.message = f"Found {len(namespaces)} namespace(s)"
             
-            self.get_logger().debug(f"List: {len(namespaces)} namespaces, {len(all_params)} total params")
+            self.get_logger().debug(f"List: {len(namespaces)} namespaces, {len(param_names)} total params")
             
         except Exception as e:
             response.success = False
