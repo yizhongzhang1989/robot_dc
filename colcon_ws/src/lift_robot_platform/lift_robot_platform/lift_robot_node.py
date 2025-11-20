@@ -401,6 +401,16 @@ class LiftRobotNode(Node):
         self.target_force = None           # target threshold (N)
         self.force_control_direction = None  # 'up'|'down'
         self.force_control_active = False  # Enable/disable FORCE control (PLATFORM ONLY)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Height-Force Hybrid Control State (NEW - PLATFORM ONLY)
+        # ═══════════════════════════════════════════════════════════════
+        # Combines height and force control - stops when EITHER condition is met
+        self.hybrid_control_active = False  # Enable/disable HYBRID control
+        self.hybrid_target_height = None    # Target height (mm)
+        self.hybrid_target_force = None     # Target force (N)
+        self.hybrid_direction = None        # 'up' | 'down' - determined at command start
+        self.hybrid_last_stop_direction = None  # 'up' | 'down' - for hybrid overshoot detection (independent from goto_height)
 
         # Subscribe force sensors
         try:
@@ -448,7 +458,7 @@ class LiftRobotNode(Node):
                 
             elif command == 'up':
                 # If interrupting a running closed-loop task, complete it first
-                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down']:
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down', 'height_force_hybrid']:
                     self._complete_task('manual_stop')
                     self.get_logger().info(f"[SEQ {seq_id_str}] Manual up - interrupted {self.task_type}")
                 
@@ -478,7 +488,7 @@ class LiftRobotNode(Node):
                 
             elif command == 'down':
                 # If interrupting a running closed-loop task, complete it first
-                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down']:
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down', 'height_force_hybrid']:
                     self._complete_task('manual_stop')
                     self.get_logger().info(f"[SEQ {seq_id_str}] Manual down - interrupted {self.task_type}")
                 
@@ -507,7 +517,7 @@ class LiftRobotNode(Node):
                 
             elif command == 'timed_up':
                 # If interrupting a running closed-loop task, complete it first
-                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down']:
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down', 'height_force_hybrid']:
                     self._complete_task('manual_stop')
                     self.get_logger().info(f"[SEQ {seq_id_str}] Timed up - interrupted {self.task_type}")
                 
@@ -527,7 +537,7 @@ class LiftRobotNode(Node):
                 
             elif command == 'timed_down':
                 # If interrupting a running closed-loop task, complete it first
-                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down']:
+                if self.task_state == 'running' and self.task_type in ['goto_height', 'force_up', 'force_down', 'height_force_hybrid']:
                     self._complete_task('manual_stop')
                     self.get_logger().info(f"[SEQ {seq_id_str}] Timed down - interrupted {self.task_type}")
                 
@@ -680,6 +690,82 @@ class LiftRobotNode(Node):
                         self.get_logger().info(f"[SEQ {seq_id_str}] Force-DOWN start target_force={self.target_force:.2f} N")
                     except Exception:
                         self.get_logger().warning(f"[SEQ {seq_id_str}] Invalid target_force for force_down: {tf}")
+            
+            elif command == 'height_force_hybrid':
+                # NEW: Height-Force Hybrid Control - stops when EITHER height OR force target is reached
+                if self.system_busy and self.active_control_owner != 'platform':
+                    self.get_logger().warning(
+                        f"[SEQ {seq_id_str}] height_force_hybrid REJECTED - {self.active_control_owner} is busy (task={self.task_type})"
+                    )
+                    return
+                
+                target_height = command_data.get('target_height')
+                target_force = command_data.get('target_force')
+                
+                if target_height is None or target_force is None:
+                    self.get_logger().warning(
+                        f"[SEQ {seq_id_str}] height_force_hybrid requires both target_height and target_force fields"
+                    )
+                    return
+                
+                try:
+                    target_height = float(target_height)
+                    target_force = float(target_force)
+                    current_error = abs(target_height - self.current_height)
+                    
+                    # Initialize force reading if not available
+                    if self.current_force_combined is None:
+                        if self.current_force_right is not None and self.current_force_left is not None:
+                            self.current_force_combined = self.current_force_right + self.current_force_left
+                        elif self.current_force_right is not None:
+                            self.current_force_combined = self.current_force_right
+                        elif self.current_force_left is not None:
+                            self.current_force_combined = self.current_force_left
+                        else:
+                            self.current_force_combined = 0.0  # Default to 0 if no reading yet
+                    
+                    # Check if already at target position (similar to goto_height)
+                    if current_error <= POSITION_TOLERANCE:
+                        self.get_logger().info(
+                            f"[SEQ {seq_id_str}] Already at target height={target_height:.2f}mm "
+                            f"(current={self.current_height:.2f}mm, error={current_error:.3f}mm) - completing immediately"
+                        )
+                        self._start_task('height_force_hybrid', owner='platform')
+                        self._complete_task('target_reached')
+                    else:
+                        # Disable any existing control modes
+                        if self.control_enabled:
+                            self.control_enabled = False
+                            self.get_logger().info(f"[SEQ {seq_id_str}] Disabled height control for hybrid mode")
+                        if self.force_control_active:
+                            self.force_control_active = False
+                            self.get_logger().info(f"[SEQ {seq_id_str}] Disabled force control for hybrid mode")
+                        
+                        # CRITICAL: Determine movement direction based on height error at command start
+                        height_error = target_height - self.current_height
+                        if height_error > 0:
+                            self.hybrid_direction = 'up'
+                        else:
+                            self.hybrid_direction = 'down'
+                        
+                        # Initialize hybrid control state
+                        self.hybrid_target_height = target_height
+                        self.hybrid_target_force = target_force
+                        self.hybrid_control_active = True
+                        self.control_mode = 'manual'  # Use manual mode for control loop
+                        self.movement_state = 'stop'
+                        
+                        # Start hybrid task
+                        self._start_task('height_force_hybrid', owner='platform')
+                        self.get_logger().info(
+                            f"[SEQ {seq_id_str}] Hybrid control start: target_height={target_height:.2f}mm, "
+                            f"target_force={target_force:.2f}N, direction={self.hybrid_direction}, current_height={self.current_height:.2f}mm, "
+                            f"current_force={self.current_force_combined:.2f}N"
+                        )
+                except Exception as e:
+                    self.get_logger().warning(
+                        f"[SEQ {seq_id_str}] Invalid parameters for height_force_hybrid: {e}"
+                    )
             
             elif command == 'reset':
                 # ═══════════════════════════════════════════════════════
@@ -850,9 +936,10 @@ class LiftRobotNode(Node):
         """
         # ═══════════════════════════════════════════════════════════════
         # PRIORITY 0: Check reset flag (exit immediately if reset in progress)
+        # Also skip if already in emergency_stop state to prevent repeated triggers
         # ═══════════════════════════════════════════════════════════════
         with self.control_lock:
-            if self.reset_in_progress:
+            if self.reset_in_progress or self.task_state == 'emergency_stop':
                 return  # Exit immediately, do not execute any control logic
         
         # ═══════════════════════════════════════════════════════════════
@@ -1020,6 +1107,220 @@ class LiftRobotNode(Node):
                     # movement_state will be updated in _on_flash_complete callback
             except Exception as e:
                 self.get_logger().error(f"Force control pulse error: {e}")
+            return
+
+        # ─────────────────────────────────────────────────────────────
+        # Height-Force Hybrid control branch (NEW)
+        # Stops when EITHER height OR force target is reached
+        # Architecture matches goto_height + force_control for safety consistency
+        # ─────────────────────────────────────────────────────────────
+        if self.hybrid_control_active and self.hybrid_target_height is not None and self.hybrid_target_force is not None:
+            # Update combined force
+            if self.current_force_right is not None and self.current_force_left is not None:
+                self.current_force_combined = self.current_force_right + self.current_force_left
+            elif self.current_force_right is not None:
+                self.current_force_combined = self.current_force_right
+            elif self.current_force_left is not None:
+                self.current_force_combined = self.current_force_left
+            else:
+                self.current_force_combined = None
+
+            # Calculate height error
+            height_error = self.hybrid_target_height - self.current_height
+            abs_height_error = abs(height_error)
+            
+            # 时间戳用于周期性日志
+            now = self.get_clock().now()
+            
+            # ═══════════════════════════════════════════════════════════════
+            # HYBRID CONTROL SAFETY: Check for excessive overshoot (height dimension)
+            # Same logic as goto_height to ensure consistent safety behavior
+            # ═══════════════════════════════════════════════════════════════
+            height_overshoot_threshold = 10.0  # mm
+            
+            # Only check overshoot in the direction we're moving/moved
+            if self.hybrid_direction == 'up' or self.movement_state == 'up' or self.hybrid_last_stop_direction == 'up':
+                # Moving/moved upward: only check upward overshoot
+                if self.current_height > self.hybrid_target_height + height_overshoot_threshold:
+                    self.get_logger().error(
+                        f"🚨 HYBRID CONTROL EMERGENCY: Height overshoot detected! "
+                        f"height={self.current_height:.2f}mm > target+threshold={self.hybrid_target_height + height_overshoot_threshold:.2f}mm "
+                        f"(overshoot={self.current_height - self.hybrid_target_height:.2f}mm)"
+                    )
+                    # Trigger emergency reset (6-step process)
+                    self._trigger_emergency_reset('hybrid_height_overshoot')
+                    return
+            
+            if self.hybrid_direction == 'down' or self.movement_state == 'down' or self.hybrid_last_stop_direction == 'down':
+                # Moving/moved downward: only check downward undershoot
+                if self.current_height < self.hybrid_target_height - height_overshoot_threshold:
+                    self.get_logger().error(
+                        f"🚨 HYBRID CONTROL EMERGENCY: Height undershoot detected! "
+                        f"height={self.current_height:.2f}mm < target-threshold={self.hybrid_target_height - height_overshoot_threshold:.2f}mm "
+                        f"(undershoot={self.hybrid_target_height - self.current_height:.2f}mm)"
+                    )
+                    # Trigger emergency reset (6-step process)
+                    self._trigger_emergency_reset('hybrid_height_undershoot')
+                    return
+            
+            # ═══════════════════════════════════════════════════════════════
+            # HYBRID CONTROL SAFETY: Check for excessive force overshoot
+            # Same logic as force_control to ensure consistent safety behavior
+            # ═══════════════════════════════════════════════════════════════
+            force_overshoot_threshold = 150.0  # N
+            
+            if self.current_force_combined is not None:
+                if self.hybrid_direction == 'up':
+                    # Force up: check if exceeded target by more than threshold
+                    if self.current_force_combined > self.hybrid_target_force + force_overshoot_threshold:
+                        self.get_logger().error(
+                            f"🚨 HYBRID CONTROL EMERGENCY: Force overshoot detected! "
+                            f"force={self.current_force_combined:.2f}N > target+threshold={self.hybrid_target_force + force_overshoot_threshold:.2f}N "
+                            f"(overshoot={self.current_force_combined - self.hybrid_target_force:.2f}N)"
+                        )
+                        # Trigger emergency reset (6-step process)
+                        self._trigger_emergency_reset('hybrid_force_overshoot')
+                        return
+                        
+                elif self.hybrid_direction == 'down':
+                    # Force down: check if exceeded target by more than threshold (negative direction)
+                    if self.current_force_combined < self.hybrid_target_force - force_overshoot_threshold:
+                        self.get_logger().error(
+                            f"🚨 HYBRID CONTROL EMERGENCY: Force undershoot detected! "
+                            f"force={self.current_force_combined:.2f}N < target-threshold={self.hybrid_target_force - force_overshoot_threshold:.2f}N "
+                            f"(undershoot={self.hybrid_target_force - self.current_force_combined:.2f}N)"
+                        )
+                        # Trigger emergency reset (6-step process)
+                        self._trigger_emergency_reset('hybrid_force_undershoot')
+                        return
+            
+            # Check if EITHER condition is met (OR logic)
+            height_reached = abs_height_error <= POSITION_TOLERANCE
+            force_reached = False
+            
+            if self.current_force_combined is not None and self.hybrid_direction is not None:
+                # CRITICAL: Force condition depends on movement direction
+                # - UP: stop when force >= target (压力增加)
+                # - DOWN: stop when force <= target (压力减小)
+                if self.hybrid_direction == 'up':
+                    force_reached = (self.current_force_combined >= self.hybrid_target_force)
+                elif self.hybrid_direction == 'down':
+                    force_reached = (self.current_force_combined <= self.hybrid_target_force)
+            
+            # Priority 1: Check if EITHER target reached (OR logic)
+            if height_reached or force_reached:
+                # CRITICAL: Disable hybrid control before stopping
+                self.hybrid_control_active = False
+                
+                # Determine completion reason
+                if height_reached and force_reached:
+                    reason = 'both_height_and_force_reached'
+                elif height_reached:
+                    reason = 'height_reached'
+                else:
+                    reason = 'force_reached'
+                
+                # Send stop and schedule task completion
+                self._issue_stop(
+                    direction=self.movement_state,
+                    reason=f'hybrid_control_{reason}',
+                    disable_control=False,  # Already disabled above
+                    complete_task_on_stop='height_or_force_reached'
+                )
+                self.get_logger().info(
+                    f"[HybridControl] ✅ Target reached: height={self.current_height:.2f}mm (target={self.hybrid_target_height:.2f}mm), "
+                    f"force={self.current_force_combined:.2f}N (target={self.hybrid_target_force:.2f}N), reason={reason}"
+                )
+                return
+            
+            # Priority 2: 预测提前停（基于当前方向和平均超调）
+            # Same logic as goto_height for adaptive early stop
+            if self.hybrid_direction == 'up' and self.avg_overshoot_up > OVERSHOOT_MIN_MARGIN:
+                threshold_height = self.hybrid_target_height - self.avg_overshoot_up
+                if self.current_height >= threshold_height:
+                    # Schedule task completion after stop relay OFF verification (early stop expects overshoot to reach target)
+                    self.hybrid_control_active = False
+                    self._issue_stop(
+                        direction='up',
+                        reason=f"hybrid_early_stop_up(th={threshold_height:.2f})",
+                        disable_control=False,
+                        complete_task_on_stop='height_or_force_reached'
+                    )
+                    self.get_logger().info(
+                        f"[HybridControl] ⚠️ Predictive early stop UP: height={self.current_height:.2f}mm >= threshold={threshold_height:.2f}mm (avg_overshoot={self.avg_overshoot_up:.2f}mm)"
+                    )
+                    return
+            elif self.hybrid_direction == 'down' and self.avg_overshoot_down > OVERSHOOT_MIN_MARGIN:
+                threshold_height = self.hybrid_target_height + self.avg_overshoot_down
+                if self.current_height <= threshold_height:
+                    # Schedule task completion after stop relay OFF verification (early stop expects overshoot to reach target)
+                    self.hybrid_control_active = False
+                    self._issue_stop(
+                        direction='down',
+                        reason=f"hybrid_early_stop_down(th={threshold_height:.2f})",
+                        disable_control=False,
+                        complete_task_on_stop='height_or_force_reached'
+                    )
+                    self.get_logger().info(
+                        f"[HybridControl] ⚠️ Predictive early stop DOWN: height={self.current_height:.2f}mm <= threshold={threshold_height:.2f}mm (avg_overshoot={self.avg_overshoot_down:.2f}mm)"
+                    )
+                    return
+            
+            # Priority 2.5: Motion Stall Detection (Mechanical Failure Monitoring)
+            # Same logic as goto_height for mechanical failure detection
+            # Extended to 2.0s to avoid false positives during slow/uneven movement.
+            if (self.movement_state in ['up','down'] and
+                self.stall_check_start_time is not None):
+                elapsed = time.time() - self.stall_check_start_time
+                if elapsed >= self.stall_check_duration:
+                    position_change = abs(self.current_height - self.stall_check_start_position)
+                    if position_change <= self.position_change_tolerance:
+                        # Mechanical stall detected - trigger emergency rather than retry
+                        self.get_logger().error(
+                            f"🚨 HYBRID CONTROL STALL DETECTED: No movement after {elapsed:.2f}s "
+                            f"(Δ={position_change:.3f}mm ≤ {self.position_change_tolerance}mm, direction={self.movement_state}) - "
+                            f"possible hardware failure (stuck gears/motor seizure)"
+                        )
+                        # Trigger emergency reset (6-step process)
+                        self._trigger_emergency_reset('hybrid_mechanical_stall')
+                        return
+            
+            # Priority 3: Send movement command based on height error direction
+            try:
+                if height_error > POSITION_TOLERANCE:
+                    # Need to move UP
+                    if self.movement_state != 'up' and not self.movement_command_sent:
+                        self.controller.up()
+                        self.movement_command_sent = True
+                        self.get_logger().info(
+                            f"[HybridControl] ⬆️ Sending UP command: height={self.current_height:.2f}mm (target={self.hybrid_target_height:.2f}mm), "
+                            f"force={self.current_force_combined:.2f}N (target={self.hybrid_target_force:.2f}N)"
+                        )
+                    else:
+                        # Already moving up - periodic status log
+                        if (time.time() - self.task_start_time) % 2.0 < CONTROL_RATE:  # Log every 2 seconds
+                            self.get_logger().debug(
+                                f"[HybridControl] ⬆️ Continuing UP: height={self.current_height:.2f}mm (target={self.hybrid_target_height:.2f}mm), "
+                                f"force={self.current_force_combined:.2f}N (target={self.hybrid_target_force:.2f}N)"
+                            )
+                elif height_error < -POSITION_TOLERANCE:
+                    # Need to move DOWN
+                    if self.movement_state != 'down' and not self.movement_command_sent:
+                        self.controller.down()
+                        self.movement_command_sent = True
+                        self.get_logger().info(
+                            f"[HybridControl] ⬇️ Sending DOWN command: height={self.current_height:.2f}mm (target={self.hybrid_target_height:.2f}mm), "
+                            f"force={self.current_force_combined:.2f}N (target={self.hybrid_target_force:.2f}N)"
+                        )
+                    else:
+                        # Already moving down - periodic status log
+                        if (time.time() - self.task_start_time) % 2.0 < CONTROL_RATE:  # Log every 2 seconds
+                            self.get_logger().debug(
+                                f"[HybridControl] ⬇️ Continuing DOWN: height={self.current_height:.2f}mm (target={self.hybrid_target_height:.2f}mm), "
+                                f"force={self.current_force_combined:.2f}N (target={self.hybrid_target_force:.2f}N)"
+                            )
+            except Exception as e:
+                self.get_logger().error(f"[HybridControl] Movement command error: {e}")
             return
 
         # ─────────────────────────────────────────────────────────────
@@ -1336,7 +1637,15 @@ class LiftRobotNode(Node):
         
         prev_state = self.movement_state
         self.height_at_stop = self.current_height
+        
+        # Update last_stop_direction for goto_height overshoot detection
         self.last_stop_direction = direction if direction in ('up','down') else prev_state
+        
+        # CRITICAL: Also update hybrid_last_stop_direction if hybrid control is/was active
+        # This ensures hybrid control has its own independent overshoot detection state
+        if self.hybrid_control_active or (complete_task_on_stop and 'hybrid' in reason.lower()):
+            self.hybrid_last_stop_direction = direction if direction in ('up','down') else prev_state
+        
         self.last_stop_time = self.get_clock().now()
         
         # Only measure overshoot for goto_height tasks (when target is set)
@@ -1655,6 +1964,7 @@ class LiftRobotNode(Node):
         with self.control_lock:
             self.control_enabled = False
             self.force_control_active = False
+            self.hybrid_control_active = False  # CRITICAL: Also disable hybrid control
             self.control_mode = 'manual'
             self.movement_state = 'stop'
             self.get_logger().warn(f"[EMERGENCY] Step 3: All control modes disabled")

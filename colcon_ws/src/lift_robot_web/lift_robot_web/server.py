@@ -244,7 +244,7 @@ class LiftRobotWeb(Node):
                 cmd = payload.get('command')
                 target = payload.get('target','platform')
                 duration = payload.get('duration')
-                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height','force_up','force_down','reset'}
+                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height','force_up','force_down','height_force_hybrid','reset'}
                 if cmd not in allowed:
                     return JSONResponse({'error':'invalid command'}, status_code=400)
                 
@@ -285,6 +285,21 @@ class LiftRobotWeb(Node):
                             return JSONResponse({'error':'target_force must be > 0'}, status_code=400)
                     except Exception:
                         return JSONResponse({'error':'invalid target_force'}, status_code=400)
+                if cmd == 'height_force_hybrid':
+                    # NEW: Height-Force Hybrid control - platform only
+                    if target != 'platform':
+                        return JSONResponse({'error':'height_force_hybrid only valid for platform target'}, status_code=400)
+                    target_height = payload.get('target_height')
+                    target_force = payload.get('target_force')
+                    if target_height is None or target_force is None:
+                        return JSONResponse({'error':'height_force_hybrid requires both target_height and target_force fields'}, status_code=400)
+                    try:
+                        th = float(target_height)
+                        tf = float(target_force)
+                        if tf <= 0:
+                            return JSONResponse({'error':'target_force must be > 0'}, status_code=400)
+                    except Exception:
+                        return JSONResponse({'error':'invalid target_height or target_force'}, status_code=400)
                 # Auto inject 5s for timed_up if not provided
                 if cmd == 'timed_up' and (duration is None):
                     duration = 3.5
@@ -304,6 +319,9 @@ class LiftRobotWeb(Node):
                 if cmd == 'goto_height':
                     body['target_height'] = payload.get('target_height')
                 if cmd in ('force_up','force_down'):
+                    body['target_force'] = float(payload.get('target_force'))
+                if cmd == 'height_force_hybrid':
+                    body['target_height'] = float(payload.get('target_height'))
                     body['target_force'] = float(payload.get('target_force'))
                 if duration is not None:
                     body['duration'] = duration
