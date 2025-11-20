@@ -27,16 +27,6 @@ class URLocateGet(URLocateBase):
         # Call parent constructor
         super().__init__(ffpp_web_url=ffpp_web_url, robot_ip=robot_ip, robot_port=robot_port)
         
-        # Override movements for 'get' task
-        # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
-        self.movements = {
-            "movement1": [0, 0, 0.03, 0, 0, 0],      # movement0
-            "movement2": [0, 0, -0.03, 0, 0, 0],      # movement1
-            "movement3": [0.03, 0, 0, 0, 0, 0],     # movement2
-            "movement4": [-0.03, 0, 0, 0, 0, 0],      # movement3
-            "movement5": [-0.03, 0, 0.05, 0, 0, 0]      # movement4
-        }
-        
         # Override data directory path
         self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_get_data')
         

@@ -1946,3 +1946,341 @@ async function disableCornerDetect() {
         logToWeb(`Error disabling corner detection: ${error.message}`, 'error');
     }
 }
+
+// Task Panel Functions
+function locateRack() {
+    logToWeb('🗄️ Locate Rack button clicked', 'info');
+    
+    // Disable button during execution
+    const btn = document.getElementById('locateRackBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_rack', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        // Re-enable button after 2 seconds
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateUnlockKnob() {
+    logToWeb('🔓 Locate Unlock Knob button clicked', 'info');
+    
+    const btn = document.getElementById('locateUnlockKnobBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_unlock_knob', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeUnlockKnob() {
+    logToWeb('🔧 Execute Unlock Knob button clicked', 'info');
+    
+    const btn = document.getElementById('executeUnlockKnobBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_unlock_knob', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateOpenHandle() {
+    logToWeb('🕹️ Locate Open Handle button clicked', 'info');
+    
+    const btn = document.getElementById('locateOpenHandleBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_open_handle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeOpenHandle() {
+    logToWeb('👜 Execute Open Handle button clicked', 'info');
+    
+    const btn = document.getElementById('executeOpenHandleBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_open_handle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateCloseLeft() {
+    logToWeb('⬅️ Locate Close Left button clicked', 'info');
+    
+    const btn = document.getElementById('locateCloseLeftBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_close_left', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeCloseLeft() {
+    logToWeb('◀️ Execute Close Left button clicked', 'info');
+    
+    const btn = document.getElementById('executeCloseLeftBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_close_left', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateCloseRight() {
+    logToWeb('➡️ Locate Close Right button clicked', 'info');
+    
+    const btn = document.getElementById('locateCloseRightBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_close_right', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeCloseRight() {
+    logToWeb('▶️ Execute Close Right button clicked', 'info');
+    
+    const btn = document.getElementById('executeCloseRightBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_close_right', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function emergencyStop() {
+    // Confirm emergency stop action
+    if (confirm('⚠️ WARNING: Are you sure you want to trigger EMERGENCY STOP?\n\nThis will immediately halt all robot operations!')) {
+        logToWeb('🚨 EMERGENCY STOP TRIGGERED!', 'error');
+        
+        // Send emergency stop command to robot via Dashboard Server
+        fetch('/emergency_stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                logToWeb('✅ Emergency stop executed successfully', 'success');
+                if (data.response) {
+                    logToWeb(`📡 Robot response: ${data.response}`, 'info');
+                }
+            } else {
+                logToWeb(`❌ Emergency stop failed: ${data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            logToWeb(`❌ Network error: ${error.message}`, 'error');
+        });
+    }
+}

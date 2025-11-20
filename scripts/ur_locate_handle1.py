@@ -33,16 +33,6 @@ class URLocateHandle1(URLocateBase):
         """
         # Call parent class constructor
         super().__init__(ffpp_web_url=ffpp_web_url, robot_ip=robot_ip, robot_port=robot_port)
-            
-        # Override movements with custom offsets
-        # Format: movement name -> [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]
-        self.movements = {
-            "movement1": [-0.01, 0, 0, 0, 0, 0],
-            "movement2": [0.01, 0, 0, 0, 0, 0],
-            "movement3": [-0.015, 0.015, 0, 0, 0, 0],
-            "movement4": [0, -0.01, 0, 0, 0, 0],
-            "movement5": [0, 0.01, 0, 0, 0, 0]
-        }
         
         # Override data directory
         self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_handle1_data')

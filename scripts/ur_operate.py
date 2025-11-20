@@ -5,6 +5,7 @@ import requests
 from ur15_robot_arm.ur15 import UR15Robot
 import time
 import socket
+from robot_status.client_utils import RobotStatusClient
 
 
 class UROperate:
@@ -17,14 +18,6 @@ class UROperate:
         
         # Port for RS485 connection of UR15
         self.rs485_port = rs485_port
-
-        # Define the path to camera parameters
-        self.camera_params_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "temp",
-            "ur15_cam_calibration_result",
-            "ur15_camera_parameters"
-        )
         
         # Data directory path (for storing collected data)
         self.data_dir = os.path.join(
@@ -47,6 +40,8 @@ class UROperate:
         self.robot = None
 
         self.rs485_socket = None
+        
+        self.robot_status_client = None
         
         # ========================= Other variables =========================
         # Initialize parameter storage
@@ -79,6 +74,9 @@ class UROperate:
         # Initialize RS485 socket connection
         self._init_rs485_socket()
         
+        # Initialize robot status client
+        self._initialize_robot_status_client()
+        
         # Automatically load all parameters
         self._load_camera_intrinsic()
         self._load_camera_extrinsic()
@@ -90,67 +88,63 @@ class UROperate:
     
     def _load_camera_intrinsic(self):
         """
-        Load camera intrinsic parameters from ur15_cam_calibration_result.json
+        Load camera intrinsic parameters from robot status service
         """
-        intrinsic_file = os.path.join(
-            self.camera_params_dir, 
-            "ur15_cam_calibration_result.json"
-        )
-        
         try:
-            with open(intrinsic_file, 'r') as f:
-                data = json.load(f)
+            status = self.robot_status_client.get_status()
             
-            if not data.get('success', False):
-                print(f"Failed to load intrinsic parameters: calibration was not successful")
+            if status is None:
+                print(f"Failed to get robot status")
                 return False
             
-            self.camera_matrix = np.array(data['camera_matrix'])
-            self.distortion_coefficients = np.array(data['distortion_coefficients'])
+            camera_params = status.get('camera_params', {})
+            intrinsic = camera_params.get('intrinsic', {})
             
-            print(f"Camera intrinsic parameters loaded successfully")
-            print(f"RMS Error: {data.get('rms_error', None)}")
+            if not intrinsic:
+                print(f"No camera intrinsic parameters found in robot status")
+                return False
+            
+            self.camera_matrix = np.array(intrinsic.get('camera_matrix', []))
+            self.distortion_coefficients = np.array(intrinsic.get('distortion_coefficients', []))
+            
+            if self.camera_matrix.size == 0 or self.distortion_coefficients.size == 0:
+                print(f"Invalid camera intrinsic parameters")
+                return False
+            
+            print(f"Camera intrinsic parameters loaded successfully from robot status")
             return True
             
-        except FileNotFoundError:
-            print(f"Intrinsic parameter file not found: {intrinsic_file}")
-            return False
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON file: {e}")
-            return False
         except Exception as e:
             print(f"Error loading intrinsic parameters: {e}")
             return False
     
     def _load_camera_extrinsic(self):
         """
-        Load camera extrinsic parameters from ur15_cam_eye_in_hand_result.json
+        Load camera extrinsic parameters from robot status service
         """
-        extrinsic_file = os.path.join(
-            self.camera_params_dir, 
-            "ur15_cam_eye_in_hand_result.json"
-        )
-        
         try:
-            with open(extrinsic_file, 'r') as f:
-                data = json.load(f)
+            status = self.robot_status_client.get_status()
             
-            if not data.get('success', False):
-                print(f"Failed to load extrinsic parameters: calibration was not successful")
+            if status is None:
+                print(f"Failed to get robot status")
                 return False
             
-            self.cam2end_matrix = np.array(data['cam2end_matrix'])
+            camera_params = status.get('camera_params', {})
+            extrinsic = camera_params.get('extrinsic', {})
             
-            print(f"Camera extrinsic parameters loaded successfully")
-            print(f"RMS Error: {data.get('rms_error', None)}")
+            if not extrinsic:
+                print(f"No camera extrinsic parameters found in robot status")
+                return False
+            
+            self.cam2end_matrix = np.array(extrinsic.get('cam2end_matrix', []))
+            
+            if self.cam2end_matrix.size == 0:
+                print(f"Invalid camera extrinsic parameters")
+                return False
+            
+            print(f"Camera extrinsic parameters loaded successfully from robot status")
             return True
             
-        except FileNotFoundError:
-            print(f"Extrinsic parameter file not found: {extrinsic_file}")
-            return False
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON file: {e}")
-            return False
         except Exception as e:
             print(f"Error loading extrinsic parameters: {e}")
             return False
@@ -183,6 +177,16 @@ class UROperate:
         except Exception as e:
             print(f'✗ Failed to initialize RS485 socket: {e}')
             self.rs485_socket = None
+    
+    def _initialize_robot_status_client(self):
+        """Initialize robot status client for getting camera parameters and other status"""
+        try:
+            print(f'Initializing robot status client...')
+            self.robot_status_client = RobotStatusClient()
+            print('✓ Robot status client initialized successfully')
+        except Exception as e:
+            print(f'✗ Failed to initialize robot status client: {e}')
+            self.robot_status_client = None
     
     def _load_estimated_kp_coordinates(self):
         """

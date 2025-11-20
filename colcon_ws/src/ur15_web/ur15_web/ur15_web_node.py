@@ -2434,6 +2434,543 @@ class UR15WebNode(Node):
                     'success': False,
                     'message': str(e)
                 })
+        
+        @self.app.route('/locate_rack', methods=['POST'])
+        def locate_rack():
+            """Execute locate rack script (ur_locate_base.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                # Get the scripts directory
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Could not find scripts directory'
+                    })
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_base.py')
+                
+                # Check if script exists
+                if not os.path.exists(script_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Script not found: {script_path}'
+                    })
+                
+                # Prepare command
+                cmd = ['python3', script_path]
+                
+                self.get_logger().info(f"Locate rack command: {' '.join(cmd)}")
+                
+                # Define a function to monitor the process
+                def monitor_locate_rack():
+                    """Monitor locate rack process and report completion status."""
+                    try:
+                        process = subprocess.Popen(
+                            cmd,
+                            cwd=os.path.dirname(script_path),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True
+                        )
+                        
+                        # Track this process for cleanup
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate rack script with PID: {process.pid}")
+                        
+                        # Wait for the process to complete
+                        return_code = process.wait()
+                        
+                        self.get_logger().info(f"Locate rack script finished with return code: {return_code}")
+                        
+                        # Push completion message to web log
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate rack completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate rack failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate rack monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate rack error: {str(e)}", 'error')
+                
+                # Start monitoring thread
+                monitor_thread = threading.Thread(target=monitor_locate_rack, daemon=True)
+                monitor_thread.start()
+                
+                self.get_logger().info(f"Started locate rack monitoring thread")
+                
+                # Push start message to web log
+                self.push_web_log("🗄️ Starting locate rack process...", 'info')
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Locate rack script started'
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate rack script: {e}")
+                self.push_web_log(f"❌ Failed to start locate rack: {str(e)}", 'error')
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        @self.app.route('/locate_unlock_knob', methods=['POST'])
+        def locate_unlock_knob():
+            """Execute locate unlock knob script (ur_locate_knob.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_knob.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Locate unlock knob command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate unlock knob script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Locate unlock knob script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate unlock knob completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate unlock knob failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate unlock knob monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate unlock knob error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🔓 Starting locate unlock knob process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Locate unlock knob script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate unlock knob script: {e}")
+                self.push_web_log(f"❌ Failed to start locate unlock knob: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/locate_open_handle', methods=['POST'])
+        def locate_open_handle():
+            """Execute locate open handle script (ur_locate_prepull.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_prepull.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Locate open handle command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate open handle script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Locate open handle script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate open handle completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate open handle failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate open handle monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate open handle error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🕹️ Starting locate open handle process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Locate open handle script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate open handle script: {e}")
+                self.push_web_log(f"❌ Failed to start locate open handle: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/locate_close_left', methods=['POST'])
+        def locate_close_left():
+            """Execute locate close left script (ur_locate_close_left.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_close_left.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Locate close left command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate close left script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Locate close left script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate close left completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate close left failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate close left monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate close left error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("⬅️ Starting locate close left process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Locate close left script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate close left script: {e}")
+                self.push_web_log(f"❌ Failed to start locate close left: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/locate_close_right', methods=['POST'])
+        def locate_close_right():
+            """Execute locate close right script (ur_locate_close_right.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_close_right.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Locate close right command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate close right script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Locate close right script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate close right completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate close right failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate close right monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate close right error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("➡️ Starting locate close right process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Locate close right script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate close right script: {e}")
+                self.push_web_log(f"❌ Failed to start locate close right: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_unlock_knob', methods=['POST'])
+        def execute_unlock_knob():
+            """Execute unlock knob script (ur_execute_knob.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_execute_knob.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Execute unlock knob command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute unlock knob script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute unlock knob script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute unlock knob completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute unlock knob failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute unlock knob monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute unlock knob error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🔧 Starting execute unlock knob process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute unlock knob script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute unlock knob script: {e}")
+                self.push_web_log(f"❌ Failed to start execute unlock knob: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_open_handle', methods=['POST'])
+        def execute_open_handle():
+            """Execute open handle script (ur_execute_prepull.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_execute_prepull.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Execute open handle command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute open handle script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute open handle script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute open handle completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute open handle failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute open handle monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute open handle error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("👜 Starting execute open handle process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute open handle script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute open handle script: {e}")
+                self.push_web_log(f"❌ Failed to start execute open handle: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_close_left', methods=['POST'])
+        def execute_close_left():
+            """Execute close left script (ur_execute_close_left.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_execute_close_left.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Execute close left command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute close left script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute close left script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute close left completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute close left failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute close left monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute close left error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("◀️ Starting execute close left process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute close left script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute close left script: {e}")
+                self.push_web_log(f"❌ Failed to start execute close left: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_close_right', methods=['POST'])
+        def execute_close_right():
+            """Execute close right script (ur_execute_close_right.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_execute_close_right.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Execute close right command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute close right script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute close right script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute close right completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute close right failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute close right monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute close right error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("▶️ Starting execute close right process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute close right script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute close right script: {e}")
+                self.push_web_log(f"❌ Failed to start execute close right: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/emergency_stop', methods=['POST'])
+        def emergency_stop():
+            """Execute emergency stop via UR Dashboard Server."""
+            from flask import jsonify
+            import socket
+            
+            try:
+                # Get robot IP from node parameters
+                robot_ip = self.ur15_ip if hasattr(self, 'ur15_ip') else '192.168.1.15'
+                dashboard_port = 29999
+                
+                self.get_logger().warn(f"🚨 EMERGENCY STOP triggered! Connecting to {robot_ip}:{dashboard_port}")
+                self.push_web_log(f"🚨 EMERGENCY STOP: Connecting to robot...", 'error')
+                
+                # Create socket connection to Dashboard Server
+                dash = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                dash.settimeout(5.0)  # 5 second timeout
+                
+                try:
+                    dash.connect((robot_ip, dashboard_port))
+                    self.get_logger().info("Connected to UR Dashboard Server")
+                    
+                    # Send stop command
+                    dash.send(b"stop\n")
+                    self.get_logger().warn("Emergency stop command sent")
+                    
+                    # Wait for response
+                    response = dash.recv(1024).decode('utf-8').strip()
+                    self.get_logger().info(f"Dashboard Server response: {response}")
+                    
+                    dash.close()
+                    
+                    self.push_web_log("🛑 EMERGENCY STOP executed successfully!", 'error')
+                    self.push_web_log(f"📡 Server response: {response}", 'info')
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': 'Emergency stop command sent successfully',
+                        'response': response
+                    })
+                    
+                except socket.timeout:
+                    dash.close()
+                    error_msg = "Connection to Dashboard Server timed out"
+                    self.get_logger().error(error_msg)
+                    self.push_web_log(f"❌ Emergency stop failed: {error_msg}", 'error')
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg
+                    })
+                    
+                except socket.error as e:
+                    dash.close()
+                    error_msg = f"Socket error: {str(e)}"
+                    self.get_logger().error(error_msg)
+                    self.push_web_log(f"❌ Emergency stop failed: {error_msg}", 'error')
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error in emergency stop: {e}")
+                self.push_web_log(f"❌ Emergency stop error: {str(e)}", 'error')
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
     
     def project_base_origin_to_image(self, frame):
         """Project base coordinate system origin to image and draw it."""

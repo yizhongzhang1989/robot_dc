@@ -32,15 +32,6 @@ class URLocateKnob2(URLocateBase):
         # Override ROS node name
         self.get_logger().info('URLocateKnob2 initialized')
         
-        # Override movement offsets (in base coordinate system, unit: meters)
-        self.movements = {
-            "movement1": [0.01, 0, 0.02, 0, 0, 0],
-            "movement2": [0, 0.01, 0, 0, 0, 0],
-            "movement3": [0, -0.01, 0, 0, 0, 0],
-            "movement4": [0, 0, 0.01, 0, 0, 0],
-            "movement5": [0, 0, -0.01, 0, 0, 0]
-        }
-        
         # Override data directory path (for storing collected data)
         self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_knob2_data')
         

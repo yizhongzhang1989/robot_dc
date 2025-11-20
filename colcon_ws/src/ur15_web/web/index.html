@@ -541,7 +541,7 @@
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
                         <!-- Enable Freedrive Mode Button -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <button id="freedriveModeBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-teal-500 hover:bg-teal-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleFreedrive()">
+                            <button id="freedriveModeBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleFreedrive()">
                                 <span>🎮</span>
                                 <span>Enable Freedrive Mode</span>
                             </button>
@@ -634,7 +634,7 @@
                         <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
                             <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">CalibrationData:</span>
                             <input type="text" id="calibrationDirPath" readonly value="{{ calibration_data_dir }}" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200 cursor-text" style="width: 100%;" title="Click to select and copy path" onclick="this.select()">
-                            <button onclick="changeCalibrationDir()" class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set calibration data directory">
+                            <button onclick="changeCalibrationDir()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set calibration data directory">
                                 📝 Set
                             </button>
                         </div>
@@ -643,7 +643,7 @@
                         <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
                             <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">ChessboardData:</span>
                             <input type="text" id="chessboardConfigPath" readonly value="{{ chessboard_config }}" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200 cursor-text" style="width: 100%;" title="Click to select and copy path" onclick="this.select()">
-                            <button onclick="openChessboardConfigModal()" class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set chessboard configuration file">
+                            <button onclick="openChessboardConfigModal()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set chessboard configuration file">
                                 📝 Set
                             </button>
                         </div>
@@ -659,13 +659,13 @@
                         <!-- Row 1: Take Picture and Delete Image -->
                         <div style="display: flex; gap: 0.5rem;">
                             <!-- Take Picture Button -->
-                            <button id="screenshotBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="takeScreenshot()">
+                            <button id="screenshotBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="takeScreenshot()">
                                 <span>📸</span>
                                 <span>Take Picture</span>
                             </button>
                             
                             <!-- Delete Image Button -->
-                            <button id="deleteImageBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="openDeleteImageModal()">
+                            <button id="deleteImageBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="openDeleteImageModal()">
                                 <span>🗑️</span>
                                 <span>Delete Image</span>
                             </button>
@@ -674,13 +674,13 @@
                         <!-- Row 2: Auto Capture and Calibrate Cam -->
                         <div style="display: flex; gap: 0.5rem;">
                             <!-- Auto Capture Calibration Data -->
-                            <button id="autoCollectBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="autoCollectData()">
+                            <button id="autoCollectBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="autoCollectData()">
                                 <span>🎥</span>
                                 <span>Auto Capture</span>
                             </button>
                             
                             <!-- Calibrate Cam Button -->
-                            <button id="calibrateCamBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="calibrateCam()">
+                            <button id="calibrateCamBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="calibrateCam()">
                                 <span>⚙️</span>
                                 <span>Calibrate Cam</span>
                             </button>
@@ -689,12 +689,12 @@
                         <!-- Row 3: Validate Result -->
                         <div style="display: flex; gap: 0.5rem;">
                             <!-- Validate Calibration Result -->
-                            <button id="validateCalibrationBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleValidation()">
+                            <button id="validateCalibrationBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleValidation()">
                                 <span>🎯</span>
                                 <span>Check Calibration</span>
                             </button>
                             <!-- Corner Detection -->
-                            <button id="cornerDetectBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleCornerDetect()">
+                            <button id="cornerDetectBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleCornerDetect()">
                                 <span>🔍</span>
                                 <span>Corner Detect</span>
                             </button>
@@ -703,10 +703,10 @@
                 </div>
             </div>
             
-            <!-- Path Panel -->
+            <!-- Dataset Panel -->
             <div class="panel-with-title">
                 <div class="panel-title">
-                    Operation Panel
+                    Dataset Panel
                 </div>
                 <div class="panel-content">
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
@@ -714,7 +714,7 @@
                         <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
                             <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">DatasetPath:</span>
                             <input type="text" id="datasetDirPath" readonly value="{{ data_dir }}" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200 cursor-text" style="width: 100%;" title="Click to select and copy path" onclick="this.select()">
-                            <button onclick="changeDataDir()" class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set dataset directory">
+                            <button onclick="changeDataDir()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set dataset directory">
                                 📝 Set
                             </button>
                         </div>
@@ -723,20 +723,86 @@
                         <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
                             <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">OperationName:</span>
                             <input type="text" id="operationName" readonly value="input operation name" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200 cursor-text" style="width: 100%;" title="Current operation name" onclick="this.select()">
-                            <button onclick="changeOperationName()" class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set operation name">
+                            <button onclick="changeOperationName()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set operation name">
                                 📝 Set
                             </button>
                         </div>
                         
                         <!-- Capture Button Row -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <button onclick="captureTaskData('crack')" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Save data to operation path">
+                            <button onclick="captureTaskData('crack')" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Save data to operation path">
                                 <span>📷</span>
                                 <span>Capture Only One</span>
                             </button>
-                            <button id="captureX3Btn" onclick="captureTaskDataX3()" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Capture 3 images at different positions (x, y offsets)">
+                            <button id="captureX3Btn" onclick="captureTaskDataX3()" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Capture 3 images at different positions (x, y offsets)">
                                 <span>📸</span>
                                 <span>Capture x3</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Operation Panel -->
+            <div class="panel-with-title">
+                <div class="panel-title">
+                    Operation Panel
+                </div>
+                <div class="panel-content">
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
+                        <!-- Row 1: locate rack -->
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button id="locateRackBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateRack()">
+                                <span>🚪</span>
+                                <span>Locate Rack</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Row 2: locate unlock_knob and execute unlock_knob -->
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button id="locateUnlockKnobBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateUnlockKnob()">
+                                <span>🔓</span>
+                                <span>Locate Unlock Knob</span>
+                            </button>
+                            <button id="executeUnlockKnobBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeUnlockKnob()">
+                                <span>🔧</span>
+                                <span>Execute Unlock Knob</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Row 3: locate open_handle and execute open_handle -->
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button id="locateOpenHandleBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateOpenHandle()">
+                                <span>🕹️</span>
+                                <span>Locate Open Handle</span>
+                            </button>
+                            <button id="executeOpenHandleBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeOpenHandle()">
+                                <span>👜</span>
+                                <span>Execute Open Handle</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Row 4: locate close_left and execute close_left -->
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button id="locateCloseLeftBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateCloseLeft()">
+                                <span>⬅️</span>
+                                <span>Locate Close Left</span>
+                            </button>
+                            <button id="executeCloseLeftBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeCloseLeft()">
+                                <span>◀️</span>
+                                <span>Execute Close Left</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Row 5: locate close_right and execute close_right -->
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button id="locateCloseRightBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateCloseRight()">
+                                <span>➡️</span>
+                                <span>Locate Close Right</span>
+                            </button>
+                            <button id="executeCloseRightBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeCloseRight()">
+                                <span>▶️</span>
+                                <span>Execute Close Right</span>
                             </button>
                         </div>
                     </div>
@@ -760,7 +826,7 @@
             <div class="bg-white rounded-lg shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-xl font-semibold text-gray-700">📋 Web Log</h3>
-                    <button onclick="clearWebLog()" class="bg-gray-500 hover:bg-gray-600 text-white font-medium py-1 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg text-sm flex items-center gap-2">
+                    <button onclick="clearWebLog()" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-1 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg text-sm flex items-center gap-2">
                         <span>🗑️</span>
                         <span>Clear</span>
                     </button>
