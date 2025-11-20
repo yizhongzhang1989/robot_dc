@@ -15,6 +15,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 import json
+import pickle
+import base64
 import threading
 import sys
 import os
@@ -134,15 +136,15 @@ class RobotStatusNode(Node):
                 for key, value in keys.items():
                     param_name = f"{namespace}.{key}"
                     try:
-                        # Convert value to string (ROS2 parameters store strings)
-                        if isinstance(value, (dict, list)):
-                            # Serialize complex types back to JSON string
-                            value_str = json.dumps(value)
+                        # Handle new format: {"pickle": "...", "json": {...}}
+                        if isinstance(value, dict) and "pickle" in value:
+                            pickle_str = value["pickle"]
                         else:
-                            # Keep simple types as strings
-                            value_str = str(value)
+                            # Backward compatibility: old format (direct pickle string)
+                            pickle_str = value
                         
-                        self.declare_parameter(param_name, value_str)
+                        # Use the pickle string directly
+                        self.declare_parameter(param_name, pickle_str)
                         count += 1
                     except Exception as e:
                         self.get_logger().warn(f"Failed to load {param_name}: {e}")
@@ -175,20 +177,45 @@ class RobotStatusNode(Node):
                 if namespace not in status_tree:
                     status_tree[namespace] = {}
                 
-                # Get parameter value
+                # Get parameter value (pickled base64 string)
                 try:
                     with self.lock:
-                        value = self.get_parameter(param_name).value
+                        value_str = self.get_parameter(param_name).value
                     
-                    # Try to parse as JSON if it's a JSON string
+                    # Create dict with pickle string
+                    value_dict = {"pickle": value_str}
+                    
+                    # Try to add JSON representation if possible
                     try:
-                        parsed_value = json.loads(value)
-                        status_tree[namespace][key] = parsed_value
-                    except (json.JSONDecodeError, TypeError):
-                        # Not JSON or already a native type, store as-is
-                        status_tree[namespace][key] = value
+                        # Unpickle to get the actual object
+                        pickled = base64.b64decode(value_str.encode('ascii'))
+                        obj = pickle.loads(pickled)
+                        
+                        # Try direct JSON serialization first
+                        try:
+                            json_str = json.dumps(obj)
+                            value_dict["json"] = json.loads(json_str)
+                        except (TypeError, ValueError):
+                            # Direct serialization failed, try tolist() method
+                            if hasattr(obj, 'tolist'):
+                                try:
+                                    list_obj = obj.tolist()
+                                    json_str = json.dumps(list_obj)
+                                    value_dict["json"] = json.loads(json_str)
+                                except (TypeError, ValueError, AttributeError):
+                                    # tolist() also failed, no JSON representation
+                                    pass
+                    except Exception:
+                        # Unpickling failed, just keep pickle
+                        pass
+                    
+                    status_tree[namespace][key] = value_dict
                 except Exception:
                     pass
+            
+            # Ensure the directory exists before writing
+            save_path = Path(self.auto_save_file_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Write to file
             with open(self.auto_save_file_path, 'w') as f:
@@ -210,12 +237,18 @@ class RobotStatusNode(Node):
         """
         param_name = f"{request.ns}.{request.key}"
         
-        # Validate JSON format
+        # Validate that the value can be decoded (pickle base64 or JSON)
         try:
-            json.loads(request.value)
-        except json.JSONDecodeError:
-            # Allow plain strings too
-            pass
+            # Try pickle format first
+            pickled = base64.b64decode(request.value.encode('ascii'))
+            pickle.loads(pickled)
+        except Exception:
+            # Try JSON format for backward compatibility
+            try:
+                json.loads(request.value)
+            except json.JSONDecodeError:
+                # Allow plain strings too
+                pass
         
         try:
             with self.lock:
@@ -302,10 +335,11 @@ class RobotStatusNode(Node):
                 if namespace not in status_tree:
                     status_tree[namespace] = {}
                 
-                # Get parameter value
+                # Get parameter value (already in base64-encoded pickle format)
                 try:
                     with self.lock:
                         value = self.get_parameter(param_name).value
+                    # Keep the base64-encoded pickle string for transmission
                     status_tree[namespace][key] = value
                 except Exception as e:
                     self.get_logger().warn(f"Error reading {param_name}: {e}")

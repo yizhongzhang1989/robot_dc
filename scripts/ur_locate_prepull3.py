@@ -34,16 +34,6 @@ class URLocatePrePull3(URLocateBase):
         # Override ROS node name
         self.get_logger().info('URLocatePrePull3 initialized')
         
-        # Override movement offsets (in base coordinate system, unit: meters)
-        # Format: {movement_name: [delta_x, delta_y, delta_z, delta_rx, delta_ry, delta_rz]}
-        self.movements = {
-            "movement1": [0, 0.015, 0.02, 0, 0, 0],
-            "movement2": [0, 0.01, 0, 0, 0, 0],
-            "movement3": [0, -0.01, 0, 0, 0, 0],
-            "movement4": [0, 0, 0.01, 0, 0, 0],
-            "movement5": [0, 0, -0.01, 0, 0, 0]
-        }
-        
         # Override data directory path (for storing collected data)
         self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_prepull3_data')
         
