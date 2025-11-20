@@ -77,6 +77,7 @@ class LiftRobotNode(Node):
         self.control_enabled = False        # Enable/disable closed-loop HEIGHT control (PLATFORM ONLY)
         self.control_mode = 'manual'        # 'manual' or 'auto' (height control)
         self.movement_state = 'stop'        # Current movement state: 'up', 'down', or 'stop'
+        self.movement_command_sent = False  # Flag to prevent duplicate commands during flash verification
         
         # ═══════════════════════════════════════════════════════════════
         # Load Overshoot Calibration from Config File (portable path resolution)
@@ -251,6 +252,9 @@ class LiftRobotNode(Node):
         self.last_goto_direction = None      # 'up' or 'down'
         self.last_goto_timestamp = None      # When the measurement completed
         
+        # Pending task completion (triggered by stop relay OFF verification)
+        self.pending_task_completion = None  # {'reason': str} or None
+        
         # ═══════════════════════════════════════════════════════════════
         # Global System Lock (Platform and Pushrod Mutual Exclusion)
         # ═══════════════════════════════════════════════════════════════
@@ -269,11 +273,13 @@ class LiftRobotNode(Node):
         self.completion_reason = None      # None | 'target_reached' | 'force_reached' | 'limit_exceeded' | 'manual_stop'
         
         # ═══════════════════════════════════════════════════════════════
-        # Motion Stall Detection (Hardware Failure Protection)
+        # Motion Stall Detection (Mechanical Failure Monitoring)
+        # Detects extreme mechanical failures (stuck gears, seized motors, etc.)
+        # Triggers emergency reset instead of retry (mechanical issues can't be fixed by resend)
         # ═══════════════════════════════════════════════════════════════
         self.stall_check_start_time = None  # Time when movement command was sent
         self.stall_check_start_position = None  # Position when movement command was sent
-        self.stall_check_duration = 0.5     # seconds - how long to wait before checking for stall
+        self.stall_check_duration = 2.0     # seconds - extended to avoid false positives during slow/uneven movement
         self.position_change_tolerance = 0.01  # mm - positions within this range considered identical
 
         # ═══════════════════════════════════════════════════════════════
@@ -345,8 +351,9 @@ class LiftRobotNode(Node):
             use_ack_patch=self.use_ack_patch
         )
         
-        # Set callback for timed operation auto-stop
+        # Set callbacks
         self.controller.on_auto_stop_callback = self._on_auto_stop_complete
+        self.controller.on_flash_complete_callback = self._on_flash_complete
         
         # Subscribe to command topic
         self.subscription = self.create_subscription(
@@ -371,8 +378,11 @@ class LiftRobotNode(Node):
             10
         )
         
-        # Status publish timer
-        self.status_timer = self.create_timer(1.0, self.publish_status)
+        # Status publish timer (10Hz for responsive web coordination)
+        # NOTE: Higher frequency (10Hz vs 1Hz) is needed for web-node coordinated control
+        # where web waits for task_state/movement_state changes between calibration steps.
+        # Internal node control (goto_height) is unaffected as it uses 50Hz control loop.
+        self.status_timer = self.create_timer(0.1, self.publish_status)
         
         # High-frequency control loop timer
         self.control_timer = self.create_timer(CONTROL_RATE, self.control_loop)
@@ -426,13 +436,15 @@ class LiftRobotNode(Node):
                 # Wait 1 control cycle (20ms) to ensure control loop has exited
                 time.sleep(CONTROL_RATE)  # 20ms = 1 control cycle
                 
-                # Step 3: Send hardware STOP pulse (after control loop stopped)
-                self.controller.stop(seq_id=seq_id)
-                self.movement_state = 'stop'
-                
-                # Step 4: Mark task as manually stopped and release system lock
-                if self.task_state == 'running':
-                    self._complete_task('manual_stop')
+                # Step 3: Send hardware STOP pulse and schedule task completion after relay verification
+                # Only complete task if there was a running task to stop
+                complete_on_stop = 'manual_stop' if self.task_state == 'running' else None
+                self._issue_stop(
+                    direction=self.movement_state if self.movement_state in ['up', 'down'] else 'up',
+                    reason='manual_stop_command',
+                    disable_control=False,  # Already disabled above
+                    complete_task_on_stop=complete_on_stop
+                )
                 
             elif command == 'up':
                 # If interrupting a running closed-loop task, complete it first
@@ -460,9 +472,9 @@ class LiftRobotNode(Node):
                     self.get_logger().info(f"[SEQ {seq_id_str}] Flash busy (relay={relay_busy}), schedule UP after 0.18s")
                     threading.Timer(0.18, lambda: self._queued_direction_pulse('up', seq_id)).start()
                 else:
+                    # Start flash - movement_state and task will be set in callback after verification
                     self.controller.up(seq_id=seq_id)
-                    self.movement_state = 'up'
-                    self._start_task('manual_up')
+                    self.get_logger().debug(f"[SEQ {seq_id_str}] UP flash started, waiting for verification...")
                 
             elif command == 'down':
                 # If interrupting a running closed-loop task, complete it first
@@ -489,9 +501,9 @@ class LiftRobotNode(Node):
                     self.get_logger().info(f"[SEQ {seq_id_str}] Flash busy (relay={relay_busy}), schedule DOWN after 0.18s")
                     threading.Timer(0.18, lambda: self._queued_direction_pulse('down', seq_id)).start()
                 else:
+                    # Start flash - movement_state and task will be set in callback after verification
                     self.controller.down(seq_id=seq_id)
-                    self.movement_state = 'down'
-                    self._start_task('manual_down')
+                    self.get_logger().debug(f"[SEQ {seq_id_str}] DOWN flash started, waiting for verification...")
                 
             elif command == 'timed_up':
                 # If interrupting a running closed-loop task, complete it first
@@ -759,7 +771,7 @@ class LiftRobotNode(Node):
                 self._start_task('range_scan', owner='platform')
                 # Send initial downward pulse
                 self.controller.down(seq_id=seq_id)
-                self.movement_state = 'down'
+                # movement_state will be set in _on_flash_complete callback
                 self.get_logger().info(f"[SEQ {seq_id_str}] ▶️ Range scan DOWN started (tolerance={self.range_scan_height_tolerance}mm, duration={self.range_scan_duration_required}s)")
             elif command == 'range_scan_up':
                 # Start range scan moving upward to find HIGH endpoint
@@ -783,7 +795,7 @@ class LiftRobotNode(Node):
                 self.range_scan_high_height = None
                 self._start_task('range_scan', owner='platform')
                 self.controller.up(seq_id=seq_id)
-                self.movement_state = 'up'
+                # movement_state will be set in _on_flash_complete callback
                 self.get_logger().info(f"[SEQ {seq_id_str}] ▶️ Range scan UP started (tolerance={self.range_scan_height_tolerance}mm, duration={self.range_scan_duration_required}s)")
             elif command == 'range_scan_cancel':
                 # Cancel any active range scan
@@ -886,17 +898,17 @@ class LiftRobotNode(Node):
                 # Dynamic bottom limit: actual_min + 1mm safety margin
                 bottom_limit = self.platform_range_min + 1.0
                 if self.current_height < bottom_limit:
-                    # Reached bottom - send stop and complete task
+                    # Reached bottom - send stop and schedule task completion after relay verification
                     self.get_logger().info(
                         f"[ManualDown] Bottom limit reached: height={self.current_height:.2f}mm < "
                         f"limit={bottom_limit:.2f}mm (actual_min+1mm) - sending stop"
                     )
-                    try:
-                        self.controller.stop()
-                    except Exception as e:
-                        self.get_logger().error(f"[ManualDown] Stop failed: {e}")
-                    self.movement_state = 'stop'
-                    self._complete_task('target_reached')
+                    self._issue_stop(
+                        direction='down',
+                        reason='manual_down_bottom_limit',
+                        disable_control=False,
+                        complete_task_on_stop='target_reached'
+                    )
         
         # ─────────────────────────────────────────────────────────────
         # Manual up task: check if reached top (dynamic range limit)
@@ -907,17 +919,17 @@ class LiftRobotNode(Node):
                 # Dynamic top limit: actual_max - 1mm safety margin
                 top_limit = self.platform_range_max - 1.0
                 if self.current_height > top_limit:
-                    # Reached top - send stop and complete task
+                    # Reached top - send stop and schedule task completion after relay verification
                     self.get_logger().info(
                         f"[ManualUp] Top limit reached: height={self.current_height:.2f}mm > "
                         f"limit={top_limit:.2f}mm (actual_max-1mm) - sending stop"
                     )
-                    try:
-                        self.controller.stop()
-                    except Exception as e:
-                        self.get_logger().error(f"[ManualUp] Stop failed: {e}")
-                    self.movement_state = 'stop'
-                    self._complete_task('target_reached')
+                    self._issue_stop(
+                        direction='up',
+                        reason='manual_up_top_limit',
+                        disable_control=False,
+                        complete_task_on_stop='target_reached'
+                    )
         
         # ─────────────────────────────────────────────────────────────
         # Force control branch (independent of height auto control)
@@ -977,34 +989,35 @@ class LiftRobotNode(Node):
                 force_reached = (self.current_force_combined <= self.target_force)
             
             if force_reached:
-                try:
-                    self.controller.stop()
-                except Exception as e:
-                    self.get_logger().error(f"Force control stop error: {e}")
-                
-                # CRITICAL: Set all control flags to False before completing task
-                # This ensures _get_task_state() will return 'completed' instead of 'running'
+                # CRITICAL: Set all control flags to False before stopping
+                # This prevents control loop from sending new commands
                 self.force_control_active = False
                 self.control_enabled = False  # Ensure height control is also disabled
-                self.movement_state = 'stop'
                 
-                # Mark force task as completed
-                self._complete_task('force_reached')
+                # Send stop and schedule task completion after relay verification
+                self._issue_stop(
+                    direction=self.force_control_direction,
+                    reason=f'force_control_{self.force_control_direction}_reached',
+                    disable_control=False,  # Already disabled above
+                    complete_task_on_stop='force_reached'
+                )
                 self.get_logger().info(
                     f"[ForceControl] ✅ Target reached: force={self.current_force_combined:.2f}N, "
-                    f"target={self.target_force:.2f}N, direction={self.force_control_direction}, "
-                    f"task_state={self.task_state}"
+                    f"target={self.target_force:.2f}N, direction={self.force_control_direction}"
                 )
                 return
 
             # Continue movement pulses only when direction differs
+            # movement_state will be set by flash_complete callback
             try:
-                if self.force_control_direction == 'up' and self.movement_state != 'up':
+                if self.force_control_direction == 'up' and self.movement_state != 'up' and not self.movement_command_sent:
                     self.controller.up()
-                    self.movement_state = 'up'
-                elif self.force_control_direction == 'down' and self.movement_state != 'down':
+                    self.movement_command_sent = True  # Prevent duplicate sends during flash verification
+                    # movement_state will be updated in _on_flash_complete callback
+                elif self.force_control_direction == 'down' and self.movement_state != 'down' and not self.movement_command_sent:
                     self.controller.down()
-                    self.movement_state = 'down'
+                    self.movement_command_sent = True  # Prevent duplicate sends during flash verification
+                    # movement_state will be updated in _on_flash_complete callback
             except Exception as e:
                 self.get_logger().error(f"Force control pulse error: {e}")
             return
@@ -1068,10 +1081,9 @@ class LiftRobotNode(Node):
         # Priority 1: Check if target reached
         if abs_error <= POSITION_TOLERANCE:
             if self.control_enabled:
-                # Mark goto_height task as completed FIRST (before disabling control)
-                self._complete_task('target_reached')
-                # Then terminate automatic control
-                self._issue_stop(direction=self.movement_state, reason="target_band", disable_control=True)
+                # Schedule task completion after stop relay OFF verification completes
+                # This ensures task_state and movement_state update synchronously
+                self._issue_stop(direction=self.movement_state, reason="target_band", disable_control=True, complete_task_on_stop='target_reached')
             return
         
         # Priority 2: 预测提前停（基于当前方向和平均超调）
@@ -1080,33 +1092,29 @@ class LiftRobotNode(Node):
             if self.movement_state == 'up' and self.avg_overshoot_up > OVERSHOOT_MIN_MARGIN:
                 threshold_height = self.target_height - self.avg_overshoot_up
                 if self.current_height >= threshold_height:
-                    # Mark task as completed (early stop expects overshoot to reach target)
-                    self._complete_task('target_reached')
+                    # Schedule task completion after stop relay OFF verification (early stop expects overshoot to reach target)
                     # 预测提前停：终止控制，剩余惯性与超调仅记录不纠正
-                    self._issue_stop(direction='up', reason=f"early_stop_up(th={threshold_height:.2f})", disable_control=True)
+                    self._issue_stop(direction='up', reason=f"early_stop_up(th={threshold_height:.2f})", disable_control=True, complete_task_on_stop='target_reached')
                     return
             elif self.movement_state == 'down' and self.avg_overshoot_down > OVERSHOOT_MIN_MARGIN:
                 threshold_height = self.target_height + self.avg_overshoot_down
                 if self.current_height <= threshold_height:
-                    # Mark task as completed (early stop expects overshoot to reach target)
-                    self._complete_task('target_reached')
-                    self._issue_stop(direction='down', reason=f"early_stop_down(th={threshold_height:.2f})", disable_control=True)
+                    # Schedule task completion after stop relay OFF verification (early stop expects overshoot to reach target)
+                    self._issue_stop(direction='down', reason=f"early_stop_down(th={threshold_height:.2f})", disable_control=True, complete_task_on_stop='target_reached')
                     return
 
         # Priority 3: 移除时间节流逻辑：只在方向需要变化或到达目标时发送命令。
         # （依靠 movement_state 防止重复脉冲）
         
         # ═══════════════════════════════════════════════════════════════
-        # Priority 2.5: Motion Stall Detection
-        # (Generic stall recovery removed. Stall semantics now limited to
-        # range scan endpoint detection inside _range_scan_check.)
+        # Priority 2.5: Motion Stall Detection (Mechanical Failure Monitoring)
+        # Detects extreme mechanical failures where relay verification succeeds
+        # but platform physically cannot move (stuck gears, seized motor, etc.)
+        # Triggers emergency reset rather than retry - mechanical issues cannot
+        # be resolved by resending pulses and indicate critical hardware fault.
+        # Extended to 2.0s to avoid false positives during slow/uneven movement.
+        # Disabled during range scan to avoid interfering with endpoint detection.
         # ═══════════════════════════════════════════════════════════════
-        # Limited resend fallback (only when NOT in range scan):
-        # If after stall_check_duration the height has not changed beyond
-        # position_change_tolerance, re-send the movement command to guard
-        # against a lost relay pulse. Do not reset movement_state to 'stop'
-        # (keeps semantic simpler). Disabled during range scan to avoid
-        # disturbing endpoint detection.
         if (not self.range_scan_active and
             self.movement_state in ['up','down'] and
             self.stall_check_start_time is not None):
@@ -1114,19 +1122,15 @@ class LiftRobotNode(Node):
             if elapsed >= self.stall_check_duration:
                 position_change = abs(self.current_height - self.stall_check_start_position)
                 if position_change <= self.position_change_tolerance:
-                    try:
-                        if self.movement_state == 'up':
-                            self.controller.up()
-                        elif self.movement_state == 'down':
-                            self.controller.down()
-                        self.get_logger().warning(
-                            f"[Control] 🔁 Resend {self.movement_state.upper()} pulse (no movement Δ≤{self.position_change_tolerance}mm in {elapsed:.2f}s)"
-                        )
-                    except Exception as e:
-                        self.get_logger().error(f"[Control] Resend {self.movement_state} failed: {e}")
-                    # Refresh stall baseline
-                    self.stall_check_start_time = time.time()
-                    self.stall_check_start_position = self.current_height
+                    # Mechanical stall detected - trigger emergency rather than retry
+                    self.get_logger().error(
+                        f"🚨 MECHANICAL STALL DETECTED: No movement after {elapsed:.2f}s "
+                        f"(Δ={position_change:.3f}mm ≤ {self.position_change_tolerance}mm, direction={self.movement_state}) - "
+                        f"possible hardware failure (stuck gears/motor seizure)"
+                    )
+                    # Trigger emergency reset (6-step process)
+                    self._trigger_emergency_reset('mechanical_stall')
+                    return
         
         # Priority 3: Send movement command based on error direction
         try:
@@ -1141,18 +1145,17 @@ class LiftRobotNode(Node):
                 * If both endpoints found, stop scan and complete task.
             """
             if error > POSITION_TOLERANCE:
-                # Need to move up - only send command if not already moving up
-                if self.movement_state != 'up':
-                    # 仅在方向变化时发送一次脉冲
+                # Need to move up - only send command if not already sent
+                if self.movement_state != 'up' and not self.movement_command_sent:
+                    # 只发送一次命令，等待继电器验证完成后回调更新 movement_state
                     self.get_logger().info(
                         f"[Control] ⬆️  Sending UP command: current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}"
                     )
                     self.controller.up()
-                    self.movement_state = 'up'
+                    # Set flag to prevent duplicate sends during flash verification (~50ms)
+                    # Will be cleared in _on_flash_complete callback when movement_state is updated
+                    self.movement_command_sent = True
                     self.last_command_time = now
-                    # Start stall detection timer
-                    self.stall_check_start_time = time.time()
-                    self.stall_check_start_position = self.current_height
                 else:
                     # Already moving up - periodic status log
                     if (time.time() - self.task_start_time) % 2.0 < CONTROL_RATE:  # Log every 2 seconds
@@ -1161,16 +1164,16 @@ class LiftRobotNode(Node):
                         )
                 
             elif error < -POSITION_TOLERANCE:
-                if self.movement_state != 'down':
+                # Need to move down - only send command if not already sent
+                if self.movement_state != 'down' and not self.movement_command_sent:
                     self.get_logger().info(
                         f"[Control] ⬇️  Sending DOWN command: current={self.current_height:.2f} target={self.target_height:.2f} err={error:.2f}"
                     )
                     self.controller.down()
-                    self.movement_state = 'down'
+                    # Set flag to prevent duplicate sends during flash verification (~50ms)
+                    # Will be cleared in _on_flash_complete callback when movement_state is updated
+                    self.movement_command_sent = True
                     self.last_command_time = now
-                    # Start stall detection timer
-                    self.stall_check_start_time = time.time()
-                    self.stall_check_start_position = self.current_height
                 else:
                     # Already moving down - periodic status log
                     if (time.time() - self.task_start_time) % 2.0 < CONTROL_RATE:  # Log every 2 seconds
@@ -1284,15 +1287,13 @@ class LiftRobotNode(Node):
                 self.get_logger().debug(f"[SEQ {seq_id}] Deferred {direction} still busy, give up this queued attempt")
                 return
             if direction == 'up':
+                # Start flash - movement_state and task will be set in callback
                 self.controller.up(seq_id=seq_id)
-                self.movement_state = 'up'
-                if self.task_state != 'running':
-                    self._start_task('manual_up')
+                self.get_logger().debug(f"[SEQ {seq_id}] Queued UP flash started")
             elif direction == 'down':
+                # Start flash - movement_state and task will be set in callback
                 self.controller.down(seq_id=seq_id)
-                self.movement_state = 'down'
-                if self.task_state != 'running':
-                    self._start_task('manual_down')
+                self.get_logger().debug(f"[SEQ {seq_id}] Queued DOWN flash started")
             else:
                 self.get_logger().warn(f"[SEQ {seq_id}] Unknown queued direction: {direction}")
         except Exception as e:
@@ -1301,30 +1302,55 @@ class LiftRobotNode(Node):
     # ─────────────────────────────────────────────────────────────
     # Overshoot helper methods
     # ─────────────────────────────────────────────────────────────
-    def _issue_stop(self, direction, reason="stop", disable_control=False):
+    def _issue_stop(self, direction, reason="stop", disable_control=False, complete_task_on_stop=None):
         """发送停止脉冲并安排超调测量。
         当前策略：所有停止（目标带或提前停）一律 disable_control=True 防止后续相反方向补偿；
         但超调测量与 EMA 更新仍继续，以供人工分析和后续手动调整初始参数。
+        
+        Args:
+            direction: 'up' or 'down' - movement direction before stop
+            reason: Stop reason for logging
+            disable_control: Whether to disable control_enabled flag
+            complete_task_on_stop: If provided (e.g., 'target_reached'), task will be completed
+                                   after stop relay OFF verification completes (in _on_flash_complete)
         """
+        # Schedule task completion if requested (will be triggered by stop relay OFF verification)
+        if complete_task_on_stop:
+            self.pending_task_completion = {'reason': complete_task_on_stop}
+            self.get_logger().debug(f"[Control] Task completion scheduled after stop OFF verification: {complete_task_on_stop}")
+        
         try:
             self.controller.stop()
         except Exception as e:
             self.get_logger().error(f"[Control] Stop command error: {e}")
+            # If stop command fails, clear pending completion to avoid stuck state
+            self.pending_task_completion = None
+            return
+            
         if disable_control:
             self.control_enabled = False
+        
+        # NOTE: movement_state will be updated to 'stop' in _on_flash_complete callback
+        # after relay OFF verification completes. This ensures synchronization with task completion.
+        # Do NOT update movement_state here - let the callback handle it.
+        
         prev_state = self.movement_state
-        self.movement_state = 'stop'
         self.height_at_stop = self.current_height
         self.last_stop_direction = direction if direction in ('up','down') else prev_state
         self.last_stop_time = self.get_clock().now()
-        # 取消旧的 overshoot timer
-        if self.overshoot_timer and self.overshoot_timer.is_alive():
-            self.overshoot_timer.cancel()
-        # 计划测量稳定高度
-        self.overshoot_timer = threading.Timer(OVERSHOOT_SETTLE_DELAY, self._measure_overshoot)
-        self.overshoot_timer.start()
+        
+        # Only measure overshoot for goto_height tasks (when target is set)
+        # Manual/force control doesn't need overshoot calibration
+        if self.last_goto_target is not None:
+            # 取消旧的 overshoot timer
+            if self.overshoot_timer and self.overshoot_timer.is_alive():
+                self.overshoot_timer.cancel()
+            # 计划测量稳定高度 (500ms later, independent of relay verification)
+            self.overshoot_timer = threading.Timer(OVERSHOOT_SETTLE_DELAY, self._measure_overshoot)
+            self.overshoot_timer.start()
+        
         self.get_logger().info(
-            f"[Control] 🛑 STOP ({reason}) height_at_stop={self.height_at_stop:.2f} dir={self.last_stop_direction} disable_control={disable_control}"
+            f"[Control] 🛑 STOP ({reason}) height_at_stop={self.height_at_stop:.2f} dir={self.last_stop_direction} disable_control={disable_control} pending_completion={complete_task_on_stop}"
         )
 
     def _measure_overshoot(self):
@@ -1371,9 +1397,10 @@ class LiftRobotNode(Node):
             else:
                 self.get_logger().warn("[Overshoot] Cannot calculate overshoot - target not set")
             
-            # Clear temporary tracking state
+            # Clear temporary tracking state (including target to prevent future measurements)
             self.height_at_stop = None
             self.last_stop_direction = None
+            self.last_goto_target = None  # Clear target after measurement completes
             
         except Exception as e:
             self.get_logger().error(f"Overshoot measurement error: {e}")
@@ -1431,7 +1458,7 @@ class LiftRobotNode(Node):
                     self.range_scan_direction = 'up'
                     try:
                         self.controller.up()
-                        self.movement_state = 'up'
+                        # movement_state will be set in _on_flash_complete callback
                     except Exception as e:
                         self.get_logger().error(f"[RangeScan] Start UP after LOW error: {e}")
                     # 重置参考用于上行端点判定
@@ -1456,7 +1483,7 @@ class LiftRobotNode(Node):
                         self.range_scan_direction = 'up'
                         try:
                             self.controller.up()
-                            self.movement_state = 'up'
+                            # movement_state will be set in _on_flash_complete callback
                         except Exception as e:
                             self.get_logger().error(f"[RangeScan] Start UP after LOW error: {e}")
                         self.range_scan_reference_height = h
@@ -1479,13 +1506,14 @@ class LiftRobotNode(Node):
                         # 若已找到 LOW → 完成扫描
                         if self.range_scan_low_reached:
                             self.range_scan_active = False
-                            try:
-                                self.controller.stop()
-                            except Exception as e:
-                                self.get_logger().error(f"[RangeScan] Stop after HIGH error: {e}")
-                            self.movement_state = 'stop'
-                            if self.task_state == 'running' and self.task_type == 'range_scan':
-                                self._complete_task('target_reached')
+                            # Send stop and schedule task completion after relay verification
+                            complete_on_stop = 'target_reached' if (self.task_state == 'running' and self.task_type == 'range_scan') else None
+                            self._issue_stop(
+                                direction=self.range_scan_direction if self.range_scan_direction else 'up',
+                                reason='range_scan_complete',
+                                disable_control=False,
+                                complete_task_on_stop=complete_on_stop
+                            )
                             self.get_logger().info(
                                 f"[RangeScan] 🏁 Range scan complete: low={self.range_scan_low_height:.2f}mm high={self.range_scan_high_height:.2f}mm"
                             )
@@ -1656,6 +1684,57 @@ class LiftRobotNode(Node):
             self.get_logger().error(
                 f"[EMERGENCY] Step 6: Emergency stop complete - reason={emergency_reason} (system_busy=False)"
             )
+    
+    def _on_flash_complete(self, relay, seq_id):
+        """Callback when relay flash verification succeeds.
+        
+        This is called by controller after relay ON→OFF→verify sequence completes.
+        For STOP relay (relay 0), OFF verification completion means hardware has truly stopped.
+        Updates movement_state and task_state based on verified relay action.
+        
+        CRITICAL: For STOP relay, task completion happens HERE (if pending) to ensure
+        task_state and movement_state update synchronously after relay OFF verification.
+        
+        Args:
+            relay: 0=STOP, 1=UP, 2=DOWN
+            seq_id: Sequence ID for tracking
+        """
+        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
+        
+        if relay == 0:  # STOP - OFF verification complete, hardware truly stopped
+            self.movement_state = 'stop'
+            self.get_logger().info(f"[SEQ {seq_id}] Movement state updated: STOP (relay OFF verified)")
+            
+            # Complete task if pending (from goto_height reaching target)
+            # This ensures task_state='completed' happens AFTER movement_state='stop'
+            # Both states update synchronously based on relay OFF verification
+            if self.pending_task_completion:
+                reason = self.pending_task_completion['reason']
+                self._complete_task(reason)
+                self.get_logger().info(f"[SEQ {seq_id}] Task completed after stop OFF verification: {reason}")
+                self.pending_task_completion = None
+            
+        elif relay == 1:  # UP
+            self.movement_state = 'up'
+            self.movement_command_sent = False  # Clear flag now that state is confirmed
+            self.get_logger().info(f"[SEQ {seq_id}] Movement state updated: UP (relay verified)")
+            # Start manual_up task if not already running a task
+            if self.task_state != 'running':
+                self._start_task('manual_up')
+            # Start stall detection timer for control loop
+            self.stall_check_start_time = time.time()
+            self.stall_check_start_position = self.current_height
+            
+        elif relay == 2:  # DOWN
+            self.movement_state = 'down'
+            self.movement_command_sent = False  # Clear flag now that state is confirmed
+            self.get_logger().info(f"[SEQ {seq_id}] Movement state updated: DOWN (relay verified)")
+            # Start manual_down task if not already running a task
+            if self.task_state != 'running':
+                self._start_task('manual_down')
+            # Start stall detection timer for control loop
+            self.stall_check_start_time = time.time()
+            self.stall_check_start_position = self.current_height
     
     def _get_task_state(self):
         """Get current task state based on task_state variable"""

@@ -31,8 +31,9 @@ class LiftRobotController(ModbusDevice):
         self.active_timers = {}  # Dictionary to store active timers
         self.timer_lock = threading.Lock()  # Lock for thread safety
         
-        # Callback for auto-stop completion (set by node)
-        self.on_auto_stop_callback = None
+        # Callbacks (set by node)
+        self.on_auto_stop_callback = None  # Callback for timed operation auto-stop
+        self.on_flash_complete_callback = None  # Callback for relay flash verification success
         
         # Command queue for timed operations
         self.timed_cmd_queue = deque()
@@ -416,6 +417,14 @@ class LiftRobotController(ModbusDevice):
         relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
         total_ms = (time.time() - ctx['start_time']) * 1000
         self.node.get_logger().info(f"[SEQ {seq_id}] ✅ Async flash SUCCESS {relay_name} total={total_ms:.1f}ms")
+        
+        # Notify node that relay verification succeeded
+        if hasattr(self, 'on_flash_complete_callback') and self.on_flash_complete_callback:
+            try:
+                self.on_flash_complete_callback(relay, seq_id)
+            except Exception as e:
+                self.node.get_logger().error(f"[SEQ {seq_id}] Flash complete callback error: {e}")
+        
         # Cancel watchdog if present
         wd = ctx.get('watchdog')
         if wd and wd.is_alive():
