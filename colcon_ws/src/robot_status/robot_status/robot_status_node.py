@@ -134,7 +134,15 @@ class RobotStatusNode(Node):
                 for key, value in keys.items():
                     param_name = f"{namespace}.{key}"
                     try:
-                        self.declare_parameter(param_name, value)
+                        # Convert value to string (ROS2 parameters store strings)
+                        if isinstance(value, (dict, list)):
+                            # Serialize complex types back to JSON string
+                            value_str = json.dumps(value)
+                        else:
+                            # Keep simple types as strings
+                            value_str = str(value)
+                        
+                        self.declare_parameter(param_name, value_str)
                         count += 1
                     except Exception as e:
                         self.get_logger().warn(f"Failed to load {param_name}: {e}")
@@ -171,7 +179,14 @@ class RobotStatusNode(Node):
                 try:
                     with self.lock:
                         value = self.get_parameter(param_name).value
-                    status_tree[namespace][key] = value
+                    
+                    # Try to parse as JSON if it's a JSON string
+                    try:
+                        parsed_value = json.loads(value)
+                        status_tree[namespace][key] = parsed_value
+                    except (json.JSONDecodeError, TypeError):
+                        # Not JSON or already a native type, store as-is
+                        status_tree[namespace][key] = value
                 except Exception:
                     pass
             
