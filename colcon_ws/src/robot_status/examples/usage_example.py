@@ -13,10 +13,10 @@ This example demonstrates setting and getting status with various data types:
 import rclpy
 from rclpy.node import Node
 from robot_status.client_utils import RobotStatusClient
-from robot_status import set_to_status, get_from_status
 import numpy as np
 from dataclasses import dataclass
 from typing import List
+import time
 
 
 # Custom class example 1: Simple class
@@ -79,25 +79,29 @@ def test_basic_types(client, node):
     
     # Float
     client.set_status('test_robot', 'temperature', 42.5)
-    value = client.get_status('test_robot', 'temperature')
+    
+    value = client.get_status( 'test_robot', 'temperature')
     node.get_logger().info(f"Float: {value} (type: {type(value).__name__})")
     assert value == 42.5
     
     # String
     client.set_status('test_robot', 'status_message', "System operational")
-    value = client.get_status('test_robot', 'status_message')
+    
+    value = client.get_status( 'test_robot', 'status_message')
     node.get_logger().info(f"String: '{value}' (type: {type(value).__name__})")
     assert value == "System operational"
     
     # Boolean
     client.set_status('test_robot', 'is_connected', True)
-    value = client.get_status('test_robot', 'is_connected')
+    
+    value = client.get_status( 'test_robot', 'is_connected')
     node.get_logger().info(f"Boolean: {value} (type: {type(value).__name__})")
     assert value is True
     
     # None
     client.set_status('test_robot', 'error_state', None)
-    value = client.get_status('test_robot', 'error_state')
+    
+    value = client.get_status( 'test_robot', 'error_state')
     node.get_logger().info(f"None: {value} (type: {type(value).__name__})")
     assert value is None
     
@@ -110,13 +114,15 @@ def test_collections(client, node):
     
     # List
     client.set_status('test_robot', 'active_sensors', ['lidar', 'camera', 'imu', 'gps'])
-    value = client.get_status('test_robot', 'active_sensors')
+    
+    value = client.get_status( 'test_robot', 'active_sensors')
     node.get_logger().info(f"List: {value} (type: {type(value).__name__})")
     assert value == ['lidar', 'camera', 'imu', 'gps']
     
     # Tuple
     client.set_status('test_robot', 'position_tuple', (1.5, 2.3, 0.5))
-    value = client.get_status('test_robot', 'position_tuple')
+    
+    value = client.get_status( 'test_robot', 'position_tuple')
     node.get_logger().info(f"Tuple: {value} (type: {type(value).__name__})")
     assert value == (1.5, 2.3, 0.5)
     
@@ -127,19 +133,22 @@ def test_collections(client, node):
         'timeout': 5.0,
         'retry': True
     })
-    value = client.get_status('test_robot', 'config_dict')
+    
+    value = client.get_status( 'test_robot', 'config_dict')
     node.get_logger().info(f"Dict: {value} (type: {type(value).__name__})")
     assert value['ip'] == '192.168.1.100'
     
     # Set
     client.set_status('test_robot', 'enabled_features', {'navigation', 'mapping', 'collision_avoidance'})
-    value = client.get_status('test_robot', 'enabled_features')
+    
+    value = client.get_status( 'test_robot', 'enabled_features')
     node.get_logger().info(f"Set: {value} (type: {type(value).__name__})")
     assert 'navigation' in value
     
     # Nested list
     client.set_status('test_robot', 'path_points', [[0, 0], [1, 2], [3, 4], [5, 6]])
-    value = client.get_status('test_robot', 'path_points')
+    
+    value = client.get_status( 'test_robot', 'path_points')
     node.get_logger().info(f"Nested list: {value}")
     assert value[2] == [3, 4]
     
@@ -153,7 +162,8 @@ def test_numpy_arrays(client, node):
     # 1D array (vector)
     vec = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     client.set_status('test_robot', 'velocity_vector', vec)
-    value = client.get_status('test_robot', 'velocity_vector')
+    
+    value = client.get_status( 'test_robot', 'velocity_vector')
     node.get_logger().info(f"1D array: shape={value.shape}, dtype={value.dtype}")
     assert np.allclose(value, vec)
     
@@ -162,28 +172,32 @@ def test_numpy_arrays(client, node):
                        [4, 5, 6],
                        [7, 8, 9]])
     client.set_status('test_robot', 'rotation_matrix', matrix)
-    value = client.get_status('test_robot', 'rotation_matrix')
+    
+    value = client.get_status( 'test_robot', 'rotation_matrix')
     node.get_logger().info(f"2D array: shape={value.shape}, dtype={value.dtype}")
     assert np.array_equal(value, matrix)
     
     # 3D array (tensor)
     tensor = np.random.rand(2, 3, 4)
     client.set_status('test_robot', 'sensor_data_tensor', tensor)
-    value = client.get_status('test_robot', 'sensor_data_tensor')
+    
+    value = client.get_status( 'test_robot', 'sensor_data_tensor')
     node.get_logger().info(f"3D array: shape={value.shape}, dtype={value.dtype}")
     assert np.allclose(value, tensor)
     
     # Different dtypes
     int_array = np.array([1, 2, 3, 4, 5], dtype=np.int32)
     client.set_status('test_robot', 'joint_indices', int_array)
-    value = client.get_status('test_robot', 'joint_indices')
+    
+    value = client.get_status( 'test_robot', 'joint_indices')
     node.get_logger().info(f"Int32 array: shape={value.shape}, dtype={value.dtype}")
     assert value.dtype == np.int32
     
     # Boolean array
     bool_array = np.array([True, False, True, False], dtype=bool)
     client.set_status('test_robot', 'sensor_status', bool_array)
-    value = client.get_status('test_robot', 'sensor_status')
+    
+    value = client.get_status( 'test_robot', 'sensor_status')
     node.get_logger().info(f"Boolean array: shape={value.shape}, dtype={value.dtype}")
     assert np.array_equal(value, bool_array)
     
@@ -192,7 +206,8 @@ def test_numpy_arrays(client, node):
                               [0.0, 1000.0, 480.0],
                               [0.0, 0.0, 1.0]])
     client.set_status('test_robot', 'camera_intrinsics', camera_matrix)
-    value = client.get_status('test_robot', 'camera_intrinsics')
+    
+    value = client.get_status( 'test_robot', 'camera_intrinsics')
     node.get_logger().info(f"Camera matrix:\n{value}")
     assert np.allclose(value, camera_matrix)
     
@@ -206,7 +221,8 @@ def test_custom_classes(client, node):
     # Simple class
     config = RobotConfig(max_speed=2.0, acceleration=0.5, brake_distance=1.2)
     client.set_status('test_robot', 'motion_config', config)
-    value = client.get_status('test_robot', 'motion_config')
+    
+    value = client.get_status( 'test_robot', 'motion_config')
     node.get_logger().info(f"Custom class: {value}")
     assert value.max_speed == 2.0
     assert value.acceleration == 0.5
@@ -214,7 +230,8 @@ def test_custom_classes(client, node):
     # Dataclass
     waypoint = Waypoint(x=10.5, y=20.3, z=0.0, orientation=45.0, velocity=1.5)
     client.set_status('test_robot', 'target_waypoint', waypoint)
-    value = client.get_status('test_robot', 'target_waypoint')
+    
+    value = client.get_status( 'test_robot', 'target_waypoint')
     node.get_logger().info(f"Dataclass: {value}")
     assert value.x == 10.5
     assert value.orientation == 45.0
@@ -222,7 +239,8 @@ def test_custom_classes(client, node):
     # Class with tolist() method
     pose = Pose3D(x=1.5, y=2.3, z=0.5, qx=0.0, qy=0.0, qz=0.707, qw=0.707)
     client.set_status('test_robot', 'robot_pose', pose)
-    value = client.get_status('test_robot', 'robot_pose')
+    
+    value = client.get_status( 'test_robot', 'robot_pose')
     node.get_logger().info(f"Class with tolist(): {value}")
     node.get_logger().info(f"  JSON representation: {value.tolist()}")
     assert value.x == 1.5
@@ -235,7 +253,8 @@ def test_custom_classes(client, node):
         Waypoint(10, 5, 0, 90, 1.0),
     ]
     client.set_status('test_robot', 'planned_path', path)
-    value = client.get_status('test_robot', 'planned_path')
+    
+    value = client.get_status( 'test_robot', 'planned_path')
     node.get_logger().info(f"List of objects: {len(value)} waypoints")
     assert len(value) == 3
     assert value[1].x == 5
@@ -286,10 +305,11 @@ def test_complex_nested_structures(client, node):
     }
     
     client.set_status('test_robot', 'complex_mission_data', complex_data)
-    value = client.get_status('test_robot', 'complex_mission_data')
+    
+    value = client.get_status( 'test_robot', 'complex_mission_data')
     
     # Verify nested structure
-    node.get_logger().info(f"Complex data retrieved successfully")
+    node.get_logger().info("Complex data retrieved successfully")
     node.get_logger().info(f"  - Metadata robot_id: {value['metadata']['robot_id']}")
     node.get_logger().info(f"  - Lidar points shape: {value['sensor_data']['lidar']['points'].shape}")
     node.get_logger().info(f"  - Camera intrinsics:\n{value['sensor_data']['camera']['intrinsics']}")
@@ -316,90 +336,76 @@ def test_update_and_overwrite(client, node):
     
     # Set initial value
     client.set_status('test_robot', 'counter', 0)
-    value = client.get_status('test_robot', 'counter')
+    
+    value = client.get_status( 'test_robot', 'counter')
     node.get_logger().info(f"Initial counter: {value}")
     assert value == 0
     
     # Update value
     client.set_status('test_robot', 'counter', 42)
-    value = client.get_status('test_robot', 'counter')
+    
+    value = client.get_status( 'test_robot', 'counter')
     node.get_logger().info(f"Updated counter: {value}")
     assert value == 42
     
     # Change type (int to array)
     client.set_status('test_robot', 'counter', np.array([1, 2, 3, 4, 5]))
-    value = client.get_status('test_robot', 'counter')
+    
+    value = client.get_status( 'test_robot', 'counter')
     node.get_logger().info(f"Counter now array: {value}")
     assert isinstance(value, np.ndarray)
     
     node.get_logger().info("✓ Update and overwrite tests passed")
 
 
-def test_direct_functions(node):
-    """Test direct set_to_status and get_from_status functions."""
-    node.get_logger().info("\n=== Testing Direct Functions (set_to_status/get_from_status) ===")
+def test_standalone_functions(node):
+    """Test standalone get_from_status and set_to_status functions."""
+    from robot_status.client_utils import get_from_status, set_to_status
     
-    # Test with basic types
-    set_to_status(node, 'direct_test', 'message', "Hello from direct function")
-    value = get_from_status(node, 'direct_test', 'message')
-    node.get_logger().info(f"String via direct functions: '{value}'")
-    assert value == "Hello from direct function"
+    node.get_logger().info("\n=== Testing Standalone Functions ===")
     
-    # Test with numpy array
-    test_array = np.array([[1, 2, 3], [4, 5, 6]])
-    set_to_status(node, 'direct_test', 'matrix', test_array)
-    value = get_from_status(node, 'direct_test', 'matrix')
-    node.get_logger().info(f"NumPy array via direct functions: shape={value.shape}")
-    assert np.array_equal(value, test_array)
+    # Use a different namespace to demonstrate independence
+    namespace = 'sensor_network'
     
-    # Test with custom class
-    config = RobotConfig(max_speed=3.0, acceleration=1.0, brake_distance=2.0)
-    set_to_status(node, 'direct_test', 'robot_config', config)
-    value = get_from_status(node, 'direct_test', 'robot_config')
-    node.get_logger().info(f"Custom class via direct functions: {value}")
-    assert value.max_speed == 3.0
+    # Test setting various data types
+    success = set_to_status(node, namespace, 'temperature', 23.5)
+    assert success
     
-    # Test with dataclass
-    waypoint = Waypoint(x=15.0, y=25.0, z=1.0, orientation=90.0, velocity=2.0)
-    set_to_status(node, 'direct_test', 'waypoint', waypoint)
-    value = get_from_status(node, 'direct_test', 'waypoint')
-    node.get_logger().info(f"Dataclass via direct functions: {value}")
-    assert value.x == 15.0
-    assert value.orientation == 90.0
+    success = set_to_status(node, namespace, 'sensor_config', {
+        'id': 'sensor_001',
+        'type': 'temperature_humidity',
+        'location': 'warehouse_a',
+        'calibration_date': '2024-11-15'
+    })
+    assert success
     
-    # Test with Pose3D (class with tolist())
-    pose = Pose3D(x=5.0, y=10.0, z=2.0, qx=0.0, qy=0.0, qz=0.383, qw=0.924)
-    set_to_status(node, 'direct_test', 'pose', pose)
-    value = get_from_status(node, 'direct_test', 'pose')
-    node.get_logger().info(f"Pose3D via direct functions: {value}")
-    node.get_logger().info(f"  JSON representation: {value.tolist()}")
-    assert value.x == 5.0
-    assert value.qw == 0.924
+    # Set numpy array
+    readings = np.array([22.1, 23.5, 24.0, 23.8, 22.9])
+    success = set_to_status(node, namespace, 'recent_readings', readings)
+    assert success
     
-    # Test with complex dict
-    complex_data = {
-        'id': 'test_001',
-        'values': [1, 2, 3, 4, 5],
-        'matrix': np.eye(3),
-        'config': RobotConfig(1.5, 0.3, 0.8),
-        'nested': {
-            'flag': True,
-            'count': 42
-        }
-    }
-    set_to_status(node, 'direct_test', 'complex', complex_data)
-    value = get_from_status(node, 'direct_test', 'complex')
-    node.get_logger().info(f"Complex dict via direct functions:")
-    node.get_logger().info(f"  - id: {value['id']}")
-    node.get_logger().info(f"  - values: {value['values']}")
-    node.get_logger().info(f"  - matrix shape: {value['matrix'].shape}")
-    node.get_logger().info(f"  - config: {value['config']}")
-    node.get_logger().info(f"  - nested flag: {value['nested']['flag']}")
-    assert value['id'] == 'test_001'
-    assert isinstance(value['matrix'], np.ndarray)
-    assert isinstance(value['config'], RobotConfig)
+    # Give cache time to update
+    time.sleep(0.2)
     
-    node.get_logger().info("✓ All direct function tests passed")
+    # Test getting values back
+    temp = get_from_status(node, namespace, 'temperature')
+    node.get_logger().info(f"Temperature: {temp}°C")
+    assert temp == 23.5
+    
+    config = get_from_status(node, namespace, 'sensor_config')
+    node.get_logger().info(f"Sensor config: {config['id']} at {config['location']}")
+    assert config['id'] == 'sensor_001'
+    
+    readings_retrieved = get_from_status(node, namespace, 'recent_readings')
+    node.get_logger().info(f"Recent readings: {readings_retrieved}")
+    assert isinstance(readings_retrieved, np.ndarray)
+    assert np.array_equal(readings_retrieved, readings)
+    
+    # Test non-existent key
+    missing = get_from_status(node, namespace, 'nonexistent_key')
+    assert missing is None
+    
+    node.get_logger().info("✓ Standalone functions test passed")
 
 
 def main():
@@ -407,7 +413,7 @@ def main():
     node = Node('usage_example')
     
     try:
-        # Create client
+        # Create client (auto_spin=True by default, handles executor internally)
         client = RobotStatusClient(node)
         
         node.get_logger().info("="*60)
@@ -421,7 +427,7 @@ def main():
         test_custom_classes(client, node)
         test_complex_nested_structures(client, node)
         test_update_and_overwrite(client, node)
-        test_direct_functions(node)
+        test_standalone_functions(node)
         
         # Summary
         node.get_logger().info("\n" + "="*60)
@@ -434,7 +440,7 @@ def main():
         node.get_logger().info("  • Custom classes and dataclasses")
         node.get_logger().info("  • Complex nested structures")
         node.get_logger().info("  • Type changes on updates")
-        node.get_logger().info("  • Direct functions (set_to_status/get_from_status)")
+        node.get_logger().info("  • Standalone functions: get_from_status, set_to_status")
         node.get_logger().info("\nView all data at: http://localhost:8005")
         
     except Exception as e:
@@ -442,6 +448,8 @@ def main():
         import traceback
         traceback.print_exc()
     finally:
+        if 'client' in locals():
+            client.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 
