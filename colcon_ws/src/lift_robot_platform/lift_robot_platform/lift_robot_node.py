@@ -403,6 +403,13 @@ class LiftRobotNode(Node):
         self.force_control_active = False  # Enable/disable FORCE control (PLATFORM ONLY)
         
         # ═══════════════════════════════════════════════════════════════
+        # Maximum Force Limit Protection (Highest Priority Safety Check)
+        # ═══════════════════════════════════════════════════════════════
+        # Applied to ALL control modes when force sensor is available
+        # Triggers emergency reset if exceeded (500N default)
+        self.max_force_limit = 500.0       # Maximum allowed force (N) - emergency threshold
+        
+        # ═══════════════════════════════════════════════════════════════
         # Height-Force Hybrid Control State (NEW - PLATFORM ONLY)
         # ═══════════════════════════════════════════════════════════════
         # Combines height and force control - stops when EITHER condition is met
@@ -713,16 +720,8 @@ class LiftRobotNode(Node):
                     target_force = float(target_force)
                     current_error = abs(target_height - self.current_height)
                     
-                    # Initialize force reading if not available
-                    if self.current_force_combined is None:
-                        if self.current_force_right is not None and self.current_force_left is not None:
-                            self.current_force_combined = self.current_force_right + self.current_force_left
-                        elif self.current_force_right is not None:
-                            self.current_force_combined = self.current_force_right
-                        elif self.current_force_left is not None:
-                            self.current_force_combined = self.current_force_left
-                        else:
-                            self.current_force_combined = 0.0  # Default to 0 if no reading yet
+                    # Force sensor is updated in real-time by callbacks
+                    # No need to initialize here, current_force_combined is always up-to-date
                     
                     # Check if already at target position (similar to goto_height)
                     if current_error <= POSITION_TOLERANCE:
@@ -752,6 +751,7 @@ class LiftRobotNode(Node):
                         self.hybrid_target_height = target_height
                         self.hybrid_target_force = target_force
                         self.hybrid_control_active = True
+                        self.hybrid_last_stop_direction = None  # CRITICAL: Clear previous hybrid stop direction
                         self.control_mode = 'manual'  # Use manual mode for control loop
                         self.movement_state = 'stop'
                         
@@ -940,7 +940,23 @@ class LiftRobotNode(Node):
         # ═══════════════════════════════════════════════════════════════
         with self.control_lock:
             if self.reset_in_progress or self.task_state == 'emergency_stop':
-                return  # Exit immediately, do not execute any control logic
+                return  # Exit control loop during reset/emergency
+        
+        # ═══════════════════════════════════════════════════════════════
+        # PRIORITY 0.1: Maximum Force Limit Protection (ALL CONTROLS)
+        # ═══════════════════════════════════════════════════════════════
+        # HIGHEST PRIORITY: Check max force limit before ANY control logic
+        # Only active when force sensor is available (current_force_combined not None)
+        # Triggers emergency reset to prevent mechanical damage
+        if self.current_force_combined is not None:
+            if self.current_force_combined > self.max_force_limit:
+                self.get_logger().error(
+                    f"🚨 MAXIMUM FORCE LIMIT EXCEEDED! "
+                    f"force={self.current_force_combined:.2f}N > max_limit={self.max_force_limit:.2f}N - "
+                    f"triggering emergency reset"
+                )
+                self._trigger_emergency_reset('max_force_exceeded')
+                return
         
         # ═══════════════════════════════════════════════════════════════
         # PRIORITY 1: Mutual Exclusion Check
@@ -1023,19 +1039,9 @@ class LiftRobotNode(Node):
         # Runs even if control_enabled is False
         # ─────────────────────────────────────────────────────────────
         if self.force_control_active and self.target_force is not None:
-            # Update combined force
-            if self.current_force_right is not None and self.current_force_left is not None:
-                self.current_force_combined = self.current_force_right + self.current_force_left
-            elif self.current_force_right is not None:
-                self.current_force_combined = self.current_force_right
-            elif self.current_force_left is not None:
-                self.current_force_combined = self.current_force_left
-            else:
-                self.current_force_combined = None
-
-            # If no force reading yet, skip
+            # Check if force sensor is available (updated in real-time by force callbacks)
             if self.current_force_combined is None:
-                return
+                return  # Skip if no force reading yet
 
             # ═══════════════════════════════════════════════════════════════
             # FORCE CONTROL SAFETY: Check for excessive overshoot
@@ -1115,16 +1121,7 @@ class LiftRobotNode(Node):
         # Architecture matches goto_height + force_control for safety consistency
         # ─────────────────────────────────────────────────────────────
         if self.hybrid_control_active and self.hybrid_target_height is not None and self.hybrid_target_force is not None:
-            # Update combined force
-            if self.current_force_right is not None and self.current_force_left is not None:
-                self.current_force_combined = self.current_force_right + self.current_force_left
-            elif self.current_force_right is not None:
-                self.current_force_combined = self.current_force_right
-            elif self.current_force_left is not None:
-                self.current_force_combined = self.current_force_left
-            else:
-                self.current_force_combined = None
-
+            # current_force_combined is updated in real-time by force sensor callbacks
             # Calculate height error
             height_error = self.hybrid_target_height - self.current_height
             abs_height_error = abs(height_error)
@@ -1135,33 +1132,39 @@ class LiftRobotNode(Node):
             # ═══════════════════════════════════════════════════════════════
             # HYBRID CONTROL SAFETY: Check for excessive overshoot (height dimension)
             # Same logic as goto_height to ensure consistent safety behavior
+            # Only check when task is actually running (not at command initialization)
             # ═══════════════════════════════════════════════════════════════
             height_overshoot_threshold = 10.0  # mm
             
-            # Only check overshoot in the direction we're moving/moved
-            if self.hybrid_direction == 'up' or self.movement_state == 'up' or self.hybrid_last_stop_direction == 'up':
-                # Moving/moved upward: only check upward overshoot
-                if self.current_height > self.hybrid_target_height + height_overshoot_threshold:
-                    self.get_logger().error(
-                        f"🚨 HYBRID CONTROL EMERGENCY: Height overshoot detected! "
-                        f"height={self.current_height:.2f}mm > target+threshold={self.hybrid_target_height + height_overshoot_threshold:.2f}mm "
-                        f"(overshoot={self.current_height - self.hybrid_target_height:.2f}mm)"
-                    )
-                    # Trigger emergency reset (6-step process)
-                    self._trigger_emergency_reset('hybrid_height_overshoot')
-                    return
-            
-            if self.hybrid_direction == 'down' or self.movement_state == 'down' or self.hybrid_last_stop_direction == 'down':
-                # Moving/moved downward: only check downward undershoot
-                if self.current_height < self.hybrid_target_height - height_overshoot_threshold:
-                    self.get_logger().error(
-                        f"🚨 HYBRID CONTROL EMERGENCY: Height undershoot detected! "
-                        f"height={self.current_height:.2f}mm < target-threshold={self.hybrid_target_height - height_overshoot_threshold:.2f}mm "
-                        f"(undershoot={self.hybrid_target_height - self.current_height:.2f}mm)"
-                    )
-                    # Trigger emergency reset (6-step process)
-                    self._trigger_emergency_reset('hybrid_height_undershoot')
-                    return
+            # CRITICAL: Only check overshoot when task is running (prevents false triggers at init)
+            if self.task_type == 'height_force_hybrid' and self.task_state == 'running':
+                # Determine expected movement direction based on current error
+                height_error_for_direction = self.hybrid_target_height - self.current_height
+                
+                # Only check overshoot in the direction we're moving/moved
+                if height_error_for_direction > 0 or self.movement_state == 'up' or self.hybrid_last_stop_direction == 'up':
+                    # Moving/moved upward: only check upward overshoot
+                    if self.current_height > self.hybrid_target_height + height_overshoot_threshold:
+                        self.get_logger().error(
+                            f"🚨 HYBRID CONTROL EMERGENCY: Height overshoot detected! "
+                            f"height={self.current_height:.2f}mm > target+threshold={self.hybrid_target_height + height_overshoot_threshold:.2f}mm "
+                            f"(overshoot={self.current_height - self.hybrid_target_height:.2f}mm)"
+                        )
+                        # Trigger emergency reset (6-step process)
+                        self._trigger_emergency_reset('hybrid_height_overshoot')
+                        return
+                
+                if height_error_for_direction < 0 or self.movement_state == 'down' or self.hybrid_last_stop_direction == 'down':
+                    # Moving/moved downward: only check downward undershoot
+                    if self.current_height < self.hybrid_target_height - height_overshoot_threshold:
+                        self.get_logger().error(
+                            f"🚨 HYBRID CONTROL EMERGENCY: Height undershoot detected! "
+                            f"height={self.current_height:.2f}mm < target-threshold={self.hybrid_target_height - height_overshoot_threshold:.2f}mm "
+                            f"(undershoot={self.hybrid_target_height - self.current_height:.2f}mm)"
+                        )
+                        # Trigger emergency reset (6-step process)
+                        self._trigger_emergency_reset('hybrid_height_undershoot')
+                        return
             
             # ═══════════════════════════════════════════════════════════════
             # HYBRID CONTROL SAFETY: Check for excessive force overshoot
@@ -1206,6 +1209,41 @@ class LiftRobotNode(Node):
                     force_reached = (self.current_force_combined >= self.hybrid_target_force)
                 elif self.hybrid_direction == 'down':
                     force_reached = (self.current_force_combined <= self.hybrid_target_force)
+            
+            # Priority 0.5: Platform Range Limits Check (same as manual control)
+            # Prevents hybrid control from exceeding physical platform boundaries
+            if self.platform_range_enabled:
+                if self.platform_range_min is not None:
+                    bottom_limit = self.platform_range_min + 1.0
+                    if self.current_height < bottom_limit:
+                        self.get_logger().warn(
+                            f"[HybridControl] Bottom limit reached: height={self.current_height:.2f}mm < "
+                            f"limit={bottom_limit:.2f}mm (actual_min+1mm) - stopping"
+                        )
+                        self.hybrid_control_active = False
+                        self._issue_stop(
+                            direction='down',
+                            reason='hybrid_bottom_limit',
+                            disable_control=True,
+                            complete_task_on_stop='limit_exceeded'
+                        )
+                        return
+                
+                if self.platform_range_max is not None:
+                    top_limit = self.platform_range_max - 1.0
+                    if self.current_height > top_limit:
+                        self.get_logger().warn(
+                            f"[HybridControl] Top limit reached: height={self.current_height:.2f}mm > "
+                            f"limit={top_limit:.2f}mm (actual_max-1mm) - stopping"
+                        )
+                        self.hybrid_control_active = False
+                        self._issue_stop(
+                            direction='up',
+                            reason='hybrid_top_limit',
+                            disable_control=True,
+                            complete_task_on_stop='limit_exceeded'
+                        )
+                        return
             
             # Priority 1: Check if EITHER target reached (OR logic)
             if height_reached or force_reached:
@@ -1377,6 +1415,39 @@ class LiftRobotNode(Node):
                     )
                     # Trigger emergency reset (6-step process)
                     self._trigger_emergency_reset('height_undershoot')
+                    return
+        
+        # Priority 0.5: Platform Range Limits Check (same as manual control)
+        # Prevents goto_height from exceeding physical platform boundaries
+        if self.platform_range_enabled:
+            if self.platform_range_min is not None:
+                bottom_limit = self.platform_range_min + 1.0
+                if self.current_height < bottom_limit:
+                    self.get_logger().warn(
+                        f"[GotoHeight] Bottom limit reached: height={self.current_height:.2f}mm < "
+                        f"limit={bottom_limit:.2f}mm (actual_min+1mm) - stopping"
+                    )
+                    self._issue_stop(
+                        direction='down',
+                        reason='goto_height_bottom_limit',
+                        disable_control=True,
+                        complete_task_on_stop='limit_exceeded'
+                    )
+                    return
+            
+            if self.platform_range_max is not None:
+                top_limit = self.platform_range_max - 1.0
+                if self.current_height > top_limit:
+                    self.get_logger().warn(
+                        f"[GotoHeight] Top limit reached: height={self.current_height:.2f}mm > "
+                        f"limit={top_limit:.2f}mm (actual_max-1mm) - stopping"
+                    )
+                    self._issue_stop(
+                        direction='up',
+                        reason='goto_height_top_limit',
+                        disable_control=True,
+                        complete_task_on_stop='limit_exceeded'
+                    )
                     return
         
         # Priority 1: Check if target reached
@@ -1882,14 +1953,27 @@ class LiftRobotNode(Node):
     def force_cb_right(self, msg):
         try:
             self.current_force_right = msg.data
+            self._update_force_combined()
         except Exception as e:
             self.get_logger().warn(f"Force right parse error: {e}")
 
     def force_cb_left(self, msg):
         try:
             self.current_force_left = msg.data
+            self._update_force_combined()
         except Exception as e:
             self.get_logger().warn(f"Force left parse error: {e}")
+    
+    def _update_force_combined(self):
+        """Update combined force reading from available sensors"""
+        if self.current_force_right is not None and self.current_force_left is not None:
+            self.current_force_combined = self.current_force_right + self.current_force_left
+        elif self.current_force_right is not None:
+            self.current_force_combined = self.current_force_right
+        elif self.current_force_left is not None:
+            self.current_force_combined = self.current_force_left
+        else:
+            self.current_force_combined = None
     
     # ═══════════════════════════════════════════════════════════════
     # Task State Management Methods
