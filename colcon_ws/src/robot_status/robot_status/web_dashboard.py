@@ -140,6 +140,16 @@ HTML_TEMPLATE = '''
             justify-content: space-between;
             align-items: center;
         }
+        .status-type {
+            font-size: 0.85em;
+            color: #666;
+            font-weight: normal;
+            background: #e8f0fe;
+            padding: 2px 8px;
+            border-radius: 3px;
+            margin-left: 10px;
+            font-family: monospace;
+        }
         .status-value {
             background: #fff;
             padding: 10px;
@@ -210,23 +220,6 @@ HTML_TEMPLATE = '''
 
         <div class="controls">
             <button onclick="refreshStatus()">🔄 Refresh Now</button>
-            <button onclick="toggleSetStatus()">➕ Set Status</button>
-            <div id="set-status-form" style="display:none; margin-top:15px; padding-top:15px; border-top:1px solid #ddd;">
-                <div class="form-group">
-                    <label>Namespace:</label>
-                    <input type="text" id="new-namespace" placeholder="robot1, shared, etc.">
-                </div>
-                <div class="form-group">
-                    <label>Key:</label>
-                    <input type="text" id="new-key" placeholder="pose, battery, etc.">
-                </div>
-                <div class="form-group">
-                    <label>Value (JSON):</label>
-                    <input type="text" id="new-value" placeholder='{"x": 1, "y": 2}' style="width:300px;">
-                </div>
-                <button onclick="submitStatus()">Submit</button>
-                <button onclick="toggleSetStatus()">Cancel</button>
-            </div>
         </div>
 
         <div class="namespace-tabs" id="tabs"></div>
@@ -236,40 +229,6 @@ HTML_TEMPLATE = '''
     <script>
         let currentNamespace = null;
         let statusData = {};
-
-        function toggleSetStatus() {
-            const form = document.getElementById('set-status-form');
-            form.style.display = form.style.display === 'none' ? 'block' : 'none';
-        }
-
-        async function submitStatus() {
-            const namespace = document.getElementById('new-namespace').value;
-            const key = document.getElementById('new-key').value;
-            const value = document.getElementById('new-value').value;
-
-            if (!namespace || !key || !value) {
-                alert('Please fill all fields');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/status', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({namespace, key, value})
-                });
-                const result = await response.json();
-                if (result.success) {
-                    alert('Status set successfully!');
-                    toggleSetStatus();
-                    refreshStatus();
-                } else {
-                    alert('Error: ' + result.message);
-                }
-            } catch (error) {
-                alert('Error: ' + error);
-            }
-        }
 
         async function deleteStatus(namespace, key) {
             if (!confirm(`Delete ${namespace}.${key}?`)) {
@@ -333,7 +292,7 @@ HTML_TEMPLATE = '''
             if (namespaces.length === 0) {
                 document.getElementById('tabs').innerHTML = '';
                 document.getElementById('content').innerHTML = 
-                    '<div class="empty-state"><h2>No robot status available</h2><p>Use the "Set Status" button to add status data</p></div>';
+                    '<div class="empty-state"><h2>No robot status available</h2></div>';
                 return;
             }
 
@@ -353,16 +312,37 @@ HTML_TEMPLATE = '''
                 const keys = Object.keys(items).sort();
                 
                 const itemsHtml = keys.map(key => {
-                    let displayValue = items[key];
-                    try {
-                        const parsed = JSON.parse(items[key]);
-                        displayValue = JSON.stringify(parsed, null, 2);
-                    } catch (e) {}
+                    const item = items[key];
+                    let displayValue = '';
+                    let typeInfo = '';
+                    
+                    // Handle new format with type and value
+                    if (typeof item === 'object' && item.type && item.value !== undefined) {
+                        typeInfo = `<span class="status-type">${item.type}</span>`;
+                        
+                        // Format the display value
+                        if (typeof item.value === 'object') {
+                            displayValue = JSON.stringify(item.value, null, 2);
+                        } else {
+                            displayValue = String(item.value);
+                        }
+                    } else {
+                        // Fallback for old format
+                        try {
+                            const parsed = JSON.parse(item);
+                            displayValue = JSON.stringify(parsed, null, 2);
+                        } catch (e) {
+                            displayValue = String(item);
+                        }
+                    }
                     
                     return `
                         <div class="status-item">
                             <div class="status-key">
-                                <span>${key}</span>
+                                <div>
+                                    <span>${key}</span>
+                                    ${typeInfo}
+                                </div>
                                 <button class="delete-btn" onclick="deleteStatus('${ns}', '${key}')">🗑️ Delete</button>
                             </div>
                             <div class="status-value">${displayValue}</div>
@@ -461,6 +441,9 @@ class WebDashboardNode(Node):
         def get_all_status():
             try:
                 from robot_status.srv import ListStatus
+                import pickle
+                import base64
+                
                 request_msg = ListStatus.Request()
                 request_msg.ns = ''
                 
@@ -468,10 +451,82 @@ class WebDashboardNode(Node):
                 rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
                 
                 if future.result():
+                    status_dict = json.loads(future.result().status_dict)
+                    
+                    # Process each value to extract type and displayable content
+                    processed_status = {}
+                    for namespace, keys in status_dict.items():
+                        processed_status[namespace] = {}
+                        for key, pickle_str in keys.items():
+                            # Unpickle to get the actual object and its type
+                            try:
+                                # Decode the base64 pickle string
+                                pickled = base64.b64decode(pickle_str.encode('ascii'))
+                                obj = pickle.loads(pickled)
+                                
+                                # Get type information
+                                type_name = type(obj).__name__
+                                module_name = type(obj).__module__
+                                if module_name not in ['builtins', '__main__']:
+                                    type_str = f"{module_name}.{type_name}"
+                                else:
+                                    type_str = type_name
+                                
+                                # Get displayable value
+                                display_value = None
+                                try:
+                                    # Try direct JSON serialization
+                                    display_value = obj
+                                    json.dumps(display_value)  # Test if serializable
+                                except (TypeError, ValueError):
+                                    # Try tolist() for numpy arrays
+                                    if hasattr(obj, 'tolist'):
+                                        display_value = obj.tolist()
+                                    elif hasattr(obj, '__dict__'):
+                                        # For custom classes, show attributes
+                                        display_value = {'_type': type_str, **obj.__dict__}
+                                    else:
+                                        # Fall back to string representation
+                                        display_value = str(obj)
+                                
+                                processed_status[namespace][key] = {
+                                    'type': type_str,
+                                    'value': display_value,
+                                    'pickle': pickle_str  # Keep pickle for reference
+                                }
+                            except Exception as e:
+                                # If unpickling fails, try to extract type from error message
+                                error_msg = str(e)
+                                type_str = 'unknown'
+                                
+                                # Try to extract class name from pickle error
+                                # Error format: "Can't get attribute 'ClassName' on <module '__main__'..."
+                                if "Can't get attribute" in error_msg:
+                                    import re
+                                    match = re.search(r"Can't get attribute '(\w+)'", error_msg)
+                                    if match:
+                                        class_name = match.group(1)
+                                        # Try to extract module name too
+                                        module_match = re.search(r"on <module '([^']+)'", error_msg)
+                                        if module_match:
+                                            module_name = module_match.group(1)
+                                            type_str = f"{module_name}.{class_name}"
+                                        else:
+                                            type_str = class_name
+                                
+                                # Display pickle string with prefix
+                                display_value = f"pickle_base64: {pickle_str}"
+                                
+                                processed_status[namespace][key] = {
+                                    'type': type_str,
+                                    'value': display_value,
+                                    'pickle': pickle_str
+                                }
+                    
                     return jsonify({
                         'success': True,
                         'namespaces': future.result().namespaces,
-                        'status': json.loads(future.result().status_dict)
+                        'status': processed_status
                     })
                 return jsonify({'success': False, 'error': 'Service call failed'})
             except Exception as e:
