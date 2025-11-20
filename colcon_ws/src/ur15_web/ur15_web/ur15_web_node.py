@@ -285,7 +285,7 @@ class UR15WebNode(Node):
             
             loaded_count = 0
             for param_name, attr_name in params_to_load:
-                value = self._get_from_status('ur15', param_name)
+                value = get_from_status(self, 'ur15', param_name)
                 if value:
                     try:
                         # Parse JSON string to numpy array
@@ -308,14 +308,6 @@ class UR15WebNode(Node):
                 
         except Exception as e:
             self.get_logger().warning(f"Error loading calibration from robot_status: {e}")
-    
-    def _get_from_status(self, namespace, key, timeout=2.0):
-        """Helper method wrapper for get_from_status utility function."""
-        return get_from_status(self, namespace, key, timeout)
-    
-    def _set_to_status(self, namespace, key, value, timeout=2.0):
-        """Helper method wrapper for set_to_status utility function."""
-        return set_to_status(self, namespace, key, value, timeout)
     
     def _signal_handler(self, signum, frame):
         """Handle termination signals."""
@@ -1778,7 +1770,7 @@ class UR15WebNode(Node):
                                         # Send all parameters
                                         success_count = 0
                                         for key, value in params.items():
-                                            if self._set_to_status('ur15', key, value):
+                                            if set_to_status(self, 'ur15', key, value):
                                                 success_count += 1
                                         
                                         if success_count == len(params):
