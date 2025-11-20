@@ -31,6 +31,7 @@ from flask import Flask, render_template_string, Response
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
 from robot_status import get_from_status, set_to_status
+from ur15_web import draw_utils
 
 # Add scripts directory to path for camera calibration toolkit
 scripts_dir = get_scripts_directory()
@@ -186,6 +187,10 @@ class UR15WebNode(Node):
         self.cam2end_matrix = None
         self.target2base_matrix = None
         self.calibration_lock = threading.Lock()
+        
+        # Generate 3D curves for visualization
+        self.ur15_base_curve = draw_utils.generate_ur15_base_curve(ray_length=3)
+        self.gb200rack_curve = draw_utils.generate_gb200rack_curve()
         
         # Robot state data
         self.joint_positions = []
@@ -2972,23 +2977,30 @@ class UR15WebNode(Node):
                     'message': str(e)
                 })
     
-    def project_base_origin_to_image(self, frame):
-        """Project base coordinate system origin to image and draw it."""
+    def _get_camera_calib_params(self):
+        """
+        Get camera intrinsic, distortion, and extrinsic matrices.
+        
+        Returns:
+            dict: Dictionary with keys 'intrinsic', 'distortion', 'extrinsic', 'cam2end_matrix', 'end2base_matrix'
+                  Returns None if calibration parameters are not available or TCP pose is missing
+        """
         try:
+            # Check if calibration parameters are available
             with self.calibration_lock:
                 if self.camera_matrix is None or self.distortion_coefficients is None:
-                    return frame
-                if self.cam2end_matrix is None or self.target2base_matrix is None:
-                    return frame
+                    return None
+                if self.cam2end_matrix is None:
+                    return None
                 camera_matrix = self.camera_matrix.copy()
                 distortion_coefficients = self.distortion_coefficients.copy()
                 cam2end_matrix = self.cam2end_matrix.copy()
-                target2base_matrix = self.target2base_matrix.copy()
             
+            # Get current TCP pose
             with self.robot_data_lock:
                 if self.tcp_pose is None:
-                    return frame
-                x = self.tcp_pose['x'] / 1000.0
+                    return None
+                x = self.tcp_pose['x'] / 1000.0  # Convert mm to m
                 y = self.tcp_pose['y'] / 1000.0
                 z = self.tcp_pose['z'] / 1000.0
                 qx = self.tcp_pose['qx']
@@ -3003,114 +3015,50 @@ class UR15WebNode(Node):
                 [2*(qx*qz - qy*qw), 2*(qy*qz + qx*qw), 1 - 2*(qx**2 + qy**2)]
             ])
             
+            # Build end2base transformation matrix
             end2base_matrix = np.eye(4)
             end2base_matrix[:3, :3] = R
             end2base_matrix[:3, 3] = [x, y, z]
             
+            # Calculate camera to base transformation
             cam2base_matrix = end2base_matrix @ cam2end_matrix
-            base_origin_base = np.array([0.0, 0.0, 0.0, 1.0])
+            
+            # Calculate extrinsic matrix (base to camera)
             base2cam_matrix = np.linalg.inv(cam2base_matrix)
-            base_origin_cam = base2cam_matrix @ base_origin_base
-            point_3d = base_origin_cam[:3]
             
-            if point_3d[2] <= 0:
-                return frame
-            
-            point_3d_reshaped = point_3d.reshape(1, 1, 3)
-            rvec = np.zeros((3, 1))
-            tvec = np.zeros((3, 1))
-            
-            image_points, _ = cv2.projectPoints(
-                point_3d_reshaped,
-                rvec, tvec,
-                camera_matrix,
-                distortion_coefficients
-            )
-            
-            pixel_x = int(image_points[0][0][0])
-            pixel_y = int(image_points[0][0][1])
-            
-            height, width = frame.shape[:2]
-            if 0 <= pixel_x < width and 0 <= pixel_y < height:
-                color = (0, 0, 255)
-                thickness = 3
-                length = 20
-                
-                cv2.line(frame, (pixel_x - length, pixel_y), (pixel_x + length, pixel_y), color, thickness)
-                cv2.line(frame, (pixel_x, pixel_y - length), (pixel_x, pixel_y + length), color, thickness)
-                cv2.circle(frame, (pixel_x, pixel_y), 10, color, thickness)
-                
-                label = "Base Origin"
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 0.7
-                label_thickness = 2
-                
-                (text_width, text_height), baseline = cv2.getTextSize(label, font, font_scale, label_thickness)
-                
-                text_x = pixel_x + 15
-                text_y = pixel_y - 10
-                cv2.rectangle(frame, 
-                            (text_x - 5, text_y - text_height - 5),
-                            (text_x + text_width + 5, text_y + baseline + 5),
-                            (0, 0, 0), -1)
-                
-                cv2.putText(frame, label, (text_x, text_y), font, font_scale, color, label_thickness)
-                
-                distance = np.linalg.norm(point_3d)
-                distance_text = f"Dist: {distance*1000:.1f}mm"
-                cv2.putText(frame, distance_text, (text_x, text_y + 25), 
-                           font, 0.5, (255, 255, 255), 1)
-            
-            # Draw a circle with radius 102mm at z=0 plane centered at base origin
-            radius_mm = 102.0  # mm
-            radius_m = radius_mm / 1000.0  # Convert to meters
-            num_points = 72  # Number of points to draw the circle (every 5 degrees)
-            
-            circle_points_3d = []
-            for i in range(num_points):
-                angle = 2 * np.pi * i / num_points
-                # Point on circle in base coordinates (x, y, z=0)
-                circle_x = radius_m * np.cos(angle)
-                circle_y = radius_m * np.sin(angle)
-                circle_z = 0.0
-                
-                # Create homogeneous coordinate
-                point_base = np.array([circle_x, circle_y, circle_z, 1.0])
-                
-                # Transform to camera coordinates
-                point_cam = base2cam_matrix @ point_base
-                
-                # Check if point is in front of camera
-                if point_cam[2] > 0:
-                    circle_points_3d.append(point_cam[:3])
-            
-            # Project circle points to image
-            if len(circle_points_3d) > 0:
-                circle_points_3d_array = np.array(circle_points_3d).reshape(-1, 1, 3)
-                rvec = np.zeros((3, 1))
-                tvec = np.zeros((3, 1))
-                
-                circle_image_points, _ = cv2.projectPoints(
-                    circle_points_3d_array,
-                    rvec, tvec,
-                    camera_matrix,
-                    distortion_coefficients
-                )
-                
-                # Draw circle points
-                circle_color = (0, 0, 255)  # Red color (BGR format)
-                point_radius = 4
-                
-                for point in circle_image_points:
-                    px = int(point[0][0])
-                    py = int(point[0][1])
-                    
-                    # Check if point is within image bounds
-                    if 0 <= px < width and 0 <= py < height:
-                        cv2.circle(frame, (px, py), point_radius, circle_color, -1)
+            return {
+                'intrinsic': camera_matrix,
+                'distortion': distortion_coefficients,
+                'extrinsic': base2cam_matrix,
+                'cam2end_matrix': cam2end_matrix,
+                'end2base_matrix': end2base_matrix
+            }
             
         except Exception as e:
-            self.get_logger().error(f"Error projecting base origin: {e}")
+            self.get_logger().error(f"Error getting camera extrinsic parameters: {e}")
+            return None
+    
+    def project_base_origin_to_image(self, frame):
+        """Project base coordinate system and curves to image using draw_curves_on_image."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+            
+            # Draw UR15 base curve
+            frame = draw_utils.draw_curves_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=params['extrinsic'],
+                point3d=self.ur15_base_curve['curves'],
+                distortion=params['distortion'],
+                color=self.ur15_base_curve['colors'],
+                thickness=2
+            )
+            
+        except Exception as e:
+            self.get_logger().error(f"Error projecting curves to image: {e}")
         
         return frame
     
