@@ -204,6 +204,7 @@ class UR15WebNode(Node):
         self.validation_active = False
         self.corner_detection_enabled = False
         self.corner_detection_params = {}
+        self.draw_rack_enabled = False
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
@@ -1249,6 +1250,40 @@ class UR15WebNode(Node):
                     
             except Exception as e:
                 self.get_logger().error(f"Error toggling corner detection: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+        
+        @self.app.route('/toggle_draw_rack', methods=['POST'])
+        def toggle_draw_rack():
+            """Toggle GB200 rack drawing on/off."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                self.draw_rack_enabled = enable
+                
+                if enable:
+                    self.get_logger().info("GB200 rack drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 rack drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("GB200 rack drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 rack drawing disabled',
+                        'enabled': False
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error toggling rack drawing: {e}")
                 return jsonify({
                     'success': False,
                     'message': str(e),
@@ -3073,9 +3108,6 @@ class UR15WebNode(Node):
                 thickness=2
             )
             
-            # Draw GB200 rack
-            frame = self.project_rack_to_image(frame)
-            
         except Exception as e:
             self.get_logger().error(f"Error projecting curves to image: {e}")
         
@@ -3212,9 +3244,13 @@ class UR15WebNode(Node):
                         if self.corner_detection_enabled:
                             frame = self.apply_corner_detection(frame)
                         
-                        # Only project validation if validation is active
+                        # Draw UR15 base if enabled
                         if self.validation_active:
                             frame = self.project_base_origin_to_image(frame)
+                        
+                        # Draw GB200 rack if enabled
+                        if self.draw_rack_enabled:
+                            frame = self.project_rack_to_image(frame)
                         
                         # Scale down for web display while maintaining aspect ratio
                         height, width = frame.shape[:2]
