@@ -286,17 +286,13 @@ class UR15WebNode(Node):
             loaded_count = 0
             for param_name, attr_name in params_to_load:
                 value = get_from_status(self, 'ur15', param_name)
-                if value:
+                if value is not None:
                     try:
-                        # Parse JSON string to numpy array
-                        matrix_list = json.loads(value)
-                        matrix_array = np.array(matrix_list, dtype=np.float64)
-                        
                         with self.calibration_lock:
-                            setattr(self, attr_name, matrix_array)
+                            setattr(self, attr_name, value)
                         
                         loaded_count += 1
-                        self.get_logger().info(f"Loaded {param_name} from robot_status (shape: {matrix_array.shape})")
+                        self.get_logger().info(f"Loaded {param_name} from robot_status (shape: {value.shape})")
                     except Exception as e:
                         self.get_logger().warning(f"Failed to parse {param_name}: {e}")
             
@@ -1761,10 +1757,10 @@ class UR15WebNode(Node):
                                         # Prepare and send calibration data
                                         with self.calibration_lock:
                                             params = {
-                                                'camera_matrix': json.dumps(self.camera_matrix.tolist()),
-                                                'distortion_coefficients': json.dumps(self.distortion_coefficients.tolist()),
-                                                'cam2end_matrix': json.dumps(self.cam2end_matrix.tolist()),
-                                                'target2base_matrix': json.dumps(self.target2base_matrix.tolist())
+                                                'camera_matrix': self.camera_matrix,
+                                                'distortion_coefficients': self.distortion_coefficients,
+                                                'cam2end_matrix': self.cam2end_matrix,
+                                                'target2base_matrix': self.target2base_matrix
                                             }
                                         
                                         # Send all parameters
