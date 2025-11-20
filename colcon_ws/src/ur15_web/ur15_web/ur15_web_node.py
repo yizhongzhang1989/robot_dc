@@ -30,6 +30,7 @@ import atexit
 from flask import Flask, render_template_string, Response
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
+from robot_status.srv import GetStatus
 
 # Add scripts directory to path for camera calibration toolkit
 scripts_dir = get_scripts_directory()
@@ -265,6 +266,66 @@ class UR15WebNode(Node):
         self.flask_thread.start()
         
         self.get_logger().info(f"Web interface running at http://0.0.0.0:{self.web_port}")
+        
+        # Load calibration parameters from robot_status if available
+        self._load_calibration_from_status()
+    
+    def _load_calibration_from_status(self):
+        """Load calibration parameters from robot_status service."""
+        try:
+            # Create service client for GetStatus
+            get_status_client = self.create_client(GetStatus, '/robot_status/get')
+            
+            # Wait for service to be available (with timeout)
+            if not get_status_client.wait_for_service(timeout_sec=2.0):
+                self.get_logger().info("robot_status service not available, skipping calibration parameter load")
+                return
+            
+            self.get_logger().info("Loading calibration parameters from robot_status...")
+            
+            # Parameters to load
+            params_to_load = [
+                ('camera_matrix', 'camera_matrix'),
+                ('distortion_coefficients', 'distortion_coefficients'),
+                ('cam2end_matrix', 'cam2end_matrix'),
+                ('target2base_matrix', 'target2base_matrix')
+            ]
+            
+            loaded_count = 0
+            for param_name, attr_name in params_to_load:
+                request = GetStatus.Request()
+                request.ns = 'ur15'
+                request.key = param_name
+                
+                future = get_status_client.call_async(request)
+                rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+                
+                if future.result() is not None:
+                    response = future.result()
+                    if response.success and response.value:
+                        try:
+                            # Parse JSON string to numpy array
+                            matrix_list = json.loads(response.value)
+                            matrix_array = np.array(matrix_list, dtype=np.float64)
+                            
+                            with self.calibration_lock:
+                                setattr(self, attr_name, matrix_array)
+                            
+                            loaded_count += 1
+                            self.get_logger().info(f"Loaded {param_name} from robot_status (shape: {matrix_array.shape})")
+                        except Exception as e:
+                            self.get_logger().warning(f"Failed to parse {param_name}: {e}")
+                else:
+                    self.get_logger().debug(f"{param_name} not found in robot_status")
+            
+            if loaded_count > 0:
+                self.get_logger().info(f"Successfully loaded {loaded_count}/4 calibration parameters from robot_status")
+                self.push_web_log(f"Loaded {loaded_count}/4 calibration parameters from robot_status", 'success')
+            else:
+                self.get_logger().info("No calibration parameters found in robot_status")
+                
+        except Exception as e:
+            self.get_logger().warning(f"Error loading calibration from robot_status: {e}")
     
     def _signal_handler(self, signum, frame):
         """Handle termination signals."""
