@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """
-UR15 Web Launch File (Without Camera)
+UR15 Beijing Bringup Launch File
 
-This launch file starts:
-1. UR15 robot driver (ur_control.launch.py)
-2. UR15 web node (ur15_web_node) - waits 5 seconds after robot driver
+This launch file starts the complete UR15 system sequentially:
+1. UR15 robot driver (ur_control) - starts immediately
+2. UR15 camera node - waits 5 seconds after robot driver
+3. UR15 web node - waits 8 seconds total (5s for robot + 3s for camera)
 
-Note: This launch file does not start the camera node.
-You should launch a camera separately if needed.
+This is the main launch file for bringing up the entire UR15 system in Beijing.
 """
 
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 import os
 
@@ -30,7 +29,13 @@ def generate_launch_description():
     camera_topic_arg = DeclareLaunchArgument(
         'camera_topic',
         default_value='/ur15_camera/image_raw',
-        description='UR15 Camera topic name (should be published by external camera node)'
+        description='UR15 Camera topic name'
+    )
+    
+    rtsp_url_arg = DeclareLaunchArgument(
+        'rtsp_url',
+        default_value='rtsp://admin:123456@192.168.1.101/stream0',
+        description='RTSP URL for camera stream'
     )
     
     dataset_dir_arg = DeclareLaunchArgument(
@@ -51,61 +56,95 @@ def generate_launch_description():
         description='JSON file containing chessboard pattern configuration'
     )
     
+    launch_rviz_arg = DeclareLaunchArgument(
+        'launch_rviz',
+        default_value='false',
+        description='Launch RViz for visualization'
+    )
+    
     # Get launch configurations
     ur15_ip = LaunchConfiguration('ur15_ip')
     camera_topic = LaunchConfiguration('camera_topic')
+    rtsp_url = LaunchConfiguration('rtsp_url')
     dataset_dir = LaunchConfiguration('dataset_dir')
     calib_data_dir = LaunchConfiguration('calib_data_dir')
     chessboard_config = LaunchConfiguration('chessboard_config')
+    launch_rviz = LaunchConfiguration('launch_rviz')
     
-    # UR robot driver launch
+    # 1. UR15 robot control launch
     ur_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
-                FindPackageShare('ur_robot_driver'),
+                FindPackageShare('ur15_web'),
                 'launch',
-                'ur_control.launch.py'
+                'ur15_control_launch.py'
             ])
         ]),
         launch_arguments={
-            'ur_type': 'ur15',
-            'robot_ip': ur15_ip,
-            'launch_rviz': 'false'
+            'ur15_ip': ur15_ip,
+            'launch_rviz': launch_rviz
         }.items()
     )
     
-    # UR15 web node
-    ur15_web_node = Node(
-        package='ur15_web',
-        executable='ur15_web_node',
-        name='ur15_web_node',
-        output='screen',
-        parameters=[{
-            'camera_topic': camera_topic,
-            'web_port': 8030,
+    # 2. UR15 camera launch
+    camera_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('camera_node'),
+                'launch',
+                'ur15_cam_launch.py'
+            ])
+        ]),
+        launch_arguments={
+            'ros_topic_name': camera_topic,
+            'rtsp_url_main': rtsp_url,
+            'camera_name': 'UR15Camera',
+            'server_port': '8019'
+        }.items()
+    )
+    
+    # 3. UR15 web launch
+    web_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('ur15_web'),
+                'launch',
+                'ur15_web_launch.py'
+            ])
+        ]),
+        launch_arguments={
             'ur15_ip': ur15_ip,
-            'ur15_port': 30002,
+            'camera_topic': camera_topic,
             'dataset_dir': dataset_dir,
             'calib_data_dir': calib_data_dir,
             'chessboard_config': chessboard_config
-        }]
+        }.items()
     )
     
-    # Delay web node by 5 seconds after robot driver
-    delayed_web_node = TimerAction(
+    # Delay camera launch by 5 seconds after robot driver
+    delayed_camera_launch = TimerAction(
         period=5.0,
-        actions=[ur15_web_node]
+        actions=[camera_launch]
+    )
+    
+    # Delay web launch by 8 seconds total (5s for robot + 3s for camera to initialize)
+    delayed_web_launch = TimerAction(
+        period=8.0,
+        actions=[web_launch]
     )
     
     return LaunchDescription([
         # Arguments
         ur15_ip_arg,
         camera_topic_arg,
+        rtsp_url_arg,
         dataset_dir_arg,
         calib_data_dir_arg,
         chessboard_config_arg,
+        launch_rviz_arg,
         
-        # Sequential launch: robot -> web (no camera)
+        # Sequential launch: control -> camera -> web
         ur_control_launch,          # Start immediately
-        delayed_web_node            # Start after 5 seconds
+        delayed_camera_launch,      # Start after 5 seconds
+        delayed_web_launch          # Start after 8 seconds
     ])

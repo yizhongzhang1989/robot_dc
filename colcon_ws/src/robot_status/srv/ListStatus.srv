@@ -1,0 +1,6 @@
+string ns              # Empty string = list all, otherwise list specific namespace
+---
+bool success           # Whether the operation succeeded
+string[] namespaces    # List of all discovered namespaces
+string status_dict     # JSON dictionary of status (filtered by ns if specified)
+string message         # Error message or info
