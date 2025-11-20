@@ -14,12 +14,38 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
+from pathlib import Path
+import os
 
 
 def generate_launch_description():
     """Generate launch description for robot status system."""
     
+    # Determine default auto-save path (temp/robot_status_auto_save.json in robot_dc root)
+    try:
+        current_dir = Path.cwd()
+        robot_dc_root = None
+        
+        # Find robot_dc root directory
+        for parent in [current_dir] + list(current_dir.parents):
+            if parent.name == 'robot_dc':
+                robot_dc_root = parent
+                break
+        
+        if robot_dc_root is not None:
+            default_save_path = str(robot_dc_root / 'temp' / 'robot_status_auto_save.json')
+        else:
+            default_save_path = 'robot_status_auto_save.json'
+    except Exception:
+        default_save_path = 'robot_status_auto_save.json'
+    
     # Declare launch arguments
+    auto_save_file_path_arg = DeclareLaunchArgument(
+        'auto_save_file_path',
+        default_value=default_save_path,
+        description='Path to JSON file for auto-saving status'
+    )
+    
     web_enabled_arg = DeclareLaunchArgument(
         'web_enabled',
         default_value='true',
@@ -39,6 +65,7 @@ def generate_launch_description():
     )
     
     # Get launch configurations
+    auto_save_file_path = LaunchConfiguration('auto_save_file_path')
     web_enabled = LaunchConfiguration('web_enabled')
     web_port = LaunchConfiguration('web_port')
     web_host = LaunchConfiguration('web_host')
@@ -49,6 +76,9 @@ def generate_launch_description():
         executable='robot_status_node.py',
         name='robot_status_node',
         output='screen',
+        parameters=[{
+            'auto_save_file_path': auto_save_file_path
+        }],
         emulate_tty=True
     )
     
@@ -68,6 +98,7 @@ def generate_launch_description():
     
     return LaunchDescription([
         # Arguments
+        auto_save_file_path_arg,
         web_enabled_arg,
         web_port_arg,
         web_host_arg,

@@ -6,8 +6,9 @@ A ROS2 package for centralized robot status management with dynamic multi-robot 
 
 - **Dynamic Multi-Robot Support**: Add robots without code changes - namespaces are created on-the-fly
 - **Hierarchical Organization**: Organize status by namespace (per-robot or shared)
-- **Three Service Interfaces**: `set_status`, `get_status`, `list_status`
-- **Web Dashboard**: Real-time visualization at http://localhost:8005
+- **Four Service Interfaces**: `set_status`, `get_status`, `list_status`, `delete_status`
+- **Auto-Save/Load**: Automatically persists status to JSON file and restores on startup
+- **Web Dashboard**: Real-time visualization at http://localhost:8005 with delete buttons
 - **Thread-Safe Operations**: Concurrent access protection with locking
 - **JSON Support**: Store complex data structures as JSON strings
 - **Python Client Utils**: Easy integration with helper class
@@ -29,14 +30,25 @@ ros2 launch robot_status robot_status_launch.py
 ```
 
 **Launch Parameters:**
+- `auto_save_file_path` - Path to JSON file for auto-saving status (default: `robot_status_auto_save.json`)
 - `web_enabled:=true/false` - Enable/disable web dashboard (default: true)
 - `web_port:=8005` - Web server port (default: 8005)
 - `web_host:=0.0.0.0` - Web server host (default: 0.0.0.0)
 
 **Example:**
 ```bash
+# Launch with custom auto-save file path
+ros2 launch robot_status robot_status_launch.py \
+  auto_save_file_path:=/path/to/my_status.json
+
+# Launch with different web port
 ros2 launch robot_status robot_status_launch.py web_port:=8080
 ```
+
+**Auto-Save Behavior:**
+- On startup: Loads all status from the JSON file if it exists
+- On set/delete: Automatically saves the updated status to the file
+- Status persists across node restarts
 
 ### 2. Access the Web Dashboard
 
@@ -50,7 +62,7 @@ The dashboard auto-refreshes every 2 seconds and displays all status organized b
 
 ### Set Status
 
-Store a status value for any namespace.key combination.
+Store a status value for any namespace.key combination. **Triggers auto-save after successful set.**
 
 **Service:** `/robot_status/set`
 
@@ -162,7 +174,7 @@ ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: 'shared'}
 
 ### Delete Status
 
-Remove a specific status key or an entire namespace.
+Remove a specific status key or an entire namespace. **Triggers auto-save after deletion.**
 
 **Service:** `/robot_status/delete`
 
@@ -430,10 +442,65 @@ string status_dict  # JSON dictionary of status
 string message      # Summary message
 ```
 
+## Auto-Save and Persistence
+
+The node automatically persists all status to a JSON file for restart-safe operation.
+
+### Configuration
+
+Set the file path via launch parameter:
+```bash
+ros2 launch robot_status robot_status_launch.py \
+  auto_save_file_path:=/path/to/status_backup.json
+```
+
+Default path: `robot_status_auto_save.json` (in current working directory)
+
+### Behavior
+
+- **On Startup**: Automatically loads all status from the JSON file if it exists
+- **On Set**: Saves updated status after every successful `set_status` call
+- **On Delete**: Saves updated status after every successful `delete_status` call
+- **File Format**: Standard JSON with hierarchical structure
+
+### JSON File Format
+
+```json
+{
+  "robot1": {
+    "pose": "{\"x\":1.5,\"y\":2.3,\"z\":0.5}",
+    "battery": "95",
+    "state": "MOVING"
+  },
+  "robot2": {
+    "location": "warehouse_B",
+    "battery": "72"
+  },
+  "shared": {
+    "mission_id": "task_123",
+    "active_robots": "3"
+  }
+}
+```
+
+### Manual File Management
+
+You can manually edit the JSON file when the node is stopped. On next startup, the node will load your changes.
+
+```bash
+# Stop the node
+# Edit the JSON file
+nano robot_status_auto_save.json
+
+# Restart to load changes
+ros2 launch robot_status robot_status_launch.py
+```
+
 ## Performance Considerations
 
 - **Concurrency**: Thread-safe operations allow multiple simultaneous requests
 - **Memory**: Status stored in-memory as ROS2 parameters
+- **Persistence**: Automatic file I/O on every set/delete (negligible overhead for typical usage)
 - **Scalability**: Tested with multiple robots and high-frequency updates
 - **Network**: Web dashboard uses polling (2s interval) - adjust if needed
 
