@@ -465,12 +465,22 @@ class URCapture(Node):
                     else:
                         print(f"✗ Failed to capture data for {movement['name']}")
                     
+                    # Return to original position before next movement
+                    return_result = robot.movel(current_tcp_pose, a=0.1, v=0.05)
+                    
+                    if return_result == 0:
+                        print("✓ Returned to start position")
+                    else:
+                        print(f"✗ Failed to return to start position (result: {return_result})")
+                    
+                    time.sleep(0.5)  # Wait for movement to complete
+                    
                 except Exception as e:
                     print(f"Error during {movement['name']} movement: {e}")
                     continue
             
-            # Return to original position
-            print(f"\n--- Returning to original position ---")
+            # Final return to original position (for safety)
+            print(f"\n--- Final return to original position ---")
             return_result = robot.movel(current_tcp_pose, a=0.1, v=0.05)
             
             time.sleep(0.5)  # Wait for movement to complete

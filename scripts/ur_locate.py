@@ -308,12 +308,23 @@ class URLocate(URCapture):
                     else:
                         self.get_logger().warn(f"✗ Failed to capture data for {movement['name']}")
                     
+                    # Return to original position before next movement
+                    self.get_logger().info(f"Returning to start position...")
+                    return_result = robot.movel(current_tcp_pose, a=0.1, v=0.05)
+                    
+                    if return_result == 0:
+                        self.get_logger().info("✓ Returned to start position")
+                    else:
+                        self.get_logger().warn(f"✗ Failed to return to start position (result: {return_result})")
+                    
+                    time.sleep(0.5)  # Wait for movement to complete
+                    
                 except Exception as e:
                     self.get_logger().error(f"Error during {movement['name']} movement: {e}")
                     continue
             
-            # Return to original position
-            self.get_logger().info(f"\n--- Returning to original position ---")
+            # Final return to original position (for safety)
+            self.get_logger().info(f"\n--- Final return to original position ---")
             return_result = robot.movel(current_tcp_pose, a=0.1, v=0.05)
             
             time.sleep(0.5)
