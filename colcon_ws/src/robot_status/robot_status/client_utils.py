@@ -80,8 +80,10 @@ class RobotStatusClient:
         self.node = node
         
         # Cache for async access (avoids spin_until_future_complete in callbacks/threads)
+        # Cache stores tuples of (value, timestamp)
         self._cache = {}
         self._pending_futures = {}
+        self._cache_ttl = 1.0  # Cache expires after 1 second
         
         # Executor and spin thread for self-contained operation
         self._executor = None
@@ -146,10 +148,16 @@ class RobotStatusClient:
             if future.done():
                 try:
                     response = future.result()
-                    if response.success and response.value:
-                        # Unpickle and cache
-                        pickled = base64.b64decode(response.value.encode('ascii'))
-                        self._cache[key] = pickle.loads(pickled)
+                    if response.success:
+                        if response.value:
+                            # Unpickle and cache with timestamp
+                            pickled = base64.b64decode(response.value.encode('ascii'))
+                            self._cache[key] = (pickle.loads(pickled), time.time())
+                        else:
+                            # Value doesn't exist (was deleted), remove from cache
+                            if key in self._cache:
+                                del self._cache[key]
+                                self.node.get_logger().debug(f"Removed deleted key from cache: {key}")
                 except Exception as e:
                     self.node.get_logger().debug(f"Error processing future {key}: {e}")
                 finally:
@@ -203,9 +211,9 @@ class RobotStatusClient:
             result = future.result()
             if result and result.success:
                 self.node.get_logger().debug(f"Set {namespace}.{key}")
-                # Update cache with new value
+                # Update cache with new value and timestamp
                 cache_key = f"{namespace}/{key}"
-                self._cache[cache_key] = value
+                self._cache[cache_key] = (value, time.time())
                 return True
             elif result:
                 self.node.get_logger().error(f"Failed to set {namespace}.{key}: {result.message}")
@@ -245,9 +253,16 @@ class RobotStatusClient:
             
             cache_key = f"{namespace}/{key}"
             
-            # Check cache first
+            # Check cache first, validate TTL
             if cache_key in self._cache:
-                return self._cache[cache_key]
+                cached_value, cached_time = self._cache[cache_key]
+                # Check if cache entry has expired
+                if time.time() - cached_time < self._cache_ttl:
+                    return cached_value
+                else:
+                    # Cache expired, remove it
+                    del self._cache[cache_key]
+                    self.node.get_logger().debug(f"Cache expired for {cache_key}")
             
             # If not in cache and not pending, initiate async request
             if cache_key not in self._pending_futures:
@@ -384,6 +399,21 @@ class RobotStatusClient:
             if future.result():
                 result = future.result()
                 if result.success:
+                    # Remove from cache after successful deletion
+                    if key:
+                        # Delete specific key
+                        cache_key = f"{namespace}/{key}"
+                        if cache_key in self._cache:
+                            del self._cache[cache_key]
+                            self.node.get_logger().debug(f"Removed {cache_key} from cache")
+                    else:
+                        # Delete entire namespace
+                        keys_to_remove = [k for k in self._cache.keys() if k.startswith(f"{namespace}/")]
+                        for k in keys_to_remove:
+                            del self._cache[k]
+                        if keys_to_remove:
+                            self.node.get_logger().debug(f"Removed {len(keys_to_remove)} keys from namespace {namespace} cache")
+                    
                     self.node.get_logger().info(result.message)
                     return True
                 else:
