@@ -130,14 +130,21 @@ class RobotStatusNode(Node):
             with open(self.auto_save_file_path, 'r') as f:
                 data = json.load(f)
             
-            # Load all namespace.key pairs (values are already pickled base64 strings)
+            # Load all namespace.key pairs
             count = 0
             for namespace, keys in data.items():
                 for key, value in keys.items():
                     param_name = f"{namespace}.{key}"
                     try:
-                        # Value is already a pickled base64 string, use directly
-                        self.declare_parameter(param_name, value)
+                        # Handle new format: {"pickle": "...", "json": {...}}
+                        if isinstance(value, dict) and "pickle" in value:
+                            pickle_str = value["pickle"]
+                        else:
+                            # Backward compatibility: old format (direct pickle string)
+                            pickle_str = value
+                        
+                        # Use the pickle string directly
+                        self.declare_parameter(param_name, pickle_str)
                         count += 1
                     except Exception as e:
                         self.get_logger().warn(f"Failed to load {param_name}: {e}")
@@ -170,12 +177,36 @@ class RobotStatusNode(Node):
                 if namespace not in status_tree:
                     status_tree[namespace] = {}
                 
-                # Get parameter value (already pickled base64 string)
+                # Get parameter value (pickled base64 string)
                 try:
                     with self.lock:
-                        value = self.get_parameter(param_name).value
-                    # Store the pickled base64 string directly
-                    status_tree[namespace][key] = value
+                        value_str = self.get_parameter(param_name).value
+                    
+                    # Create dict with pickle string
+                    value_dict = {"pickle": value_str}
+                    
+                    # Try to add JSON representation if possible
+                    try:
+                        # Unpickle to get the actual object
+                        pickled = base64.b64decode(value_str.encode('ascii'))
+                        obj = pickle.loads(pickled)
+                        
+                        # Try to serialize to JSON
+                        # This will work for basic types, lists, dicts, etc.
+                        try:
+                            json_str = json.dumps(obj)
+                            # If successful, parse it back to include as dict
+                            value_dict["json"] = json.loads(json_str)
+                        except (TypeError, ValueError):
+                            # Try tolist() method (for numpy arrays and similar objects)
+                            if hasattr(obj, 'tolist'):
+                                json_str = json.dumps(obj.tolist())
+                                value_dict["json"] = json.loads(json_str)
+                    except Exception:
+                        # JSON serialization failed, just keep pickle
+                        pass
+                    
+                    status_tree[namespace][key] = value_dict
                 except Exception:
                     pass
             
@@ -183,7 +214,7 @@ class RobotStatusNode(Node):
             save_path = Path(self.auto_save_file_path)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Write to file - values are pickled base64 strings
+            # Write to file
             with open(self.auto_save_file_path, 'w') as f:
                 json.dump(status_tree, f, indent=2)
             
