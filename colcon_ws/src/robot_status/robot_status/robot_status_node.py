@@ -190,6 +190,10 @@ class RobotStatusNode(Node):
                 except Exception:
                     pass
             
+            # Ensure the directory exists before writing
+            save_path = Path(self.auto_save_file_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            
             # Write to file
             with open(self.auto_save_file_path, 'w') as f:
                 json.dump(status_tree, f, indent=2)
