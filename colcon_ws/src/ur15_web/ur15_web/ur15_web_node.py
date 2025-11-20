@@ -2524,8 +2524,35 @@ class UR15WebNode(Node):
                 thickness=2
             )
             
+            # Draw GB200 rack
+            frame = self.project_rack_to_image(frame)
+            
         except Exception as e:
             self.get_logger().error(f"Error projecting curves to image: {e}")
+        
+        return frame
+    
+    def project_rack_to_image(self, frame):
+        """Project GB200 rack to image using draw_curves_on_image."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+            
+            # Draw GB200 rack curve
+            frame = draw_utils.draw_curves_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=params['extrinsic'],
+                point3d=self.gb200rack_curve['curves'],
+                distortion=params['distortion'],
+                color=self.gb200rack_curve['colors'],
+                thickness=2
+            )
+            
+        except Exception as e:
+            self.get_logger().error(f"Error projecting rack to image: {e}")
         
         return frame
     
