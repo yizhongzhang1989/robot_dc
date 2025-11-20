@@ -191,19 +191,22 @@ class RobotStatusNode(Node):
                         pickled = base64.b64decode(value_str.encode('ascii'))
                         obj = pickle.loads(pickled)
                         
-                        # Try to serialize to JSON
-                        # This will work for basic types, lists, dicts, etc.
+                        # Try direct JSON serialization first
                         try:
                             json_str = json.dumps(obj)
-                            # If successful, parse it back to include as dict
                             value_dict["json"] = json.loads(json_str)
                         except (TypeError, ValueError):
-                            # Try tolist() method (for numpy arrays and similar objects)
+                            # Direct serialization failed, try tolist() method
                             if hasattr(obj, 'tolist'):
-                                json_str = json.dumps(obj.tolist())
-                                value_dict["json"] = json.loads(json_str)
+                                try:
+                                    list_obj = obj.tolist()
+                                    json_str = json.dumps(list_obj)
+                                    value_dict["json"] = json.loads(json_str)
+                                except (TypeError, ValueError, AttributeError):
+                                    # tolist() also failed, no JSON representation
+                                    pass
                     except Exception:
-                        # JSON serialization failed, just keep pickle
+                        # Unpickling failed, just keep pickle
                         pass
                     
                     status_tree[namespace][key] = value_dict

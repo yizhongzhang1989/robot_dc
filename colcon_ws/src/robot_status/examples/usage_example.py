@@ -13,6 +13,7 @@ This example demonstrates setting and getting status with various data types:
 import rclpy
 from rclpy.node import Node
 from robot_status.client_utils import RobotStatusClient
+from robot_status import set_to_status, get_from_status
 import numpy as np
 from dataclasses import dataclass
 from typing import List
@@ -40,6 +41,30 @@ class Waypoint:
     
     def __repr__(self):
         return f"Waypoint(x={self.x}, y={self.y}, z={self.z}, θ={self.orientation}°, v={self.velocity})"
+
+
+# Custom class example 3: Class with tolist() method for JSON serialization
+class Pose3D:
+    """3D pose with position and orientation (quaternion)."""
+    
+    def __init__(self, x, y, z, qx, qy, qz, qw):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.qx = qx
+        self.qy = qy
+        self.qz = qz
+        self.qw = qw
+    
+    def tolist(self):
+        """Convert to list for JSON serialization."""
+        return {
+            'position': [self.x, self.y, self.z],
+            'orientation': [self.qx, self.qy, self.qz, self.qw]
+        }
+    
+    def __repr__(self):
+        return f"Pose3D(pos=[{self.x}, {self.y}, {self.z}], quat=[{self.qx}, {self.qy}, {self.qz}, {self.qw}])"
 
 
 def test_basic_types(client, node):
@@ -194,6 +219,15 @@ def test_custom_classes(client, node):
     assert value.x == 10.5
     assert value.orientation == 45.0
     
+    # Class with tolist() method
+    pose = Pose3D(x=1.5, y=2.3, z=0.5, qx=0.0, qy=0.0, qz=0.707, qw=0.707)
+    client.set_status('test_robot', 'robot_pose', pose)
+    value = client.get_status('test_robot', 'robot_pose')
+    node.get_logger().info(f"Class with tolist(): {value}")
+    node.get_logger().info(f"  JSON representation: {value.tolist()}")
+    assert value.x == 1.5
+    assert value.z == 0.5
+    
     # List of custom objects
     path = [
         Waypoint(0, 0, 0, 0, 1.0),
@@ -301,6 +335,73 @@ def test_update_and_overwrite(client, node):
     node.get_logger().info("✓ Update and overwrite tests passed")
 
 
+def test_direct_functions(node):
+    """Test direct set_to_status and get_from_status functions."""
+    node.get_logger().info("\n=== Testing Direct Functions (set_to_status/get_from_status) ===")
+    
+    # Test with basic types
+    set_to_status(node, 'direct_test', 'message', "Hello from direct function")
+    value = get_from_status(node, 'direct_test', 'message')
+    node.get_logger().info(f"String via direct functions: '{value}'")
+    assert value == "Hello from direct function"
+    
+    # Test with numpy array
+    test_array = np.array([[1, 2, 3], [4, 5, 6]])
+    set_to_status(node, 'direct_test', 'matrix', test_array)
+    value = get_from_status(node, 'direct_test', 'matrix')
+    node.get_logger().info(f"NumPy array via direct functions: shape={value.shape}")
+    assert np.array_equal(value, test_array)
+    
+    # Test with custom class
+    config = RobotConfig(max_speed=3.0, acceleration=1.0, brake_distance=2.0)
+    set_to_status(node, 'direct_test', 'robot_config', config)
+    value = get_from_status(node, 'direct_test', 'robot_config')
+    node.get_logger().info(f"Custom class via direct functions: {value}")
+    assert value.max_speed == 3.0
+    
+    # Test with dataclass
+    waypoint = Waypoint(x=15.0, y=25.0, z=1.0, orientation=90.0, velocity=2.0)
+    set_to_status(node, 'direct_test', 'waypoint', waypoint)
+    value = get_from_status(node, 'direct_test', 'waypoint')
+    node.get_logger().info(f"Dataclass via direct functions: {value}")
+    assert value.x == 15.0
+    assert value.orientation == 90.0
+    
+    # Test with Pose3D (class with tolist())
+    pose = Pose3D(x=5.0, y=10.0, z=2.0, qx=0.0, qy=0.0, qz=0.383, qw=0.924)
+    set_to_status(node, 'direct_test', 'pose', pose)
+    value = get_from_status(node, 'direct_test', 'pose')
+    node.get_logger().info(f"Pose3D via direct functions: {value}")
+    node.get_logger().info(f"  JSON representation: {value.tolist()}")
+    assert value.x == 5.0
+    assert value.qw == 0.924
+    
+    # Test with complex dict
+    complex_data = {
+        'id': 'test_001',
+        'values': [1, 2, 3, 4, 5],
+        'matrix': np.eye(3),
+        'config': RobotConfig(1.5, 0.3, 0.8),
+        'nested': {
+            'flag': True,
+            'count': 42
+        }
+    }
+    set_to_status(node, 'direct_test', 'complex', complex_data)
+    value = get_from_status(node, 'direct_test', 'complex')
+    node.get_logger().info(f"Complex dict via direct functions:")
+    node.get_logger().info(f"  - id: {value['id']}")
+    node.get_logger().info(f"  - values: {value['values']}")
+    node.get_logger().info(f"  - matrix shape: {value['matrix'].shape}")
+    node.get_logger().info(f"  - config: {value['config']}")
+    node.get_logger().info(f"  - nested flag: {value['nested']['flag']}")
+    assert value['id'] == 'test_001'
+    assert isinstance(value['matrix'], np.ndarray)
+    assert isinstance(value['config'], RobotConfig)
+    
+    node.get_logger().info("✓ All direct function tests passed")
+
+
 def main():
     rclpy.init()
     node = Node('usage_example')
@@ -320,6 +421,7 @@ def main():
         test_custom_classes(client, node)
         test_complex_nested_structures(client, node)
         test_update_and_overwrite(client, node)
+        test_direct_functions(node)
         
         # Summary
         node.get_logger().info("\n" + "="*60)
@@ -332,6 +434,7 @@ def main():
         node.get_logger().info("  • Custom classes and dataclasses")
         node.get_logger().info("  • Complex nested structures")
         node.get_logger().info("  • Type changes on updates")
+        node.get_logger().info("  • Direct functions (set_to_status/get_from_status)")
         node.get_logger().info("\nView all data at: http://localhost:8005")
         
     except Exception as e:
