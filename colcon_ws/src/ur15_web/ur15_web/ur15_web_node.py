@@ -635,14 +635,14 @@ class UR15WebNode(Node):
             from flask import jsonify
             has_image = self.current_image is not None
             
-            # Debug log for camera status
-            if hasattr(self, '_debug_counter'):
-                self._debug_counter += 1
-            else:
-                self._debug_counter = 1
-            
-            if self._debug_counter % 20 == 0:  # Log every 10 seconds (20 * 500ms)
-                self.get_logger().info(f"Camera status check: has_image={has_image}, current_image type: {type(self.current_image)}")
+            # Debug log for camera status (disabled - not critical)
+            # if hasattr(self, '_debug_counter'):
+            #     self._debug_counter += 1
+            # else:
+            #     self._debug_counter = 1
+            # 
+            # if self._debug_counter % 20 == 0:  # Log every 10 seconds (20 * 500ms)
+            #     self.get_logger().info(f"Camera status check: has_image={has_image}, current_image type: {type(self.current_image)}")
             
             with self.calibration_lock:
                 has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
