@@ -52,20 +52,18 @@ HTML_TEMPLATE = '''
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header-left h1 {
+            margin-bottom: 5px;
         }
         .update-info {
             color: #666;
             font-size: 0.9em;
-            margin-top: 5px;
         }
-        .controls {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .controls button {
+        .refresh-btn {
             background: #1a73e8;
             color: white;
             border: none;
@@ -73,16 +71,30 @@ HTML_TEMPLATE = '''
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
-            margin-right: 10px;
+            transition: background 0.2s;
         }
-        .controls button:hover {
+        .refresh-btn:hover {
             background: #1557b0;
         }
-        .controls input, .controls select {
-            padding: 8px;
-            border: 1px solid #ddd;
+        .connection-status {
+            display: inline-block;
+            padding: 4px 12px;
             border-radius: 4px;
-            margin-right: 5px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-left: 20px;
+        }
+        .connection-status.connected {
+            background: #e6f4ea;
+            color: #137333;
+        }
+        .connection-status.disconnected {
+            background: #fce8e6;
+            color: #c5221f;
+        }
+        .connection-status.connecting {
+            background: #fef7e0;
+            color: #ea8600;
         }
         .namespace-tabs {
             display: flex;
@@ -211,15 +223,15 @@ HTML_TEMPLATE = '''
 <body>
     <div class="container">
         <div class="header">
-            <h1>🤖 Robot Status Dashboard</h1>
-            <div class="update-info">
-                Last updated: <span id="last-update">Loading...</span>
-                <span style="margin-left: 20px;">Auto-refresh: <strong>ON</strong> (every 2s)</span>
+            <div class="header-left">
+                <h1>🤖 Robot Status Dashboard</h1>
+                <div class="update-info">
+                    Last updated: <span id="last-update">Loading...</span>
+                    <span style="margin-left: 20px;">Auto-refresh: <strong>ON</strong> (every 2s)</span>
+                    <span class="connection-status connecting" id="connection-status">⚪ Connecting...</span>
+                </div>
             </div>
-        </div>
-
-        <div class="controls">
-            <button onclick="refreshStatus()">🔄 Refresh Now</button>
+            <button class="refresh-btn" onclick="refreshStatus()">🔄 Refresh Now</button>
         </div>
 
         <div class="namespace-tabs" id="tabs"></div>
@@ -229,6 +241,17 @@ HTML_TEMPLATE = '''
     <script>
         let currentNamespace = null;
         let statusData = {};
+
+        function updateConnectionStatus(isConnected) {
+            const statusElem = document.getElementById('connection-status');
+            if (isConnected) {
+                statusElem.className = 'connection-status connected';
+                statusElem.textContent = '🟢 Connected';
+            } else {
+                statusElem.className = 'connection-status disconnected';
+                statusElem.textContent = '🔴 Disconnected';
+            }
+        }
 
         async function deleteStatus(namespace, key) {
             if (!confirm(`Delete ${namespace}.${key}?`)) {
@@ -280,9 +303,13 @@ HTML_TEMPLATE = '''
                     statusData = data.status;
                     renderDashboard();
                     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                    updateConnectionStatus(true);
+                } else {
+                    updateConnectionStatus(false);
                 }
             } catch (error) {
                 console.error('Error fetching status:', error);
+                updateConnectionStatus(false);
             }
         }
 
