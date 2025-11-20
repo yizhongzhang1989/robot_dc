@@ -1710,6 +1710,71 @@ class UR15WebNode(Node):
                                 # Final summary
                                 if intrinsic_loaded and extrinsic_loaded:
                                     self.push_web_log("🎉 Calibration completed! All parameters loaded successfully", 'success')
+                                    
+                                    # Send calibration parameters to robot_status
+                                    try:
+                                        self.push_web_log("📤 Sending calibration parameters to robot_status...", 'info')
+                                        
+                                        # Prepare calibration data as JSON strings
+                                        with self.calibration_lock:
+                                            camera_matrix_json = json.dumps(self.camera_matrix.tolist())
+                                            distortion_coeffs_json = json.dumps(self.distortion_coefficients.tolist())
+                                            cam2end_matrix_json = json.dumps(self.cam2end_matrix.tolist())
+                                            target2base_matrix_json = json.dumps(self.target2base_matrix.tolist())
+                                        
+                                        # Import robot_status service
+                                        from robot_status.srv import SetStatus
+                                        
+                                        # Create service client
+                                        set_status_client = self.create_client(SetStatus, '/robot_status/set')
+                                        
+                                        # Wait for service (with timeout)
+                                        if set_status_client.wait_for_service(timeout_sec=2.0):
+                                            # Send camera_matrix
+                                            request = SetStatus.Request()
+                                            request.ns = 'ur15'
+                                            request.key = 'camera_matrix'
+                                            request.value = camera_matrix_json
+                                            future = set_status_client.call_async(request)
+                                            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+                                            
+                                            # Send distortion_coefficients
+                                            request = SetStatus.Request()
+                                            request.ns = 'ur15'
+                                            request.key = 'distortion_coefficients'
+                                            request.value = distortion_coeffs_json
+                                            future = set_status_client.call_async(request)
+                                            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+                                            
+                                            # Send cam2end_matrix
+                                            request = SetStatus.Request()
+                                            request.ns = 'ur15'
+                                            request.key = 'cam2end_matrix'
+                                            request.value = cam2end_matrix_json
+                                            future = set_status_client.call_async(request)
+                                            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+                                            
+                                            # Send target2base_matrix
+                                            request = SetStatus.Request()
+                                            request.ns = 'ur15'
+                                            request.key = 'target2base_matrix'
+                                            request.value = target2base_matrix_json
+                                            future = set_status_client.call_async(request)
+                                            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+                                            
+                                            self.get_logger().info("✅ Calibration parameters sent to robot_status")
+                                            self.push_web_log("✅ Calibration parameters saved to robot_status", 'success')
+                                        else:
+                                            self.get_logger().warning("robot_status service not available")
+                                            self.push_web_log("⚠️ robot_status service not available", 'warning')
+                                        
+                                        # Destroy client
+                                        self.destroy_client(set_status_client)
+                                        
+                                    except Exception as e:
+                                        self.get_logger().error(f"Failed to send calibration to robot_status: {e}")
+                                        self.push_web_log(f"⚠️ Failed to send to robot_status: {e}", 'warning')
+                                    
                                 elif intrinsic_loaded or extrinsic_loaded:
                                     self.push_web_log("⚠️ Calibration partially completed", 'warning')
                                 else:
