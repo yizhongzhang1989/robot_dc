@@ -15,6 +15,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 import json
+import pickle
+import base64
 import threading
 import sys
 import os
@@ -128,21 +130,14 @@ class RobotStatusNode(Node):
             with open(self.auto_save_file_path, 'r') as f:
                 data = json.load(f)
             
-            # Load all namespace.key pairs
+            # Load all namespace.key pairs (values are already pickled base64 strings)
             count = 0
             for namespace, keys in data.items():
                 for key, value in keys.items():
                     param_name = f"{namespace}.{key}"
                     try:
-                        # Convert value to string (ROS2 parameters store strings)
-                        if isinstance(value, (dict, list)):
-                            # Serialize complex types back to JSON string
-                            value_str = json.dumps(value)
-                        else:
-                            # Keep simple types as strings
-                            value_str = str(value)
-                        
-                        self.declare_parameter(param_name, value_str)
+                        # Value is already a pickled base64 string, use directly
+                        self.declare_parameter(param_name, value)
                         count += 1
                     except Exception as e:
                         self.get_logger().warn(f"Failed to load {param_name}: {e}")
@@ -175,18 +170,12 @@ class RobotStatusNode(Node):
                 if namespace not in status_tree:
                     status_tree[namespace] = {}
                 
-                # Get parameter value
+                # Get parameter value (already pickled base64 string)
                 try:
                     with self.lock:
                         value = self.get_parameter(param_name).value
-                    
-                    # Try to parse as JSON if it's a JSON string
-                    try:
-                        parsed_value = json.loads(value)
-                        status_tree[namespace][key] = parsed_value
-                    except (json.JSONDecodeError, TypeError):
-                        # Not JSON or already a native type, store as-is
-                        status_tree[namespace][key] = value
+                    # Store the pickled base64 string directly
+                    status_tree[namespace][key] = value
                 except Exception:
                     pass
             
@@ -194,7 +183,7 @@ class RobotStatusNode(Node):
             save_path = Path(self.auto_save_file_path)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Write to file
+            # Write to file - values are pickled base64 strings
             with open(self.auto_save_file_path, 'w') as f:
                 json.dump(status_tree, f, indent=2)
             
@@ -214,12 +203,18 @@ class RobotStatusNode(Node):
         """
         param_name = f"{request.ns}.{request.key}"
         
-        # Validate JSON format
+        # Validate that the value can be decoded (pickle base64 or JSON)
         try:
-            json.loads(request.value)
-        except json.JSONDecodeError:
-            # Allow plain strings too
-            pass
+            # Try pickle format first
+            pickled = base64.b64decode(request.value.encode('ascii'))
+            pickle.loads(pickled)
+        except Exception:
+            # Try JSON format for backward compatibility
+            try:
+                json.loads(request.value)
+            except json.JSONDecodeError:
+                # Allow plain strings too
+                pass
         
         try:
             with self.lock:
@@ -306,10 +301,11 @@ class RobotStatusNode(Node):
                 if namespace not in status_tree:
                     status_tree[namespace] = {}
                 
-                # Get parameter value
+                # Get parameter value (already in base64-encoded pickle format)
                 try:
                     with self.lock:
                         value = self.get_parameter(param_name).value
+                    # Keep the base64-encoded pickle string for transmission
                     status_tree[namespace][key] = value
                 except Exception as e:
                     self.get_logger().warn(f"Error reading {param_name}: {e}")
