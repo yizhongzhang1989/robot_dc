@@ -304,3 +304,95 @@ class RobotStatusClient:
             time.sleep(0.1)
         
         return False
+
+
+# Standalone helper functions for simple get/set operations without client instance
+def get_from_status(node: Node, namespace: str, key: str, timeout: float = 2.0):
+    """
+    Standalone helper function to get a value from robot_status service.
+    
+    Args:
+        node: ROS2 node instance
+        namespace: The namespace to query
+        key: The key to retrieve
+        timeout: Service call timeout in seconds
+        
+    Returns:
+        The value as a string if found, None otherwise
+        
+    Example:
+        from robot_status.client_utils import get_from_status
+        
+        value = get_from_status(self, 'ur15', 'camera_matrix')
+        if value:
+            matrix = json.loads(value)
+    """
+    try:
+        from robot_status.srv import GetStatus
+        
+        client = node.create_client(GetStatus, '/robot_status/get')
+        if not client.wait_for_service(timeout_sec=timeout):
+            return None
+        
+        request = GetStatus.Request()
+        request.ns = namespace
+        request.key = key
+        
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+        
+        if future.result() is not None:
+            response = future.result()
+            if response.success and response.value:
+                return response.value
+        return None
+    except Exception as e:
+        node.get_logger().debug(f"Error getting {namespace}/{key} from status: {e}")
+        return None
+
+
+def set_to_status(node: Node, namespace: str, key: str, value, timeout: float = 2.0):
+    """
+    Standalone helper function to set a value in robot_status service.
+    
+    Args:
+        node: ROS2 node instance
+        namespace: The namespace to use
+        key: The key to set
+        value: The value to set (will be converted to string if needed)
+        timeout: Service call timeout in seconds
+        
+    Returns:
+        True if successful, False otherwise
+        
+    Example:
+        from robot_status.client_utils import set_to_status
+        
+        import json
+        matrix_json = json.dumps(camera_matrix.tolist())
+        if set_to_status(self, 'ur15', 'camera_matrix', matrix_json):
+            print("Saved successfully")
+    """
+    try:
+        from robot_status.srv import SetStatus
+        
+        client = node.create_client(SetStatus, '/robot_status/set')
+        if not client.wait_for_service(timeout_sec=timeout):
+            node.get_logger().debug(f"robot_status service not available for setting {namespace}/{key}")
+            return False
+        
+        request = SetStatus.Request()
+        request.ns = namespace
+        request.key = key
+        request.value = str(value) if not isinstance(value, str) else value
+        
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+        
+        if future.result() is not None:
+            response = future.result()
+            return response.success
+        return False
+    except Exception as e:
+        node.get_logger().warning(f"Error setting {namespace}/{key} to status: {e}")
+        return False

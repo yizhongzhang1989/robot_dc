@@ -30,6 +30,7 @@ import atexit
 from flask import Flask, render_template_string, Response
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
+from robot_status import get_from_status, set_to_status
 
 # Add scripts directory to path for camera calibration toolkit
 scripts_dir = get_scripts_directory()
@@ -265,6 +266,48 @@ class UR15WebNode(Node):
         self.flask_thread.start()
         
         self.get_logger().info(f"Web interface running at http://0.0.0.0:{self.web_port}")
+        
+        # Load calibration parameters from robot_status if available
+        self._load_calibration_from_status()
+    
+    def _load_calibration_from_status(self):
+        """Load calibration parameters from robot_status service."""
+        try:
+            self.get_logger().info("Loading calibration parameters from robot_status...")
+            
+            # Parameters to load
+            params_to_load = [
+                ('camera_matrix', 'camera_matrix'),
+                ('distortion_coefficients', 'distortion_coefficients'),
+                ('cam2end_matrix', 'cam2end_matrix'),
+                ('target2base_matrix', 'target2base_matrix')
+            ]
+            
+            loaded_count = 0
+            for param_name, attr_name in params_to_load:
+                value = get_from_status(self, 'ur15', param_name)
+                if value:
+                    try:
+                        # Parse JSON string to numpy array
+                        matrix_list = json.loads(value)
+                        matrix_array = np.array(matrix_list, dtype=np.float64)
+                        
+                        with self.calibration_lock:
+                            setattr(self, attr_name, matrix_array)
+                        
+                        loaded_count += 1
+                        self.get_logger().info(f"Loaded {param_name} from robot_status (shape: {matrix_array.shape})")
+                    except Exception as e:
+                        self.get_logger().warning(f"Failed to parse {param_name}: {e}")
+            
+            if loaded_count > 0:
+                self.get_logger().info(f"Successfully loaded {loaded_count}/4 calibration parameters from robot_status")
+                self.push_web_log(f"Loaded {loaded_count}/4 calibration parameters from robot_status", 'success')
+            else:
+                self.get_logger().info("No calibration parameters found in robot_status")
+                
+        except Exception as e:
+            self.get_logger().warning(f"Error loading calibration from robot_status: {e}")
     
     def _signal_handler(self, signum, frame):
         """Handle termination signals."""
@@ -481,6 +524,11 @@ class UR15WebNode(Node):
     def _run_flask_server(self):
         """Run Flask server with proper error handling."""
         try:
+            # Disable Flask access logs
+            import logging
+            log = logging.getLogger('werkzeug')
+            log.setLevel(logging.ERROR)
+            
             self.app.run(
                 host='0.0.0.0', 
                 port=self.web_port, 
@@ -630,14 +678,14 @@ class UR15WebNode(Node):
             from flask import jsonify
             has_image = self.current_image is not None
             
-            # Debug log for camera status
-            if hasattr(self, '_debug_counter'):
-                self._debug_counter += 1
-            else:
-                self._debug_counter = 1
-            
-            if self._debug_counter % 20 == 0:  # Log every 10 seconds (20 * 500ms)
-                self.get_logger().info(f"Camera status check: has_image={has_image}, current_image type: {type(self.current_image)}")
+            # Debug log for camera status (disabled - not critical)
+            # if hasattr(self, '_debug_counter'):
+            #     self._debug_counter += 1
+            # else:
+            #     self._debug_counter = 1
+            # 
+            # if self._debug_counter % 20 == 0:  # Log every 10 seconds (20 * 500ms)
+            #     self.get_logger().info(f"Camera status check: has_image={has_image}, current_image type: {type(self.current_image)}")
             
             with self.calibration_lock:
                 has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
@@ -1705,6 +1753,37 @@ class UR15WebNode(Node):
                                 # Final summary
                                 if intrinsic_loaded and extrinsic_loaded:
                                     self.push_web_log("🎉 Calibration completed! All parameters loaded successfully", 'success')
+                                    
+                                    # Send calibration parameters to robot_status
+                                    try:
+                                        self.push_web_log("📤 Sending calibration parameters to robot_status...", 'info')
+                                        
+                                        # Prepare and send calibration data
+                                        with self.calibration_lock:
+                                            params = {
+                                                'camera_matrix': json.dumps(self.camera_matrix.tolist()),
+                                                'distortion_coefficients': json.dumps(self.distortion_coefficients.tolist()),
+                                                'cam2end_matrix': json.dumps(self.cam2end_matrix.tolist()),
+                                                'target2base_matrix': json.dumps(self.target2base_matrix.tolist())
+                                            }
+                                        
+                                        # Send all parameters
+                                        success_count = 0
+                                        for key, value in params.items():
+                                            if set_to_status(self, 'ur15', key, value):
+                                                success_count += 1
+                                        
+                                        if success_count == len(params):
+                                            self.get_logger().info("✅ Calibration parameters sent to robot_status")
+                                            self.push_web_log("✅ Calibration parameters saved to robot_status", 'success')
+                                        else:
+                                            self.get_logger().warning(f"Only {success_count}/{len(params)} parameters saved to robot_status")
+                                            self.push_web_log(f"⚠️ Only {success_count}/{len(params)} parameters saved", 'warning')
+                                        
+                                    except Exception as e:
+                                        self.get_logger().error(f"Failed to send calibration to robot_status: {e}")
+                                        self.push_web_log(f"⚠️ Failed to send to robot_status: {e}", 'warning')
+                                    
                                 elif intrinsic_loaded or extrinsic_loaded:
                                     self.push_web_log("⚠️ Calibration partially completed", 'warning')
                                 else:

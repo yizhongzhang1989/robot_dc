@@ -630,6 +630,8 @@ function toggleValidation() {
     btn.disabled = true;
     btn.style.opacity = '0.7';
     
+    logToWeb('Toggling calibration validation...', 'info');
+    
     fetch('/toggle_validation', {
         method: 'POST',
         headers: {
@@ -646,17 +648,22 @@ function toggleValidation() {
                 btn.classList.remove('bg-purple-500', 'hover:bg-purple-600');
                 btn.classList.add('bg-red-500', 'hover:bg-red-600');
                 btn.querySelector('span:last-child').textContent = 'Stop Check';
+                logToWeb('Calibration validation activated', 'success');
             } else {
                 btn.classList.remove('bg-red-500', 'hover:bg-red-600');
                 btn.classList.add('bg-purple-500', 'hover:bg-purple-600');
                 btn.querySelector('span:last-child').textContent = 'Check Calibration';
+                logToWeb('Calibration validation deactivated', 'info');
             }
+        } else {
+            logToWeb(`Failed to toggle validation: ${data.message}`, 'error');
         }
         btn.disabled = false;
         btn.style.opacity = '1';
     })
     .catch(error => {
         console.error('Failed to toggle validation:', error);
+        logToWeb(`Error toggling validation: ${error.message}`, 'error');
         btn.disabled = false;
         btn.style.opacity = '1';
     });

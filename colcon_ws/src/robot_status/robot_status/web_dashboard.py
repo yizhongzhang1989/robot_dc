@@ -22,6 +22,7 @@ from flask import Flask, jsonify, request, render_template_string
 import json
 import threading
 import sys
+import logging
 
 
 # HTML Template for dashboard
@@ -578,6 +579,10 @@ class WebDashboardNode(Node):
     
     def run_flask(self):
         """Run Flask app."""
+        # Disable Flask access logs
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
+        
         self.app.run(host=self.host, port=self.port, debug=False, use_reloader=False)
 
 
