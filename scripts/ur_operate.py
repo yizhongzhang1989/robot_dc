@@ -5,42 +5,25 @@ import requests
 from ur15_robot_arm.ur15 import UR15Robot
 import time
 import socket
+import argparse
 from robot_status.client_utils import RobotStatusClient
 
 
 class UROperate:
-    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, rs485_port=54321):
+    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, operation_name="test_operation"):
 
         # =========================== Configurable Parameters ===========================
         # IP address and port for UR15 robot
         self.robot_ip = robot_ip
         self.robot_port = robot_port
-        
-        # Port for RS485 connection of UR15
-        self.rs485_port = rs485_port
-        
-        # Data directory path (for storing collected data)
-        self.data_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "temp",
-            "ur_locate_crack_data"
-        )
-        
-        # Result directory path (for storing results)
-        self.result_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "temp",
-            "ur_locate_crack_result"
-        )
-        
-        # File names for coordinate system data
-        self.COORD_SYSTEM_RESULT_FILENAME = "log_local_coordinate_system_result.json"
+        # Port for RS485 connection of UR15 (fixed)
+        self.rs485_port = 54321
+        # Operation name for data organization
+        self.operation_name = operation_name
 
         # ========================= Instance variables =========================
         self.robot = None
-
         self.rs485_socket = None
-        
         self.robot_status_client = None
         
         # ========================= Other variables =========================
@@ -54,10 +37,9 @@ class UROperate:
         self.local_origin = None
         
         # Crack coordinate system storage
-        self.crack_coord_origin = None
-        self.crack_coord_transformation = None
-        self.crack_coord_pose = None
-        
+        self.wobj_origin = None
+        self.wobj_transformation_matrix = None
+
         # Reference pose storage
         self.ref_joint_angles = None
         
@@ -68,85 +50,74 @@ class UROperate:
         self.task_position_offset = None
 
         # ========================= Initialization =========================
-        # Initialize the robot connection
+        self._setup_paths()
         self._initialize_robot()
-        
-        # Initialize RS485 socket connection
         self._init_rs485_socket()
-        
-        # Initialize robot status client
         self._initialize_robot_status_client()
         
-        # Automatically load all parameters
-        self._load_camera_intrinsic()
-        self._load_camera_extrinsic()
-        self._load_estimated_kp_coordinates()
-        self._load_local_coordinate_system()
-        self._load_crack_local_coordinate_system()
-        self._load_ref_joint_angles()
+        # Automatically load neccessary parameters
+        self._load_camera_params_from_service()
+        self._load_3d_positioning_result_from_servive()
+        self._load_local_coordinate_system_from_service()
+        self._load_wobj_coordinate_system_from_service()
+        self._load_ref_joint_angles_from_json()
+
         self._load_task_position_information()
     
-    def _load_camera_intrinsic(self):
+    def _setup_paths(self):
+        """Setup directory paths for script, dataset, data and results"""
+        # Get the script directory for relative paths
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Dataset directory path
+        self.dataset_dir = os.path.join(self.script_dir, '..', 'dataset', self.operation_name)
+        
+        # Data directory path (for storing collected data)
+        self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_data')
+        
+        # Result directory path (for storing results)
+        self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result')
+    
+    def _load_camera_params_from_service(self):
         """
-        Load camera intrinsic parameters from robot status service
+        Load camera parameters (intrinsic and extrinsic) from robot status service
         """
         try:
-            status = self.robot_status_client.get_status()
-            
-            if status is None:
-                print(f"Failed to get robot status")
+            # Get camera matrix
+            camera_matrix = self.robot_status_client.get_status('ur15', 'camera_matrix')
+            if camera_matrix is None:
+                print(f"Failed to get camera_matrix from robot status")
                 return False
             
-            camera_params = status.get('camera_params', {})
-            intrinsic = camera_params.get('intrinsic', {})
-            
-            if not intrinsic:
-                print(f"No camera intrinsic parameters found in robot status")
+            # Get distortion coefficients
+            distortion_coefficients = self.robot_status_client.get_status('ur15', 'distortion_coefficients')
+            if distortion_coefficients is None:
+                print(f"Failed to get distortion_coefficients from robot status")
                 return False
             
-            self.camera_matrix = np.array(intrinsic.get('camera_matrix', []))
-            self.distortion_coefficients = np.array(intrinsic.get('distortion_coefficients', []))
+            # Get cam2end matrix
+            cam2end_matrix = self.robot_status_client.get_status('ur15', 'cam2end_matrix')
+            if cam2end_matrix is None:
+                print(f"Failed to get cam2end_matrix from robot status")
+                return False
+            
+            self.camera_matrix = np.array(camera_matrix)
+            self.distortion_coefficients = np.array(distortion_coefficients)
+            self.cam2end_matrix = np.array(cam2end_matrix)
             
             if self.camera_matrix.size == 0 or self.distortion_coefficients.size == 0:
                 print(f"Invalid camera intrinsic parameters")
                 return False
             
-            print(f"Camera intrinsic parameters loaded successfully from robot status")
-            return True
-            
-        except Exception as e:
-            print(f"Error loading intrinsic parameters: {e}")
-            return False
-    
-    def _load_camera_extrinsic(self):
-        """
-        Load camera extrinsic parameters from robot status service
-        """
-        try:
-            status = self.robot_status_client.get_status()
-            
-            if status is None:
-                print(f"Failed to get robot status")
-                return False
-            
-            camera_params = status.get('camera_params', {})
-            extrinsic = camera_params.get('extrinsic', {})
-            
-            if not extrinsic:
-                print(f"No camera extrinsic parameters found in robot status")
-                return False
-            
-            self.cam2end_matrix = np.array(extrinsic.get('cam2end_matrix', []))
-            
             if self.cam2end_matrix.size == 0:
                 print(f"Invalid camera extrinsic parameters")
                 return False
             
-            print(f"Camera extrinsic parameters loaded successfully from robot status")
+            print(f"Camera parameters loaded successfully from robot status")
             return True
             
         except Exception as e:
-            print(f"Error loading extrinsic parameters: {e}")
+            print(f"Error loading camera parameters: {e}")
             return False
     
     def _initialize_robot(self):
@@ -188,93 +159,149 @@ class UROperate:
             print(f'✗ Failed to initialize robot status client: {e}')
             self.robot_status_client = None
     
-    def _load_estimated_kp_coordinates(self):
+    def _load_3d_positioning_result_from_servive(self):
         """
-        Load estimated keypoints coordinates from log_estimation_result.json
+        Load estimated keypoints coordinates from robot status service
         """
-        estimation_file = os.path.join(
-            self.result_dir,
-            "log_estimation_result.json"
-        )
-        
         try:
-            with open(estimation_file, 'r') as f:
-                data = json.load(f)
+            # Get 3D points using operation_name and 'points_3d' parameter
+            points_3d = self.robot_status_client.get_status(self.operation_name, 'points_3d')
             
-            if 'estimated_keypoints' not in data:
-                print(f"No 'estimated_keypoints' field found in estimation result file")
+            if points_3d is None:
+                print(f"Failed to get points_3d from robot status for operation '{self.operation_name}'")
                 return None
             
-            self.estimated_keypoints = data['estimated_keypoints']
-            num_keypoints = len(self.estimated_keypoints)
+            self.estimated_keypoints = points_3d
+            num_keypoints = len(self.estimated_keypoints) if isinstance(self.estimated_keypoints, list) else 0
             
-            print(f"Estimated keypoints loaded successfully")
+            print(f"Estimated keypoints loaded successfully from robot status")
             print(f"Number of keypoints: {num_keypoints}")
             
             return self.estimated_keypoints
             
-        except FileNotFoundError:
-            print(f"Estimation result file not found: {estimation_file}")
-            return None
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON file: {e}")
-            return None
         except Exception as e:
             print(f"Error loading estimated keypoints: {e}")
             return None
     
-    def _load_local_coordinate_system(self):
+    def _load_local_coordinate_system_from_service(self):
         """
-        Load local coordinate system transformation matrix and origin from log_local_coordinate_system_result.json
+        Load local coordinate system from robot status service
         Returns: Dictionary with 'transformation_matrix' and 'origin' if successful, None otherwise
         """
-        coordinate_system_file = os.path.join(
-            self.result_dir,
-            "log_local_coordinate_system_result.json"
-        )
-        
         try:
-            with open(coordinate_system_file, 'r') as f:
-                data = json.load(f)
-            
-            if 'transformation_matrix' not in data:
-                print(f"No 'transformation_matrix' field found in coordinate system result file")
+            # Get wobj_origin
+            wobj_origin = self.robot_status_client.get_status(self.operation_name, 'wobj_origin')
+            if wobj_origin is None:
+                print(f"Failed to get wobj_origin from robot status for operation '{self.operation_name}'")
                 return None
             
-            if 'origin' not in data:
-                print(f"No 'origin' field found in coordinate system result file")
+            # Get wobj_x axis
+            wobj_x = self.robot_status_client.get_status(self.operation_name, 'wobj_x')
+            if wobj_x is None:
+                print(f"Failed to get wobj_x from robot status for operation '{self.operation_name}'")
                 return None
             
-            self.local_transformation_matrix = np.array(data['transformation_matrix'])
-            self.local_origin = data['origin']
+            # Get wobj_y axis
+            wobj_y = self.robot_status_client.get_status(self.operation_name, 'wobj_y')
+            if wobj_y is None:
+                print(f"Failed to get wobj_y from robot status for operation '{self.operation_name}'")
+                return None
             
-            print(f"Local coordinate system loaded successfully")
-            print(f"Origin: ({self.local_origin['x']:.6f}, {self.local_origin['y']:.6f}, {self.local_origin['z']:.6f})")
+            # Get wobj_z axis
+            wobj_z = self.robot_status_client.get_status(self.operation_name, 'wobj_z')
+            if wobj_z is None:
+                print(f"Failed to get wobj_z from robot status for operation '{self.operation_name}'")
+                return None
+            
+            # Convert to numpy arrays
+            origin = np.array(wobj_origin)
+            x_axis = np.array(wobj_x)
+            y_axis = np.array(wobj_y)
+            z_axis = np.array(wobj_z)
+            
+            # Build transformation matrix from axes
+            transformation_matrix = np.eye(4)
+            transformation_matrix[:3, 0] = x_axis  # X-axis as first column
+            transformation_matrix[:3, 1] = y_axis  # Y-axis as second column
+            transformation_matrix[:3, 2] = z_axis  # Z-axis as third column
+            transformation_matrix[:3, 3] = origin  # Origin as translation
+            
+            self.local_transformation_matrix = transformation_matrix
+            self.local_origin = {
+                'x': float(origin[0]),
+                'y': float(origin[1]),
+                'z': float(origin[2])
+            }
+            
+            print(f"Local coordinate system loaded successfully from robot status")
             
             return {
                 'transformation_matrix': self.local_transformation_matrix,
                 'origin': self.local_origin
             }
             
-        except FileNotFoundError:
-            print(f"Coordinate system result file not found: {coordinate_system_file}")
-            return None
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON file: {e}")
-            return None
         except Exception as e:
             print(f"Error loading local coordinate system: {e}")
             return None
-    
-    def _load_ref_joint_angles(self):
+
+    def _load_wobj_coordinate_system_from_service(self):
         """
-        Load reference joint angles from ref_pose.json
-        Returns: List of joint angles if successful, None otherwise
+        Load the crack local coordinate system from robot status service
         """
-        ref_pose_file = os.path.join(
-            self.data_dir,
-            "ref_pose.json"
-        )
+        try:
+            # Get wobj_origin
+            wobj_origin = self.robot_status_client.get_status('rack', 'wobj_origin')
+            if wobj_origin is None:
+                print(f"Failed to get wobj_origin from robot status for 'rack'")
+                return None
+            
+            # Get wobj_x axis
+            wobj_x = self.robot_status_client.get_status('rack', 'wobj_x')
+            if wobj_x is None:
+                print(f"Failed to get wobj_x from robot status for 'rack'")
+                return None
+            
+            # Get wobj_y axis
+            wobj_y = self.robot_status_client.get_status('rack', 'wobj_y')
+            if wobj_y is None:
+                print(f"Failed to get wobj_y from robot status for 'rack'")
+                return None
+            
+            # Get wobj_z axis
+            wobj_z = self.robot_status_client.get_status('rack', 'wobj_z')
+            if wobj_z is None:
+                print(f"Failed to get wobj_z from robot status for 'rack'")
+                return None
+            
+            # Convert to numpy arrays
+            origin = np.array(wobj_origin)
+            x_axis = np.array(wobj_x)
+            y_axis = np.array(wobj_y)
+            z_axis = np.array(wobj_z)
+            
+            # Build transformation matrix from axes
+            transformation_matrix = np.eye(4)
+            transformation_matrix[:3, 0] = x_axis  # X-axis as first column
+            transformation_matrix[:3, 1] = y_axis  # Y-axis as second column
+            transformation_matrix[:3, 2] = z_axis  # Z-axis as third column
+            transformation_matrix[:3, 3] = origin  # Origin as translation
+            
+            self.wobj_transformation_matrix = transformation_matrix
+            self.wobj_origin = origin
+            
+            print(f"Crack coordinate system loaded successfully from robot status")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error loading crack coordinate system: {e}")
+            return None
+        
+    def _load_ref_joint_angles_from_json(self):
+        """
+        Load reference joint angles from dataset/operation_name/ref_img_1_pose.json
+        """
+        ref_pose_file = os.path.join(self.dataset_dir, "ref_img_1_pose.json")
         
         try:
             with open(ref_pose_file, 'r') as f:
@@ -286,7 +313,7 @@ class UROperate:
             
             self.ref_joint_angles = data['joint_angles']
             
-            print(f"Reference joint angles loaded successfully")
+            print(f"Reference joint angles loaded successfully from {ref_pose_file}")
             print(f"Joint angles: {self.ref_joint_angles}")
             
             return self.ref_joint_angles
@@ -346,192 +373,23 @@ class UROperate:
             print(f"Error loading task position information: {e}")
             return None
 
-    def _load_crack_local_coordinate_system(self, coord_system_file_path=None):
-        """
-        Load the local coordinate system established for crack detection/tracking
-        """
-        try:
-            print("\n" + "="*50)
-            print("Loading Crack Local Coordinate System")
-            print("="*50)
-            
-            # Determine file path
-            if coord_system_file_path is None:
-                coord_system_file_path = os.path.join(self.result_dir, self.COORD_SYSTEM_RESULT_FILENAME)
-            
-            # Check if file exists
-            if not os.path.exists(coord_system_file_path):
-                error_msg = f"Coordinate system file not found: {coord_system_file_path}"
-                print(f"✗ {error_msg}")
-                return {
-                    'success': False,
-                    'error': error_msg,
-                    'origin': None,
-                    'transformation_matrix': None,
-                    'pose_representation': None,
-                    'axes': None
-                }
-            
-            print(f"📖 Loading from: {coord_system_file_path}")
-            
-            # Load coordinate system data
-            with open(coord_system_file_path, 'r') as f:
-                coord_data = json.load(f)
-            
-            # Validate required fields
-            required_fields = ['origin', 'transformation_matrix', 'pose_representation', 'axes']
-            missing_fields = [field for field in required_fields if field not in coord_data]
-            
-            if missing_fields:
-                error_msg = f"Missing required fields in coordinate system file: {missing_fields}"
-                print(f"✗ {error_msg}")
-                return {
-                    'success': False,
-                    'error': error_msg,
-                    'origin': None,
-                    'transformation_matrix': None,
-                    'pose_representation': None,
-                    'axes': None
-                }
-            
-            # Extract origin coordinates
-            origin = coord_data['origin']
-            origin_point = np.array([origin['x'], origin['y'], origin['z']])
-            
-            # Extract transformation matrix
-            transformation_matrix = np.array(coord_data['transformation_matrix'])
-            
-            # Validate transformation matrix shape
-            if transformation_matrix.shape != (4, 4):
-                error_msg = f"Invalid transformation matrix shape: {transformation_matrix.shape} (expected 4x4)"
-                print(f"✗ {error_msg}")
-                return {
-                    'success': False,
-                    'error': error_msg,
-                    'origin': None,
-                    'transformation_matrix': None,
-                    'pose_representation': None,
-                    'axes': None
-                }
-            
-            # Extract pose representation
-            pose_repr = coord_data['pose_representation']
-            
-            # Extract axes information
-            axes_info = coord_data['axes']
-            
-            # ========== Store to instance variables for easy access ==========
-            self.crack_coord_origin = origin_point.copy()
-            self.crack_coord_transformation = transformation_matrix.copy()
-            self.crack_coord_pose = pose_repr.copy()
-            
-            # Print loaded information
-            print("✓ Successfully loaded coordinate system:")
-            print(f"  Origin: ({origin_point[0]:.6f}, {origin_point[1]:.6f}, {origin_point[2]:.6f}) m")
-
-            # Print axes information
-            x_axis = axes_info['x_axis']['vector']
-            y_axis = axes_info['y_axis']['vector']
-            z_axis = axes_info['z_axis']['vector']
-            
-            print(f"  X-axis: [{x_axis[0]:.4f}, {x_axis[1]:.4f}, {x_axis[2]:.4f}] ({axes_info['x_axis']['source']})")
-            print(f"  Y-axis: [{y_axis[0]:.4f}, {y_axis[1]:.4f}, {y_axis[2]:.4f}] ({axes_info['y_axis']['source']})")
-            print(f"  Z-axis: [{z_axis[0]:.4f}, {z_axis[1]:.4f}, {z_axis[2]:.4f}] ({axes_info['z_axis']['source']})")
-                        
-            print("="*50)
-            
-            # Return successful result
-            return {
-                'success': True,
-                'origin': origin,
-                'origin_array': origin_point,
-                'transformation_matrix': transformation_matrix,
-                'pose_representation': pose_repr,
-                'axes': axes_info,
-                'full_data': coord_data,
-                'file_path': coord_system_file_path,
-                'error': None
-            }
-            
-        except FileNotFoundError:
-            error_msg = f"Coordinate system file not found: {coord_system_file_path}"
-            print(f"✗ {error_msg}")
-            return {
-                'success': False,
-                'error': error_msg,
-                'origin': None,
-                'transformation_matrix': None,
-                'pose_representation': None,
-                'axes': None
-            }
-        except json.JSONDecodeError as e:
-            error_msg = f"Invalid JSON format in coordinate system file: {e}"
-            print(f"✗ {error_msg}")
-            return {
-                'success': False,
-                'error': error_msg,
-                'origin': None,
-                'transformation_matrix': None,
-                'pose_representation': None,
-                'axes': None
-            }
-        except KeyError as e:
-            error_msg = f"Missing key in coordinate system file: {e}"
-            print(f"✗ {error_msg}")
-            return {
-                'success': False,
-                'error': error_msg,
-                'origin': None,
-                'transformation_matrix': None,
-                'pose_representation': None,
-                'axes': None
-            }
-        except Exception as e:
-            error_msg = f"Error loading coordinate system: {e}"
-            print(f"✗ {error_msg}")
-            return {
-                'success': False,
-                'error': error_msg,
-                'origin': None,
-                'transformation_matrix': None,
-                'pose_representation': None,
-                'axes': None
-            }
-
 
 if __name__ == "__main__":
-    # Example usage
-    ur_operate = UROperate()
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='UROperate - Robot operation and control system')
+    parser.add_argument('--robot-ip', type=str, default='192.168.1.15',
+                       help='IP address of the UR15 robot (default: 192.168.1.15)')
+    parser.add_argument('--robot-port', type=int, default=30002,
+                       help='Port number of the UR15 robot (default: 30002)')
+    parser.add_argument('--operation-name', type=str, default='test_operation',
+                       help='Name of the operation (default: test_operation)')
     
-    # All parameters are automatically loaded during initialization
-    # Access them directly from instance variables
+    args = parser.parse_args()
     
-    if ur_operate.camera_matrix is not None:
-        print("\nCamera Matrix:")
-        print(ur_operate.camera_matrix)
-        print("\nDistortion Coefficients:")
-        print(ur_operate.distortion_coefficients)
+    # Create UROperate instance with command line arguments
+    ur_operate = UROperate(
+        robot_ip=args.robot_ip,
+        robot_port=args.robot_port,
+        operation_name=args.operation_name
+    )
     
-    if ur_operate.cam2end_matrix is not None:
-        print("\nCamera to End-effector Matrix:")
-        print(ur_operate.cam2end_matrix)
-    
-    if ur_operate.estimated_keypoints is not None:
-        print("\nEstimated Keypoints:")
-        for kp in ur_operate.estimated_keypoints:
-            print(f"Keypoint {kp['keypoint_index']}: ({kp['x']:.6f}, {kp['y']:.6f}, {kp['z']:.6f})")
-    
-    if ur_operate.local_transformation_matrix is not None:
-        print("\nLocal Coordinate System Transformation Matrix:")
-        print(ur_operate.local_transformation_matrix)
-    
-    if ur_operate.ref_joint_angles is not None:
-        print("\nReference Joint Angles (radians):")
-        for i, angle in enumerate(ur_operate.ref_joint_angles):
-            print(f"Joint {i}: {angle:.6f}")
-    
-    if ur_operate.task_position_offset is not None:
-        print("\nTask Position Offset (in local coordinate system):")
-        print(f"x: {ur_operate.task_position_offset.get('x', 0):.6f}")
-        print(f"y: {ur_operate.task_position_offset.get('y', 0):.6f}")
-        print(f"z: {ur_operate.task_position_offset.get('z', 0):.6f}")
