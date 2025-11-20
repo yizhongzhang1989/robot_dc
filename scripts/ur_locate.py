@@ -181,6 +181,160 @@ class URLocate(URCapture):
             self.positioning_client = None
 
     # =================================== functions for 3d positioning ===================================
+    def auto_collect_data(self, save_dir=None, robot=None, session_id=None):
+        """
+        Override parent's auto_collect_data to add real-time upload functionality.
+        
+        Args:
+            save_dir: Directory to save captured images
+            robot: Robot instance to use
+            session_id: Optional session ID for uploading images in real-time
+            
+        Returns:
+            str: Path to session directory if successful, False otherwise
+        """
+        robot = robot or self.robot
+        if robot is None:
+            self.get_logger().error("Error: Robot not initialized")
+            return False
+        
+        if save_dir is None:
+            # Create session directory with auto-incremented number
+            session_dir = self._create_session_directory()
+            save_dir = session_dir
+
+        self.get_logger().info(">>> Starting Auto Data Collection with Real-time Upload..")
+
+        try:
+            if not self._movej_to_collect_position(robot):
+                self.get_logger().error("✗ Failed to move to collect position, aborting data collection")
+                return False
+            
+            # Get current TCP pose as reference
+            current_tcp_pose = robot.get_actual_tcp_pose()
+            if current_tcp_pose is None:
+                self.get_logger().error("Failed to get current TCP pose")
+                return False
+            
+            # Use movements from class variable
+            movements = []
+            for idx, (movement_name, offset) in enumerate(self.movements.items()):
+                movements.append({
+                    "name": movement_name,
+                    "offset": offset,
+                    "index": idx
+                })
+            
+            # Create save directory
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+                self.get_logger().info(f"Created save directory: {save_dir}")
+            
+            # Wait for camera image to be available
+            self.get_logger().info("Waiting for camera image...")
+            max_wait_time = 10.0
+            start_time = time.time()
+            
+            while self.latest_image is None and (time.time() - start_time) < max_wait_time:
+                rclpy.spin_once(self, timeout_sec=0.1)
+            
+            if self.latest_image is None:
+                self.get_logger().error("Error: No camera image received within timeout.")
+                return False
+            
+            self.get_logger().info("✓ Camera image available, starting data collection...")
+            
+            success_count = 0
+            upload_count = 0
+            
+            for movement in movements:
+                try:
+                    self.get_logger().info(f"\n--- {movement['name']} ---")
+                    
+                    # Use offset directly for move_tcp
+                    offset = movement['offset']
+                    self.get_logger().info(f"Move TCP by offset: {[f'{p:.4f}' for p in offset]}")
+                    
+                    # Move robot to target position
+                    move_result = robot.move_tcp(offset, a=0.1, v=0.05)
+                    
+                    if move_result != 0:
+                        self.get_logger().warn(f"Movement failed for {movement['name']} (result: {move_result})")
+                        continue
+                    
+                    # Wait for robot to settle
+                    time.sleep(0.5)
+                    
+                    # Capture image and pose
+                    img_filename = f"{movement['index']}.jpg"
+                    pose_filename = f"{movement['index']}_pose.json"
+                    
+                    if self.capture_image_and_pose(save_dir, img_filename, pose_filename, robot=robot):
+                        self.get_logger().info(f"✓ Successfully captured data for {movement['name']}")
+                        success_count += 1
+                        
+                        # If session_id is provided, upload immediately
+                        if session_id is not None and self.positioning_client is not None:
+                            img_path = os.path.join(save_dir, img_filename)
+                            pose_path = os.path.join(save_dir, pose_filename)
+                            
+                            try:
+                                # Load image
+                                image = cv2.imread(img_path)
+                                if image is None:
+                                    self.get_logger().warn(f"  ⚠️  Failed to load image for upload: {img_path}")
+                                else:
+                                    # Load camera parameters
+                                    intrinsic, distortion, extrinsic = load_camera_params_from_json(pose_path)
+                                    
+                                    # Upload view
+                                    result = self.positioning_client.upload_view(
+                                        session_id=session_id,
+                                        image=image,
+                                        intrinsic=intrinsic,
+                                        distortion=distortion,
+                                        extrinsic=extrinsic
+                                    )
+                                    
+                                    if result.get('success'):
+                                        upload_count += 1
+                                        self.get_logger().info(f"   ✓ View {upload_count} uploaded, queue position: {result.get('queue_position', 'N/A')}")
+                                    else:
+                                        self.get_logger().error(f"   ✗ Upload failed: {result.get('error')}")
+                            except Exception as e:
+                                self.get_logger().error(f"   ✗ Error uploading image: {e}")
+                        
+                        time.sleep(0.5)
+                    else:
+                        self.get_logger().warn(f"✗ Failed to capture data for {movement['name']}")
+                    
+                except Exception as e:
+                    self.get_logger().error(f"Error during {movement['name']} movement: {e}")
+                    continue
+            
+            # Return to original position
+            self.get_logger().info(f"\n--- Returning to original position ---")
+            return_result = robot.movel(current_tcp_pose, a=0.1, v=0.05)
+            
+            time.sleep(0.5)
+
+            if return_result == 0:
+                self.get_logger().info("✓ Successfully returned to original position")
+            else:
+                self.get_logger().warn(f"✗ Failed to return to original position (result: {return_result})")
+            
+            self.get_logger().info(f"\nData collection completed: {success_count}/{len(movements)} successful")
+            if session_id is not None:
+                self.get_logger().info(f"Upload completed: {upload_count}/{success_count} uploaded")
+            self.get_logger().info("="*60)
+            
+            # Return save_dir if all movements were successful, False otherwise
+            return save_dir if success_count == len(movements) else False
+            
+        except Exception as e:
+            self.get_logger().error(f"Error during auto data collection: {e}")
+            return False
+    
     def upload_reference_data_to_ffpp_web(self):
         """
         Upload reference images toffppweb, which is the first step before performing 3D triangulation.
@@ -400,33 +554,81 @@ class URLocate(URCapture):
             
             self.get_logger().info("✓ Reference data uploaded successfully!")
             
-            # Step 2: Auto collect data from multiple viewpoints
-            self.get_logger().info("Step 2: Collecting camera images from multiple viewpoints...")
+            # Step 2: Initialize session for real-time upload
+            self.get_logger().info("Step 2: Initializing session for data collection...")
             
-            self.session_dir = self.auto_collect_data()
+            session_result = self.positioning_client.init_session(reference_name=self.operation_name)
+            if not session_result.get('success'):
+                self.get_logger().error(f"✗ Failed to initialize session: {session_result.get('error')}")
+                return None
+            
+            session_id = session_result['session_id']
+            self.get_logger().info(f"✓ Web session created: {session_id}")
+            
+            # Step 3: Collect images and upload in real-time
+            self.get_logger().info("Step 3: Collecting and uploading camera images...")
+            
+            # Call overridden auto_collect_data with session_id for real-time upload
+            self.session_dir = self.auto_collect_data(session_id=session_id)
             if self.session_dir is False or self.session_dir is None:
                 self.get_logger().error("✗ Failed to collect camera data. Aborting positioning.")
+                # Terminate session on failure
+                self.positioning_client.terminate_session(session_id)
                 return None
             
-            self.get_logger().info(f"✓ Data collected successfully in: {self.session_dir}")
+            self.get_logger().info(f"✓ Data collection and upload completed successfully!")
             
-            # Step 3: Estimate 3D position using triangulation
-            self.get_logger().info("Step 3: Estimating 3D position via triangulation...")
-
+            # Step 4: Wait for triangulation result
+            self.get_logger().info("Step 4: Waiting for positioning results (timeout: 30s)...")
             
-            result = self.estimate_3d_position_of_test_image(
-                test_image_path=self.session_dir,
-                operation_name=self.operation_name
-            )
+            result = self.positioning_client.get_result(session_id, timeout=30000)
             
-            if result is None:
-                self.get_logger().error("✗ 3D positioning failed.")
+            if not result.get('success'):
+                self.get_logger().error(f"✗ Failed to get result: {result.get('error')}")
+                # Terminate session
+                self.positioning_client.terminate_session(session_id)
                 return None
+            
+            # Check if we got the final result or timed out
+            if 'result' not in result:
+                if result.get('timeout'):
+                    self.get_logger().error("\n✗ Timeout waiting for triangulation")
+                else:
+                    session_info = result.get('session', {})
+                    session_status = session_info.get('status')
+                    if session_status == 'failed':
+                        self.get_logger().error(f"\n✗ Session failed: {session_info.get('error_message', 'Unknown error')}")
+                    else:
+                        self.get_logger().error(f"\n✗ Triangulation not completed (status: {session_status})")
+                # Terminate session
+                self.positioning_client.terminate_session(session_id)
+                return None
+            
+            self.get_logger().info("✓ Triangulation completed!")
+            
+            triangulation_result = result['result']
+            points_3d = np.array(triangulation_result['points_3d'])
+            mean_error = triangulation_result['mean_error']
+            processing_time = triangulation_result.get('processing_time', 0)
+            views_data = result.get('views', [])
+            
+            self.get_logger().info(f"   Number of 3D points: {len(points_3d)}")
+            self.get_logger().info(f"   Mean reprojection error: {mean_error:.3f} pixels")
+            self.get_logger().info(f"   Processing time: {processing_time:.2f} seconds")
+            self.get_logger().info(f"   Number of views: {len(views_data)}")
+            
+            # Terminate session
+            self.get_logger().info("Step 5: Terminating session...")
+            term_result = self.positioning_client.terminate_session(session_id)
+            if term_result.get('success'):
+                self.get_logger().info(f"✓ Session {session_id} terminated and cleaned up")
+            else:
+                self.get_logger().warn(f"⚠️  Failed to terminate session: {term_result.get('error')}")
             
             self.get_logger().info("✓ 3D positioning completed successfully!")
             
-            # Step 4: Save results to result directory
-            self.get_logger().info("Step 4: Saving 3D positioning results...")
+            # Step 6: Save results to result directory
+            self.get_logger().info("Step 6: Saving 3D positioning results...")
             
             # Get session name and create result directory for this session
             session_name = os.path.basename(self.session_dir)
@@ -449,8 +651,8 @@ class URLocate(URCapture):
             
             self.get_logger().info(f"✓ Results saved to: {positioning_result_file_path}")
             
-            # Step 5: Validate positioning results
-            self.get_logger().info("Step 5: Validating positioning results...")
+            # Step 7: Validate positioning results
+            self.get_logger().info("Step 7: Validating positioning results...")
             
             validation_success = self.validate_positioning_results(self.session_dir, result, verbose=self.verbose)
             if validation_success:

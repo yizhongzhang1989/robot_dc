@@ -71,13 +71,13 @@ class URCapture(Node):
         # Default fallback values if config file not found
         self.collect_start_position = None
         
-        # Collection movement offsets (in base coordinate system, unit: meters)
+        # Collection movement offsets (in tcp coordinate system, unit: meters)
         self.movements = {
-            "movement1": [0, 0.01, 0, 0, 0, 0],      # Y+1cm
-            "movement2": [0, -0.01, 0, 0, 0, 0],     # Y-1cm
-            "movement3": [0, 0, 0.01, 0, 0, 0],      # Z+1cm
-            "movement4": [0, 0, -0.01, 0, 0, 0],     # Z-1cm
-            "movement5": [-0.01, 0.02, 0, 0, 0, 0]   # X-1cm, Y+2cm
+            "movement1": [0, 0, 0, 0, 0, 0],         # No offset
+            "movement2": [0.01, 0, 0, 0, 0, 0],      # X+1cm
+            "movement3": [-0.01, 0, 0, 0, 0, 0],     # X-1cm
+            "movement4": [0, 0.01, 0, 0, 0, 0],      # Y+1cm
+            "movement5": [0, -0.01, 0, 0, 0, 0]      # Y-1cm
         }
         
         # ============================ Initialization =================================
@@ -438,15 +438,13 @@ class URCapture(Node):
                 try:
                     print(f"\n--- {movement['name']} ---")
                     
-                    # Calculate target pose by adding offset to current pose
-                    target_pose = current_tcp_pose.copy()
-                    for i in range(6):
-                        target_pose[i] += movement['offset'][i]
+                    # Use offset directly for move_tcp
+                    offset = movement['offset']
                     
-                    print(f"Movel to: {[f'{p:.4f}' for p in target_pose]}")
+                    print(f"Move TCP by offset: {[f'{p:.4f}' for p in offset]}")
                     
-                    # Move robot to target position
-                    move_result = robot.movel(target_pose, a=0.1, v=0.05)
+                    # Move robot to target position using relative offset
+                    move_result = robot.move_tcp(offset, a=0.1, v=0.05)
                     
                     if move_result != 0:
                         print(f"Movement failed for {movement['name']} (result: {move_result})")
