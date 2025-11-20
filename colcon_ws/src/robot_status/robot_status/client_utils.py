@@ -4,17 +4,28 @@ Robot Status Client Utilities
 
 Helper functions for easy interaction with robot_status service from other nodes.
 
+Values are serialized using pickle, which supports:
+- Basic types (int, float, str, bool)
+- Collections (dict, list, tuple, set)
+- Custom classes
+- NumPy arrays
+- Any picklable Python object
+
 Usage:
     from robot_status.client_utils import RobotStatusClient
+    import numpy as np
     
     # In your node
     client = RobotStatusClient(self)
     
-    # Set status
+    # Set status - supports various data types
     client.set_status('robot1', 'pose', {'x': 1.5, 'y': 2.3, 'z': 0.0})
+    client.set_status('robot1', 'camera_matrix', np.eye(3))  # NumPy array
+    client.set_status('robot1', 'config', MyCustomClass())  # Custom objects
     
-    # Get status
+    # Get status - returns original Python objects
     pose = client.get_status('robot1', 'pose')
+    matrix = client.get_status('robot1', 'camera_matrix')  # Returns np.ndarray
     
     # List all status
     all_status = client.list_status()
@@ -26,6 +37,8 @@ Usage:
 import rclpy
 from rclpy.node import Node
 import json
+import pickle
+import base64
 import time
 
 
@@ -75,15 +88,19 @@ class RobotStatusClient:
         Args:
             namespace: Robot or namespace identifier (e.g., 'robot1', 'shared')
             key: Status key (e.g., 'pose', 'battery')
-            value: Value to set (dict, list, str, int, float)
+            value: Value to set (any picklable Python object: dict, list, str, int, 
+                   float, numpy arrays, custom classes, etc.)
             timeout_sec: Timeout for service call
             
         Returns:
             bool: True if successful, False otherwise
             
         Example:
+            import numpy as np
+            
             client.set_status('robot1', 'pose', {'x': 1.0, 'y': 2.0, 'z': 0.0})
             client.set_status('robot1', 'battery', 85)
+            client.set_status('robot1', 'camera_matrix', np.eye(3))
             client.set_status('shared', 'mission_id', 'mission_001')
         """
         try:
@@ -93,11 +110,9 @@ class RobotStatusClient:
             request.ns = namespace
             request.key = key
             
-            # Convert value to JSON string
-            if isinstance(value, (dict, list)):
-                request.value = json.dumps(value)
-            else:
-                request.value = json.dumps(value)
+            # Serialize value using pickle and encode as base64 string
+            pickled = pickle.dumps(value)
+            request.value = base64.b64encode(pickled).decode('ascii')
             
             future = self.set_client.call_async(request)
             rclpy.spin_until_future_complete(self.node, future, timeout_sec=timeout_sec)
@@ -128,11 +143,14 @@ class RobotStatusClient:
             timeout_sec: Timeout for service call
             
         Returns:
-            Value if found (parsed from JSON), None if not found
+            Value if found (original Python object), None if not found
             
         Example:
+            import numpy as np
+            
             pose = client.get_status('robot1', 'pose')  # Returns dict
             battery = client.get_status('robot1', 'battery')  # Returns int
+            matrix = client.get_status('robot1', 'camera_matrix')  # Returns np.ndarray
         """
         try:
             from robot_status.srv import GetStatus
@@ -147,12 +165,17 @@ class RobotStatusClient:
             if future.result():
                 result = future.result()
                 if result.success:
-                    # Try to parse JSON
+                    # Try to unpickle (base64 encoded)
                     try:
-                        return json.loads(result.value)
-                    except json.JSONDecodeError:
-                        # Return as string if not valid JSON
-                        return result.value
+                        pickled = base64.b64decode(result.value.encode('ascii'))
+                        return pickle.loads(pickled)
+                    except Exception:
+                        # Fallback: try JSON for backward compatibility
+                        try:
+                            return json.loads(result.value)
+                        except json.JSONDecodeError:
+                            # Return as string if neither works
+                            return result.value
                 else:
                     self.node.get_logger().debug(f"{namespace}.{key} not found")
                     return None
@@ -192,7 +215,21 @@ class RobotStatusClient:
             if future.result():
                 result = future.result()
                 if result.success:
-                    return json.loads(result.status_dict)
+                    # Parse the status dict which contains base64-encoded pickled values
+                    status_dict = json.loads(result.status_dict)
+                    # Decode each value
+                    for namespace in status_dict:
+                        for key in status_dict[namespace]:
+                            try:
+                                pickled = base64.b64decode(status_dict[namespace][key].encode('ascii'))
+                                status_dict[namespace][key] = pickle.loads(pickled)
+                            except Exception:
+                                # Keep as-is if not pickle-encoded (backward compatibility)
+                                try:
+                                    status_dict[namespace][key] = json.loads(status_dict[namespace][key])
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                    return status_dict
                 else:
                     self.node.get_logger().error(f"Failed to list status: {result.message}")
                     return {}
@@ -318,14 +355,16 @@ def get_from_status(node: Node, namespace: str, key: str, timeout: float = 2.0):
         timeout: Service call timeout in seconds
         
     Returns:
-        The value as a string if found, None otherwise
+        The original Python object if found, None otherwise
         
     Example:
         from robot_status.client_utils import get_from_status
+        import numpy as np
         
-        value = get_from_status(self, 'ur15', 'camera_matrix')
-        if value:
-            matrix = json.loads(value)
+        matrix = get_from_status(self, 'ur15', 'camera_matrix')
+        if matrix is not None:
+            # matrix is already a numpy array, no conversion needed
+            print(matrix.shape)
     """
     try:
         from robot_status.srv import GetStatus
@@ -344,7 +383,13 @@ def get_from_status(node: Node, namespace: str, key: str, timeout: float = 2.0):
         if future.result() is not None:
             response = future.result()
             if response.success and response.value:
-                return response.value
+                # Try to unpickle (base64 encoded)
+                try:
+                    pickled = base64.b64decode(response.value.encode('ascii'))
+                    return pickle.loads(pickled)
+                except Exception:
+                    # Fallback: return raw value for backward compatibility
+                    return response.value
         return None
     except Exception as e:
         node.get_logger().debug(f"Error getting {namespace}/{key} from status: {e}")
@@ -359,7 +404,7 @@ def set_to_status(node: Node, namespace: str, key: str, value, timeout: float = 
         node: ROS2 node instance
         namespace: The namespace to use
         key: The key to set
-        value: The value to set (will be converted to string if needed)
+        value: The value to set (any picklable Python object)
         timeout: Service call timeout in seconds
         
     Returns:
@@ -367,10 +412,11 @@ def set_to_status(node: Node, namespace: str, key: str, value, timeout: float = 
         
     Example:
         from robot_status.client_utils import set_to_status
+        import numpy as np
         
-        import json
-        matrix_json = json.dumps(camera_matrix.tolist())
-        if set_to_status(self, 'ur15', 'camera_matrix', matrix_json):
+        # No conversion needed - pass numpy array directly
+        camera_matrix = np.eye(3)
+        if set_to_status(self, 'ur15', 'camera_matrix', camera_matrix):
             print("Saved successfully")
     """
     try:
@@ -384,7 +430,9 @@ def set_to_status(node: Node, namespace: str, key: str, value, timeout: float = 
         request = SetStatus.Request()
         request.ns = namespace
         request.key = key
-        request.value = str(value) if not isinstance(value, str) else value
+        # Serialize value using pickle and encode as base64 string
+        pickled = pickle.dumps(value)
+        request.value = base64.b64encode(pickled).decode('ascii')
         
         future = client.call_async(request)
         rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)

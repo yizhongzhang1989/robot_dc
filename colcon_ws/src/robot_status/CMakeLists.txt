@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.8)
 project(robot_status)
 
+# Suppress CMake policy CMP0148 warning about deprecated FindPythonInterp
+if(POLICY CMP0148)
+  cmake_policy(SET CMP0148 OLD)
+endif()
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
