@@ -13,6 +13,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetStatus.srv"
   "srv/GetStatus.srv"
   "srv/ListStatus.srv"
+  "srv/DeleteStatus.srv"
   DEPENDENCIES std_msgs
 )
 

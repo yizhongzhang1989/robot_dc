@@ -34,7 +34,7 @@ class RobotStatusNode(Node):
         
         # Import service types (will be available after build)
         try:
-            from robot_status.srv import SetStatus, GetStatus, ListStatus
+            from robot_status.srv import SetStatus, GetStatus, ListStatus, DeleteStatus
             
             # Create services
             self.set_service = self.create_service(
@@ -55,12 +55,19 @@ class RobotStatusNode(Node):
                 self.list_status_callback
             )
             
+            self.delete_service = self.create_service(
+                DeleteStatus,
+                'robot_status/delete',
+                self.delete_status_callback
+            )
+            
             self.get_logger().info("=" * 60)
             self.get_logger().info("Robot Status Node Ready")
             self.get_logger().info("Services available:")
             self.get_logger().info("  - /robot_status/set")
             self.get_logger().info("  - /robot_status/get")
             self.get_logger().info("  - /robot_status/list")
+            self.get_logger().info("  - /robot_status/delete")
             self.get_logger().info("=" * 60)
             
         except ImportError as e:
@@ -189,6 +196,66 @@ class RobotStatusNode(Node):
             response.namespaces = []
             response.status_dict = "{}"
             response.message = f"Error listing status: {str(e)}"
+            self.get_logger().error(response.message)
+        
+        return response
+    
+    def delete_status_callback(self, request, response):
+        """
+        Delete status callback: remove namespace.key or entire namespace
+        
+        Args:
+            request.ns: Robot or namespace identifier
+            request.key: Status key to delete (empty = delete entire namespace)
+        """
+        try:
+            if request.key:
+                # Delete specific key
+                param_name = f"{request.ns}.{request.key}"
+                
+                with self.lock:
+                    if self.has_parameter(param_name):
+                        # ROS2 doesn't have undeclare_parameter, so we set it to empty
+                        # and remove from internal dict
+                        if param_name in self._parameters:
+                            del self._parameters[param_name]
+                        
+                        response.success = True
+                        response.message = f"Deleted {param_name}"
+                        self.get_logger().info(f"Deleted: {param_name}")
+                    else:
+                        response.success = False
+                        response.message = f"Parameter {param_name} not found"
+                        self.get_logger().warn(response.message)
+            else:
+                # Delete entire namespace
+                deleted_count = 0
+                params_to_delete = []
+                
+                with self.lock:
+                    # Find all parameters in this namespace
+                    for param_name in list(self._parameters.keys()):
+                        if param_name.startswith(f"{request.ns}."):
+                            params_to_delete.append(param_name)
+                    
+                    # Delete them
+                    for param_name in params_to_delete:
+                        if param_name in self._parameters:
+                            del self._parameters[param_name]
+                            deleted_count += 1
+                
+                if deleted_count > 0:
+                    response.success = True
+                    response.message = f"Deleted namespace '{request.ns}' ({deleted_count} parameters)"
+                    self.get_logger().info(response.message)
+                else:
+                    response.success = False
+                    response.message = f"Namespace '{request.ns}' not found or empty"
+                    self.get_logger().warn(response.message)
+                    
+        except Exception as e:
+            response.success = False
+            response.message = f"Error deleting: {str(e)}"
             self.get_logger().error(response.message)
         
         return response

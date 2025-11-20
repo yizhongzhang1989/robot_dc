@@ -160,6 +160,50 @@ ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: 'robot1'}
 ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: 'shared'}"
 ```
 
+### Delete Status
+
+Remove a specific status key or an entire namespace.
+
+**Service:** `/robot_status/delete`
+
+**Command:**
+```bash
+# Delete specific key
+ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+  "{ns: 'robot1', key: 'pose'}"
+
+# Delete entire namespace
+ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+  "{ns: 'robot1', key: ''}"
+```
+
+**Parameters:**
+- `ns` (string): Namespace identifier
+- `key` (string): Status key to delete (empty string = delete entire namespace)
+
+**Response:**
+- `success` (bool): Operation result
+- `message` (string): Result message
+
+**Examples:**
+```bash
+# Delete robot1 pose
+ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+  "{ns: 'robot1', key: 'pose'}"
+
+# Delete robot1 battery
+ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+  "{ns: 'robot2', key: 'battery'}"
+
+# Delete entire robot1 namespace (all keys)
+ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+  "{ns: 'robot1', key: ''}"
+
+# Delete entire shared namespace
+ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+  "{ns: 'shared', key: ''}"
+```
+
 ## Python Client API
 
 Use the `RobotStatusClient` helper class for easy integration:
@@ -203,6 +247,12 @@ print(f"Robot1 status: {robot1_status}")
 # Get all namespaces
 namespaces = client.get_namespaces()
 print(f"Active robots: {namespaces}")  # ['robot1', 'robot2', 'shared']
+
+# Delete specific key
+client.delete_status('robot1', 'pose')
+
+# Delete entire namespace
+client.delete_status('robot2')  # Deletes all robot2 keys
 
 node.destroy_node()
 rclpy.shutdown()
@@ -361,14 +411,13 @@ bool success        # Operation result
 string message      # Result message
 ```
 
-**GetStatus.srv**
+**DeleteStatus.srv**
 ```
 string ns           # Namespace identifier
-string key          # Status key to retrieve
+string key          # Status key to delete (empty = delete namespace)
 ---
-bool success        # Whether parameter exists
-string value        # The stored value
-string message      # Success or error message
+bool success        # Operation result
+string message      # Result message
 ```
 
 **ListStatus.srv**

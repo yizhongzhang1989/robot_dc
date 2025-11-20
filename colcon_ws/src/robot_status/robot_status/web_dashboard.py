@@ -128,12 +128,16 @@ HTML_TEMPLATE = '''
             padding: 15px;
             border-radius: 6px;
             border-left: 4px solid #1a73e8;
+            position: relative;
         }
         .status-key {
             font-weight: 600;
             color: #333;
             margin-bottom: 8px;
             font-size: 1.1em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .status-value {
             background: #fff;
@@ -145,6 +149,38 @@ HTML_TEMPLATE = '''
             overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-word;
+        }
+        .delete-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background 0.2s;
+        }
+        .delete-btn:hover {
+            background: #c82333;
+        }
+        .namespace-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .delete-namespace-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background 0.2s;
+        }
+        .delete-namespace-btn:hover {
+            background: #c82333;
         }
         .empty-state {
             text-align: center;
@@ -234,6 +270,47 @@ HTML_TEMPLATE = '''
             }
         }
 
+        async function deleteStatus(namespace, key) {
+            if (!confirm(`Delete ${namespace}.${key}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/status/${namespace}/${key}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                if (result.success) {
+                    refreshStatus();
+                } else {
+                    alert('Error: ' + result.message);
+                }
+            } catch (error) {
+                alert('Error: ' + error);
+            }
+        }
+
+        async function deleteNamespace(namespace) {
+            if (!confirm(`Delete entire namespace '${namespace}' and all its keys?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/namespace/${namespace}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                if (result.success) {
+                    currentNamespace = null;
+                    refreshStatus();
+                } else {
+                    alert('Error: ' + result.message);
+                }
+            } catch (error) {
+                alert('Error: ' + error);
+            }
+        }
+
         async function refreshStatus() {
             try {
                 const response = await fetch('/api/status');
@@ -283,7 +360,10 @@ HTML_TEMPLATE = '''
                     
                     return `
                         <div class="status-item">
-                            <div class="status-key">${key}</div>
+                            <div class="status-key">
+                                <span>${key}</span>
+                                <button class="delete-btn" onclick="deleteStatus('${ns}', '${key}')">🗑️ Delete</button>
+                            </div>
                             <div class="status-value">${displayValue}</div>
                         </div>
                     `;
@@ -291,7 +371,10 @@ HTML_TEMPLATE = '''
 
                 return `
                     <div class="namespace-content ${ns === currentNamespace ? 'active' : ''}" data-namespace="${ns}">
-                        <h2>${ns}</h2>
+                        <div class="namespace-header">
+                            <h2>${ns}</h2>
+                            <button class="delete-namespace-btn" onclick="deleteNamespace('${ns}')">🗑️ Delete Namespace</button>
+                        </div>
                         <div class="status-grid">${itemsHtml || '<div class="empty-state">No status items</div>'}</div>
                     </div>
                 `;
@@ -331,12 +414,13 @@ class WebDashboardNode(Node):
         
         # Import service types
         try:
-            from robot_status.srv import SetStatus, GetStatus, ListStatus
+            from robot_status.srv import SetStatus, GetStatus, ListStatus, DeleteStatus
             
             # Create service clients
             self.set_client = self.create_client(SetStatus, 'robot_status/set')
             self.get_client = self.create_client(GetStatus, 'robot_status/get')
             self.list_client = self.create_client(ListStatus, 'robot_status/list')
+            self.delete_client = self.create_client(DeleteStatus, 'robot_status/delete')
             
             # Wait for services
             self.get_logger().info("Waiting for robot_status services...")
@@ -345,6 +429,9 @@ class WebDashboardNode(Node):
                 sys.exit(1)
             if not self.list_client.wait_for_service(timeout_sec=10.0):
                 self.get_logger().error("robot_status/list service not available!")
+                sys.exit(1)
+            if not self.delete_client.wait_for_service(timeout_sec=10.0):
+                self.get_logger().error("robot_status/delete service not available!")
                 sys.exit(1)
                 
             self.get_logger().info("Connected to robot_status services")
@@ -438,6 +525,46 @@ class WebDashboardNode(Node):
                 request_msg.value = data['value']
                 
                 future = self.set_client.call_async(request_msg)
+                rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+                
+                if future.result():
+                    return jsonify({
+                        'success': future.result().success,
+                        'message': future.result().message
+                    })
+                return jsonify({'success': False, 'message': 'Service call failed'})
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/api/status/<namespace>/<key>', methods=['DELETE'])
+        def delete_status(namespace, key):
+            try:
+                from robot_status.srv import DeleteStatus
+                request_msg = DeleteStatus.Request()
+                request_msg.ns = namespace
+                request_msg.key = key
+                
+                future = self.delete_client.call_async(request_msg)
+                rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+                
+                if future.result():
+                    return jsonify({
+                        'success': future.result().success,
+                        'message': future.result().message
+                    })
+                return jsonify({'success': False, 'message': 'Service call failed'})
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/api/namespace/<namespace>', methods=['DELETE'])
+        def delete_namespace(namespace):
+            try:
+                from robot_status.srv import DeleteStatus
+                request_msg = DeleteStatus.Request()
+                request_msg.ns = namespace
+                request_msg.key = ''  # Empty key = delete entire namespace
+                
+                future = self.delete_client.call_async(request_msg)
                 rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
                 
                 if future.result():

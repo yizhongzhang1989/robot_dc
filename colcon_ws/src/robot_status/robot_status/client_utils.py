@@ -43,12 +43,13 @@ class RobotStatusClient:
         self.node = node
         
         try:
-            from robot_status.srv import SetStatus, GetStatus, ListStatus
+            from robot_status.srv import SetStatus, GetStatus, ListStatus, DeleteStatus
             
             # Create service clients
             self.set_client = node.create_client(SetStatus, 'robot_status/set')
             self.get_client = node.create_client(GetStatus, 'robot_status/get')
             self.list_client = node.create_client(ListStatus, 'robot_status/list')
+            self.delete_client = node.create_client(DeleteStatus, 'robot_status/delete')
             
             # Wait for services
             self.node.get_logger().info("Waiting for robot_status services...")
@@ -59,6 +60,8 @@ class RobotStatusClient:
                 raise TimeoutError("robot_status/get service not available")
             if not self.list_client.wait_for_service(timeout_sec=timeout_sec):
                 raise TimeoutError("robot_status/list service not available")
+            if not self.delete_client.wait_for_service(timeout_sec=timeout_sec):
+                raise TimeoutError("robot_status/delete service not available")
             
             self.node.get_logger().info("Connected to robot_status services")
             
@@ -238,6 +241,48 @@ class RobotStatusClient:
             self.node.get_logger().error(f"Error in get_namespaces: {e}")
             return []
     
+    def delete_status(self, namespace: str, key: str = '', timeout_sec=2.0):
+        """
+        Delete status value or entire namespace.
+        
+        Args:
+            namespace: Robot or namespace identifier
+            key: Status key to delete (empty = delete entire namespace)
+            timeout_sec: Timeout for service call
+            
+        Returns:
+            bool: True if successful, False otherwise
+            
+        Example:
+            client.delete_status('robot1', 'pose')  # Delete specific key
+            client.delete_status('robot1')  # Delete entire namespace
+        """
+        try:
+            from robot_status.srv import DeleteStatus
+            
+            request = DeleteStatus.Request()
+            request.ns = namespace
+            request.key = key
+            
+            future = self.delete_client.call_async(request)
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=timeout_sec)
+            
+            if future.result():
+                result = future.result()
+                if result.success:
+                    self.node.get_logger().info(result.message)
+                    return True
+                else:
+                    self.node.get_logger().error(f"Failed to delete: {result.message}")
+                    return False
+            else:
+                self.node.get_logger().error(f"Service call failed for delete_status")
+                return False
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Error in delete_status: {e}")
+            return False
+    
     def wait_for_services(self, timeout_sec=10.0):
         """
         Wait for robot_status services to become available.
@@ -253,7 +298,8 @@ class RobotStatusClient:
         while time.time() - start_time < timeout_sec:
             if (self.set_client.service_is_ready() and
                 self.get_client.service_is_ready() and
-                self.list_client.service_is_ready()):
+                self.list_client.service_is_ready() and
+                self.delete_client.service_is_ready()):
                 return True
             time.sleep(0.1)
         
