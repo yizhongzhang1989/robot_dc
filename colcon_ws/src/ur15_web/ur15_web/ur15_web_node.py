@@ -792,6 +792,144 @@ class UR15WebNode(Node):
                     'message': str(e)
                 })
         
+        @self.app.route('/prepare_last_captured_image', methods=['GET'])
+        def prepare_last_captured_image():
+            """Prepare last captured image URL for automatic upload to image labeling service."""
+            from flask import request, jsonify, url_for
+            from urllib.parse import quote
+            
+            try:
+                # Get last_picture path from robot_status service
+                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                
+                if image_path is None:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'No image has been captured yet. Please capture an image first.'
+                    }), 404
+                
+                # Check if image exists
+                if not os.path.exists(image_path):
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Image file not found: {image_path}'
+                    }), 404
+                
+                # Build the image URL that can be accessed from browser
+                image_url = url_for('serve_last_captured_image', _external=True)
+                
+                # Use the same hostname as the request to build labeling URL
+                host = request.host.split(':')[0]  # Extract hostname without port
+                encoded_image_path = quote(image_path)
+                labeling_url = f'http://{host}:8007?imageUrl={image_url}&imagePath={encoded_image_path}'
+                
+                self.get_logger().info(f"Preparing last captured image: {image_path}")
+                self.get_logger().info(f"Image URL: {image_url}")
+                self.get_logger().info(f"Labeling URL: {labeling_url}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'image_url': image_url,
+                    'labeling_url': labeling_url,
+                    'image_path': image_path
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error preparing last captured image: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                }), 500
+        
+        @self.app.route('/serve_last_captured_image', methods=['GET'])
+        def serve_last_captured_image():
+            """Serve the last captured image file."""
+            from flask import send_file, jsonify, make_response
+            
+            try:
+                # Get last_picture path from robot_status service
+                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                
+                if image_path is None:
+                    return jsonify({'error': 'No image has been captured yet'}), 404
+                
+                if not os.path.exists(image_path):
+                    return jsonify({'error': 'Image file not found'}), 404
+                
+                self.get_logger().info(f"Serving last captured image: {image_path}")
+                
+                # Send the file with CORS headers to allow cross-origin access
+                response = make_response(send_file(image_path, mimetype='image/jpeg'))
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                return response
+                
+            except Exception as e:
+                self.get_logger().error(f"Error serving last captured image: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/save_labels', methods=['POST', 'OPTIONS'])
+        def save_labels():
+            """Save labels JSON to the same directory as the image on the server."""
+            from flask import request, jsonify
+            import json
+            
+            # Handle CORS preflight request
+            if request.method == 'OPTIONS':
+                response = jsonify({'status': 'ok'})
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                return response
+            
+            try:
+                data = request.get_json()
+                if not data or 'labels' not in data:
+                    response = jsonify({'error': 'No labels data provided'})
+                    response.headers['Access-Control-Allow-Origin'] = '*'
+                    return response, 400
+                
+                # Get the image path from request data - required, no default
+                image_path = data.get('image_path')
+                if not image_path:
+                    response = jsonify({'error': 'Image path is required'})
+                    response.headers['Access-Control-Allow-Origin'] = '*'
+                    return response, 400
+                
+                # Validate that the image path exists
+                if not os.path.exists(image_path):
+                    response = jsonify({'error': f'Image not found: {image_path}'})
+                    response.headers['Access-Control-Allow-Origin'] = '*'
+                    return response, 404
+                
+                # Construct JSON path from image path
+                json_path = os.path.splitext(image_path)[0] + '.json'
+                
+                # Save the labels to JSON file
+                with open(json_path, 'w') as f:
+                    json.dump(data['labels'], f, indent=2)
+                
+                self.get_logger().info(f"Labels saved to: {json_path}")
+                self.push_web_log(f"Labels saved to: {json_path}", 'success')
+                
+                response = jsonify({
+                    'status': 'success',
+                    'message': 'Labels saved to server',
+                    'path': json_path
+                })
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                return response
+                
+            except Exception as e:
+                self.get_logger().error(f"Error saving labels: {e}")
+                response = jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                })
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                return response, 500
+        
         @self.app.route('/upload_intrinsic', methods=['POST'])
         def upload_intrinsic():
             """Upload intrinsic calibration parameters."""

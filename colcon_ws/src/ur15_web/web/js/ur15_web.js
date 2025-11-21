@@ -378,6 +378,29 @@ function updateCaptureX3ButtonState() {
     }
 }
 
+function labelLastCapturedImage() {
+    logToWeb('Preparing last captured image for labeling...', 'info');
+    
+    fetch('/prepare_last_captured_image', {
+        method: 'GET',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Open image labeling web in new tab with image URL
+            window.open(data.labeling_url, '_blank');
+            logToWeb('Image labeling service opened in new tab', 'success');
+        } else {
+            logToWeb(`Error: ${data.message}`, 'error');
+            showMessage(`Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`Failed to prepare image: ${error}`, 'error');
+        showMessage(`Failed to prepare image: ${error}`, 'error');
+    });
+}
+
 function captureTaskDataX3() {
     const operationName = document.getElementById('operationName').value;
     const calibrationDataDir = document.getElementById('calibrationDirPath').value;
