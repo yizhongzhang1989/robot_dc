@@ -69,6 +69,11 @@ class RobotStatusNode(Node):
         # Thread lock for thread-safe operations
         self.lock = threading.Lock()
         
+        # Clear all existing Redis data on startup
+        self.get_logger().info("Clearing all existing Redis data...")
+        self._redis_backend._client.flushdb()
+        self.get_logger().info("✓ Redis data cleared")
+        
         # Load existing status from file to Redis
         self._load_status_from_file()
         

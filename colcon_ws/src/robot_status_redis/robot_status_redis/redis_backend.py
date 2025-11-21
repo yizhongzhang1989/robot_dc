@@ -21,6 +21,17 @@ class RedisBackend:
     """Redis backend for robot status storage.
     
     This is an internal interface. Users should use RobotStatusClient instead.
+    
+    Data Persistence:
+        - Redis data persists after process termination
+        - Data remains until Redis server restart (unless RDB/AOF persistence configured)
+        - Keys can be explicitly deleted or set to expire
+    
+    Namespace Isolation:
+        - Use 'key_prefix' to isolate data between applications/processes
+        - Default: 'robot_status' (shared by all robot_status_redis users)
+        - Example: key_prefix='my_app' creates keys like 'my_app:robot1:pose'
+        - Different processes can use different key_prefix values for isolation
     """
     
     def __init__(
@@ -29,6 +40,7 @@ class RedisBackend:
         port: int = 6379,
         db: int = 0,
         password: Optional[str] = None,
+        key_prefix: str = 'robot_status',
         max_retries: int = 3,
         retry_delay: float = 0.1
     ):
@@ -37,8 +49,10 @@ class RedisBackend:
         Args:
             host: Redis server host
             port: Redis server port
-            db: Redis database number
+            db: Redis database number (0-15, use different db for complete isolation)
             password: Redis password (if required)
+            key_prefix: Prefix for all Redis keys (default: 'robot_status')
+                       Use different prefixes to isolate data between applications
             max_retries: Maximum connection retry attempts
             retry_delay: Delay between retries in seconds
         """
@@ -46,6 +60,7 @@ class RedisBackend:
         self.port = port
         self.db = db
         self.password = password
+        self.key_prefix = key_prefix
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         
@@ -91,8 +106,7 @@ class RedisBackend:
         except (redis.ConnectionError, redis.TimeoutError):
             return False
     
-    @staticmethod
-    def _make_key(namespace: str, key: str) -> str:
+    def _make_key(self, namespace: str, key: str) -> str:
         """Create Redis key from namespace and key.
         
         Args:
@@ -102,10 +116,9 @@ class RedisBackend:
         Returns:
             Redis key string (e.g., 'robot_status:ur15:tcp_pos')
         """
-        return f"robot_status:{namespace}:{key}"
+        return f"{self.key_prefix}:{namespace}:{key}"
     
-    @staticmethod
-    def _parse_key(redis_key: str) -> Optional[Tuple[str, str]]:
+    def _parse_key(self, redis_key: str) -> Optional[Tuple[str, str]]:
         """Parse Redis key into namespace and key.
         
         Args:
@@ -114,7 +127,8 @@ class RedisBackend:
         Returns:
             Tuple of (namespace, key) or None if invalid format
         """
-        if not redis_key.startswith('robot_status:'):
+        prefix = f"{self.key_prefix}:"
+        if not redis_key.startswith(prefix):
             return None
         
         parts = redis_key.split(':', 2)
@@ -257,9 +271,9 @@ class RedisBackend:
         try:
             # Determine search pattern
             if namespace:
-                pattern = f"robot_status:{namespace}:*"
+                pattern = f"{self.key_prefix}:{namespace}:*"
             else:
-                pattern = "robot_status:*"
+                pattern = f"{self.key_prefix}:*"
             
             # Get all matching keys
             keys = self._client.keys(pattern)
@@ -312,15 +326,20 @@ def get_redis_backend(
     port: int = 6379,
     db: int = 0,
     password: Optional[str] = None,
+    key_prefix: str = 'robot_status',
     reconnect: bool = False
 ) -> Optional[RedisBackend]:
     """Get or create Redis backend singleton.
+    
+    NOTE: Singleton is shared - first call sets key_prefix for all subsequent uses.
+    For different prefixes, create separate RedisBackend instances directly.
     
     Args:
         host: Redis server host
         port: Redis server port
         db: Redis database number
         password: Redis password (if required)
+        key_prefix: Prefix for Redis keys (default: 'robot_status')
         reconnect: Force reconnection even if instance exists
     
     Returns:
@@ -338,7 +357,8 @@ def get_redis_backend(
                 host=host,
                 port=port,
                 db=db,
-                password=password
+                password=password,
+                key_prefix=key_prefix
             )
         except ConnectionError:
             return None

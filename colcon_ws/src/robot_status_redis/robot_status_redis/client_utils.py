@@ -55,9 +55,14 @@ class RobotStatusClient:
     
     Thread-safe and high-performance (<200μs per operation).
     No ROS2 dependencies - works anywhere in Python code.
+    
+    Data Isolation:
+        - Use 'key_prefix' parameter to isolate data between applications
+        - Default: 'robot_status' (shared namespace)
+        - Use 'db' parameter (0-15) for complete database isolation
     """
     
-    def __init__(self, node=None, host='localhost', port=6379, db=0, password=None):
+    def __init__(self, node=None, host='localhost', port=6379, db=0, password=None, key_prefix='robot_status'):
         """
         Initialize Redis-based status client.
         
@@ -65,8 +70,12 @@ class RobotStatusClient:
             node: Optional ROS2 node for logging (not required for operation)
             host: Redis server host (default: localhost)
             port: Redis server port (default: 6379)
-            db: Redis database number (default: 0)
+            db: Redis database number (default: 0, range: 0-15)
+                 Use different db numbers for complete isolation
             password: Redis password if required (default: None)
+            key_prefix: Prefix for Redis keys (default: 'robot_status')
+                       Use different prefixes to isolate data between applications
+                       Example: 'my_app' creates keys like 'my_app:robot1:pose'
         
         Raises:
             ConnectionError: If Redis is not available
@@ -87,13 +96,13 @@ class RobotStatusClient:
                 node.get_logger().error(error_msg)
             raise ConnectionError(error_msg)
         
-        # Get Redis backend
-        self._redis_backend = get_redis_backend(host, port, db, password)
+        # Get Redis backend with key_prefix
+        self._redis_backend = get_redis_backend(host, port, db, password, key_prefix)
         if self._redis_backend is None:
             raise ConnectionError("Failed to connect to Redis")
         
         if node:
-            node.get_logger().info("✓ Connected to Redis backend for robot_status")
+            node.get_logger().info(f"✓ Connected to Redis backend (prefix: {key_prefix}, db: {db})")
     
     def set_status(self, namespace: str, key: str, value: Any) -> bool:
         """
@@ -240,7 +249,7 @@ class RobotStatusClient:
 
 
 # Standalone helper functions for simple get/set operations
-def get_from_status(namespace: str, key: str, host='localhost', port=6379) -> Any:
+def get_from_status(namespace: str, key: str, host='localhost', port=6379, key_prefix='robot_status') -> Any:
     """
     Standalone helper function to get a value from robot_status.
     
@@ -249,6 +258,7 @@ def get_from_status(namespace: str, key: str, host='localhost', port=6379) -> An
         key: The key to retrieve
         host: Redis server host
         port: Redis server port
+        key_prefix: Redis key prefix for isolation (default: 'robot_status')
         
     Returns:
         The original Python object if found, None otherwise
@@ -261,13 +271,13 @@ def get_from_status(namespace: str, key: str, host='localhost', port=6379) -> An
             print(matrix.shape)
     """
     try:
-        client = RobotStatusClient(host=host, port=port)
+        client = RobotStatusClient(host=host, port=port, key_prefix=key_prefix)
         return client.get_status(namespace, key)
     except Exception:
         return None
 
 
-def set_to_status(namespace: str, key: str, value: Any, host='localhost', port=6379) -> bool:
+def set_to_status(namespace: str, key: str, value: Any, host='localhost', port=6379, key_prefix='robot_status') -> bool:
     """
     Standalone helper function to set a value in robot_status.
     
@@ -277,6 +287,7 @@ def set_to_status(namespace: str, key: str, value: Any, host='localhost', port=6
         value: The value to set (any picklable Python object)
         host: Redis server host
         port: Redis server port
+        key_prefix: Redis key prefix for isolation (default: 'robot_status')
         
     Returns:
         True if successful, False otherwise
