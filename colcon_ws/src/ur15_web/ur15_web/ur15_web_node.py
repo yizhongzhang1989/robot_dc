@@ -218,9 +218,9 @@ class UR15WebNode(Node):
         self.web_log_lock = threading.Lock()
         
         # Create status service client
-        from robot_status.client_utils import RobotStatusClient
+        from robot_status_redis.client_utils import RobotStatusClient
         # auto_spin=False because this node is already spinning via launch file
-        self.status_client = RobotStatusClient(self, auto_spin=False)
+        self.status_client = RobotStatusClient(self)
         self.get_logger().info("Status service client created")
         
         # Register cleanup handlers

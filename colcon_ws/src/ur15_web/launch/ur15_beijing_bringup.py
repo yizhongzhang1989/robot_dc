@@ -76,7 +76,7 @@ def generate_launch_description():
     robot_status_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
-                FindPackageShare('robot_status'),
+                FindPackageShare('robot_status_redis'),
                 'launch',
                 'robot_status_launch.py'
             ])
