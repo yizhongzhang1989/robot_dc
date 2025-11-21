@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
-Launch file for Image Labeling Service
-
-This launch file starts the image labeling web service with configurable parameters.
-The service provides a web interface for labeling images with keypoints.
+Launch file for Test Web Service
 
 Usage:
-    ros2 launch image_labeling_service image_labeling_launch.py
-    ros2 launch image_labeling_service image_labeling_launch.py port:=8003
+    ros2 launch test_web test_web_launch.py
+    ros2 launch test_web test_web_launch.py port:=8080
 """
 
 from launch import LaunchDescription
@@ -17,12 +14,12 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    """Generate launch description for image_labeling service."""
+    """Generate launch description for test_web service."""
     
     # Declare launch arguments
     port_arg = DeclareLaunchArgument(
         'port',
-        default_value='8007',
+        default_value='8006',
         description='Port for the web service'
     )
     
@@ -36,6 +33,19 @@ def generate_launch_description():
     port = LaunchConfiguration('port')
     host = LaunchConfiguration('host')
     
+    # Define the test_web service node
+    test_web_node = Node(
+        package='test_web',
+        executable='test_web_node',
+        name='test_web_node',
+        output='screen',
+        parameters=[{
+            'port': port,
+            'host': host
+        }],
+        emulate_tty=True
+    )
+    
     # Define the image_labeling service node
     image_labeling_node = Node(
         package='image_labeling_service',
@@ -43,8 +53,8 @@ def generate_launch_description():
         name='image_labeling_service_node',
         output='screen',
         parameters=[{
-            'port': port,
-            'host': host
+            'port': 8007,
+            'host': '0.0.0.0'
         }],
         emulate_tty=True
     )
@@ -55,5 +65,6 @@ def generate_launch_description():
         host_arg,
         
         # Nodes
+        test_web_node,
         image_labeling_node
     ])
