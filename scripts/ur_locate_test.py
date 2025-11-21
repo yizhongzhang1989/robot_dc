@@ -144,12 +144,14 @@ class URLocate(URCapture):
         except Exception as e:
             self.get_logger().error(f"Error loading reference data: {e}")
 
-    def _init_positioning_client(self, service_url="http://localhost:8004"):
+    def _init_positioning_client(self, service_url="http://localhost:8004", max_retries=5, retry_delay=2):
         """
-        Initialize the 3D Positioning Web API Client
+        Initialize the 3D Positioning Web API Client with retry logic
         
         Args:
             service_url (str): URL of the positioning service
+            max_retries (int): Maximum number of connection attempts
+            retry_delay (int): Seconds to wait between retries
         """
         # Check if the Web API client is available
         if Positioning3DWebAPIClient is None:
@@ -157,33 +159,39 @@ class URLocate(URCapture):
             self.positioning_client = None
             return
         
-        try:
-            self.positioning_client = Positioning3DWebAPIClient(service_url=service_url)
-            
-            # Check service health
-            health = self.positioning_client.check_health()
-            if health.get('success'):
-                self.get_logger().info(f"Positioning service connected to: {service_url}")
-                ffpp_connected = health.get('status', {}).get('ffpp_server', {}).get('connected', False)
-                refs_loaded = health.get('status', {}).get('references', {}).get('loaded', 0)
-                self.get_logger().info(f"FFPP server connected: {ffpp_connected}")
-                self.get_logger().info(f"{refs_loaded} reference data has been loaded")
+        for attempt in range(max_retries):
+            try:
+                self.positioning_client = Positioning3DWebAPIClient(service_url=service_url)
                 
-                # List all loaded references
-                refs = self.positioning_client.list_references()
-                if refs.get('success'):
-                    ref_list = list(refs.get('references', {}).keys())
-                    if ref_list:
-                        self.get_logger().info(f"Available reference data: {ref_list}")
-                    else:
-                        self.get_logger().info("No reference data currently loaded")
-            else:
-                self.get_logger().warn(f"✗ Positioning service not available: {health.get('error')}")
-                self.positioning_client = None
-                
-        except Exception as e:
-            self.get_logger().error(f"Failed to initialize positioning client: {e}")
-            self.positioning_client = None
+                # Check service health
+                health = self.positioning_client.check_health()
+                if health.get('success'):
+                    self.get_logger().info(f"Positioning service connected to: {service_url}")
+                    ffpp_connected = health.get('status', {}).get('ffpp_server', {}).get('connected', False)
+                    refs_loaded = health.get('status', {}).get('references', {}).get('loaded', 0)
+                    self.get_logger().info(f"FFPP server connected: {ffpp_connected}")
+                    self.get_logger().info(f"{refs_loaded} reference data has been loaded")
+                    
+                    # List all loaded references
+                    refs = self.positioning_client.list_references()
+                    if refs.get('success'):
+                        ref_list = list(refs.get('references', {}).keys())
+                        if ref_list:
+                            self.get_logger().info(f"Available reference data: {ref_list}")
+                        else:
+                            self.get_logger().info("No reference data currently loaded")
+                    return  # Successfully connected
+                else:
+                    raise Exception(health.get('error', 'Service health check failed'))
+                    
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    self.get_logger().warn(f"Positioning service not ready (attempt {attempt + 1}/{max_retries}): {e}")
+                    self.get_logger().info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    self.get_logger().error(f"Failed to connect to positioning service after {max_retries} attempts: {e}")
+                    self.positioning_client = None
 
     def _init_robot_status_client(self):
         """
@@ -573,46 +581,68 @@ class URLocate(URCapture):
         """
         try:
             # Step 1: Upload reference data
-            self.get_logger().info("Step 1: Uploading reference data to FFPP web service...")
+            msg = "Step 1: Uploading reference data to FFPP web service..."
+            self.get_logger().info(msg)
+            print(msg)
             
             upload_success = self.upload_reference_data_to_ffpp_web()
             if not upload_success:
-                self.get_logger().error("✗ Failed to upload reference data. Aborting positioning.")
+                msg = "✗ Failed to upload reference data. Aborting positioning."
+                self.get_logger().error(msg)
+                print(msg)
                 return None
             
-            self.get_logger().info("✓ Reference data uploaded successfully!")
+            msg = "✓ Reference data uploaded successfully!"
+            self.get_logger().info(msg)
+            print(msg)
             
             # Step 2: Initialize session for real-time upload
-            self.get_logger().info("Step 2: Initializing session for data collection...")
+            msg = "Step 2: Initializing session for data collection..."
+            self.get_logger().info(msg)
+            print(msg)
             
             session_result = self.positioning_client.init_session(reference_name=self.operation_name)
             if not session_result.get('success'):
-                self.get_logger().error(f"✗ Failed to initialize session: {session_result.get('error')}")
+                msg = f"✗ Failed to initialize session: {session_result.get('error')}"
+                self.get_logger().error(msg)
+                print(msg)
                 return None
             
             session_id = session_result['session_id']
-            self.get_logger().info(f"✓ Web session created: {session_id}")
+            msg = f"✓ Web session created: {session_id}"
+            self.get_logger().info(msg)
+            print(msg)
             
             # Step 3: Collect images and upload in real-time
-            self.get_logger().info("Step 3: Collecting and uploading camera images...")
+            msg = "Step 3: Collecting and uploading camera images..."
+            self.get_logger().info(msg)
+            print(msg)
             
             # Call overridden auto_collect_data with session_id for real-time upload
             self.session_dir = self.auto_collect_data(session_id=session_id)
             if self.session_dir is False or self.session_dir is None:
-                self.get_logger().error("✗ Failed to collect camera data. Aborting positioning.")
+                msg = "✗ Failed to collect camera data. Aborting positioning."
+                self.get_logger().error(msg)
+                print(msg)
                 # Terminate session on failure
                 self.positioning_client.terminate_session(session_id)
                 return None
             
-            self.get_logger().info(f"✓ Data collection and upload completed successfully!")
+            msg = "✓ Data collection and upload completed successfully!"
+            self.get_logger().info(msg)
+            print(msg)
             
             # Step 4: Wait for triangulation result
-            self.get_logger().info("Step 4: Waiting for positioning results (timeout: 30s)...")
+            msg = "Step 4: Waiting for positioning results (timeout: 30s)..."
+            self.get_logger().info(msg)
+            print(msg)
             
             result = self.positioning_client.get_result(session_id, timeout=30000)
             
             if not result.get('success'):
-                self.get_logger().error(f"✗ Failed to get result: {result.get('error')}")
+                msg = f"✗ Failed to get result: {result.get('error')}"
+                self.get_logger().error(msg)
+                print(msg)
                 # Terminate session
                 self.positioning_client.terminate_session(session_id)
                 return None
@@ -620,19 +650,27 @@ class URLocate(URCapture):
             # Check if we got the final result or timed out
             if 'result' not in result:
                 if result.get('timeout'):
-                    self.get_logger().error("\n✗ Timeout waiting for triangulation")
+                    msg = "\n✗ Timeout waiting for triangulation"
+                    self.get_logger().error(msg)
+                    print(msg)
                 else:
                     session_info = result.get('session', {})
                     session_status = session_info.get('status')
                     if session_status == 'failed':
-                        self.get_logger().error(f"\n✗ Session failed: {session_info.get('error_message', 'Unknown error')}")
+                        msg = f"\n✗ Session failed: {session_info.get('error_message', 'Unknown error')}"
+                        self.get_logger().error(msg)
+                        print(msg)
                     else:
-                        self.get_logger().error(f"\n✗ Triangulation not completed (status: {session_status})")
+                        msg = f"\n✗ Triangulation not completed (status: {session_status})"
+                        self.get_logger().error(msg)
+                        print(msg)
                 # Terminate session
                 self.positioning_client.terminate_session(session_id)
                 return None
             
-            self.get_logger().info("✓ Triangulation completed!")
+            msg = "✓ Triangulation completed!"
+            self.get_logger().info(msg)
+            print(msg)
             
             triangulation_result = result['result']
             points_3d = np.array(triangulation_result['points_3d'])
@@ -640,23 +678,41 @@ class URLocate(URCapture):
             processing_time = triangulation_result.get('processing_time', 0)
             views_data = result.get('views', [])
             
-            self.get_logger().info(f"   Number of 3D points: {len(points_3d)}")
-            self.get_logger().info(f"   Mean reprojection error: {mean_error:.3f} pixels")
-            self.get_logger().info(f"   Processing time: {processing_time:.2f} seconds")
-            self.get_logger().info(f"   Number of views: {len(views_data)}")
+            msg = f"   Number of 3D points: {len(points_3d)}"
+            self.get_logger().info(msg)
+            print(msg)
+            msg = f"   Mean reprojection error: {mean_error:.3f} pixels"
+            self.get_logger().info(msg)
+            print(msg)
+            msg = f"   Processing time: {processing_time:.2f} seconds"
+            self.get_logger().info(msg)
+            print(msg)
+            msg = f"   Number of views: {len(views_data)}"
+            self.get_logger().info(msg)
+            print(msg)
             
             # Terminate session
-            self.get_logger().info("Step 5: Terminating session...")
+            msg = "Step 5: Terminating session..."
+            self.get_logger().info(msg)
+            print(msg)
             term_result = self.positioning_client.terminate_session(session_id)
             if term_result.get('success'):
-                self.get_logger().info(f"✓ Session {session_id} terminated and cleaned up")
+                msg = f"✓ Session {session_id} terminated and cleaned up"
+                self.get_logger().info(msg)
+                print(msg)
             else:
-                self.get_logger().warn(f"⚠️  Failed to terminate session: {term_result.get('error')}")
+                msg = f"⚠️  Failed to terminate session: {term_result.get('error')}"
+                self.get_logger().warn(msg)
+                print(msg)
             
-            self.get_logger().info("✓ 3D positioning completed successfully!")
+            msg = "✓ 3D positioning completed successfully!"
+            self.get_logger().info(msg)
+            print(msg)
             
             # Step 6: Save results to result directory
-            self.get_logger().info("Step 6: Saving 3D positioning results...")
+            msg = "Step 6: Saving 3D positioning results..."
+            self.get_logger().info(msg)
+            print(msg)
             
             # Get session name and create result directory for this session
             session_name = os.path.basename(self.session_dir)
@@ -677,31 +733,47 @@ class URLocate(URCapture):
             with open(positioning_result_file_path, 'w') as f:
                 json.dump(result_data, f, indent=2)
             
-            self.get_logger().info(f"✓ Results saved to: {positioning_result_file_path}")
+            msg = f"✓ Results saved to: {positioning_result_file_path}"
+            self.get_logger().info(msg)
+            print(msg)
             
             # Save points_3d to robot_status
             if self.robot_status_client:
                 try:
                     if self.robot_status_client.set_status(self.operation_name, 'points_3d', result['result']['points_3d']):
-                        self.get_logger().info(f"✓ points_3d saved to robot_status (namespace: {self.operation_name})")
+                        msg = f"✓ points_3d saved to robot_status (namespace: {self.operation_name})"
+                        self.get_logger().info(msg)
+                        print(msg)
                     else:
-                        self.get_logger().warning("Failed to save points_3d to robot_status")
+                        msg = "Failed to save points_3d to robot_status"
+                        self.get_logger().warning(msg)
+                        print(msg)
                 except Exception as e:
-                    self.get_logger().warning(f"Error saving points_3d to robot_status: {e}")
+                    msg = f"Error saving points_3d to robot_status: {e}"
+                    self.get_logger().warning(msg)
+                    print(msg)
             
             # Step 7: Validate positioning results
-            self.get_logger().info("Step 7: Validating positioning results...")
+            msg = "Step 7: Validating positioning results..."
+            self.get_logger().info(msg)
+            print(msg)
             
             validation_success = self.validate_positioning_results(self.session_dir, result, verbose=self.verbose)
             if validation_success:
-                self.get_logger().info("✓ wobj validation completed successfully!")
+                msg = "✓ wobj validation completed successfully!"
+                self.get_logger().info(msg)
+                print(msg)
             else:
-                self.get_logger().warn("⚠ wobj validation completed with warnings")
+                msg = "⚠ wobj validation completed with warnings"
+                self.get_logger().warn(msg)
+                print(msg)
             
             return result
             
         except Exception as e:
-            self.get_logger().error(f"Error during 3D positioning: {e}")
+            msg = f"Error during 3D positioning: {e}"
+            self.get_logger().error(msg)
+            print(msg)
             return None
 
     def validate_positioning_results(self, session_dir, result_data, verbose=True):

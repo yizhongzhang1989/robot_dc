@@ -146,6 +146,26 @@ def generate_launch_description():
         actions=[web_launch]
     )
     
+    # 4. Positioning 3D service launch
+    positioning_3d_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('positioning_3d_service'),
+                'launch',
+                'positioning_3d_launch.py'
+            ])
+        ]),
+        launch_arguments={
+            'port': '8004'
+        }.items()
+    )
+    
+    # Delay positioning service by 10 seconds (after web is ready)
+    delayed_positioning_launch = TimerAction(
+        period=10.0,
+        actions=[positioning_3d_launch]
+    )
+    
     return LaunchDescription([
         # Arguments
         ur15_ip_arg,
@@ -156,9 +176,10 @@ def generate_launch_description():
         chessboard_config_arg,
         launch_rviz_arg,
         
-        # Sequential launch: robot_status -> control -> camera -> web
+        # Sequential launch: robot_status -> control -> camera -> web -> positioning
         robot_status_launch,        # Start first (immediately)
         ur_control_launch,          # Start immediately
         delayed_camera_launch,      # Start after 5 seconds
-        delayed_web_launch          # Start after 8 seconds
+        delayed_web_launch,         # Start after 8 seconds
+        delayed_positioning_launch  # Start after 10 seconds
     ])

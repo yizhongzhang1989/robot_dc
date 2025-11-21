@@ -2850,7 +2850,8 @@ class UR15WebNode(Node):
                             cwd=os.path.dirname(script_path),
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,
-                            text=True
+                            text=True,
+                            bufsize=1
                         )
                         
                         # Track this process for cleanup
@@ -2858,6 +2859,20 @@ class UR15WebNode(Node):
                             self.child_processes.append(process)
                         
                         self.get_logger().info(f"Started locate last operation script with PID: {process.pid}")
+                        
+                        # Read and log output in real-time
+                        for line in process.stdout:
+                            line = line.rstrip()
+                            if line:
+                                self.get_logger().info(f"[ur_locate_test] {line}")
+                                # Also push important messages to web log
+                                if '✓' in line or '✗' in line or 'Step' in line or 'Error' in line:
+                                    if '✗' in line or 'Error' in line or 'failed' in line.lower():
+                                        self.push_web_log(line, 'error')
+                                    elif '✓' in line:
+                                        self.push_web_log(line, 'success')
+                                    else:
+                                        self.push_web_log(line, 'info')
                         
                         # Wait for the process to complete
                         return_code = process.wait()
