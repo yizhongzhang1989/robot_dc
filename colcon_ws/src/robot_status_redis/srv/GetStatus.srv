@@ -1,6 +1,0 @@
-string ns              # Robot or namespace identifier
-string key             # Status key to retrieve
----
-bool success           # Whether the key was found
-string value           # JSON-encoded value (empty if not found)
-string message         # Error message if not found

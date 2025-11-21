@@ -74,7 +74,7 @@ def generate_launch_description():
     robot_status_node = Node(
         package='robot_status_redis',
         executable='robot_status_node.py',
-        name='robot_status_redis',
+        name='robot_status_node',
         output='screen',
         parameters=[{
             'auto_save_file_path': auto_save_file_path

@@ -6,9 +6,9 @@ Provides centralized status storage using ROS2 parameters with hierarchical name
 Supports dynamic robot addition without code changes.
 
 Services:
-    - robot_status_redis/set: Set status for any namespace.key
-    - robot_status_redis/get: Get status for any namespace.key
-    - robot_status_redis/list: List all status or filter by namespace
+    - robot_status/set: Set status for any namespace.key
+    - robot_status/get: Get status for any namespace.key
+    - robot_status/list: List all status or filter by namespace
 """
 
 import rclpy
@@ -28,7 +28,7 @@ class RobotStatusNode(Node):
     
     def __init__(self):
         super().__init__(
-            'robot_status_redis',
+            'robot_status_node',
             allow_undeclared_parameters=True,
             automatically_declare_parameters_from_overrides=True
         )
@@ -51,40 +51,40 @@ class RobotStatusNode(Node):
         
         # Import service types (will be available after build)
         try:
-            from robot_status_redis.srv import SetStatus, GetStatus, ListStatus, DeleteStatus
+            from robot_status.srv import SetStatus, GetStatus, ListStatus, DeleteStatus
             
             # Create services
             self.set_service = self.create_service(
                 SetStatus,
-                'robot_status_redis/set',
+                'robot_status/set',
                 self.set_status_callback
             )
             
             self.get_service = self.create_service(
                 GetStatus,
-                'robot_status_redis/get',
+                'robot_status/get',
                 self.get_status_callback
             )
             
             self.list_service = self.create_service(
                 ListStatus,
-                'robot_status_redis/list',
+                'robot_status/list',
                 self.list_status_callback
             )
             
             self.delete_service = self.create_service(
                 DeleteStatus,
-                'robot_status_redis/delete',
+                'robot_status/delete',
                 self.delete_status_callback
             )
             
             self.get_logger().info("=" * 60)
             self.get_logger().info("Robot Status Redis Node Ready")
             self.get_logger().info("Services available:")
-            self.get_logger().info("  - /robot_status_redis/set")
-            self.get_logger().info("  - /robot_status_redis/get")
-            self.get_logger().info("  - /robot_status_redis/list")
-            self.get_logger().info("  - /robot_status_redis/delete")
+            self.get_logger().info("  - /robot_status/set")
+            self.get_logger().info("  - /robot_status/get")
+            self.get_logger().info("  - /robot_status/list")
+            self.get_logger().info("  - /robot_status/delete")
             self.get_logger().info(f"Auto-save file: {self.auto_save_file_path}")
             self.get_logger().info("=" * 60)
             

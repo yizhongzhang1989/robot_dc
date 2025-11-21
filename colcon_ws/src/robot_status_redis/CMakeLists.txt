@@ -9,18 +9,8 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
-find_package(std_msgs REQUIRED)
 find_package(rclpy REQUIRED)
-
-# Generate services
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv/SetStatus.srv"
-  "srv/GetStatus.srv"
-  "srv/ListStatus.srv"
-  "srv/DeleteStatus.srv"
-  DEPENDENCIES std_msgs
-)
+find_package(robot_status REQUIRED)
 
 # Install Python module files to the rosidl generated Python package location
 # This ensures they're in the same location as the service interfaces
