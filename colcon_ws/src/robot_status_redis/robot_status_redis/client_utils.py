@@ -62,26 +62,36 @@ class RobotStatusClient:
         - Use 'db' parameter (0-15) for complete database isolation
     """
     
-    def __init__(self, node=None, host='localhost', port=6379, db=0, password=None, key_prefix='robot_status'):
+    def __init__(self, node=None, **kwargs):
         """
         Initialize Redis-based status client.
         
         Args:
             node: Optional ROS2 node for logging (not required for operation)
-            host: Redis server host (default: localhost)
-            port: Redis server port (default: 6379)
-            db: Redis database number (default: 0, range: 0-15)
-                 Use different db numbers for complete isolation
-            password: Redis password if required (default: None)
-            key_prefix: Prefix for Redis keys (default: 'robot_status')
-                       Use different prefixes to isolate data between applications
-                       Example: 'my_app' creates keys like 'my_app:robot1:pose'
+            **kwargs: Additional parameters:
+                timeout_sec: Ignored parameter for backward compatibility (default: 5.0)
+                auto_spin: Ignored parameter for backward compatibility (default: True)
+                host: Redis server host (default: localhost)
+                port: Redis server port (default: 6379)
+                db: Redis database number (default: 0, range: 0-15)
+                     Use different db numbers for complete isolation
+                password: Redis password if required (default: None)
+                key_prefix: Prefix for Redis keys (default: 'robot_status')
+                           Use different prefixes to isolate data between applications
+                           Example: 'my_app' creates keys like 'my_app:robot1:pose'
         
         Raises:
             ConnectionError: If Redis is not available
             ImportError: If redis module is not installed
         """
         self.node = node
+        
+        # Extract parameters with defaults
+        host = kwargs.get('host', 'localhost')
+        port = kwargs.get('port', 6379)
+        db = kwargs.get('db', 0)
+        password = kwargs.get('password', None)
+        key_prefix = kwargs.get('key_prefix', 'robot_status')
         
         # Check if Redis is available
         if not is_redis_available(host, port, db, password):
@@ -104,7 +114,11 @@ class RobotStatusClient:
         if node:
             node.get_logger().info(f"✓ Connected to Redis backend (prefix: {key_prefix}, db: {db})")
     
-    def set_status(self, namespace: str, key: str, value: Any) -> bool:
+    def shutdown(self):
+        """Clean shutdown. No-op for Redis backend (included for API compatibility)."""
+        pass
+    
+    def set_status(self, namespace: str, key: str, value: Any, timeout_sec=2.0) -> bool:
         """
         Set status value.
         
@@ -112,6 +126,7 @@ class RobotStatusClient:
             namespace: Robot or namespace identifier (e.g., 'robot1', 'shared')
             key: Status key (e.g., 'pose', 'battery')
             value: Value to set (any picklable Python object: dict, list, numpy array, etc.)
+            timeout_sec: Ignored parameter for backward compatibility with original interface
             
         Returns:
             bool: True if successful, False otherwise
@@ -130,13 +145,14 @@ class RobotStatusClient:
                 self.node.get_logger().error(f"Error in set_status: {e}")
             return False
     
-    def get_status(self, namespace: str, key: str) -> Any:
+    def get_status(self, namespace: str, key: str, timeout_sec=2.0) -> Any:
         """
         Get status value.
         
         Args:
             namespace: Robot or namespace identifier
             key: Status key to retrieve
+            timeout_sec: Ignored parameter for backward compatibility with original interface
             
         Returns:
             Value if found (original Python object), None if not found
@@ -154,12 +170,13 @@ class RobotStatusClient:
                 self.node.get_logger().error(f"Error in get_status: {e}")
             return None
     
-    def list_status(self, namespace: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    def list_status(self, namespace: str = '', timeout_sec=2.0) -> Dict[str, Dict[str, Any]]:
         """
         List status for all namespaces or specific namespace.
         
         Args:
-            namespace: Optional namespace filter (None = list all)
+            namespace: Namespace filter (empty string = list all)
+            timeout_sec: Ignored parameter for backward compatibility with original interface
             
         Returns:
             dict: Status dictionary, e.g., {'robot1': {'pose': {...}, 'battery': 85}}
@@ -170,7 +187,9 @@ class RobotStatusClient:
             robot1_status = client.list_status('robot1')  # Just robot1
         """
         try:
-            storage_tree = self._redis_backend.list_status(namespace)
+            # Convert empty string to None for backend call
+            ns_filter = namespace if namespace else None
+            storage_tree = self._redis_backend.list_status(ns_filter)
             
             # Convert storage dicts to actual values
             result = {}
@@ -193,13 +212,14 @@ class RobotStatusClient:
                 self.node.get_logger().error(f"Error in list_status: {e}")
             return {}
     
-    def delete_status(self, namespace: str, key: Optional[str] = None) -> bool:
+    def delete_status(self, namespace: str, key: str = '', timeout_sec=2.0) -> bool:
         """
         Delete status value or entire namespace.
         
         Args:
             namespace: Robot or namespace identifier
-            key: Status key to delete (None = delete entire namespace)
+            key: Status key to delete (empty string = delete entire namespace)
+            timeout_sec: Ignored parameter for backward compatibility with original interface
             
         Returns:
             bool: True if successful, False otherwise
@@ -209,10 +229,10 @@ class RobotStatusClient:
             client.delete_status('robot1')  # Delete entire namespace
         """
         try:
-            if key:
+            if key:  # Non-empty string means delete specific key
                 # Delete specific key
                 return self._redis_backend.delete_status(namespace, key)
-            else:
+            else:  # Empty string means delete entire namespace
                 # Delete entire namespace - get all keys and delete them
                 storage_tree = self._redis_backend.list_status(namespace)
                 if namespace in storage_tree:
