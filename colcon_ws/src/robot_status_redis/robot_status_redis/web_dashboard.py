@@ -475,42 +475,70 @@ class WebDashboardNode(Node):
         for namespace, keys in status_dict.items():
             processed_status[namespace] = {}
             for key, pickle_str in keys.items():
-                # Unpickle the base64 string (same format as original robot_status)
+                # Unpickle to get the actual object and its type
                 try:
+                    # Decode the base64 pickle string
                     pickled = base64.b64decode(pickle_str.encode('ascii'))
                     obj = pickle.loads(pickled)
-                except Exception:
-                    # Fallback if unpickling fails
-                    obj = f"pickle_base64: {pickle_str}"
-                
-                # Get type information
-                type_name = type(obj).__name__
-                module_name = type(obj).__module__
-                if module_name not in ['builtins', '__main__']:
-                    type_str = f"{module_name}.{type_name}"
-                else:
-                    type_str = type_name
-                
-                # Get displayable value
-                display_value = obj
-                try:
-                    # Test if already JSON serializable
-                    json.dumps(display_value)
-                except (TypeError, ValueError):
-                    # Try tolist() for numpy arrays
-                    if hasattr(obj, 'tolist'):
-                        display_value = obj.tolist()
-                    elif hasattr(obj, '__dict__'):
-                        # For custom classes, show attributes
-                        display_value = {'_type': type_str, **obj.__dict__}
+                    
+                    # Get type information
+                    type_name = type(obj).__name__
+                    module_name = type(obj).__module__
+                    if module_name not in ['builtins', '__main__']:
+                        type_str = f"{module_name}.{type_name}"
                     else:
-                        # Fall back to string representation
-                        display_value = str(obj)
-                
-                processed_status[namespace][key] = {
-                    'type': type_str,
-                    'value': display_value
-                }
+                        type_str = type_name
+                    
+                    # Get displayable value
+                    display_value = None
+                    try:
+                        # Try direct JSON serialization
+                        display_value = obj
+                        json.dumps(display_value)  # Test if serializable
+                    except (TypeError, ValueError):
+                        # Try tolist() for numpy arrays
+                        if hasattr(obj, 'tolist'):
+                            display_value = obj.tolist()
+                        elif hasattr(obj, '__dict__'):
+                            # For custom classes, show attributes
+                            display_value = {'_type': type_str, **obj.__dict__}
+                        else:
+                            # Fall back to string representation
+                            display_value = str(obj)
+                    
+                    processed_status[namespace][key] = {
+                        'type': type_str,
+                        'value': display_value,
+                        'pickle': pickle_str  # Keep pickle for reference
+                    }
+                except Exception as e:
+                    # If unpickling fails, try to extract type from error message
+                    error_msg = str(e)
+                    type_str = 'unknown'
+                    
+                    # Try to extract class name from pickle error
+                    # Error format: "Can't get attribute 'ClassName' on <module '__main__'..."
+                    if "Can't get attribute" in error_msg:
+                        import re
+                        match = re.search(r"Can't get attribute '(\w+)'", error_msg)
+                        if match:
+                            class_name = match.group(1)
+                            # Try to extract module name too
+                            module_match = re.search(r"on <module '([^']+)'", error_msg)
+                            if module_match:
+                                module_name = module_match.group(1)
+                                type_str = f"{module_name}.{class_name}"
+                            else:
+                                type_str = class_name
+                    
+                    # Display pickle string with prefix
+                    display_value = f"pickle_base64: {pickle_str}"
+                    
+                    processed_status[namespace][key] = {
+                        'type': type_str,
+                        'value': display_value,
+                        'pickle': pickle_str
+                    }
         
         return processed_status
     
