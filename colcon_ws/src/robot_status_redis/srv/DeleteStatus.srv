@@ -1,0 +1,9 @@
+# Delete a status entry or entire namespace
+# If key is empty, delete entire namespace
+# If key is specified, delete only that key
+
+string ns           # Namespace identifier
+string key          # Status key to delete (empty = delete entire namespace)
+---
+bool success        # Operation result
+string message      # Result message
