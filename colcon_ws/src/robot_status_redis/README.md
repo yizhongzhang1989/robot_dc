@@ -12,10 +12,12 @@ A Redis-based ROS2 package for high-performance, thread-safe robot status manage
 - **Thread-Safe**: Safe to call from Flask threads, timers, multi-threaded nodes, any Python context
 - **Universal Data Type Support**: Pickle serialization supports any Python object (dict, list, numpy arrays, custom classes)
 - **Dual-Format Storage**: Stores both pickle (for retrieval) and JSON (for human readability) when possible
+- **Event-Driven Auto-Save**: Redis keyspace notifications trigger automatic file saves with 1-second debounce
+- **Flexible Interface**: `**kwargs` parameter pattern for maximum flexibility and backward compatibility
 - **Dynamic Multi-Robot Support**: Add robots without code changes - namespaces are created on-the-fly
 - **Hierarchical Organization**: Organize status by namespace (per-robot or shared)
 - **Simple API**: Four methods - `set_status`, `get_status`, `list_status`, `delete_status`
-- **Web Dashboard**: Real-time visualization at http://localhost:8005
+- **Web Dashboard**: Real-time visualization at http://localhost:8005 with type extraction for unpicklable objects
 - **No Conversion Needed**: Pass Python objects directly - automatic pickle serialization
 
 ## Installation
@@ -85,9 +87,13 @@ Open your browser and navigate to:
 
 The dashboard auto-refreshes every 2 seconds and displays all status organized by namespace.
 
-## Service Interface
+## Service Interface (Not Recommended)
 
-The ROS2 service interface provides compatibility with the original `robot_status` package. Services write to Redis (same backend as Python client), so data is immediately visible in the web dashboard and accessible via both service API and Python client API.
+**⚠️ Note:** The ROS2 service interface is **not recommended** for use with this package. It is provided only for backward compatibility with the original `robot_status` package. 
+
+**Recommended:** Use the [Python Client API](#python-client-api-recommended) instead for direct Redis access with better performance and no executor conflicts.
+
+The ROS2 service interface writes to Redis (same backend as Python client), so data is immediately visible in the web dashboard and accessible via both service API and Python client API.
 
 ### Set Status
 
@@ -259,6 +265,9 @@ from robot_status_redis.client_utils import RobotStatusClient
 # Create client (no ROS2 node required!)
 client = RobotStatusClient()
 
+# Or with custom Redis configuration
+client = RobotStatusClient(host='localhost', port=6379, db=0, key_prefix='my_app')
+
 # Or with ROS2 node for logging
 from rclpy.node import Node
 class MyNode(Node):
@@ -320,25 +329,40 @@ def main():
 - ✅ **High performance** - <200μs per operation via Redis
 - ✅ **Type preservation** - Retrieved objects have original types and structure
 
-### Standalone Helper Functions
+### Client Configuration Options
 
-For simple use cases without creating a client instance:
+The `RobotStatusClient` accepts flexible parameters via `**kwargs`:
 
 ```python
 #!/usr/bin/env python3
 import rclpy
 from robot_status_redis.client_utils import RobotStatusClient
 
+# Option 1: Simplest - default configuration
+client = RobotStatusClient()
+
+# Option 2: With ROS2 node for logging
 rclpy.init()
 node = rclpy.create_node('my_node')
-
-# Create client
 client = RobotStatusClient(node)
 
-# Wait for services
-client.wait_for_services(timeout_sec=5.0)
+# Option 3: Custom Redis configuration
+client = RobotStatusClient(
+    host='localhost',
+    port=6379,
+    db=1,  # Use different database for isolation
+    key_prefix='my_app'  # Custom key prefix
+)
 
-# Set status (automatically handles JSON encoding)
+# Option 4: Mixed parameters (backward compatible)
+client = RobotStatusClient(
+    node,
+    timeout_sec=10.0,  # Ignored but accepted for compatibility
+    auto_spin=True,     # Ignored but accepted for compatibility
+    key_prefix='custom'
+)
+
+# Set status (automatically handles pickle encoding)
 client.set_status('robot1', 'pose', {'x': 1.5, 'y': 2.3, 'z': 0.5})
 client.set_status('robot1', 'battery', 95)
 client.set_status('robot1', 'state', 'MOVING')
@@ -403,7 +427,7 @@ redis-cli ping  # Should return "PONG"
 cd ~/robot_dc/colcon_ws
 source install/setup.bash
 
-# Test basic operations
+# Test basic operations with type preservation
 python3 -c "
 from robot_status_redis.client_utils import RobotStatusClient
 import numpy as np
@@ -411,16 +435,21 @@ import numpy as np
 client = RobotStatusClient()
 print('✓ Client created')
 
-# Set and get dictionary
+# Set and get dictionary - type preserved
 client.set_status('test', 'data', {'x': 1, 'y': 2})
 result = client.get_status('test', 'data')
-print(f'✓ Dict: {result}')
+print(f'✓ Dict: {result} (type: {type(result).__name__})')
 
-# Set and get numpy array
+# Set and get numpy array - type preserved, no tolist() needed!
 arr = np.eye(3)
 client.set_status('test', 'matrix', arr)
 result = client.get_status('test', 'matrix')
-print(f'✓ NumPy: shape {result.shape}')
+print(f'✓ NumPy: shape {result.shape} (type: {type(result).__name__})')
+
+# Set and get list
+client.set_status('test', 'waypoints', [[0, 0], [1, 2], [3, 4]])
+result = client.get_status('test', 'waypoints')
+print(f'✓ List: {result} (type: {type(result).__name__})')
 
 # Cleanup
 client.delete_status('test')
@@ -431,8 +460,9 @@ print('✓ All tests passed!')
 **Expected output:**
 ```
 ✓ Client created
-✓ Dict: {'x': 1, 'y': 2}
-✓ NumPy: shape (3, 3)
+✓ Dict: {'x': 1, 'y': 2} (type: dict)
+✓ NumPy: shape (3, 3) (type: ndarray)
+✓ List: [[0, 0], [1, 2], [3, 4]] (type: list)
 ✓ All tests passed!
 ```
 
@@ -863,7 +893,7 @@ string message      # Summary message
 
 ## Auto-Save and Persistence
 
-The node automatically persists all status to a JSON file for restart-safe operation.
+The node automatically persists all status to a JSON file for restart-safe operation using **event-driven** Redis keyspace notifications.
 
 ### Configuration
 
@@ -878,29 +908,45 @@ Default path: `temp/robot_status_auto_save.json` (in robot_dc root directory)
 ### Behavior
 
 - **On Startup**: Automatically loads all status from the JSON file if it exists
-- **On Set**: Saves updated status after every successful `set_status` call
-- **On Delete**: Saves updated status after every successful `delete_status` call
-- **File Format**: Standard JSON with hierarchical structure
+- **On Redis Change**: Automatically saves when Redis data changes (event-driven via keyspace notifications)
+- **Debounced**: Uses 1-second debounce to batch rapid changes and prevent excessive file writes
+- **All Sources**: Captures changes from Python client, ROS2 services, and web dashboard
+- **File Format**: Standard JSON with dual-format storage (pickle + JSON when possible)
 
 ### JSON File Format
+
+The file stores data in dual format: pickle (base64-encoded) for faithful serialization and JSON for human readability when possible.
 
 ```json
 {
   "robot1": {
-    "pose": "{\"x\":1.5,\"y\":2.3,\"z\":0.5}",
-    "battery": "95",
-    "state": "MOVING"
+    "pose": {
+      "pickle": "gASVJgAAAAAAAAB9lCiMAXiUjAF5lIwBelSMBW5lc3RlZJR9lCiMAWGUSwGMAWKUSwJ1dS4=",
+      "json": {"x": 1.5, "y": 2.3, "z": 0.5, "nested": {"a": 1, "b": 2}}
+    },
+    "battery": {
+      "pickle": "gASVBQAAAAAAAABLVS4=",
+      "json": 85
+    },
+    "state": {
+      "pickle": "gASVCgAAAAAAAACMBklETEWULg==",
+      "json": "IDLE"
+    }
   },
   "robot2": {
-    "location": "warehouse_B",
-    "battery": "72"
-  },
-  "shared": {
-    "mission_id": "task_123",
-    "active_robots": "3"
+    "camera_matrix": {
+      "pickle": "gASVgwAAAAAAAACMFW51bXB5LmNvcmUubXVsdGlhcnJheZSTlC4=",
+      "json": [[800.0, 0.0, 320.0], [0.0, 800.0, 240.0], [0.0, 0.0, 1.0]]
+    }
   }
 }
 ```
+
+**Format Notes:**
+- `pickle`: Base64-encoded pickle string for exact type preservation
+- `json`: Human-readable JSON representation when object is JSON-serializable
+- NumPy arrays automatically converted to nested lists in JSON field
+- Custom classes only have pickle field (JSON conversion not possible)
 
 ### Manual File Management
 

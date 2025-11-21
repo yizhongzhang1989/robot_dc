@@ -15,6 +15,8 @@ robot_dc/
 │       ├── modbus_driver/         # Central Modbus RTU driver and simulator
 │       ├── modbus_driver_interfaces/ # Shared service/message interface definitions
 │       ├── robot_bringup/         # Unified system-level launch entry points
+│       ├── robot_status/          # Original file-based robot status management
+│       ├── robot_status_redis/    # High-performance Redis-based status management (recommended)
 │       ├── robot_teleop/          # Joystick teleoperation support
 │       └── robot_web/             # Web-based interface for control and monitoring
 ├── doc/                          # Documentation and FAQs
@@ -25,6 +27,8 @@ robot_dc/
 │   ├── cam.py                    # Original camera script (reference)
 │   ├── jog_motor.py
 │   └── serial_port_finder.py
+├── temp/                         # Runtime data directory
+│   └── robot_status_auto_save.json  # Auto-saved robot status (Redis backend)
 ├── install.sh                    # Setup helper script
 ├── requirements.txt              # Python dependencies
 └── README.md                     # This file - global project overview
@@ -41,6 +45,8 @@ robot_dc/
   * [cam\_node](colcon_ws/src/cam_node/README.md)
   * [leadshine\_motor](colcon_ws/src/leadshine_motor/README.md)
   * [modbus\_driver](colcon_ws/src/modbus_driver/README.md)
+  * [robot\_status](colcon_ws/src/robot_status/README.md) - Original file-based status management
+  * [robot\_status\_redis](colcon_ws/src/robot_status_redis/README.md) - **Recommended** high-performance Redis-based status management
   * [robot\_teleop](colcon_ws/src/robot_teleop/README.md)
   * [robot\_web](colcon_ws/src/robot_web/README.md)
 * Shared interfaces are in [`modbus_driver_interfaces`](colcon_ws/src/modbus_driver_interfaces).
@@ -56,7 +62,25 @@ robot_dc/
 
 ## Quick Start
 
-1. **Build and source the workspace:**
+1. **Install Redis (Required for robot_status_redis):**
+
+   ```bash
+   # Install Redis server
+   sudo apt-get update
+   sudo apt-get install redis-server
+   
+   # Install Python Redis client
+   pip3 install redis
+   
+   # Start Redis and enable auto-start on boot
+   sudo systemctl start redis-server
+   sudo systemctl enable redis-server
+   
+   # Verify Redis is running
+   redis-cli ping  # Should return "PONG"
+   ```
+
+2. **Build and source the workspace:**
 
    ```bash
    cd colcon_ws
@@ -64,29 +88,62 @@ robot_dc/
    source install/setup.bash
    ```
 
-2. **Launch the full robot system (real hardware):**
+3. **Launch the robot status system (Redis-based, recommended):**
+
+   ```bash
+   # Launch with web dashboard at http://localhost:8005
+   ros2 launch robot_status_redis robot_status_launch.py
+   
+   # Or with custom settings
+   ros2 launch robot_status_redis robot_status_launch.py \
+     web_port:=8080 \
+     auto_save_file_path:=/path/to/status.json
+   ```
+
+4. **Launch the full robot system (real hardware):**
 
    ```bash
    ros2 launch robot_bringup robot_launch.py
    ```
 
-3. **Alternatively, run in simulation mode (no physical hardware required):**
+5. **Alternatively, run in simulation mode (no physical hardware required):**
 
    ```bash
    ros2 launch robot_bringup simulate_motor_launch.py
    ```
 
-4. **Access the web interface for control and monitoring:**
+6. **Use robot status in your Python code:**
+
+   ```python
+   from robot_status_redis.client_utils import RobotStatusClient
+   import numpy as np
+   
+   # Create client (no ROS2 node required)
+   client = RobotStatusClient()
+   
+   # Store any Python object (dict, numpy arrays, custom classes)
+   client.set_status('robot1', 'pose', {'x': 1.5, 'y': 2.3, 'z': 0.5})
+   client.set_status('robot1', 'camera_matrix', np.eye(3))
+   
+   # Retrieve with original types preserved
+   pose = client.get_status('robot1', 'pose')  # Returns dict
+   matrix = client.get_status('robot1', 'camera_matrix')  # Returns numpy array
+   
+   # View all status at http://localhost:8005
+   ```
+
+7. **Access the web interface for control and monitoring:**
 
    Open a browser and navigate to:
 
    ```
-   http://<hostname>:8000
+   http://<hostname>:8000  # Main robot control
+   http://<hostname>:8005  # Robot status dashboard
    ```
 
-   > On Linux, you may need to allow port 8000 through your firewall to access from other PCs.
+   > On Linux, you may need to allow ports 8000 and 8005 through your firewall to access from other PCs.
 
-5. **Take camera snapshots via the web interface:**
+8. **Take camera snapshots via the web interface:**
 
    The system includes a dual-camera RTSP snapshot service. Once the system is running, you can:
    - Access the web interface at `http://<hostname>:8000`
@@ -94,7 +151,7 @@ robot_dc/
    - Images are automatically displayed in the web interface
    - Service endpoint: `/snapshot` (std_srvs/srv/Trigger)
 
-6. **Refer to individual package READMEs for usage examples, APIs, and command formats.**
+9. **Refer to individual package READMEs for usage examples, APIs, and command formats.**
 
 ---
 
@@ -135,13 +192,23 @@ For remote visual monitoring of the robot or workspace, you can launch a USB cam
 
 ## Features
 
-* Centralized Modbus RTU management
-* Leadshine motor control via ROS 2 service interface
-* RTSP camera snapshot service for dual-camera systems
-* Web-based interface for visualization and command
-* Simulation mode for development without hardware
-* Joystick teleoperation support
-* Modular architecture for easy extension
+* **High-Performance Status Management**
+  * Redis-based robot status with <200μs operation latency
+  * Thread-safe, no ROS2 executor conflicts
+  * Automatic pickle serialization for any Python object (dict, numpy, custom classes)
+  * Event-driven auto-save with Redis keyspace notifications
+  * Web dashboard with real-time visualization at http://localhost:8005
+* **Robot Control**
+  * Centralized Modbus RTU management
+  * Leadshine motor control via ROS 2 service interface
+  * RTSP camera snapshot service for dual-camera systems
+  * Web-based interface for visualization and command
+  * Simulation mode for development without hardware
+  * Joystick teleoperation support
+* **Architecture**
+  * Modular design for easy extension
+  * Flexible **kwargs interface for backward compatibility
+  * Direct Redis access eliminates service call overhead
 
 ---
 
