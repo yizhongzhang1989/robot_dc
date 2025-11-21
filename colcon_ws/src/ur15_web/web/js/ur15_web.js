@@ -626,9 +626,8 @@ function toggleFreedrive() {
 }
 
 function toggleValidation() {
-    const btn = document.getElementById('validateCalibrationBtn');
-    btn.disabled = true;
-    btn.style.opacity = '0.7';
+    const checkbox = document.getElementById('validateCalibrationCheckbox');
+    checkbox.disabled = true;
     
     logToWeb('Toggling calibration validation...', 'info');
     
@@ -642,30 +641,26 @@ function toggleValidation() {
     .then(data => {
         if (data.success) {
             validationActive = data.validation_active;
+            checkbox.checked = validationActive;
             
-            // Update button appearance
             if (validationActive) {
-                btn.classList.remove('bg-purple-500', 'hover:bg-purple-600');
-                btn.classList.add('bg-red-500', 'hover:bg-red-600');
-                btn.querySelector('span:last-child').textContent = 'Stop Check';
-                logToWeb('Calibration validation activated', 'success');
+                logToWeb('Draw UR15 base activated', 'success');
             } else {
-                btn.classList.remove('bg-red-500', 'hover:bg-red-600');
-                btn.classList.add('bg-purple-500', 'hover:bg-purple-600');
-                btn.querySelector('span:last-child').textContent = 'Check Calibration';
-                logToWeb('Calibration validation deactivated', 'info');
+                logToWeb('Draw UR15 base deactivated', 'info');
             }
         } else {
             logToWeb(`Failed to toggle validation: ${data.message}`, 'error');
+            // Revert checkbox state on failure
+            checkbox.checked = !checkbox.checked;
         }
-        btn.disabled = false;
-        btn.style.opacity = '1';
+        checkbox.disabled = false;
     })
     .catch(error => {
         console.error('Failed to toggle validation:', error);
         logToWeb(`Error toggling validation: ${error.message}`, 'error');
-        btn.disabled = false;
-        btn.style.opacity = '1';
+        // Revert checkbox state on error
+        checkbox.checked = !checkbox.checked;
+        checkbox.disabled = false;
     });
 }
 
@@ -1848,7 +1843,9 @@ function disableCornerDetection() {
 let cornerDetectEnabled = false;
 
 async function toggleCornerDetect() {
-    if (!cornerDetectEnabled) {
+    const checkbox = document.getElementById('cornerDetectCheckbox');
+    
+    if (checkbox.checked) {
         await enableCornerDetect();
     } else {
         await disableCornerDetect();
@@ -1856,6 +1853,9 @@ async function toggleCornerDetect() {
 }
 
 async function enableCornerDetect() {
+    const checkbox = document.getElementById('cornerDetectCheckbox');
+    checkbox.disabled = true;
+    
     try {
         // Read chessboard config path
         const configPath = document.getElementById('chessboardConfigPath').value;
@@ -1876,6 +1876,8 @@ async function enableCornerDetect() {
         if (!configData.success || !configData.config) {
             showMessage('Failed to load chessboard config', 'error');
             logToWeb('Failed to load chessboard config', 'error');
+            checkbox.checked = false;
+            checkbox.disabled = false;
             return;
         }
         
@@ -1903,21 +1905,24 @@ async function enableCornerDetect() {
         
         if (data.success) {
             cornerDetectEnabled = true;
-            const btn = document.getElementById('cornerDetectBtn');
-            btn.innerHTML = '<span>🛑</span><span>Stop Detect</span>';
-            btn.className = 'responsive-btn bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
-            
-            logToWeb('Corner detection enabled', 'success');
+            logToWeb('Draw chessboard corners enabled', 'success');
         } else {
             logToWeb(`Failed to enable corner detection: ${data.message}`, 'error');
+            checkbox.checked = false;
         }
         
     } catch (error) {
         logToWeb(`Error enabling corner detection: ${error.message}`, 'error');
+        checkbox.checked = false;
+    } finally {
+        checkbox.disabled = false;
     }
 }
 
 async function disableCornerDetect() {
+    const checkbox = document.getElementById('cornerDetectCheckbox');
+    checkbox.disabled = true;
+    
     try {
         logToWeb('Disabling corner detection...', 'info');
         
@@ -1933,17 +1938,58 @@ async function disableCornerDetect() {
         
         if (data.success) {
             cornerDetectEnabled = false;
-            const btn = document.getElementById('cornerDetectBtn');
-            btn.innerHTML = '<span>🔍</span><span>Corner Detect</span>';
-            btn.className = 'responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
-            
-            logToWeb('Corner detection stopped', 'success');
+            logToWeb('Draw chessboard corners stopped', 'success');
         } else {
             logToWeb(`Failed to stop corner detection: ${data.message}`, 'error');
+            checkbox.checked = true;
         }
         
     } catch (error) {
         logToWeb(`Error disabling corner detection: ${error.message}`, 'error');
+        checkbox.checked = true;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
+// Draw GB200 Rack Functions
+let drawRackEnabled = false;
+
+async function toggleDrawRack() {
+    const checkbox = document.getElementById('drawRackCheckbox');
+    checkbox.disabled = true;
+    
+    try {
+        const response = await fetch('/toggle_draw_rack', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: checkbox.checked })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            drawRackEnabled = data.enabled;
+            checkbox.checked = data.enabled;
+            
+            if (data.enabled) {
+                logToWeb('Draw GB200 rack enabled', 'success');
+            } else {
+                logToWeb('Draw GB200 rack disabled', 'info');
+            }
+        } else {
+            logToWeb(`Failed to toggle rack drawing: ${data.message}`, 'error');
+            // Revert checkbox on failure
+            checkbox.checked = !checkbox.checked;
+        }
+    } catch (error) {
+        logToWeb(`Error toggling rack drawing: ${error.message}`, 'error');
+        // Revert checkbox on error
+        checkbox.checked = !checkbox.checked;
+    } finally {
+        checkbox.disabled = false;
     }
 }
 

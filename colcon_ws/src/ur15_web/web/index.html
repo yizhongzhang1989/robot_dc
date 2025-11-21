@@ -687,17 +687,22 @@
                         </div>
                         
                         <!-- Row 3: Validate Result -->
-                        <div style="display: flex; gap: 0.5rem;">
-                            <!-- Validate Calibration Result -->
-                            <button id="validateCalibrationBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleValidation()">
-                                <span>🎯</span>
-                                <span>Check Calibration</span>
-                            </button>
-                            <!-- Corner Detection -->
-                            <button id="cornerDetectBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="toggleCornerDetect()">
-                                <span>🔍</span>
-                                <span>Corner Detect</span>
-                            </button>
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <!-- Draw Chessboard Corners -->
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" id="cornerDetectCheckbox" onchange="toggleCornerDetect()" style="width: 18px; height: 18px; cursor: pointer;">
+                                <span style="font-weight: 600;">🔍 Draw Chessboard Corners</span>
+                            </label>
+                            <!-- Draw UR15 Base -->
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" id="validateCalibrationCheckbox" onchange="toggleValidation()" style="width: 18px; height: 18px; cursor: pointer;">
+                                <span style="font-weight: 600;">🎯 Draw UR15 Base</span>
+                            </label>
+                            <!-- Draw GB200 Rack -->
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" id="drawRackCheckbox" onchange="toggleDrawRack()" style="width: 18px; height: 18px; cursor: pointer;">
+                                <span style="font-weight: 600;">🗄️ Draw GB200 Rack</span>
+                            </label>
                         </div>
                     </div>
                 </div>

@@ -30,7 +30,6 @@ import atexit
 from flask import Flask, render_template_string, Response
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
-from robot_status import get_from_status, set_to_status
 from ur15_web import draw_utils
 
 # Add scripts directory to path for camera calibration toolkit
@@ -205,6 +204,7 @@ class UR15WebNode(Node):
         self.validation_active = False
         self.corner_detection_enabled = False
         self.corner_detection_params = {}
+        self.draw_rack_enabled = False
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
@@ -216,6 +216,12 @@ class UR15WebNode(Node):
         # Web log message queue
         self.web_log_messages = []
         self.web_log_lock = threading.Lock()
+        
+        # Create status service client
+        from robot_status.client_utils import RobotStatusClient
+        # auto_spin=False because this node is already spinning via launch file
+        self.status_client = RobotStatusClient(self, auto_spin=False)
+        self.get_logger().info("Status service client created")
         
         # Register cleanup handlers
         atexit.register(self.cleanup)
@@ -272,14 +278,13 @@ class UR15WebNode(Node):
         
         self.get_logger().info(f"Web interface running at http://0.0.0.0:{self.web_port}")
         
-        # Load calibration parameters from robot_status if available
-        self._load_calibration_from_status()
+        # Create a timer to load calibration parameters after async cache is populated
+        self._load_calib_retry_count = 0
+        self._load_calib_timer = self.create_timer(0.5, self._load_calibration_from_status)
     
     def _load_calibration_from_status(self):
         """Load calibration parameters from robot_status service."""
         try:
-            self.get_logger().info("Loading calibration parameters from robot_status...")
-            
             # Parameters to load
             params_to_load = [
                 ('camera_matrix', 'camera_matrix'),
@@ -289,26 +294,38 @@ class UR15WebNode(Node):
             ]
             
             loaded_count = 0
+            pending_count = 0
             for param_name, attr_name in params_to_load:
-                value = get_from_status(self, 'ur15', param_name)
+                value = self.status_client.get_status('ur15', param_name, timeout_sec=2.0)
                 if value is not None:
                     try:
                         with self.calibration_lock:
-                            setattr(self, attr_name, value)
-                        
-                        loaded_count += 1
-                        self.get_logger().info(f"Loaded {param_name} from robot_status (shape: {value.shape})")
+                            existing_value = getattr(self, attr_name, None)
+                            # Only update if not already set
+                            if existing_value is None:
+                                setattr(self, attr_name, value)
+                                loaded_count += 1
+                                self.get_logger().info(f"Loaded {param_name} from robot_status (shape: {value.shape})")
                     except Exception as e:
                         self.get_logger().warning(f"Failed to parse {param_name}: {e}")
+                else:
+                    pending_count += 1
             
+            # If we loaded something or nothing is pending after retries, stop the timer
             if loaded_count > 0:
                 self.get_logger().info(f"Successfully loaded {loaded_count}/4 calibration parameters from robot_status")
                 self.push_web_log(f"Loaded {loaded_count}/4 calibration parameters from robot_status", 'success')
+                self._load_calib_timer.cancel()
+            elif self._load_calib_retry_count >= 10:  # Stop after 5 seconds (10 * 0.5s)
+                if pending_count == len(params_to_load):
+                    self.get_logger().info("No calibration parameters found in robot_status")
+                self._load_calib_timer.cancel()
             else:
-                self.get_logger().info("No calibration parameters found in robot_status")
+                self._load_calib_retry_count += 1
                 
         except Exception as e:
             self.get_logger().warning(f"Error loading calibration from robot_status: {e}")
+            self._load_calib_timer.cancel()
     
     def _signal_handler(self, signum, frame):
         """Handle termination signals."""
@@ -1239,6 +1256,40 @@ class UR15WebNode(Node):
                     'enabled': False
                 })
         
+        @self.app.route('/toggle_draw_rack', methods=['POST'])
+        def toggle_draw_rack():
+            """Toggle GB200 rack drawing on/off."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                self.draw_rack_enabled = enable
+                
+                if enable:
+                    self.get_logger().info("GB200 rack drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 rack drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("GB200 rack drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 rack drawing disabled',
+                        'enabled': False
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error toggling rack drawing: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+        
         @self.app.route('/take_screenshot', methods=['POST'])
         def take_screenshot():
             """Take a screenshot of current camera feed and save robot pose."""
@@ -1771,7 +1822,7 @@ class UR15WebNode(Node):
                                         # Send all parameters
                                         success_count = 0
                                         for key, value in params.items():
-                                            if set_to_status(self, 'ur15', key, value):
+                                            if self.status_client.set_status('ur15', key, value):
                                                 success_count += 1
                                         
                                         if success_count == len(params):
@@ -3062,6 +3113,66 @@ class UR15WebNode(Node):
         
         return frame
     
+    def project_rack_to_image(self, frame):
+        """Project GB200 rack to image using draw_curves_on_image."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+            
+            # Get rack work object parameters - client handles caching internally
+            wobj_origin = self.status_client.get_status('rack', 'wobj_origin')
+            wobj_x = self.status_client.get_status('rack', 'wobj_x')
+            wobj_y = self.status_client.get_status('rack', 'wobj_y')
+            wobj_z = self.status_client.get_status('rack', 'wobj_z')
+            
+            # Check if all work object parameters are available
+            if wobj_origin is None or wobj_x is None or wobj_y is None or wobj_z is None:
+                self.get_logger().debug("Rack work object parameters not available yet")
+                return frame
+            
+            # Convert to numpy arrays
+            wobj_origin = np.array(wobj_origin, dtype=np.float64)
+            wobj_x = np.array(wobj_x, dtype=np.float64)
+            wobj_y = np.array(wobj_y, dtype=np.float64)
+            wobj_z = np.array(wobj_z, dtype=np.float64)
+            
+            # Normalize the axes to ensure they are unit vectors
+            wobj_x = wobj_x / np.linalg.norm(wobj_x)
+            wobj_y = wobj_y / np.linalg.norm(wobj_y)
+            wobj_z = wobj_z / np.linalg.norm(wobj_z)
+            
+            # Build rack2base transformation matrix
+            # The rotation matrix is formed by the three axes as columns
+            rack2base_matrix = np.eye(4)
+            rack2base_matrix[:3, 0] = wobj_x  # X axis
+            rack2base_matrix[:3, 1] = wobj_y  # Y axis
+            rack2base_matrix[:3, 2] = wobj_z  # Z axis
+            rack2base_matrix[:3, 3] = wobj_origin  # Origin position
+            
+            # Calculate rack2camera transformation
+            # base2camera = params['extrinsic']
+            # rack2camera = base2camera @ rack2base
+            base2camera = params['extrinsic']
+            rack2camera = base2camera @ rack2base_matrix
+            
+            # Draw GB200 rack curve with rack2camera extrinsic
+            frame = draw_utils.draw_curves_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=rack2camera,
+                point3d=self.gb200rack_curve['curves'],
+                distortion=params['distortion'],
+                color=self.gb200rack_curve['colors'],
+                thickness=2
+            )
+            
+        except Exception as e:
+            self.get_logger().error(f"Error projecting rack to image: {e}")
+        
+        return frame
+    
     def apply_corner_detection(self, frame):
         """Apply corner detection visualization to frame using calibration toolkit."""
         if not CALIBRATION_TOOLKIT_AVAILABLE:
@@ -3133,9 +3244,13 @@ class UR15WebNode(Node):
                         if self.corner_detection_enabled:
                             frame = self.apply_corner_detection(frame)
                         
-                        # Only project validation if validation is active
+                        # Draw UR15 base if enabled
                         if self.validation_active:
                             frame = self.project_base_origin_to_image(frame)
+                        
+                        # Draw GB200 rack if enabled
+                        if self.draw_rack_enabled:
+                            frame = self.project_rack_to_image(frame)
                         
                         # Scale down for web display while maintaining aspect ratio
                         height, width = frame.shape[:2]
