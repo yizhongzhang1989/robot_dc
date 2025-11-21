@@ -134,21 +134,30 @@ class Positioning3DServiceNode(Node):
             sys.exit(1)
     
     def _monitor_output(self):
-        """Monitor and log the web service output."""
+        """Monitor and log the web service output (critical messages only)."""
         if not self.process or not self.process.stdout:
             return
         
         try:
             for line in iter(self.process.stdout.readline, ''):
                 if line:
-                    # Forward service logs to ROS logger
                     line = line.rstrip()
-                    if 'ERROR' in line or 'Error' in line:
+                    
+                    # Only log critical messages (errors and warnings)
+                    # Filter out routine HTTP request logs from werkzeug
+                    if 'ERROR' in line or 'Error' in line or 'error' in line:
                         self.get_logger().error(f"[positioning_3d] {line}")
-                    elif 'WARNING' in line or 'Warning' in line:
+                    elif 'WARNING' in line or 'Warning' in line or 'warning' in line:
                         self.get_logger().warn(f"[positioning_3d] {line}")
-                    else:
-                        self.get_logger().info(f"[positioning_3d] {line}")
+                    elif 'werkzeug' in line.lower():
+                        # Skip routine werkzeug HTTP request logs (GET, POST, etc.)
+                        continue
+                    elif 'INFO' in line and ('GET' in line or 'POST' in line or 'PUT' in line or 'DELETE' in line):
+                        # Skip HTTP method logs
+                        continue
+                    elif line.strip():
+                        # Log other non-empty lines at debug level (only shown if ROS log level is debug)
+                        self.get_logger().debug(f"[positioning_3d] {line}")
         except Exception as e:
             self.get_logger().error(f"Error monitoring output: {e}")
     
