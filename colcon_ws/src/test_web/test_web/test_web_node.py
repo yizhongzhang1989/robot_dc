@@ -101,8 +101,11 @@ class TestWebNode(Node):
             
             # Use the same hostname as the request to build labeling URL
             # This ensures it works whether accessed via localhost, hostname, or IP
+            # Include the image path so it can be returned when saving labels
+            from urllib.parse import quote
             host = request.host.split(':')[0]  # Extract hostname without port
-            labeling_url = f'http://{host}:8007?imageUrl={image_url}'
+            encoded_image_path = quote(image_path)
+            labeling_url = f'http://{host}:8007?imageUrl={image_url}&imagePath={encoded_image_path}'
             
             self.get_logger().info(f"Preparing image: {image_path}")
             self.get_logger().info(f"Request host: {request.host}")
@@ -119,13 +122,58 @@ class TestWebNode(Node):
         @app.route('/serve_image', methods=['GET'])
         def serve_image():
             """Serve the target image file."""
-            image_path = '/home/ros/Documents/robot_dc/dataset/rack1/ref_img_1.jpg'
+            from flask import request
+            
+            # Get image path from query parameter, or use default
+            image_path = request.args.get('path', '/home/ros/Documents/robot_dc/dataset/rack1/ref_img_1.jpg')
             
             if not os.path.exists(image_path):
                 return jsonify({'error': 'Image not found'}), 404
             
             self.get_logger().info(f"Serving image: {image_path}")
             return send_file(image_path, mimetype='image/jpeg')
+        
+        @app.route('/save_labels', methods=['POST'])
+        def save_labels():
+            """Save labels JSON to the same directory as the image on the server."""
+            from flask import request
+            import json
+            
+            try:
+                data = request.get_json()
+                if not data or 'labels' not in data:
+                    return jsonify({'error': 'No labels data provided'}), 400
+                
+                # Get the image path from request data - required, no default
+                image_path = data.get('image_path')
+                if not image_path:
+                    return jsonify({'error': 'Image path is required'}), 400
+                
+                # Validate that the image path exists
+                if not os.path.exists(image_path):
+                    return jsonify({'error': f'Image not found: {image_path}'}), 404
+                
+                # Construct JSON path from image path
+                json_path = os.path.splitext(image_path)[0] + '.json'
+                
+                # Save the labels to JSON file
+                with open(json_path, 'w') as f:
+                    json.dump(data['labels'], f, indent=2)
+                
+                self.get_logger().info(f"Labels saved to: {json_path}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': f'Labels saved to server',
+                    'path': json_path
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error saving labels: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                }), 500
         
         return app
     
