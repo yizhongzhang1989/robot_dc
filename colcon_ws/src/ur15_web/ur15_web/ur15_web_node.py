@@ -2065,6 +2065,20 @@ class UR15WebNode(Node):
                     json.dump(combined_data, f, indent=2)                # Add web log message
                 self.push_web_log(f'Captured image and pose data: {image_filename}, {pose_filename}', 'success')
                 
+                # Upload the absolute path of ref_img_1.jpg to robot_status
+                try:
+                    ref_img_1_path = os.path.join(expanded_task_path, 'ref_img_1.jpg')
+                    abs_ref_img_1_path = os.path.abspath(ref_img_1_path)
+                    if self.status_client.set_status('ur15', 'last_picture', abs_ref_img_1_path):
+                        self.get_logger().info(f"✅ Uploaded last_picture path to robot_status: {abs_ref_img_1_path}")
+                        self.push_web_log(f"✅ Saved last_picture path: {abs_ref_img_1_path}", 'success')
+                    else:
+                        self.get_logger().warning("⚠️ Failed to upload last_picture path to robot_status")
+                        self.push_web_log("⚠️ Failed to save last_picture path", 'warning')
+                except Exception as e:
+                    self.get_logger().error(f"❌ Error uploading last_picture to robot_status: {e}")
+                    self.push_web_log(f"⚠️ Error saving last_picture: {e}", 'warning')
+                
                 return jsonify({
                     'success': True,
                     'message': f'Successfully captured image and pose data',
