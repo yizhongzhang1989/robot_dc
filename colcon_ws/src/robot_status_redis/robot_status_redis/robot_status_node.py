@@ -116,9 +116,9 @@ class RobotStatusNode(Node):
             self.get_logger().info(f"Auto-save file: {self.auto_save_file_path}")
             self.get_logger().info("=" * 60)
             
-            # Create periodic auto-save timer (5 seconds, same as original robot_status)
-            self.auto_save_timer = self.create_timer(5.0, self._periodic_save_callback)
-            self.get_logger().info("Auto-save timer enabled (every 5 seconds)")
+            # Setup Redis keyspace notifications for auto-save on changes
+            self._setup_redis_notifications()
+            self.get_logger().info("Auto-save enabled (triggers on Redis changes)")
             
         except ImportError as e:
             self.get_logger().error(f"Failed to import service types: {e}")
@@ -186,9 +186,56 @@ class RobotStatusNode(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to load auto-save file: {e}")
     
-    def _periodic_save_callback(self):
-        """Periodic timer callback for auto-save."""
-        self._save_status_to_file()
+    def _setup_redis_notifications(self):
+        """Setup Redis keyspace notifications to trigger auto-save on changes."""
+        try:
+            # Enable keyspace notifications for set and delete operations
+            self._redis_backend._client.config_set('notify-keyspace-events', 'KEA')
+            
+            # Create a separate Redis connection for pubsub (non-blocking)
+            import redis
+            self._pubsub_client = redis.Redis(
+                host=self._redis_backend.host,
+                port=self._redis_backend.port,
+                db=self._redis_backend.db,
+                decode_responses=True
+            )
+            self._pubsub = self._pubsub_client.pubsub()
+            
+            # Subscribe to keyspace notifications for robot_status keys
+            pattern = f'__keyspace@{self._redis_backend.db}__:robot_status:*'
+            self._pubsub.psubscribe(pattern)
+            
+            # Start background thread to listen for notifications
+            self._notification_thread = threading.Thread(
+                target=self._redis_notification_listener,
+                daemon=True
+            )
+            self._notification_thread.start()
+            self._save_pending = False
+            
+        except Exception as e:
+            self.get_logger().error(f"Failed to setup Redis notifications: {e}")
+            self.get_logger().warn("Auto-save will only work via service API")
+    
+    def _redis_notification_listener(self):
+        """Background thread that listens for Redis keyspace notifications."""
+        try:
+            for message in self._pubsub.listen():
+                if message['type'] == 'pmessage':
+                    # Mark that a save is needed
+                    if not self._save_pending:
+                        self._save_pending = True
+                        # Debounce: wait a bit before saving (avoid rapid saves)
+                        threading.Timer(1.0, self._trigger_save).start()
+        except Exception as e:
+            self.get_logger().error(f"Redis notification listener error: {e}")
+    
+    def _trigger_save(self):
+        """Trigger auto-save after debounce period."""
+        if self._save_pending:
+            self._save_pending = False
+            self._save_status_to_file()
     
     def _save_status_to_file(self):
         """Save current Redis status to auto-save JSON file."""
