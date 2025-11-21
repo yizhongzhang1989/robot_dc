@@ -7,9 +7,11 @@ Assumes ur_control and camera are already running.
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
 import os
 
 
@@ -83,6 +85,14 @@ def generate_launch_description():
         }]
     )
     
+    # Include image labeling service launch file
+    image_labeling_service_dir = get_package_share_directory('image_labeling_service')
+    image_labeling_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(image_labeling_service_dir, 'launch', 'image_labeling_launch.py')
+        )
+    )
+    
     return LaunchDescription([
         # Arguments
         ur15_ip_arg,
@@ -93,6 +103,7 @@ def generate_launch_description():
         calib_data_dir_arg,
         chessboard_config_arg,
         
-        # Launch web node only
-        ur15_web_node
+        # Launch nodes
+        ur15_web_node,
+        image_labeling_launch
     ])
