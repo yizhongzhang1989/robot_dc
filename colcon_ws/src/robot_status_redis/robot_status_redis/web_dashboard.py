@@ -474,31 +474,14 @@ class WebDashboardNode(Node):
         
         for namespace, keys in status_dict.items():
             processed_status[namespace] = {}
-            for key, value_dict in keys.items():
-                # Handle dual-format storage: {"pickle": "...", "json": ...}
-                if isinstance(value_dict, dict) and 'pickle' in value_dict:
-                    # Use JSON value if available, otherwise unpickle
-                    if 'json' in value_dict:
-                        # JSON value is already decoded and ready to display
-                        obj = value_dict['json']
-                        pickle_str = value_dict['pickle']
-                    else:
-                        # Only pickle available, need to decode
-                        pickle_str = value_dict['pickle']
-                        try:
-                            pickled = base64.b64decode(pickle_str.encode('ascii'))
-                            obj = pickle.loads(pickled)
-                        except Exception:
-                            # Fallback if unpickling fails
-                            obj = f"pickle_base64: {pickle_str}"
-                else:
-                    # Legacy format: direct pickle string
-                    pickle_str = value_dict
-                    try:
-                        pickled = base64.b64decode(pickle_str.encode('ascii'))
-                        obj = pickle.loads(pickled)
-                    except Exception:
-                        obj = f"pickle_base64: {pickle_str}"
+            for key, pickle_str in keys.items():
+                # Unpickle the base64 string (same format as original robot_status)
+                try:
+                    pickled = base64.b64decode(pickle_str.encode('ascii'))
+                    obj = pickle.loads(pickled)
+                except Exception:
+                    # Fallback if unpickling fails
+                    obj = f"pickle_base64: {pickle_str}"
                 
                 # Get type information
                 type_name = type(obj).__name__

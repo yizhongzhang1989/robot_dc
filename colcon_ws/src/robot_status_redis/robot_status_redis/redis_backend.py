@@ -203,10 +203,10 @@ class RedisBackend:
         """
         try:
             redis_key = self._make_key(namespace, key)
-            storage_dict = self._create_storage_dict(value)
+            pickle_str = self._serialize_value(value)
             
-            # Store as JSON string in Redis
-            self._client.set(redis_key, json.dumps(storage_dict))
+            # Store pickle string directly in Redis (same as original robot_status)
+            self._client.set(redis_key, pickle_str)
             return True
         except Exception:
             return False
@@ -223,19 +223,12 @@ class RedisBackend:
         """
         try:
             redis_key = self._make_key(namespace, key)
-            data = self._client.get(redis_key)
+            pickle_str = self._client.get(redis_key)
             
-            if data is None:
+            if pickle_str is None:
                 return False, None
             
-            # Parse JSON to get storage dict
-            storage_dict = json.loads(data)
-            
-            # Extract pickle string and deserialize
-            pickle_str = storage_dict.get("pickle", "")
-            if not pickle_str:
-                return False, None
-            
+            # Deserialize pickle string directly (same as original robot_status)
             value = self._deserialize_value(pickle_str)
             return True, value
         except Exception:
@@ -285,23 +278,20 @@ class RedisBackend:
                 if parsed is None:
                     continue
                 
-                ns, k = parsed
+                ns, key = parsed
                 
-                # Get value
-                data = self._client.get(redis_key)
-                if data is None:
+                # Filter by namespace if specified (already handled in pattern, but double-check)
+                if namespace and ns != namespace:
                     continue
                 
-                # Parse storage dict
-                try:
-                    storage_dict = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                
-                # Add to result tree
+                # Initialize namespace dict
                 if ns not in result:
                     result[ns] = {}
-                result[ns][k] = storage_dict
+                
+                # Get pickle string from Redis (same format as original robot_status)
+                pickle_str = self._client.get(redis_key)
+                if pickle_str:
+                    result[ns][key] = pickle_str
             
             return result
         except Exception:

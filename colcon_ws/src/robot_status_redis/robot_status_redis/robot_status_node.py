@@ -116,6 +116,10 @@ class RobotStatusNode(Node):
             self.get_logger().info(f"Auto-save file: {self.auto_save_file_path}")
             self.get_logger().info("=" * 60)
             
+            # Create periodic auto-save timer (5 seconds, same as original robot_status)
+            self.auto_save_timer = self.create_timer(5.0, self._periodic_save_callback)
+            self.get_logger().info("Auto-save timer enabled (every 5 seconds)")
+            
         except ImportError as e:
             self.get_logger().error(f"Failed to import service types: {e}")
             self.get_logger().error("Make sure the package is built: colcon build --packages-select robot_status")
@@ -163,17 +167,16 @@ class RobotStatusNode(Node):
             for namespace, keys in data.items():
                 for key, value in keys.items():
                     try:
-                        # Handle new format: {"pickle": "...", "json": {...}}
+                        # Handle format: {"pickle": "...", "json": {...}}
                         if isinstance(value, dict) and "pickle" in value:
                             pickle_str = value["pickle"]
                         else:
-                            # Backward compatibility: old format (direct pickle string)
+                            # Backward compatibility: direct pickle string
                             pickle_str = value
                         
-                        # Decode and store in Redis
-                        pickled = base64.b64decode(pickle_str.encode('ascii'))
-                        obj = pickle.loads(pickled)
-                        self._redis_backend.set_status(namespace, key, obj)
+                        # Store pickle string directly in Redis
+                        redis_key = f"robot_status:{namespace}:{key}"
+                        self._redis_backend._client.set(redis_key, pickle_str)
                         count += 1
                     except Exception as e:
                         self.get_logger().warn(f"Failed to load {namespace}.{key}: {e}")
@@ -183,18 +186,56 @@ class RobotStatusNode(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to load auto-save file: {e}")
     
+    def _periodic_save_callback(self):
+        """Periodic timer callback for auto-save."""
+        self._save_status_to_file()
+    
     def _save_status_to_file(self):
         """Save current Redis status to auto-save JSON file."""
         try:
-            # Get all status from Redis
+            # Get all status from Redis (returns pickle strings)
             with self.lock:
-                status_tree = self._redis_backend.list_status()
+                raw_status = self._redis_backend.list_status()
+            
+            # Convert to format matching original robot_status: {"pickle": "...", "json": ...}
+            status_tree = {}
+            for namespace, keys in raw_status.items():
+                status_tree[namespace] = {}
+                for key, pickle_str in keys.items():
+                    # Create dict with pickle string
+                    value_dict = {"pickle": pickle_str}
+                    
+                    # Try to add JSON representation if possible
+                    try:
+                        # Unpickle to get the actual object
+                        pickled = base64.b64decode(pickle_str.encode('ascii'))
+                        obj = pickle.loads(pickled)
+                        
+                        # Try direct JSON serialization first
+                        try:
+                            json_str = json.dumps(obj)
+                            value_dict["json"] = json.loads(json_str)
+                        except (TypeError, ValueError):
+                            # Direct serialization failed, try tolist() method
+                            if hasattr(obj, 'tolist'):
+                                try:
+                                    list_obj = obj.tolist()
+                                    json_str = json.dumps(list_obj)
+                                    value_dict["json"] = json.loads(json_str)
+                                except (TypeError, ValueError, AttributeError):
+                                    # tolist() also failed, no JSON representation
+                                    pass
+                    except Exception:
+                        # Unpickling failed, just keep pickle
+                        pass
+                    
+                    status_tree[namespace][key] = value_dict
             
             # Ensure the directory exists before writing
             save_path = Path(self.auto_save_file_path)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Write to file (status_tree already has pickle+json format)
+            # Write to file (same format as original robot_status)
             with open(self.auto_save_file_path, 'w') as f:
                 json.dump(status_tree, f, indent=2)
             
@@ -213,35 +254,10 @@ class RobotStatusNode(Node):
             request.value: Pickled base64-encoded value
         """
         try:
-            # Decode the pickled bytes but don't unpickle here (avoid __main__ class issues)
-            pickled = base64.b64decode(request.value.encode('ascii'))
-            
-            # Try to unpickle to create JSON representation if possible
-            value_dict = {"pickle": request.value}
-            try:
-                obj = pickle.loads(pickled)
-                # Try to create JSON representation
-                try:
-                    json_str = json.dumps(obj)
-                    value_dict["json"] = json.loads(json_str)
-                except (TypeError, ValueError):
-                    # Try tolist() method for numpy arrays
-                    if hasattr(obj, 'tolist'):
-                        try:
-                            list_obj = obj.tolist()
-                            json_str = json.dumps(list_obj)
-                            value_dict["json"] = json.loads(json_str)
-                        except (TypeError, ValueError, AttributeError):
-                            pass
-            except Exception as e:
-                # Can't unpickle (e.g., __main__ classes), just store pickle
-                self.get_logger().debug(f"Storing pickled data only (cannot unpickle): {e}")
-            
-            # Store the value_dict directly in Redis using the backend's client
-            # Redis backend stores value_dict as JSON string
+            # Store pickle string directly (same as original robot_status stores in ROS parameters)
             redis_key = f"robot_status:{request.ns}:{request.key}"
             with self.lock:
-                success = self._redis_backend._client.set(redis_key, json.dumps(value_dict))
+                success = self._redis_backend._client.set(redis_key, request.value)
             
             if success:
                 response.success = True
@@ -271,16 +287,14 @@ class RobotStatusNode(Node):
             request.key: Status key to retrieve
         """
         try:
+            # Get pickle string directly from Redis (avoid unpickle/re-pickle cycle)
+            redis_key = f"robot_status:{request.ns}:{request.key}"
             with self.lock:
-                success, obj = self._redis_backend.get_status(request.ns, request.key)
+                pickle_str = self._redis_backend._client.get(redis_key)
             
-            if success and obj is not None:
-                # Pickle and encode as base64
-                pickled = pickle.dumps(obj)
-                value_str = base64.b64encode(pickled).decode('ascii')
-                
+            if pickle_str is not None:
                 response.success = True
-                response.value = value_str
+                response.value = pickle_str
                 response.message = "Success"
                 self.get_logger().debug(f"Get: {request.ns}.{request.key}")
             else:
@@ -313,18 +327,8 @@ class RobotStatusNode(Node):
             # Extract namespaces
             namespaces = sorted(list(status_dict.keys()))
             
-            # Convert to pickle base64 format for service response
-            result_tree = {}
-            for namespace, keys in status_dict.items():
-                result_tree[namespace] = {}
-                for key, value_dict in keys.items():
-                    # value_dict should have 'pickle' key with base64 string
-                    if isinstance(value_dict, dict) and 'pickle' in value_dict:
-                        result_tree[namespace][key] = value_dict['pickle']
-                    else:
-                        # Legacy format or direct value, re-pickle it
-                        pickled = pickle.dumps(value_dict)
-                        result_tree[namespace][key] = base64.b64encode(pickled).decode('ascii')
+            # status_dict already contains pickle strings (same format as original robot_status)
+            result_tree = status_dict
             
             response.success = True
             response.namespaces = namespaces
