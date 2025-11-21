@@ -73,22 +73,29 @@
     <script>
         function testClick() {
             const responseDiv = document.getElementById('response');
-            responseDiv.textContent = 'Testing...';
+            responseDiv.textContent = 'Preparing image labeling...';
             responseDiv.className = '';
             
-            fetch('/test', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
+            // First, prepare the image
+            fetch('/prepare_image', {
+                method: 'GET',
             })
             .then(response => response.json())
             .then(data => {
-                responseDiv.textContent = data.message || 'Test successful!';
-                responseDiv.className = 'success';
+                if (data.status === 'success') {
+                    // Open image labeling web in new tab with image URL
+                    const labelingUrl = data.labeling_url;
+                    window.open(labelingUrl, '_blank');
+                    
+                    responseDiv.textContent = 'Image labeling opened! Image will load automatically.';
+                    responseDiv.className = 'success';
+                } else {
+                    responseDiv.textContent = 'Error: ' + data.message;
+                    responseDiv.className = 'error';
+                }
             })
             .catch(error => {
-                responseDiv.textContent = 'Test failed: ' + error;
+                responseDiv.textContent = 'Failed to prepare image: ' + error;
                 responseDiv.className = 'error';
             });
         }

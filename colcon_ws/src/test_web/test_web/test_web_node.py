@@ -7,7 +7,7 @@ A simple Flask-based web service for testing purposes.
 
 import rclpy
 from rclpy.node import Node
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, send_file, url_for, make_response
 import threading
 import os
 from pathlib import Path
@@ -59,6 +59,14 @@ class TestWebNode(Node):
         
         app = Flask(__name__, template_folder=template_dir)
         
+        # Add CORS headers to all responses
+        @app.after_request
+        def after_request(response):
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+            response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+            return response
+        
         @app.route('/')
         def index():
             """Serve the main page."""
@@ -73,6 +81,51 @@ class TestWebNode(Node):
                 'message': 'Test button clicked successfully! ✓',
                 'timestamp': self.get_clock().now().to_msg().sec
             })
+        
+        @app.route('/prepare_image', methods=['GET'])
+        def prepare_image():
+            """Prepare image URL for automatic upload to image labeling service."""
+            from flask import request
+            
+            image_path = '/home/ros/Documents/robot_dc/dataset/rack1/ref_img_1.jpg'
+            
+            # Check if image exists
+            if not os.path.exists(image_path):
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Image not found: {image_path}'
+                }), 404
+            
+            # Build the image URL that can be accessed from browser
+            image_url = url_for('serve_image', _external=True)
+            
+            # Use the same hostname as the request to build labeling URL
+            # This ensures it works whether accessed via localhost, hostname, or IP
+            host = request.host.split(':')[0]  # Extract hostname without port
+            labeling_url = f'http://{host}:8007?imageUrl={image_url}'
+            
+            self.get_logger().info(f"Preparing image: {image_path}")
+            self.get_logger().info(f"Request host: {request.host}")
+            self.get_logger().info(f"Image URL: {image_url}")
+            self.get_logger().info(f"Labeling URL: {labeling_url}")
+            
+            return jsonify({
+                'status': 'success',
+                'image_url': image_url,
+                'labeling_url': labeling_url,
+                'image_path': image_path
+            })
+        
+        @app.route('/serve_image', methods=['GET'])
+        def serve_image():
+            """Serve the target image file."""
+            image_path = '/home/ros/Documents/robot_dc/dataset/rack1/ref_img_1.jpg'
+            
+            if not os.path.exists(image_path):
+                return jsonify({'error': 'Image not found'}), 404
+            
+            self.get_logger().info(f"Serving image: {image_path}")
+            return send_file(image_path, mimetype='image/jpeg')
         
         return app
     
