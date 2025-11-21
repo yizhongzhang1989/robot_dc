@@ -106,13 +106,13 @@ class URLocateBase(Node):
             -0.7743623892413538,
             -1.3792231718646448]
         
-        # Data collection movement offsets (in base coordinate system, unit: meters)
+        # Data collection movement offsets (in tcp coordinate system, unit: meters)
         self.movements = {
-            "movement1": [0, 0.01, 0, 0, 0, 0],      
-            "movement2": [0, -0.01, 0, 0, 0, 0],     
-            "movement3": [0, 0, 0.01, 0, 0, 0],      
-            "movement4": [0, 0, -0.01, 0, 0, 0],     
-            "movement5": [-0.01, 0.02, 0, 0, 0, 0]   
+            "movement1": [0, 0, 0, 0, 0, 0],         # No offset
+            "movement2": [0.01, 0, 0, 0, 0, 0],      # X+1cm
+            "movement3": [-0.01, 0, 0, 0, 0, 0],     # X-1cm
+            "movement4": [0, 0.01, 0, 0, 0, 0],      # Y+1cm
+            "movement5": [0, -0.01, 0, 0, 0, 0]      # Y-1cm
         }
         
         # Defines which keypoints to use for building the X-axis of local coordinate system
@@ -611,17 +611,15 @@ class URLocateBase(Node):
             
             for movement in movements:
                 try:
-                    print(f"\n--- Movement {movement['index']}: {movement['name']} ---")
+                    print(f"\n--- {movement['name']} ---")
                     
-                    # Calculate target pose by adding offset to current pose
-                    target_pose = current_tcp_pose.copy()
-                    for i in range(6):
-                        target_pose[i] += movement['offset'][i]
+                    # Use offset directly for move_tcp
+                    offset = movement['offset']
                     
-                    print(f"Moving to: {[f'{p:.4f}' for p in target_pose]}")
+                    print(f"Move TCP by offset: {[f'{p:.4f}' for p in offset]}")
                     
-                    # Move robot to target position
-                    move_result = robot.movel(target_pose, a=0.1, v=0.05)
+                    # Move robot to target position using relative offset
+                    move_result = robot.move_tcp(offset, a=0.1, v=0.05)
                     
                     if move_result != 0:
                         print(f"Movement failed for {movement['name']} (result: {move_result})")
@@ -655,12 +653,22 @@ class URLocateBase(Node):
                     else:
                         print(f"✗ Failed to capture data for {movement['name']}")
                     
+                    # Return to original position before next movement
+                    return_result = robot.movel(current_tcp_pose, a=0.1, v=0.05)
+                    
+                    if return_result == 0:
+                        print("✓ Returned to start position")
+                    else:
+                        print(f"✗ Failed to return to start position (result: {return_result})")
+                    
+                    time.sleep(0.5)  # Wait for movement to complete
+                    
                 except Exception as e:
                     print(f"Error during {movement['name']} movement: {e}")
                     continue
             
-            # Return to original position
-            print(f"\n--- Returning to original position ---")
+            # Final return to original position (for safety)
+            print(f"\n--- Final return to original position ---")
             return_result = robot.movel(current_tcp_pose, a=0.1, v=0.05)
             
             time.sleep(0.5)  # Wait for movement to complete

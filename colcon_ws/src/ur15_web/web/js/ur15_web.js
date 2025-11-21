@@ -267,13 +267,21 @@ function confirmOperationNameChange() {
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ operation_path: fullOperationPath })
+        body: JSON.stringify({ 
+            operation_path: fullOperationPath,
+            operation_name: newName
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
             logToWeb(`Operation set successfully: ${newName}`, 'success');
             closeOperationPathModal();
+            // Enable the Locate Last Operation button
+            const locateLastOperationBtn = document.getElementById('locateLastOperationBtn');
+            if (locateLastOperationBtn) {
+                locateLastOperationBtn.disabled = false;
+            }
         } else {
             console.error('Failed to set operation:', data.message || 'Unknown error');
             logToWeb(`Failed to set operation: ${data.message || 'Unknown error'}`, 'error');
@@ -368,6 +376,29 @@ function updateCaptureX3ButtonState() {
         captureX3Btn.title = 'Capture 3 images at different positions (x, y offsets)';
         captureX3Btn.classList.add('hover:bg-orange-600');
     }
+}
+
+function labelLastCapturedImage() {
+    logToWeb('Preparing last captured image for labeling...', 'info');
+    
+    fetch('/prepare_last_captured_image', {
+        method: 'GET',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Open image labeling web in new tab with image URL
+            window.open(data.labeling_url, '_blank');
+            logToWeb('Image labeling service opened in new tab', 'success');
+        } else {
+            logToWeb(`Error: ${data.message}`, 'error');
+            showMessage(`Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`Failed to prepare image: ${error}`, 'error');
+        showMessage(`Failed to prepare image: ${error}`, 'error');
+    });
 }
 
 function captureTaskDataX3() {
@@ -626,9 +657,8 @@ function toggleFreedrive() {
 }
 
 function toggleValidation() {
-    const btn = document.getElementById('validateCalibrationBtn');
-    btn.disabled = true;
-    btn.style.opacity = '0.7';
+    const checkbox = document.getElementById('validateCalibrationCheckbox');
+    checkbox.disabled = true;
     
     logToWeb('Toggling calibration validation...', 'info');
     
@@ -642,30 +672,26 @@ function toggleValidation() {
     .then(data => {
         if (data.success) {
             validationActive = data.validation_active;
+            checkbox.checked = validationActive;
             
-            // Update button appearance
             if (validationActive) {
-                btn.classList.remove('bg-purple-500', 'hover:bg-purple-600');
-                btn.classList.add('bg-red-500', 'hover:bg-red-600');
-                btn.querySelector('span:last-child').textContent = 'Stop Check';
-                logToWeb('Calibration validation activated', 'success');
+                logToWeb('Draw UR15 base activated', 'success');
             } else {
-                btn.classList.remove('bg-red-500', 'hover:bg-red-600');
-                btn.classList.add('bg-purple-500', 'hover:bg-purple-600');
-                btn.querySelector('span:last-child').textContent = 'Check Calibration';
-                logToWeb('Calibration validation deactivated', 'info');
+                logToWeb('Draw UR15 base deactivated', 'info');
             }
         } else {
             logToWeb(`Failed to toggle validation: ${data.message}`, 'error');
+            // Revert checkbox state on failure
+            checkbox.checked = !checkbox.checked;
         }
-        btn.disabled = false;
-        btn.style.opacity = '1';
+        checkbox.disabled = false;
     })
     .catch(error => {
         console.error('Failed to toggle validation:', error);
         logToWeb(`Error toggling validation: ${error.message}`, 'error');
-        btn.disabled = false;
-        btn.style.opacity = '1';
+        // Revert checkbox state on error
+        checkbox.checked = !checkbox.checked;
+        checkbox.disabled = false;
     });
 }
 
@@ -1848,7 +1874,9 @@ function disableCornerDetection() {
 let cornerDetectEnabled = false;
 
 async function toggleCornerDetect() {
-    if (!cornerDetectEnabled) {
+    const checkbox = document.getElementById('cornerDetectCheckbox');
+    
+    if (checkbox.checked) {
         await enableCornerDetect();
     } else {
         await disableCornerDetect();
@@ -1856,6 +1884,9 @@ async function toggleCornerDetect() {
 }
 
 async function enableCornerDetect() {
+    const checkbox = document.getElementById('cornerDetectCheckbox');
+    checkbox.disabled = true;
+    
     try {
         // Read chessboard config path
         const configPath = document.getElementById('chessboardConfigPath').value;
@@ -1876,6 +1907,8 @@ async function enableCornerDetect() {
         if (!configData.success || !configData.config) {
             showMessage('Failed to load chessboard config', 'error');
             logToWeb('Failed to load chessboard config', 'error');
+            checkbox.checked = false;
+            checkbox.disabled = false;
             return;
         }
         
@@ -1903,21 +1936,24 @@ async function enableCornerDetect() {
         
         if (data.success) {
             cornerDetectEnabled = true;
-            const btn = document.getElementById('cornerDetectBtn');
-            btn.innerHTML = '<span>🛑</span><span>Stop Detect</span>';
-            btn.className = 'responsive-btn bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
-            
-            logToWeb('Corner detection enabled', 'success');
+            logToWeb('Draw chessboard corners enabled', 'success');
         } else {
             logToWeb(`Failed to enable corner detection: ${data.message}`, 'error');
+            checkbox.checked = false;
         }
         
     } catch (error) {
         logToWeb(`Error enabling corner detection: ${error.message}`, 'error');
+        checkbox.checked = false;
+    } finally {
+        checkbox.disabled = false;
     }
 }
 
 async function disableCornerDetect() {
+    const checkbox = document.getElementById('cornerDetectCheckbox');
+    checkbox.disabled = true;
+    
     try {
         logToWeb('Disabling corner detection...', 'info');
         
@@ -1933,16 +1969,474 @@ async function disableCornerDetect() {
         
         if (data.success) {
             cornerDetectEnabled = false;
-            const btn = document.getElementById('cornerDetectBtn');
-            btn.innerHTML = '<span>🔍</span><span>Corner Detect</span>';
-            btn.className = 'responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2';
-            
-            logToWeb('Corner detection stopped', 'success');
+            logToWeb('Draw chessboard corners stopped', 'success');
         } else {
             logToWeb(`Failed to stop corner detection: ${data.message}`, 'error');
+            checkbox.checked = true;
         }
         
     } catch (error) {
         logToWeb(`Error disabling corner detection: ${error.message}`, 'error');
+        checkbox.checked = true;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
+// Draw GB200 Rack Functions
+let drawRackEnabled = false;
+
+// Draw Keypoints Functions
+let drawKeypointsEnabled = false;
+
+async function toggleDrawRack() {
+    const checkbox = document.getElementById('drawRackCheckbox');
+    checkbox.disabled = true;
+    
+    try {
+        const response = await fetch('/toggle_draw_rack', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: checkbox.checked })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            drawRackEnabled = data.enabled;
+            checkbox.checked = data.enabled;
+            
+            if (data.enabled) {
+                logToWeb('Draw GB200 rack enabled', 'success');
+            } else {
+                logToWeb('Draw GB200 rack disabled', 'info');
+            }
+        } else {
+            logToWeb(`Failed to toggle rack drawing: ${data.message}`, 'error');
+            // Revert checkbox on failure
+            checkbox.checked = !checkbox.checked;
+        }
+    } catch (error) {
+        logToWeb(`Error toggling rack drawing: ${error.message}`, 'error');
+        // Revert checkbox on error
+        checkbox.checked = !checkbox.checked;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
+async function toggleDrawKeypoints() {
+    const checkbox = document.getElementById('drawKeypointsCheckbox');
+    checkbox.disabled = true;
+    
+    try {
+        const response = await fetch('/toggle_draw_keypoints', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: checkbox.checked })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            drawKeypointsEnabled = data.enabled;
+            checkbox.checked = data.enabled;
+            
+            if (data.enabled) {
+                logToWeb('Draw keypoints enabled', 'success');
+            } else {
+                logToWeb('Draw keypoints disabled', 'info');
+            }
+        } else {
+            logToWeb(`Failed to toggle keypoints drawing: ${data.message}`, 'error');
+            // Revert checkbox on failure
+            checkbox.checked = !checkbox.checked;
+        }
+    } catch (error) {
+        logToWeb(`Error toggling keypoints drawing: ${error.message}`, 'error');
+        // Revert checkbox on error
+        checkbox.checked = !checkbox.checked;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
+// Task Panel Functions
+function locateRack() {
+    logToWeb('🗄️ Locate Rack button clicked', 'info');
+    
+    // Disable button during execution
+    const btn = document.getElementById('locateRackBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_rack', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        // Re-enable button after 2 seconds
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateLastOperation() {
+    logToWeb('🎯 Locate Last Operation button clicked', 'info');
+    
+    // Disable button during execution
+    const btn = document.getElementById('locateLastOperationBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_last_operation', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        // Re-enable button after 2 seconds
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateUnlockKnob() {
+    logToWeb('🔓 Locate Unlock Knob button clicked', 'info');
+    
+    const btn = document.getElementById('locateUnlockKnobBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_unlock_knob', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeUnlockKnob() {
+    logToWeb('🔧 Execute Unlock Knob button clicked', 'info');
+    
+    const btn = document.getElementById('executeUnlockKnobBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_unlock_knob', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateOpenHandle() {
+    logToWeb('🕹️ Locate Open Handle button clicked', 'info');
+    
+    const btn = document.getElementById('locateOpenHandleBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_open_handle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeOpenHandle() {
+    logToWeb('👜 Execute Open Handle button clicked', 'info');
+    
+    const btn = document.getElementById('executeOpenHandleBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_open_handle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateCloseLeft() {
+    logToWeb('⬅️ Locate Close Left button clicked', 'info');
+    
+    const btn = document.getElementById('locateCloseLeftBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_close_left', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeCloseLeft() {
+    logToWeb('◀️ Execute Close Left button clicked', 'info');
+    
+    const btn = document.getElementById('executeCloseLeftBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_close_left', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateCloseRight() {
+    logToWeb('➡️ Locate Close Right button clicked', 'info');
+    
+    const btn = document.getElementById('locateCloseRightBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_close_right', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeCloseRight() {
+    logToWeb('▶️ Execute Close Right button clicked', 'info');
+    
+    const btn = document.getElementById('executeCloseRightBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_close_right', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function emergencyStop() {
+    // Confirm emergency stop action
+    if (confirm('⚠️ WARNING: Are you sure you want to trigger EMERGENCY STOP?\n\nThis will immediately halt all robot operations!')) {
+        logToWeb('🚨 EMERGENCY STOP TRIGGERED!', 'error');
+        
+        // Send emergency stop command to robot via Dashboard Server
+        fetch('/emergency_stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                logToWeb('✅ Emergency stop executed successfully', 'success');
+                if (data.response) {
+                    logToWeb(`📡 Robot response: ${data.response}`, 'info');
+                }
+            } else {
+                logToWeb(`❌ Emergency stop failed: ${data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            logToWeb(`❌ Network error: ${error.message}`, 'error');
+        });
     }
 }

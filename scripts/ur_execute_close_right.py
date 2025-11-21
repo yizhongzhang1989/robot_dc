@@ -806,7 +806,7 @@ if __name__ == "__main__":
 
     # # move to leave the handle
     print("\n" + "="*50)
-    ur_close_right.movel_in_crack_frame([0, 0, -0.03])
+    ur_close_right.movel_in_crack_frame([0, 0, -0.025])
     time.sleep(0.5)
 
     # # pull the server out of rack
@@ -827,7 +827,7 @@ if __name__ == "__main__":
     
     # # move to leave the left handle
     print("\n" + "="*50)
-    ur_close_right.movel_in_crack_frame([0, -0.015, -0.04])
+    ur_close_right.movel_in_crack_frame([0, -0.015, -0.03])
     time.sleep(0.5)
 
     # # move to leave the handle

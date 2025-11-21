@@ -30,6 +30,7 @@ import atexit
 from flask import Flask, render_template_string, Response
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
+from ur15_web import draw_utils
 from robot_status import get_from_status, set_to_status
 
 # Add scripts directory to path for camera calibration toolkit
@@ -187,6 +188,10 @@ class UR15WebNode(Node):
         self.target2base_matrix = None
         self.calibration_lock = threading.Lock()
         
+        # Generate 3D curves for visualization
+        self.ur15_base_curve = draw_utils.generate_ur15_base_curve(ray_length=3)
+        self.gb200rack_curve = draw_utils.generate_gb200rack_curve()
+        
         # Robot state data
         self.joint_positions = []
         self.tcp_pose = None
@@ -200,6 +205,8 @@ class UR15WebNode(Node):
         self.validation_active = False
         self.corner_detection_enabled = False
         self.corner_detection_params = {}
+        self.draw_rack_enabled = False
+        self.draw_keypoints_enabled = False
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
@@ -211,6 +218,12 @@ class UR15WebNode(Node):
         # Web log message queue
         self.web_log_messages = []
         self.web_log_lock = threading.Lock()
+        
+        # Create status service client
+        from robot_status_redis.client_utils import RobotStatusClient
+        # auto_spin=False because this node is already spinning via launch file
+        self.status_client = RobotStatusClient(self)
+        self.get_logger().info("Status service client created")
         
         # Register cleanup handlers
         atexit.register(self.cleanup)
@@ -267,14 +280,13 @@ class UR15WebNode(Node):
         
         self.get_logger().info(f"Web interface running at http://0.0.0.0:{self.web_port}")
         
-        # Load calibration parameters from robot_status if available
-        self._load_calibration_from_status()
+        # Create a timer to load calibration parameters after async cache is populated
+        self._load_calib_retry_count = 0
+        self._load_calib_timer = self.create_timer(0.5, self._load_calibration_from_status)
     
     def _load_calibration_from_status(self):
         """Load calibration parameters from robot_status service."""
         try:
-            self.get_logger().info("Loading calibration parameters from robot_status...")
-            
             # Parameters to load
             params_to_load = [
                 ('camera_matrix', 'camera_matrix'),
@@ -284,30 +296,38 @@ class UR15WebNode(Node):
             ]
             
             loaded_count = 0
+            pending_count = 0
             for param_name, attr_name in params_to_load:
-                value = get_from_status(self, 'ur15', param_name)
-                if value:
+                value = self.status_client.get_status('ur15', param_name, timeout_sec=2.0)
+                if value is not None:
                     try:
-                        # Parse JSON string to numpy array
-                        matrix_list = json.loads(value)
-                        matrix_array = np.array(matrix_list, dtype=np.float64)
-                        
                         with self.calibration_lock:
-                            setattr(self, attr_name, matrix_array)
-                        
-                        loaded_count += 1
-                        self.get_logger().info(f"Loaded {param_name} from robot_status (shape: {matrix_array.shape})")
+                            existing_value = getattr(self, attr_name, None)
+                            # Only update if not already set
+                            if existing_value is None:
+                                setattr(self, attr_name, value)
+                                loaded_count += 1
+                                self.get_logger().info(f"Loaded {param_name} from robot_status (shape: {value.shape})")
                     except Exception as e:
                         self.get_logger().warning(f"Failed to parse {param_name}: {e}")
+                else:
+                    pending_count += 1
             
+            # If we loaded something or nothing is pending after retries, stop the timer
             if loaded_count > 0:
                 self.get_logger().info(f"Successfully loaded {loaded_count}/4 calibration parameters from robot_status")
                 self.push_web_log(f"Loaded {loaded_count}/4 calibration parameters from robot_status", 'success')
+                self._load_calib_timer.cancel()
+            elif self._load_calib_retry_count >= 10:  # Stop after 5 seconds (10 * 0.5s)
+                if pending_count == len(params_to_load):
+                    self.get_logger().info("No calibration parameters found in robot_status")
+                self._load_calib_timer.cancel()
             else:
-                self.get_logger().info("No calibration parameters found in robot_status")
+                self._load_calib_retry_count += 1
                 
         except Exception as e:
             self.get_logger().warning(f"Error loading calibration from robot_status: {e}")
+            self._load_calib_timer.cancel()
     
     def _signal_handler(self, signum, frame):
         """Handle termination signals."""
@@ -772,6 +792,144 @@ class UR15WebNode(Node):
                     'message': str(e)
                 })
         
+        @self.app.route('/prepare_last_captured_image', methods=['GET'])
+        def prepare_last_captured_image():
+            """Prepare last captured image URL for automatic upload to image labeling service."""
+            from flask import request, jsonify, url_for
+            from urllib.parse import quote
+            
+            try:
+                # Get last_picture path from robot_status service
+                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                
+                if image_path is None:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'No image has been captured yet. Please capture an image first.'
+                    }), 404
+                
+                # Check if image exists
+                if not os.path.exists(image_path):
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Image file not found: {image_path}'
+                    }), 404
+                
+                # Build the image URL that can be accessed from browser
+                image_url = url_for('serve_last_captured_image', _external=True)
+                
+                # Use the same hostname as the request to build labeling URL
+                host = request.host.split(':')[0]  # Extract hostname without port
+                encoded_image_path = quote(image_path)
+                labeling_url = f'http://{host}:8007?imageUrl={image_url}&imagePath={encoded_image_path}'
+                
+                self.get_logger().info(f"Preparing last captured image: {image_path}")
+                self.get_logger().info(f"Image URL: {image_url}")
+                self.get_logger().info(f"Labeling URL: {labeling_url}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'image_url': image_url,
+                    'labeling_url': labeling_url,
+                    'image_path': image_path
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error preparing last captured image: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                }), 500
+        
+        @self.app.route('/serve_last_captured_image', methods=['GET'])
+        def serve_last_captured_image():
+            """Serve the last captured image file."""
+            from flask import send_file, jsonify, make_response
+            
+            try:
+                # Get last_picture path from robot_status service
+                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                
+                if image_path is None:
+                    return jsonify({'error': 'No image has been captured yet'}), 404
+                
+                if not os.path.exists(image_path):
+                    return jsonify({'error': 'Image file not found'}), 404
+                
+                self.get_logger().info(f"Serving last captured image: {image_path}")
+                
+                # Send the file with CORS headers to allow cross-origin access
+                response = make_response(send_file(image_path, mimetype='image/jpeg'))
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                return response
+                
+            except Exception as e:
+                self.get_logger().error(f"Error serving last captured image: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/save_labels', methods=['POST', 'OPTIONS'])
+        def save_labels():
+            """Save labels JSON to the same directory as the image on the server."""
+            from flask import request, jsonify
+            import json
+            
+            # Handle CORS preflight request
+            if request.method == 'OPTIONS':
+                response = jsonify({'status': 'ok'})
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                return response
+            
+            try:
+                data = request.get_json()
+                if not data or 'labels' not in data:
+                    response = jsonify({'error': 'No labels data provided'})
+                    response.headers['Access-Control-Allow-Origin'] = '*'
+                    return response, 400
+                
+                # Get the image path from request data - required, no default
+                image_path = data.get('image_path')
+                if not image_path:
+                    response = jsonify({'error': 'Image path is required'})
+                    response.headers['Access-Control-Allow-Origin'] = '*'
+                    return response, 400
+                
+                # Validate that the image path exists
+                if not os.path.exists(image_path):
+                    response = jsonify({'error': f'Image not found: {image_path}'})
+                    response.headers['Access-Control-Allow-Origin'] = '*'
+                    return response, 404
+                
+                # Construct JSON path from image path
+                json_path = os.path.splitext(image_path)[0] + '.json'
+                
+                # Save the labels to JSON file
+                with open(json_path, 'w') as f:
+                    json.dump(data['labels'], f, indent=2)
+                
+                self.get_logger().info(f"Labels saved to: {json_path}")
+                self.push_web_log(f"Labels saved to: {json_path}", 'success')
+                
+                response = jsonify({
+                    'status': 'success',
+                    'message': 'Labels saved to server',
+                    'path': json_path
+                })
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                return response
+                
+            except Exception as e:
+                self.get_logger().error(f"Error saving labels: {e}")
+                response = jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                })
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                return response, 500
+        
         @self.app.route('/upload_intrinsic', methods=['POST'])
         def upload_intrinsic():
             """Upload intrinsic calibration parameters."""
@@ -1042,14 +1200,32 @@ class UR15WebNode(Node):
                 # Expand user home directory if needed
                 new_path = os.path.expanduser(new_path)
                 
+                # Get operation name from request or extract from path
+                operation_name = data.get('operation_name', '').strip()
+                if not operation_name:
+                    # Fallback: extract from path if not provided
+                    operation_name = os.path.basename(new_path)
+                
                 # Create directory if it doesn't exist
                 try:
                     os.makedirs(new_path, exist_ok=True)
                     self.get_logger().info(f"Operation path changed to: {new_path}")
+                    self.get_logger().info(f"Operation name: {operation_name}")
+                    
+                    # Set operation name to robot_status (only if operation_name is valid)
+                    if operation_name and operation_name != 'input operation name':
+                        if set_to_status(self, 'ur15', 'last_operation_name', operation_name):
+                            self.get_logger().info(f"Successfully set last_operation_name to robot_status: {operation_name}")
+                        else:
+                            self.get_logger().warning(f"Failed to set last_operation_name to robot_status")
+                    else:
+                        self.get_logger().info("Operation name not set (empty or default value)")
+                    
                     return jsonify({
                         'success': True, 
                         'message': 'Operation path changed successfully',
-                        'operation_path': self._simplify_path(new_path)
+                        'operation_path': self._simplify_path(new_path),
+                        'operation_name': operation_name
                     })
                 except Exception as e:
                     return jsonify({
@@ -1232,6 +1408,74 @@ class UR15WebNode(Node):
                     
             except Exception as e:
                 self.get_logger().error(f"Error toggling corner detection: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+        
+        @self.app.route('/toggle_draw_rack', methods=['POST'])
+        def toggle_draw_rack():
+            """Toggle GB200 rack drawing on/off."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                self.draw_rack_enabled = enable
+                
+                if enable:
+                    self.get_logger().info("GB200 rack drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 rack drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("GB200 rack drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 rack drawing disabled',
+                        'enabled': False
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error toggling rack drawing: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+        
+        @self.app.route('/toggle_draw_keypoints', methods=['POST'])
+        def toggle_draw_keypoints():
+            """Toggle keypoints drawing on/off."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                self.draw_keypoints_enabled = enable
+                
+                if enable:
+                    self.get_logger().info("Keypoints drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Keypoints drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("Keypoints drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Keypoints drawing disabled',
+                        'enabled': False
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error toggling keypoints drawing: {e}")
                 return jsonify({
                     'success': False,
                     'message': str(e),
@@ -1761,16 +2005,16 @@ class UR15WebNode(Node):
                                         # Prepare and send calibration data
                                         with self.calibration_lock:
                                             params = {
-                                                'camera_matrix': json.dumps(self.camera_matrix.tolist()),
-                                                'distortion_coefficients': json.dumps(self.distortion_coefficients.tolist()),
-                                                'cam2end_matrix': json.dumps(self.cam2end_matrix.tolist()),
-                                                'target2base_matrix': json.dumps(self.target2base_matrix.tolist())
+                                                'camera_matrix': self.camera_matrix,
+                                                'distortion_coefficients': self.distortion_coefficients,
+                                                'cam2end_matrix': self.cam2end_matrix,
+                                                'target2base_matrix': self.target2base_matrix
                                             }
                                         
                                         # Send all parameters
                                         success_count = 0
                                         for key, value in params.items():
-                                            if set_to_status(self, 'ur15', key, value):
+                                            if self.status_client.set_status('ur15', key, value):
                                                 success_count += 1
                                         
                                         if success_count == len(params):
@@ -1928,7 +2172,7 @@ class UR15WebNode(Node):
                     })
 
                 # 3. Get camera parameters from calibration results
-                camera_params = self._get_camera_parameters_from_calibration(calibration_data_dir)
+                camera_params = self._get_camera_parameters_from_status(calibration_data_dir)
                 if not camera_params['success']:
                     return jsonify({
                         'success': False, 
@@ -1958,6 +2202,20 @@ class UR15WebNode(Node):
                 with open(pose_path, 'w') as f:
                     json.dump(combined_data, f, indent=2)                # Add web log message
                 self.push_web_log(f'Captured image and pose data: {image_filename}, {pose_filename}', 'success')
+                
+                # Upload the absolute path of ref_img_1.jpg to robot_status
+                try:
+                    ref_img_1_path = os.path.join(expanded_task_path, 'ref_img_1.jpg')
+                    abs_ref_img_1_path = os.path.abspath(ref_img_1_path)
+                    if self.status_client.set_status('ur15', 'last_picture', abs_ref_img_1_path):
+                        self.get_logger().info(f"✅ Uploaded last_picture path to robot_status: {abs_ref_img_1_path}")
+                        self.push_web_log(f"✅ Saved last_picture path: {abs_ref_img_1_path}", 'success')
+                    else:
+                        self.get_logger().warning("⚠️ Failed to upload last_picture path to robot_status")
+                        self.push_web_log("⚠️ Failed to save last_picture path", 'warning')
+                except Exception as e:
+                    self.get_logger().error(f"❌ Error uploading last_picture to robot_status: {e}")
+                    self.push_web_log(f"⚠️ Error saving last_picture: {e}", 'warning')
                 
                 return jsonify({
                     'success': True,
@@ -2113,7 +2371,7 @@ class UR15WebNode(Node):
                             }
                         
                         # Get camera parameters
-                        camera_params = self._get_camera_parameters_from_calibration(calibration_data_dir)
+                        camera_params = self._get_camera_parameters_from_status(calibration_data_dir)
                         if not camera_params['success']:
                             raise Exception(camera_params['message'])
                         
@@ -2166,6 +2424,20 @@ class UR15WebNode(Node):
                     })
                 
                 self.push_web_log(f'Capture x3 completed: {len(captured_files)} images captured', 'success')
+                
+                # Upload the absolute path of ref_img_1.jpg to robot_status
+                try:
+                    ref_img_1_path = os.path.join(expanded_task_path, 'ref_img_1.jpg')
+                    abs_ref_img_1_path = os.path.abspath(ref_img_1_path)
+                    if self.status_client.set_status('ur15', 'last_picture', abs_ref_img_1_path):
+                        self.get_logger().info(f"✅ Uploaded last_picture path to robot_status: {abs_ref_img_1_path}")
+                        self.push_web_log(f"✅ Saved last_picture path: {abs_ref_img_1_path}", 'success')
+                    else:
+                        self.get_logger().warning("⚠️ Failed to upload last_picture path to robot_status")
+                        self.push_web_log("⚠️ Failed to save last_picture path", 'warning')
+                except Exception as e:
+                    self.get_logger().error(f"❌ Error uploading last_picture to robot_status: {e}")
+                    self.push_web_log(f"⚠️ Error saving last_picture: {e}", 'warning')
                 
                 return jsonify({
                     'success': True,
@@ -2438,24 +2710,683 @@ class UR15WebNode(Node):
                     'success': False,
                     'message': str(e)
                 })
+        
+        @self.app.route('/locate_rack', methods=['POST'])
+        def locate_rack():
+            """Execute locate rack script (ur_locate_base.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                # Get the scripts directory
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Could not find scripts directory'
+                    })
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_base.py')
+                
+                # Check if script exists
+                if not os.path.exists(script_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Script not found: {script_path}'
+                    })
+                
+                # Prepare command
+                cmd = ['python3', script_path]
+                
+                self.get_logger().info(f"Locate rack command: {' '.join(cmd)}")
+                
+                # Define a function to monitor the process
+                def monitor_locate_rack():
+                    """Monitor locate rack process and report completion status."""
+                    try:
+                        process = subprocess.Popen(
+                            cmd,
+                            cwd=os.path.dirname(script_path),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True
+                        )
+                        
+                        # Track this process for cleanup
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate rack script with PID: {process.pid}")
+                        
+                        # Wait for the process to complete
+                        return_code = process.wait()
+                        
+                        self.get_logger().info(f"Locate rack script finished with return code: {return_code}")
+                        
+                        # Push completion message to web log
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate rack completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate rack failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate rack monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate rack error: {str(e)}", 'error')
+                
+                # Start monitoring thread
+                monitor_thread = threading.Thread(target=monitor_locate_rack, daemon=True)
+                monitor_thread.start()
+                
+                self.get_logger().info(f"Started locate rack monitoring thread")
+                
+                # Push start message to web log
+                self.push_web_log("🗄️ Starting locate rack process...", 'info')
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Locate rack script started'
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate rack script: {e}")
+                self.push_web_log(f"❌ Failed to start locate rack: {str(e)}", 'error')
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        @self.app.route('/locate_last_operation', methods=['POST'])
+        def locate_last_operation():
+            """Execute locate last operation script (ur_locate_test.py)."""
+            from flask import request, jsonify
+            import subprocess
+            import threading
+            
+            try:
+                # Get last_operation_name from robot_status
+                operation_name = get_from_status(self, 'ur15', 'last_operation_name')
+                
+                if not operation_name:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No last_operation_name found in robot_status. Please set an operation name first.'
+                    })
+                
+                operation_name = operation_name.strip()
+                if not operation_name or operation_name == 'input operation name':
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid operation name in robot_status'
+                    })
+                
+                # Get the scripts directory
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Could not find scripts directory'
+                    })
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_test.py')
+                
+                # Check if script exists
+                if not os.path.exists(script_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Script not found: {script_path}'
+                    })
+                
+                # Prepare command
+                cmd = ['python3', script_path, '--operation-name', operation_name]
+                
+                self.get_logger().info(f"Locate last operation command: {' '.join(cmd)}")
+                
+                # Define a function to monitor the process
+                def monitor_locate_last_operation():
+                    """Monitor locate last operation process and report completion status."""
+                    try:
+                        process = subprocess.Popen(
+                            cmd,
+                            cwd=os.path.dirname(script_path),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            bufsize=1
+                        )
+                        
+                        # Track this process for cleanup
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate last operation script with PID: {process.pid}")
+                        
+                        # Read and log output in real-time
+                        for line in process.stdout:
+                            line = line.rstrip()
+                            if line:
+                                self.get_logger().info(f"[ur_locate_test] {line}")
+                                # Also push important messages to web log
+                                if '✓' in line or '✗' in line or 'Step' in line or 'Error' in line:
+                                    if '✗' in line or 'Error' in line or 'failed' in line.lower():
+                                        self.push_web_log(line, 'error')
+                                    elif '✓' in line:
+                                        self.push_web_log(line, 'success')
+                                    else:
+                                        self.push_web_log(line, 'info')
+                        
+                        # Wait for the process to complete
+                        return_code = process.wait()
+                        
+                        self.get_logger().info(f"Locate last operation script finished with return code: {return_code}")
+                        
+                        # Push completion message to web log
+                        if return_code == 0:
+                            self.push_web_log(f"✅ Locate last operation '{operation_name}' completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate last operation '{operation_name}' failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate last operation monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate last operation error: {str(e)}", 'error')
+                
+                # Start monitoring thread
+                monitor_thread = threading.Thread(target=monitor_locate_last_operation, daemon=True)
+                monitor_thread.start()
+                
+                self.get_logger().info(f"Started locate last operation monitoring thread")
+                
+                # Push start message to web log
+                self.push_web_log(f"🎯 Starting locate last operation '{operation_name}'...", 'info')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Locate last operation script started for: {operation_name}'
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate last operation script: {e}")
+                self.push_web_log(f"❌ Failed to start locate last operation: {str(e)}", 'error')
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        @self.app.route('/locate_unlock_knob', methods=['POST'])
+        def locate_unlock_knob():
+            """Execute locate unlock knob script (ur_locate_knob.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_knob.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Locate unlock knob command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate unlock knob script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Locate unlock knob script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate unlock knob completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate unlock knob failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate unlock knob monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate unlock knob error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🔓 Starting locate unlock knob process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Locate unlock knob script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate unlock knob script: {e}")
+                self.push_web_log(f"❌ Failed to start locate unlock knob: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/locate_open_handle', methods=['POST'])
+        def locate_open_handle():
+            """Execute locate open handle script (ur_locate_prepull.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_prepull.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Locate open handle command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate open handle script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Locate open handle script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate open handle completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate open handle failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate open handle monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate open handle error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🕹️ Starting locate open handle process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Locate open handle script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate open handle script: {e}")
+                self.push_web_log(f"❌ Failed to start locate open handle: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/locate_close_left', methods=['POST'])
+        def locate_close_left():
+            """Execute locate close left script (ur_locate_close_left.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_close_left.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Locate close left command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate close left script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Locate close left script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate close left completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate close left failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate close left monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate close left error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("⬅️ Starting locate close left process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Locate close left script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate close left script: {e}")
+                self.push_web_log(f"❌ Failed to start locate close left: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/locate_close_right', methods=['POST'])
+        def locate_close_right():
+            """Execute locate close right script (ur_locate_close_right.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_close_right.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Locate close right command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate close right script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Locate close right script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Locate close right completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate close right failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate close right monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate close right error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("➡️ Starting locate close right process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Locate close right script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate close right script: {e}")
+                self.push_web_log(f"❌ Failed to start locate close right: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_unlock_knob', methods=['POST'])
+        def execute_unlock_knob():
+            """Execute unlock knob script (ur_execute_knob.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_execute_knob.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Execute unlock knob command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute unlock knob script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute unlock knob script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute unlock knob completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute unlock knob failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute unlock knob monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute unlock knob error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🔧 Starting execute unlock knob process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute unlock knob script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute unlock knob script: {e}")
+                self.push_web_log(f"❌ Failed to start execute unlock knob: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_open_handle', methods=['POST'])
+        def execute_open_handle():
+            """Execute open handle script (ur_execute_prepull.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_execute_prepull.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Execute open handle command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute open handle script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute open handle script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute open handle completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute open handle failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute open handle monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute open handle error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("👜 Starting execute open handle process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute open handle script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute open handle script: {e}")
+                self.push_web_log(f"❌ Failed to start execute open handle: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_close_left', methods=['POST'])
+        def execute_close_left():
+            """Execute close left script (ur_execute_close_left.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_execute_close_left.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Execute close left command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute close left script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute close left script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute close left completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute close left failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute close left monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute close left error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("◀️ Starting execute close left process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute close left script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute close left script: {e}")
+                self.push_web_log(f"❌ Failed to start execute close left: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_close_right', methods=['POST'])
+        def execute_close_right():
+            """Execute close right script (ur_execute_close_right.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_execute_close_right.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                cmd = ['python3', script_path]
+                self.get_logger().info(f"Execute close right command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute close right script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute close right script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute close right completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute close right failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute close right monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute close right error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("▶️ Starting execute close right process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute close right script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute close right script: {e}")
+                self.push_web_log(f"❌ Failed to start execute close right: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/emergency_stop', methods=['POST'])
+        def emergency_stop():
+            """Execute emergency stop via UR Dashboard Server."""
+            from flask import jsonify
+            import socket
+            
+            try:
+                # Get robot IP from node parameters
+                robot_ip = self.ur15_ip if hasattr(self, 'ur15_ip') else '192.168.1.15'
+                dashboard_port = 29999
+                
+                self.get_logger().warn(f"🚨 EMERGENCY STOP triggered! Connecting to {robot_ip}:{dashboard_port}")
+                self.push_web_log(f"🚨 EMERGENCY STOP: Connecting to robot...", 'error')
+                
+                # Create socket connection to Dashboard Server
+                dash = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                dash.settimeout(5.0)  # 5 second timeout
+                
+                try:
+                    dash.connect((robot_ip, dashboard_port))
+                    self.get_logger().info("Connected to UR Dashboard Server")
+                    
+                    # Send stop command
+                    dash.send(b"stop\n")
+                    self.get_logger().warn("Emergency stop command sent")
+                    
+                    # Wait for response
+                    response = dash.recv(1024).decode('utf-8').strip()
+                    self.get_logger().info(f"Dashboard Server response: {response}")
+                    
+                    dash.close()
+                    
+                    self.push_web_log("🛑 EMERGENCY STOP executed successfully!", 'error')
+                    self.push_web_log(f"📡 Server response: {response}", 'info')
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': 'Emergency stop command sent successfully',
+                        'response': response
+                    })
+                    
+                except socket.timeout:
+                    dash.close()
+                    error_msg = "Connection to Dashboard Server timed out"
+                    self.get_logger().error(error_msg)
+                    self.push_web_log(f"❌ Emergency stop failed: {error_msg}", 'error')
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg
+                    })
+                    
+                except socket.error as e:
+                    dash.close()
+                    error_msg = f"Socket error: {str(e)}"
+                    self.get_logger().error(error_msg)
+                    self.push_web_log(f"❌ Emergency stop failed: {error_msg}", 'error')
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error in emergency stop: {e}")
+                self.push_web_log(f"❌ Emergency stop error: {str(e)}", 'error')
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
     
-    def project_base_origin_to_image(self, frame):
-        """Project base coordinate system origin to image and draw it."""
+    def _get_camera_calib_params(self):
+        """
+        Get camera intrinsic, distortion, and extrinsic matrices.
+        
+        Returns:
+            dict: Dictionary with keys 'intrinsic', 'distortion', 'extrinsic', 'cam2end_matrix', 'end2base_matrix'
+                  Returns None if calibration parameters are not available or TCP pose is missing
+        """
         try:
+            # Check if calibration parameters are available
             with self.calibration_lock:
                 if self.camera_matrix is None or self.distortion_coefficients is None:
-                    return frame
-                if self.cam2end_matrix is None or self.target2base_matrix is None:
-                    return frame
+                    return None
+                if self.cam2end_matrix is None:
+                    return None
                 camera_matrix = self.camera_matrix.copy()
                 distortion_coefficients = self.distortion_coefficients.copy()
                 cam2end_matrix = self.cam2end_matrix.copy()
-                target2base_matrix = self.target2base_matrix.copy()
             
+            # Get current TCP pose
             with self.robot_data_lock:
                 if self.tcp_pose is None:
-                    return frame
-                x = self.tcp_pose['x'] / 1000.0
+                    return None
+                x = self.tcp_pose['x'] / 1000.0  # Convert mm to m
                 y = self.tcp_pose['y'] / 1000.0
                 z = self.tcp_pose['z'] / 1000.0
                 qx = self.tcp_pose['qx']
@@ -2470,114 +3401,155 @@ class UR15WebNode(Node):
                 [2*(qx*qz - qy*qw), 2*(qy*qz + qx*qw), 1 - 2*(qx**2 + qy**2)]
             ])
             
+            # Build end2base transformation matrix
             end2base_matrix = np.eye(4)
             end2base_matrix[:3, :3] = R
             end2base_matrix[:3, 3] = [x, y, z]
             
+            # Calculate camera to base transformation
             cam2base_matrix = end2base_matrix @ cam2end_matrix
-            base_origin_base = np.array([0.0, 0.0, 0.0, 1.0])
+            
+            # Calculate extrinsic matrix (base to camera)
             base2cam_matrix = np.linalg.inv(cam2base_matrix)
-            base_origin_cam = base2cam_matrix @ base_origin_base
-            point_3d = base_origin_cam[:3]
             
-            if point_3d[2] <= 0:
-                return frame
-            
-            point_3d_reshaped = point_3d.reshape(1, 1, 3)
-            rvec = np.zeros((3, 1))
-            tvec = np.zeros((3, 1))
-            
-            image_points, _ = cv2.projectPoints(
-                point_3d_reshaped,
-                rvec, tvec,
-                camera_matrix,
-                distortion_coefficients
-            )
-            
-            pixel_x = int(image_points[0][0][0])
-            pixel_y = int(image_points[0][0][1])
-            
-            height, width = frame.shape[:2]
-            if 0 <= pixel_x < width and 0 <= pixel_y < height:
-                color = (0, 0, 255)
-                thickness = 3
-                length = 20
-                
-                cv2.line(frame, (pixel_x - length, pixel_y), (pixel_x + length, pixel_y), color, thickness)
-                cv2.line(frame, (pixel_x, pixel_y - length), (pixel_x, pixel_y + length), color, thickness)
-                cv2.circle(frame, (pixel_x, pixel_y), 10, color, thickness)
-                
-                label = "Base Origin"
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 0.7
-                label_thickness = 2
-                
-                (text_width, text_height), baseline = cv2.getTextSize(label, font, font_scale, label_thickness)
-                
-                text_x = pixel_x + 15
-                text_y = pixel_y - 10
-                cv2.rectangle(frame, 
-                            (text_x - 5, text_y - text_height - 5),
-                            (text_x + text_width + 5, text_y + baseline + 5),
-                            (0, 0, 0), -1)
-                
-                cv2.putText(frame, label, (text_x, text_y), font, font_scale, color, label_thickness)
-                
-                distance = np.linalg.norm(point_3d)
-                distance_text = f"Dist: {distance*1000:.1f}mm"
-                cv2.putText(frame, distance_text, (text_x, text_y + 25), 
-                           font, 0.5, (255, 255, 255), 1)
-            
-            # Draw a circle with radius 102mm at z=0 plane centered at base origin
-            radius_mm = 102.0  # mm
-            radius_m = radius_mm / 1000.0  # Convert to meters
-            num_points = 72  # Number of points to draw the circle (every 5 degrees)
-            
-            circle_points_3d = []
-            for i in range(num_points):
-                angle = 2 * np.pi * i / num_points
-                # Point on circle in base coordinates (x, y, z=0)
-                circle_x = radius_m * np.cos(angle)
-                circle_y = radius_m * np.sin(angle)
-                circle_z = 0.0
-                
-                # Create homogeneous coordinate
-                point_base = np.array([circle_x, circle_y, circle_z, 1.0])
-                
-                # Transform to camera coordinates
-                point_cam = base2cam_matrix @ point_base
-                
-                # Check if point is in front of camera
-                if point_cam[2] > 0:
-                    circle_points_3d.append(point_cam[:3])
-            
-            # Project circle points to image
-            if len(circle_points_3d) > 0:
-                circle_points_3d_array = np.array(circle_points_3d).reshape(-1, 1, 3)
-                rvec = np.zeros((3, 1))
-                tvec = np.zeros((3, 1))
-                
-                circle_image_points, _ = cv2.projectPoints(
-                    circle_points_3d_array,
-                    rvec, tvec,
-                    camera_matrix,
-                    distortion_coefficients
-                )
-                
-                # Draw circle points
-                circle_color = (0, 0, 255)  # Red color (BGR format)
-                point_radius = 4
-                
-                for point in circle_image_points:
-                    px = int(point[0][0])
-                    py = int(point[0][1])
-                    
-                    # Check if point is within image bounds
-                    if 0 <= px < width and 0 <= py < height:
-                        cv2.circle(frame, (px, py), point_radius, circle_color, -1)
+            return {
+                'intrinsic': camera_matrix,
+                'distortion': distortion_coefficients,
+                'extrinsic': base2cam_matrix,
+                'cam2end_matrix': cam2end_matrix,
+                'end2base_matrix': end2base_matrix
+            }
             
         except Exception as e:
-            self.get_logger().error(f"Error projecting base origin: {e}")
+            self.get_logger().error(f"Error getting camera extrinsic parameters: {e}")
+            return None
+    
+    def project_base_origin_to_image(self, frame):
+        """Project base coordinate system and curves to image using draw_curves_on_image."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+            
+            # Draw UR15 base curve
+            frame = draw_utils.draw_curves_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=params['extrinsic'],
+                point3d=self.ur15_base_curve['curves'],
+                distortion=params['distortion'],
+                color=self.ur15_base_curve['colors'],
+                thickness=2
+            )
+            
+        except Exception as e:
+            self.get_logger().error(f"Error projecting curves to image: {e}")
+        
+        return frame
+    
+    def project_rack_to_image(self, frame):
+        """Project GB200 rack to image using draw_curves_on_image."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+            
+            # Get rack work object parameters - client handles caching internally
+            wobj_origin = self.status_client.get_status('rack', 'wobj_origin')
+            wobj_x = self.status_client.get_status('rack', 'wobj_x')
+            wobj_y = self.status_client.get_status('rack', 'wobj_y')
+            wobj_z = self.status_client.get_status('rack', 'wobj_z')
+            
+            # Check if all work object parameters are available
+            if wobj_origin is None or wobj_x is None or wobj_y is None or wobj_z is None:
+                self.get_logger().debug("Rack work object parameters not available yet")
+                return frame
+            
+            # Convert to numpy arrays
+            wobj_origin = np.array(wobj_origin, dtype=np.float64)
+            wobj_x = np.array(wobj_x, dtype=np.float64)
+            wobj_y = np.array(wobj_y, dtype=np.float64)
+            wobj_z = np.array(wobj_z, dtype=np.float64)
+            
+            # Normalize the axes to ensure they are unit vectors
+            wobj_x = wobj_x / np.linalg.norm(wobj_x)
+            wobj_y = wobj_y / np.linalg.norm(wobj_y)
+            wobj_z = wobj_z / np.linalg.norm(wobj_z)
+            
+            # Build rack2base transformation matrix
+            # The rotation matrix is formed by the three axes as columns
+            rack2base_matrix = np.eye(4)
+            rack2base_matrix[:3, 0] = wobj_x  # X axis
+            rack2base_matrix[:3, 1] = wobj_y  # Y axis
+            rack2base_matrix[:3, 2] = wobj_z  # Z axis
+            rack2base_matrix[:3, 3] = wobj_origin  # Origin position
+            
+            # Calculate rack2camera transformation
+            # base2camera = params['extrinsic']
+            # rack2camera = base2camera @ rack2base
+            base2camera = params['extrinsic']
+            rack2camera = base2camera @ rack2base_matrix
+            
+            # Draw GB200 rack curve with rack2camera extrinsic
+            frame = draw_utils.draw_curves_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=rack2camera,
+                point3d=self.gb200rack_curve['curves'],
+                distortion=params['distortion'],
+                color=self.gb200rack_curve['colors'],
+                thickness=2
+            )
+            
+        except Exception as e:
+            self.get_logger().error(f"Error projecting rack to image: {e}")
+        
+        return frame
+    
+    def draw_keypoints_on_image(self, frame):
+        """Draw 3D keypoints from robot_status on image using draw_utils."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+            
+            # Get 3D points from robot_status - client handles caching internally
+            points_3d = self.status_client.get_status('ur15', 'last_points_3d')
+            
+            # Check if points are available
+            if points_3d is None:
+                return frame
+            
+            # Convert to numpy array
+            points_3d = np.array(points_3d, dtype=np.float64)
+            
+            if len(points_3d) == 0:
+                return frame
+            
+            # Draw keypoints using draw_utils function
+            frame = draw_utils.draw_keypoints_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=params['extrinsic'],
+                points_3d=points_3d,
+                distortion=params['distortion'],
+                radius=6,
+                color=(0, 0, 255),  # Red
+                thickness=2,
+                draw_labels=True,
+                label_color=(255, 255, 255)
+            )
+            
+            # Draw info text
+            info_text = f"Keypoints: {len(points_3d)}"
+            cv2.putText(frame, info_text, (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error drawing keypoints on image: {e}")
         
         return frame
     
@@ -2652,9 +3624,17 @@ class UR15WebNode(Node):
                         if self.corner_detection_enabled:
                             frame = self.apply_corner_detection(frame)
                         
-                        # Only project validation if validation is active
+                        # Draw UR15 base if enabled
                         if self.validation_active:
                             frame = self.project_base_origin_to_image(frame)
+                        
+                        # Draw GB200 rack if enabled
+                        if self.draw_rack_enabled:
+                            frame = self.project_rack_to_image(frame)
+                        
+                        # Draw keypoints if enabled
+                        if self.draw_keypoints_enabled:
+                            frame = self.draw_keypoints_on_image(frame)
                         
                         # Scale down for web display while maintaining aspect ratio
                         height, width = frame.shape[:2]
@@ -2748,94 +3728,65 @@ class UR15WebNode(Node):
         
         return img
 
-    def _get_camera_parameters_from_calibration(self, calibration_data_dir):
-        """Get camera parameters from calibration result files."""
+    def _get_camera_parameters_from_status(self, calibration_data_dir):
+        """Get camera parameters from robot_status (ur15 namespace)."""
         try:
-            # Expand ~ in path and construct paths to calibration result files
-            expanded_calibration_data_dir = os.path.expanduser(calibration_data_dir)
-            calib_data_parent = os.path.dirname(expanded_calibration_data_dir)
-            calibration_result_dir = os.path.join(calib_data_parent, 'ur15_cam_calibration_result')
-            camera_params_dir = os.path.join(calibration_result_dir, 'ur15_camera_parameters')
+            # Read camera parameters from robot_status
+            camera_matrix = self.status_client.get_status('ur15', 'camera_matrix')
+            distortion_coefficients = self.status_client.get_status('ur15', 'distortion_coefficients')
+            cam2end_matrix = self.status_client.get_status('ur15', 'cam2end_matrix')
             
-            intrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
-            extrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
-            
-            self.get_logger().info(f"Looking for calibration files:")
-            self.get_logger().info(f"  Intrinsic: {intrinsic_file}")
-            self.get_logger().info(f"  Extrinsic: {extrinsic_file}")
-            
-            # Load intrinsic parameters
-            intrinsics = None
-            if os.path.exists(intrinsic_file):
-                try:
-                    with open(intrinsic_file, 'r') as f:
-                        intrinsic_data = json.load(f)
-                    
-                    if intrinsic_data.get('success', False):
-                        intrinsics = {
-                            'camera_matrix': intrinsic_data['camera_matrix'],
-                            'distortion_coefficients': intrinsic_data['distortion_coefficients']
-                        }
-                        self.get_logger().info("✅ Successfully loaded intrinsic parameters from file")
-                    else:
-                        self.get_logger().warning("Intrinsic calibration file indicates failure")
-                except Exception as e:
-                    self.get_logger().error(f"Failed to load intrinsic file: {e}")
-            else:
-                self.get_logger().warning(f"Intrinsic file not found: {intrinsic_file}")
-            
-            # Load extrinsic parameters
-            extrinsics = None
-            if os.path.exists(extrinsic_file):
-                try:
-                    with open(extrinsic_file, 'r') as f:
-                        extrinsic_data = json.load(f)
-                    
-                    if extrinsic_data.get('success', False):
-                        # Calculate current camera pose based on robot TCP and hand-eye calibration
-                        cam2end_matrix = np.array(extrinsic_data['cam2end_matrix'], dtype=np.float64)
-                        
-                        # Save the cam2end_matrix directly as extrinsics
-                        # This is the fixed transformation from camera to end-effector from calibration
-                        extrinsics = {
-                            'cam2end_matrix': cam2end_matrix.tolist()
-                        }
-                        self.get_logger().info("✅ Successfully loaded cam2end_matrix as extrinsic parameters")
-                    else:
-                        self.get_logger().warning("Extrinsic calibration file indicates failure")
-                except Exception as e:
-                    self.get_logger().error(f"Failed to load extrinsic file: {e}")
-            else:
-                self.get_logger().warning(f"Extrinsic file not found: {extrinsic_file}")
+            self.get_logger().info(f"Reading calibration parameters from robot_status (ur15 namespace)")
             
             # Check if we have required parameters
-            if intrinsics is None:
+            if camera_matrix is None or distortion_coefficients is None:
                 return {
                     'success': False,
-                    'message': f'Camera intrinsic parameters not found in {camera_params_dir}. Please run calibration first.'
+                    'message': 'Camera intrinsic parameters (camera_matrix, distortion_coefficients) not found in robot_status. Please run calibration first.'
                 }
             
-            # Compile camera parameters - only intrinsics and extrinsics
+            # Convert numpy arrays to lists for JSON serialization
+            if isinstance(camera_matrix, np.ndarray):
+                camera_matrix = camera_matrix.tolist()
+            if isinstance(distortion_coefficients, np.ndarray):
+                distortion_coefficients = distortion_coefficients.tolist()
+            
+            # Build intrinsics dictionary
+            intrinsics = {
+                'camera_matrix': camera_matrix,
+                'distortion_coefficients': distortion_coefficients
+            }
+            self.get_logger().info("✅ Successfully loaded intrinsic parameters from robot_status")
+            
+            # Build camera parameters dictionary
             camera_params = {
                 'intrinsics': intrinsics
             }
             
-            # Only add extrinsics if available
-            if extrinsics is not None:
+            # Add extrinsics if available
+            if cam2end_matrix is not None:
+                # Convert to list if it's a numpy array
+                if isinstance(cam2end_matrix, np.ndarray):
+                    cam2end_matrix = cam2end_matrix.tolist()
+                
+                extrinsics = {
+                    'cam2end_matrix': cam2end_matrix
+                }
                 camera_params['extrinsics'] = extrinsics
-            
-            source_description = f"Calibration results from {os.path.basename(calibration_result_dir)}"
+                self.get_logger().info("✅ Successfully loaded cam2end_matrix from robot_status")
+            else:
+                self.get_logger().warning("cam2end_matrix not found in robot_status")
             
             return {
                 'success': True, 
                 'data': camera_params,
-                'source': source_description
+                'source': 'robot_status (ur15 namespace)'
             }
             
         except Exception as e:
             return {
                 'success': False,
-                'message': f'Error reading calibration files: {str(e)}'
+                'message': f'Error reading calibration parameters from robot_status: {str(e)}'
             }
 
 
