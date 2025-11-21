@@ -290,3 +290,135 @@ def generate_gb200rack_curve():
         'curves': [square_points],
         'colors': [(0, 0, 255)]  # Red for the square
     }
+
+
+def draw_keypoints_on_image(image, intrinsic, extrinsic, points_3d, distortion=None, 
+                            radius=6, color=(255, 105, 180), thickness=2, 
+                            draw_labels=True, label_color=(255, 255, 255)):
+    """
+    Draw 3D keypoints on an image by projecting them onto the image plane.
+    
+    This function robustly handles cases where 3D points are behind the camera by:
+    - Transforming points to camera coordinate system
+    - Checking if points are in front of camera (Z > 0)
+    - Only drawing keypoints that are visible
+    
+    Args:
+        image: Input image (numpy array) to draw on
+        intrinsic: Camera intrinsic matrix (3x3)
+        extrinsic: Extrinsic matrix (4x4) containing [R|t]
+        points_3d: Array/list of 3D points, shape (N, 3) or list of [x,y,z]
+        distortion: Distortion coefficients (1D array) or None (default: None)
+        radius: Radius of the keypoint circle in pixels (default: 6)
+        color: BGR color tuple for the keypoint (default: (255, 105, 180) magenta/pink)
+        thickness: Thickness for the outer circle (default: 2). Use -1 for filled circle.
+        draw_labels: Whether to draw index labels next to keypoints (default: True)
+        label_color: BGR color tuple for labels (default: (255, 255, 255) white)
+        
+    Returns:
+        image: The image with the keypoints drawn on it
+    """
+    # Convert points to numpy array
+    points_3d = np.asarray(points_3d, dtype=np.float32).reshape(-1, 3)
+    
+    # Check if we have any points
+    if len(points_3d) == 0:
+        return image
+    
+    # Extract rotation and translation from extrinsic matrix
+    rvec, _ = cv2.Rodrigues(extrinsic[:3, :3])
+    tvec = extrinsic[:3, 3].reshape(3, 1)
+    
+    # Transform 3D points to camera coordinate system to check Z-depth
+    rotation_matrix = extrinsic[:3, :3]
+    translation_vector = extrinsic[:3, 3]
+    points_cam = (rotation_matrix @ points_3d.T).T + translation_vector
+    
+    # Check which points are in front of camera (positive Z in camera frame)
+    z_threshold = 1e-2
+    in_front = points_cam[:, 2] > z_threshold
+    
+    # Project points without distortion to check if they're within image bounds
+    projected_no_distortion, _ = cv2.projectPoints(
+        points_3d,
+        rvec,
+        tvec,
+        intrinsic,
+        np.zeros(5, dtype=np.float32)
+    )
+    projected_no_distortion = projected_no_distortion.reshape(-1, 2)
+    
+    # Get image dimensions
+    img_height, img_width = image.shape[:2]
+    
+    # Allow points outside image by 10% of image dimensions for margin
+    margin_x = img_width * 0.1
+    margin_y = img_height * 0.1
+    
+    # Check which points project within expanded image bounds
+    within_image = (
+        (projected_no_distortion[:, 0] >= -margin_x) &
+        (projected_no_distortion[:, 0] < img_width + margin_x) &
+        (projected_no_distortion[:, 1] >= -margin_y) &
+        (projected_no_distortion[:, 1] < img_height + margin_y)
+    )
+    
+    # Combine visibility checks: in front of camera AND within image bounds
+    visible = in_front & within_image
+    
+    # Project all 3D points onto the image plane with distortion
+    dist_coeffs = distortion if distortion is not None else np.zeros(5, dtype=np.float32)
+    projected_points, _ = cv2.projectPoints(
+        points_3d,
+        rvec,
+        tvec,
+        intrinsic,
+        dist_coeffs
+    )
+    
+    # Convert to integer pixel coordinates
+    projected_points = projected_points.reshape(-1, 2).astype(int)
+    
+    # Draw each visible keypoint
+    for idx, (pt, is_visible) in enumerate(zip(projected_points, visible)):
+        if not is_visible:
+            continue
+        
+        pt_tuple = tuple(pt)
+        
+        # Draw filled circle for keypoint
+        cv2.circle(image, pt_tuple, radius, color, -1)
+        
+        # Draw outer circle for better visibility
+        if thickness > 0:
+            cv2.circle(image, pt_tuple, radius + 2, (255, 255, 255), thickness)
+        
+        # Draw point index label if requested
+        if draw_labels:
+            label = f"{idx}"
+            label_pos = (pt[0] + radius + 6, pt[1] + 5)
+            
+            # Draw text background
+            (text_w, text_h), baseline = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2
+            )
+            cv2.rectangle(
+                image,
+                (label_pos[0] - 2, label_pos[1] - text_h - 2),
+                (label_pos[0] + text_w + 2, label_pos[1] + baseline + 2),
+                (0, 0, 0),
+                -1
+            )
+            
+            # Draw text
+            cv2.putText(
+                image,
+                label,
+                label_pos,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                label_color,
+                2
+            )
+    
+    return image

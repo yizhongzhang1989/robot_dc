@@ -287,7 +287,7 @@ def perform_intrinsic_calibration(images, pattern, verbose=False):
             calibration_pattern=pattern
         )
         
-        results = intrinsic_calibrator.calibrate(verbose=verbose)
+        results = intrinsic_calibrator.calibrate(verbose=verbose, flags=cv2.CALIB_RATIONAL_MODEL)
         
         if results is None:
             raise ValueError("Intrinsic calibration failed")

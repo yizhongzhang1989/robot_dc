@@ -267,13 +267,21 @@ function confirmOperationNameChange() {
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ operation_path: fullOperationPath })
+        body: JSON.stringify({ 
+            operation_path: fullOperationPath,
+            operation_name: newName
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
             logToWeb(`Operation set successfully: ${newName}`, 'success');
             closeOperationPathModal();
+            // Enable the Locate Last Operation button
+            const locateLastOperationBtn = document.getElementById('locateLastOperationBtn');
+            if (locateLastOperationBtn) {
+                locateLastOperationBtn.disabled = false;
+            }
         } else {
             console.error('Failed to set operation:', data.message || 'Unknown error');
             logToWeb(`Failed to set operation: ${data.message || 'Unknown error'}`, 'error');
@@ -1955,6 +1963,9 @@ async function disableCornerDetect() {
 // Draw GB200 Rack Functions
 let drawRackEnabled = false;
 
+// Draw Keypoints Functions
+let drawKeypointsEnabled = false;
+
 async function toggleDrawRack() {
     const checkbox = document.getElementById('drawRackCheckbox');
     checkbox.disabled = true;
@@ -1993,6 +2004,44 @@ async function toggleDrawRack() {
     }
 }
 
+async function toggleDrawKeypoints() {
+    const checkbox = document.getElementById('drawKeypointsCheckbox');
+    checkbox.disabled = true;
+    
+    try {
+        const response = await fetch('/toggle_draw_keypoints', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: checkbox.checked })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            drawKeypointsEnabled = data.enabled;
+            checkbox.checked = data.enabled;
+            
+            if (data.enabled) {
+                logToWeb('Draw keypoints enabled', 'success');
+            } else {
+                logToWeb('Draw keypoints disabled', 'info');
+            }
+        } else {
+            logToWeb(`Failed to toggle keypoints drawing: ${data.message}`, 'error');
+            // Revert checkbox on failure
+            checkbox.checked = !checkbox.checked;
+        }
+    } catch (error) {
+        logToWeb(`Error toggling keypoints drawing: ${error.message}`, 'error');
+        // Revert checkbox on error
+        checkbox.checked = !checkbox.checked;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
 // Task Panel Functions
 function locateRack() {
     logToWeb('🗄️ Locate Rack button clicked', 'info');
@@ -2005,6 +2054,44 @@ function locateRack() {
     }
     
     fetch('/locate_rack', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        // Re-enable button after 2 seconds
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function locateLastOperation() {
+    logToWeb('🎯 Locate Last Operation button clicked', 'info');
+    
+    // Disable button during execution
+    const btn = document.getElementById('locateLastOperationBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/locate_last_operation', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

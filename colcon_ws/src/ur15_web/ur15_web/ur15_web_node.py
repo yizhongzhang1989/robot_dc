@@ -31,6 +31,7 @@ from flask import Flask, render_template_string, Response
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
 from ur15_web import draw_utils
+from robot_status import get_from_status, set_to_status
 
 # Add scripts directory to path for camera calibration toolkit
 scripts_dir = get_scripts_directory()
@@ -205,6 +206,7 @@ class UR15WebNode(Node):
         self.corner_detection_enabled = False
         self.corner_detection_params = {}
         self.draw_rack_enabled = False
+        self.draw_keypoints_enabled = False
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
@@ -1060,14 +1062,32 @@ class UR15WebNode(Node):
                 # Expand user home directory if needed
                 new_path = os.path.expanduser(new_path)
                 
+                # Get operation name from request or extract from path
+                operation_name = data.get('operation_name', '').strip()
+                if not operation_name:
+                    # Fallback: extract from path if not provided
+                    operation_name = os.path.basename(new_path)
+                
                 # Create directory if it doesn't exist
                 try:
                     os.makedirs(new_path, exist_ok=True)
                     self.get_logger().info(f"Operation path changed to: {new_path}")
+                    self.get_logger().info(f"Operation name: {operation_name}")
+                    
+                    # Set operation name to robot_status (only if operation_name is valid)
+                    if operation_name and operation_name != 'input operation name':
+                        if set_to_status(self, 'ur15', 'last_operation_name', operation_name):
+                            self.get_logger().info(f"Successfully set last_operation_name to robot_status: {operation_name}")
+                        else:
+                            self.get_logger().warning(f"Failed to set last_operation_name to robot_status")
+                    else:
+                        self.get_logger().info("Operation name not set (empty or default value)")
+                    
                     return jsonify({
                         'success': True, 
                         'message': 'Operation path changed successfully',
-                        'operation_path': self._simplify_path(new_path)
+                        'operation_path': self._simplify_path(new_path),
+                        'operation_name': operation_name
                     })
                 except Exception as e:
                     return jsonify({
@@ -1284,6 +1304,40 @@ class UR15WebNode(Node):
                     
             except Exception as e:
                 self.get_logger().error(f"Error toggling rack drawing: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+        
+        @self.app.route('/toggle_draw_keypoints', methods=['POST'])
+        def toggle_draw_keypoints():
+            """Toggle keypoints drawing on/off."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                self.draw_keypoints_enabled = enable
+                
+                if enable:
+                    self.get_logger().info("Keypoints drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Keypoints drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("Keypoints drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Keypoints drawing disabled',
+                        'enabled': False
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error toggling keypoints drawing: {e}")
                 return jsonify({
                     'success': False,
                     'message': str(e),
@@ -2575,6 +2629,106 @@ class UR15WebNode(Node):
                     'message': str(e)
                 })
         
+        @self.app.route('/locate_last_operation', methods=['POST'])
+        def locate_last_operation():
+            """Execute locate last operation script (ur_locate_test.py)."""
+            from flask import request, jsonify
+            import subprocess
+            import threading
+            
+            try:
+                # Get last_operation_name from robot_status
+                operation_name = get_from_status(self, 'ur15', 'last_operation_name')
+                
+                if not operation_name:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No last_operation_name found in robot_status. Please set an operation name first.'
+                    })
+                
+                operation_name = operation_name.strip()
+                if not operation_name or operation_name == 'input operation name':
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid operation name in robot_status'
+                    })
+                
+                # Get the scripts directory
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Could not find scripts directory'
+                    })
+                
+                script_path = os.path.join(scripts_dir, 'ur_locate_test.py')
+                
+                # Check if script exists
+                if not os.path.exists(script_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Script not found: {script_path}'
+                    })
+                
+                # Prepare command
+                cmd = ['python3', script_path, '--operation-name', operation_name]
+                
+                self.get_logger().info(f"Locate last operation command: {' '.join(cmd)}")
+                
+                # Define a function to monitor the process
+                def monitor_locate_last_operation():
+                    """Monitor locate last operation process and report completion status."""
+                    try:
+                        process = subprocess.Popen(
+                            cmd,
+                            cwd=os.path.dirname(script_path),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True
+                        )
+                        
+                        # Track this process for cleanup
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started locate last operation script with PID: {process.pid}")
+                        
+                        # Wait for the process to complete
+                        return_code = process.wait()
+                        
+                        self.get_logger().info(f"Locate last operation script finished with return code: {return_code}")
+                        
+                        # Push completion message to web log
+                        if return_code == 0:
+                            self.push_web_log(f"✅ Locate last operation '{operation_name}' completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Locate last operation '{operation_name}' failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in locate last operation monitor thread: {e}")
+                        self.push_web_log(f"❌ Locate last operation error: {str(e)}", 'error')
+                
+                # Start monitoring thread
+                monitor_thread = threading.Thread(target=monitor_locate_last_operation, daemon=True)
+                monitor_thread.start()
+                
+                self.get_logger().info(f"Started locate last operation monitoring thread")
+                
+                # Push start message to web log
+                self.push_web_log(f"🎯 Starting locate last operation '{operation_name}'...", 'info')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Locate last operation script started for: {operation_name}'
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error starting locate last operation script: {e}")
+                self.push_web_log(f"❌ Failed to start locate last operation: {str(e)}", 'error')
+                return jsonify({
+                    'success': False,
+                    'message': str(e)
+                })
+        
         @self.app.route('/locate_unlock_knob', methods=['POST'])
         def locate_unlock_knob():
             """Execute locate unlock knob script (ur_locate_knob.py)."""
@@ -3173,6 +3327,51 @@ class UR15WebNode(Node):
         
         return frame
     
+    def draw_keypoints_on_image(self, frame):
+        """Draw 3D keypoints from robot_status on image using draw_utils."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+            
+            # Get 3D points from robot_status - client handles caching internally
+            points_3d = self.status_client.get_status('ur15', 'last_points_3d')
+            
+            # Check if points are available
+            if points_3d is None:
+                return frame
+            
+            # Convert to numpy array
+            points_3d = np.array(points_3d, dtype=np.float64)
+            
+            if len(points_3d) == 0:
+                return frame
+            
+            # Draw keypoints using draw_utils function
+            frame = draw_utils.draw_keypoints_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=params['extrinsic'],
+                points_3d=points_3d,
+                distortion=params['distortion'],
+                radius=6,
+                color=(0, 0, 255),  # Red
+                thickness=2,
+                draw_labels=True,
+                label_color=(255, 255, 255)
+            )
+            
+            # Draw info text
+            info_text = f"Keypoints: {len(points_3d)}"
+            cv2.putText(frame, info_text, (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error drawing keypoints on image: {e}")
+        
+        return frame
+    
     def apply_corner_detection(self, frame):
         """Apply corner detection visualization to frame using calibration toolkit."""
         if not CALIBRATION_TOOLKIT_AVAILABLE:
@@ -3251,6 +3450,10 @@ class UR15WebNode(Node):
                         # Draw GB200 rack if enabled
                         if self.draw_rack_enabled:
                             frame = self.project_rack_to_image(frame)
+                        
+                        # Draw keypoints if enabled
+                        if self.draw_keypoints_enabled:
+                            frame = self.draw_keypoints_on_image(frame)
                         
                         # Scale down for web display while maintaining aspect ratio
                         height, width = frame.shape[:2]
