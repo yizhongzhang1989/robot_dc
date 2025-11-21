@@ -1488,22 +1488,22 @@ def main():
                     except Exception as e:
                         print(f"⚠️  Error sending last_points_3d to ur15 workspace: {e}")
                 
-                # Perform workpiece frame building
-                print(">>> Building Workpiece Coordinate System...")
+                # # Perform workpiece frame building
+                # print(">>> Building Workpiece Coordinate System...")
                 
-                coord_system = ur_locate.perform_wobj_frame_building()
+                # coord_system = ur_locate.perform_wobj_frame_building()
                 
-                if coord_system:
-                    print("\n" + "="*60)
-                    print("✓ Wobj Coordinate System built successfully!")
-                    origin = coord_system['origin']
-                    pose = coord_system['pose_representation']
-                    print(f"  Origin: ({origin['x']:.4f}, {origin['y']:.4f}, {origin['z']:.4f}) m")
-                    print(f"  Pose: x={pose['x']:.4f}, y={pose['y']:.4f}, z={pose['z']:.4f}")
-                    print(f"        rx={pose['rx']:.4f}, ry={pose['ry']:.4f}, rz={pose['rz']:.4f}")
-                    print("="*60 + "\n")
-                else:
-                    print("\n✗ Wobj Coordinate System building failed!")
+                # if coord_system:
+                #     print("\n" + "="*60)
+                #     print("✓ Wobj Coordinate System built successfully!")
+                #     origin = coord_system['origin']
+                #     pose = coord_system['pose_representation']
+                #     print(f"  Origin: ({origin['x']:.4f}, {origin['y']:.4f}, {origin['z']:.4f}) m")
+                #     print(f"  Pose: x={pose['x']:.4f}, y={pose['y']:.4f}, z={pose['z']:.4f}")
+                #     print(f"        rx={pose['rx']:.4f}, ry={pose['ry']:.4f}, rz={pose['rz']:.4f}")
+                #     print("="*60 + "\n")
+                # else:
+                #     print("\n✗ Wobj Coordinate System building failed!")
             else:
                 print("\n✗ 3D Positioning failed!")
                 

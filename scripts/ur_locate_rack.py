@@ -12,9 +12,11 @@ import cv2
 import numpy as np
 import argparse
 import traceback
+import matplotlib.pyplot as plt
 from datetime import datetime
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
+import rclpy
 
 # Import the parent class
 from ur_capture import URCapture
@@ -24,11 +26,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vis
 
 # Import Web API client (with error handling)
 from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_params_from_json
-
-
-# ROS2 imports
-import rclpy
-
 # Robot status imports
 from robot_status.client_utils import RobotStatusClient
 
@@ -370,6 +367,17 @@ class URLocateRack(URCapture):
         # Store session directories for each operation
         self.session_dirs = {}
         
+        # Step 1: Upload reference data (only once for both operations)
+        self.get_logger().info(f"\n{'='*80}")
+        self.get_logger().info(f"Step 1: Uploading reference data for all operations...")
+        self.get_logger().info(f"{'='*80}")
+        upload_success = self._upload_reference_data('rack1')  # Upload once with rack1 as reference
+        if not upload_success:
+            self.get_logger().error(f"✗ Failed to upload reference data")
+            return {'rack1': None, 'rack2': None}
+        
+        self.get_logger().info(f"✓ Reference data uploaded successfully!")
+        
         for operation in operations:
             self.get_logger().info(f"\n{'='*80}")
             self.get_logger().info(f"Starting 3D positioning workflow for {operation}")
@@ -383,17 +391,6 @@ class URLocateRack(URCapture):
                 # Update paths for this operation
                 self._setup_paths(operation, self.camera_params_path)
                 self._load_collect_position_from_config()
-                
-                # Step 1: Upload reference data
-                self.get_logger().info(f"Step 1: Uploading reference data for {operation}...")
-                upload_success = self._upload_reference_data(operation)
-                if not upload_success:
-                    self.get_logger().error(f"✗ Failed to upload reference data for {operation}")
-                    results[operation] = None
-                    self.operation_name = original_operation_name
-                    continue
-                
-                self.get_logger().info(f"✓ Reference data uploaded successfully!")
                 
                 # Step 2: Initialize session
                 self.get_logger().info(f"Step 2: Initializing session for {operation}...")
@@ -546,6 +543,24 @@ class URLocateRack(URCapture):
                 self.get_logger().info(f"{operation}: {status}")
         self.get_logger().info(f"{'='*80}")
         
+        # Merge and save all 3D points to robot_status
+        if self.robot_status_client:
+            try:
+                all_points = []
+                # Collect points from rack1 and rack2
+                for operation in ['rack1', 'rack2']:
+                    if operation in results and results[operation]:
+                        points = results[operation].get('points_3d', [])
+                        all_points.extend(points)
+                
+                if all_points:
+                    if self.robot_status_client.set_status('ur15', 'last_points_3d', all_points):
+                        self.get_logger().info(f"✓ last_points_3d saved to robot_status (namespace: ur15, total points: {len(all_points)})")
+                    else:
+                        self.get_logger().warn("Failed to save last_points_3d to robot_status")
+            except Exception as e:
+                self.get_logger().warn(f"Failed to save merged points to robot_status: {e}")
+        
         return results
     
     def _validate_positioning_results(self, session_dir, result_data, output_dir):
@@ -591,7 +606,6 @@ class URLocateRack(URCapture):
             cols = min(3, num_views)
             rows = (num_views + cols - 1) // cols
             
-            import matplotlib.pyplot as plt
             fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
             if num_views == 1:
                 axes = np.array([axes])
@@ -634,48 +648,27 @@ class URLocateRack(URCapture):
                     ax.axis('off')
                     continue
                 
-                # Extract camera parameters
-                fx = intrinsic[0, 0]
-                fy = intrinsic[1, 1]
-                cx = intrinsic[0, 2]
-                cy = intrinsic[1, 2]
-                
                 # extrinsic is already base2cam (world to camera transformation)
+                # Convert to rvec and tvec for cv2.projectPoints
                 base2cam = extrinsic
+                rotation_matrix = base2cam[:3, :3]
+                translation_vector = base2cam[:3, 3]
+                rvec, _ = cv2.Rodrigues(rotation_matrix)
+                tvec = translation_vector.reshape(3, 1)
                 
-                # Reproject 3D points back to this view (red X markers)
-                for pt_idx, point_3d in enumerate(points_3d):
-                    # Transform 3D point to camera frame
-                    # points_3d are in base coordinate system
-                    point_3d_base = np.array([point_3d[0], point_3d[1], point_3d[2], 1.0])
-                    point_3d_cam = base2cam @ point_3d_base
-                    
-                    x_cam = point_3d_cam[0]
-                    y_cam = point_3d_cam[1]
-                    z_cam = point_3d_cam[2]
-                    
-                    if z_cam <= 0:
-                        continue  # Point behind camera
-                    
-                    # Project to image plane with distortion
-                    if distortion is not None and np.any(distortion != 0):
-                        x_norm = x_cam / z_cam
-                        y_norm = y_cam / z_cam
-                        
-                        # Apply radial and tangential distortion
-                        k1, k2, p1, p2, k3 = distortion.flatten()[:5]
-                        r2 = x_norm**2 + y_norm**2
-                        
-                        radial = 1 + k1*r2 + k2*r2**2 + k3*r2**3
-                        x_distorted = x_norm * radial + 2*p1*x_norm*y_norm + p2*(r2 + 2*x_norm**2)
-                        y_distorted = y_norm * radial + p1*(r2 + 2*y_norm**2) + 2*p2*x_norm*y_norm
-                        
-                        u_reproj = fx * x_distorted + cx
-                        v_reproj = fy * y_distorted + cy
-                    else:
-                        u_reproj = fx * (x_cam / z_cam) + cx
-                        v_reproj = fy * (y_cam / z_cam) + cy
-                    
+                # Reproject 3D points using cv2.projectPoints
+                dist_coeffs = distortion if distortion is not None else np.zeros(5, dtype=np.float32)
+                projected_points, _ = cv2.projectPoints(
+                    points_3d.astype(np.float32),
+                    rvec,
+                    tvec,
+                    intrinsic,
+                    dist_coeffs
+                )
+                projected_points = projected_points.reshape(-1, 2)
+                
+                # Plot reprojected points and calculate errors
+                for pt_idx, (u_reproj, v_reproj) in enumerate(projected_points):
                     # Plot reprojected point (red x marker)
                     ax.plot(u_reproj, v_reproj, 'rx', markersize=6,
                            markeredgewidth=2,
@@ -1245,57 +1238,38 @@ class URLocateRack(URCapture):
                         ax.axis('off')
                         continue
                     
-                    # Extract camera parameters
-                    fx = intrinsic[0, 0]
-                    fy = intrinsic[1, 1]
-                    cx = intrinsic[0, 2]
-                    cy = intrinsic[1, 2]
-                    
                     # extrinsic is already base2cam (world to camera transformation)
+                    # Convert to rvec and tvec for cv2.projectPoints
                     base2cam = extrinsic
+                    rotation_matrix = base2cam[:3, :3]
+                    translation_vector = base2cam[:3, 3]
+                    rvec, _ = cv2.Rodrigues(rotation_matrix)
+                    tvec = translation_vector.reshape(3, 1)
                     
-                    # Function to project 3D point to 2D
-                    def project_3d_to_2d(point_3d_base):
-                        """Project a 3D point in base frame to 2D image coordinates"""
-                        point_3d_homog = np.array([point_3d_base[0], point_3d_base[1], point_3d_base[2], 1.0])
-                        point_3d_cam = base2cam @ point_3d_homog
-                        
-                        x_cam = point_3d_cam[0]
-                        y_cam = point_3d_cam[1]
-                        z_cam = point_3d_cam[2]
-                        
-                        if z_cam <= 0:
-                            return None  # Point is behind camera
-                        
-                        # Apply distortion and projection
-                        if distortion is not None and np.any(distortion != 0):
-                            # Normalize coordinates
-                            x_norm = x_cam / z_cam
-                            y_norm = y_cam / z_cam
-                            
-                            # Apply distortion
-                            k1, k2, p1, p2, k3 = distortion.flatten()[:5]
-                            r2 = x_norm**2 + y_norm**2
-                            
-                            radial = 1 + k1*r2 + k2*r2**2 + k3*r2**3
-                            x_distorted = x_norm * radial + 2*p1*x_norm*y_norm + p2*(r2 + 2*x_norm**2)
-                            y_distorted = y_norm * radial + p1*(r2 + 2*y_norm**2) + 2*p2*x_norm*y_norm
-                            
-                            # Convert to pixel coordinates
-                            u = fx * x_distorted + cx
-                            v = fy * y_distorted + cy
-                        else:
-                            # No distortion
-                            u = fx * (x_cam / z_cam) + cx
-                            v = fy * (y_cam / z_cam) + cy
-                        
-                        return (u, v)
+                    # Prepare 3D points for projection: origin and axis endpoints
+                    points_3d_to_project = np.array([
+                        origin_3d,
+                        x_end_3d,
+                        y_end_3d,
+                        z_end_3d
+                    ], dtype=np.float32)
                     
-                    # Project origin and axis endpoints
-                    origin_2d = project_3d_to_2d(origin_3d)
-                    x_end_2d = project_3d_to_2d(x_end_3d)
-                    y_end_2d = project_3d_to_2d(y_end_3d)
-                    z_end_2d = project_3d_to_2d(z_end_3d)
+                    # Project all points using cv2.projectPoints
+                    dist_coeffs = distortion if distortion is not None else np.zeros(5, dtype=np.float32)
+                    projected_points, _ = cv2.projectPoints(
+                        points_3d_to_project,
+                        rvec,
+                        tvec,
+                        intrinsic,
+                        dist_coeffs
+                    )
+                    projected_points = projected_points.reshape(-1, 2)
+                    
+                    # Extract projected 2D points
+                    origin_2d = tuple(projected_points[0])
+                    x_end_2d = tuple(projected_points[1])
+                    y_end_2d = tuple(projected_points[2])
+                    z_end_2d = tuple(projected_points[3])
                     
                     # Draw on image
                     img_draw = img_rgb.copy()

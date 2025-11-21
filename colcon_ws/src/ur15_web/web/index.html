@@ -703,6 +703,11 @@
                                 <input type="checkbox" id="drawRackCheckbox" onchange="toggleDrawRack()" style="width: 18px; height: 18px; cursor: pointer;">
                                 <span style="font-weight: 600;">🗄️ Draw GB200 Rack</span>
                             </label>
+                            <!-- Draw Keypoints -->
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(236, 72, 153, 0.1); border: 1px solid rgba(236, 72, 153, 0.3); border-radius: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" id="drawKeypointsCheckbox" onchange="toggleDrawKeypoints()" style="width: 18px; height: 18px; cursor: pointer;">
+                                <span style="font-weight: 600;">📍 Draw Keypoints</span>
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -810,6 +815,28 @@
                                 <span>Execute Close Right</span>
                             </button>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Panel -->
+            <div class="panel-with-title">
+                <div class="panel-title">
+                    Test Panel
+                </div>
+                <div class="panel-content">
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
+                        <!-- Warning Message -->
+                        <div style="background-color: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px; padding: 0.75rem; display: flex; align-items: start; gap: 0.5rem;">
+                            <p style="margin: 0; font-size: 0.875rem; color: #92400e; line-height: 1.4;">
+                                <strong>⚠️ Before clicking:</strong> Make sure keypoints are labeling in <code style="background-color: #fde68a; padding: 0.125rem 0.25rem; border-radius: 3px;">ref_img_1.json</code> file!
+                            </p>
+                        </div>
+                        
+                        <button id="locateLastOperationBtn" disabled style="flex: 1; min-width: 0;" class="responsive-btn bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" onclick="locateLastOperation()">
+                            <span>🎯</span>
+                            <span>Locate Last Operation</span>
+                        </button>
                     </div>
                 </div>
             </div>
