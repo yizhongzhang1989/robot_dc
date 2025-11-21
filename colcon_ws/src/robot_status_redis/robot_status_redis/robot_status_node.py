@@ -22,9 +22,14 @@ import sys
 import os
 from pathlib import Path
 
+try:
+    from .redis_backend import get_redis_backend, is_redis_available
+except ImportError:
+    from robot_status_redis.redis_backend import get_redis_backend, is_redis_available
+
 
 class RobotStatusNode(Node):
-    """ROS2 node for managing robot status using hierarchical parameters."""
+    """ROS2 node for managing robot status using Redis backend with ROS2 service interface."""
     
     def __init__(self):
         super().__init__(
@@ -32,6 +37,24 @@ class RobotStatusNode(Node):
             allow_undeclared_parameters=True,
             automatically_declare_parameters_from_overrides=True
         )
+        
+        # Initialize Redis backend
+        if not is_redis_available():
+            error_msg = (
+                "Redis is not available. Please install and start Redis:\n"
+                "  sudo apt-get install redis-server\n"
+                "  sudo systemctl start redis-server\n"
+                "  pip3 install redis\n"
+                "Verify with: redis-cli ping"
+            )
+            self.get_logger().error(error_msg)
+            raise ConnectionError(error_msg)
+        
+        self._redis_backend = get_redis_backend()
+        if self._redis_backend is None:
+            raise ConnectionError("Failed to connect to Redis")
+        
+        self.get_logger().info("✓ Connected to Redis backend")
         
         # Get auto-save file path (already declared by automatically_declare_parameters_from_overrides)
         if not self.has_parameter('auto_save_file_path'):
@@ -43,10 +66,10 @@ class RobotStatusNode(Node):
         # Convert to absolute path if relative
         self.auto_save_file_path = str(Path(auto_save_path).expanduser().resolve())
         
-        # Thread lock for thread-safe parameter operations
+        # Thread lock for thread-safe operations
         self.lock = threading.Lock()
         
-        # Load existing status from file
+        # Load existing status from file to Redis
         self._load_status_from_file()
         
         # Import service types (will be available after build)
@@ -121,7 +144,7 @@ class RobotStatusNode(Node):
             return 'robot_status_auto_save.json'
     
     def _load_status_from_file(self):
-        """Load status from auto-save JSON file."""
+        """Load status from auto-save JSON file into Redis."""
         if not os.path.exists(self.auto_save_file_path):
             self.get_logger().info(f"Auto-save file not found: {self.auto_save_file_path}")
             return
@@ -130,11 +153,10 @@ class RobotStatusNode(Node):
             with open(self.auto_save_file_path, 'r') as f:
                 data = json.load(f)
             
-            # Load all namespace.key pairs
+            # Load all namespace.key pairs into Redis
             count = 0
             for namespace, keys in data.items():
                 for key, value in keys.items():
-                    param_name = f"{namespace}.{key}"
                     try:
                         # Handle new format: {"pickle": "...", "json": {...}}
                         if isinstance(value, dict) and "pickle" in value:
@@ -143,81 +165,31 @@ class RobotStatusNode(Node):
                             # Backward compatibility: old format (direct pickle string)
                             pickle_str = value
                         
-                        # Use the pickle string directly
-                        self.declare_parameter(param_name, pickle_str)
+                        # Decode and store in Redis
+                        pickled = base64.b64decode(pickle_str.encode('ascii'))
+                        obj = pickle.loads(pickled)
+                        self._redis_backend.set_status(namespace, key, obj)
                         count += 1
                     except Exception as e:
-                        self.get_logger().warn(f"Failed to load {param_name}: {e}")
+                        self.get_logger().warn(f"Failed to load {namespace}.{key}: {e}")
             
-            self.get_logger().info(f"Loaded {count} parameters from {self.auto_save_file_path}")
+            self.get_logger().info(f"Loaded {count} items from {self.auto_save_file_path} into Redis")
             
         except Exception as e:
             self.get_logger().error(f"Failed to load auto-save file: {e}")
     
     def _save_status_to_file(self):
-        """Save current status to auto-save JSON file."""
+        """Save current Redis status to auto-save JSON file."""
         try:
-            # Build status tree
-            status_tree = {}
-            
+            # Get all status from Redis
             with self.lock:
-                param_names = list(self._parameters.keys())
-            
-            for param_name in param_names:
-                # Skip non-hierarchical parameters
-                if '.' not in param_name:
-                    continue
-                
-                # Split namespace and key
-                parts = param_name.split('.', 1)
-                namespace = parts[0]
-                key = parts[1] if len(parts) > 1 else ""
-                
-                # Initialize namespace dict if needed
-                if namespace not in status_tree:
-                    status_tree[namespace] = {}
-                
-                # Get parameter value (pickled base64 string)
-                try:
-                    with self.lock:
-                        value_str = self.get_parameter(param_name).value
-                    
-                    # Create dict with pickle string
-                    value_dict = {"pickle": value_str}
-                    
-                    # Try to add JSON representation if possible
-                    try:
-                        # Unpickle to get the actual object
-                        pickled = base64.b64decode(value_str.encode('ascii'))
-                        obj = pickle.loads(pickled)
-                        
-                        # Try direct JSON serialization first
-                        try:
-                            json_str = json.dumps(obj)
-                            value_dict["json"] = json.loads(json_str)
-                        except (TypeError, ValueError):
-                            # Direct serialization failed, try tolist() method
-                            if hasattr(obj, 'tolist'):
-                                try:
-                                    list_obj = obj.tolist()
-                                    json_str = json.dumps(list_obj)
-                                    value_dict["json"] = json.loads(json_str)
-                                except (TypeError, ValueError, AttributeError):
-                                    # tolist() also failed, no JSON representation
-                                    pass
-                    except Exception:
-                        # Unpickling failed, just keep pickle
-                        pass
-                    
-                    status_tree[namespace][key] = value_dict
-                except Exception:
-                    pass
+                status_tree = self._redis_backend.list_status()
             
             # Ensure the directory exists before writing
             save_path = Path(self.auto_save_file_path)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Write to file
+            # Write to file (status_tree already has pickle+json format)
             with open(self.auto_save_file_path, 'w') as f:
                 json.dump(status_tree, f, indent=2)
             
@@ -233,41 +205,54 @@ class RobotStatusNode(Node):
         Args:
             request.ns: Robot or namespace identifier
             request.key: Status key
-            request.value: JSON-encoded value
+            request.value: Pickled base64-encoded value
         """
-        param_name = f"{request.ns}.{request.key}"
-        
-        # Validate that the value can be decoded (pickle base64 or JSON)
         try:
-            # Try pickle format first
+            # Decode the pickled bytes but don't unpickle here (avoid __main__ class issues)
             pickled = base64.b64decode(request.value.encode('ascii'))
-            pickle.loads(pickled)
-        except Exception:
-            # Try JSON format for backward compatibility
+            
+            # Try to unpickle to create JSON representation if possible
+            value_dict = {"pickle": request.value}
             try:
-                json.loads(request.value)
-            except json.JSONDecodeError:
-                # Allow plain strings too
-                pass
-        
-        try:
+                obj = pickle.loads(pickled)
+                # Try to create JSON representation
+                try:
+                    json_str = json.dumps(obj)
+                    value_dict["json"] = json.loads(json_str)
+                except (TypeError, ValueError):
+                    # Try tolist() method for numpy arrays
+                    if hasattr(obj, 'tolist'):
+                        try:
+                            list_obj = obj.tolist()
+                            json_str = json.dumps(list_obj)
+                            value_dict["json"] = json.loads(json_str)
+                        except (TypeError, ValueError, AttributeError):
+                            pass
+            except Exception as e:
+                # Can't unpickle (e.g., __main__ classes), just store pickle
+                self.get_logger().debug(f"Storing pickled data only (cannot unpickle): {e}")
+            
+            # Store the value_dict directly in Redis using the backend's client
+            # Redis backend stores value_dict as JSON string
+            redis_key = f"robot_status:{request.ns}:{request.key}"
             with self.lock:
-                # Declare parameter if it doesn't exist
-                if not self.has_parameter(param_name):
-                    self.declare_parameter(param_name, request.value)
-                else:
-                    self.set_parameters([Parameter(param_name, value=request.value)])
+                success = self._redis_backend._client.set(redis_key, json.dumps(value_dict))
             
-            response.success = True
-            response.message = f"Set {param_name}"
-            self.get_logger().info(f"Set: {param_name} = {request.value[:100]}...")
-            
-            # Auto-save after successful set
-            self._save_status_to_file()
+            if success:
+                response.success = True
+                response.message = f"Set {request.ns}.{request.key}"
+                self.get_logger().info(f"Set: {request.ns}.{request.key}")
+                
+                # Auto-save to file after successful set
+                self._save_status_to_file()
+            else:
+                response.success = False
+                response.message = "Failed to set status in Redis"
+                self.get_logger().error(response.message)
             
         except Exception as e:
             response.success = False
-            response.message = f"Error setting parameter: {str(e)}"
+            response.message = f"Error setting status: {str(e)}"
             self.get_logger().error(response.message)
         
         return response
@@ -280,22 +265,30 @@ class RobotStatusNode(Node):
             request.ns: Robot or namespace identifier
             request.key: Status key to retrieve
         """
-        param_name = f"{request.ns}.{request.key}"
-        
         try:
             with self.lock:
-                value = self.get_parameter(param_name).value
+                success, obj = self._redis_backend.get_status(request.ns, request.key)
             
-            response.success = True
-            response.value = value
-            response.message = "Success"
-            self.get_logger().debug(f"Get: {param_name} = {value[:100]}...")
+            if success and obj is not None:
+                # Pickle and encode as base64
+                pickled = pickle.dumps(obj)
+                value_str = base64.b64encode(pickled).decode('ascii')
+                
+                response.success = True
+                response.value = value_str
+                response.message = "Success"
+                self.get_logger().debug(f"Get: {request.ns}.{request.key}")
+            else:
+                response.success = False
+                response.value = ""
+                response.message = f"Key {request.ns}.{request.key} not found"
+                self.get_logger().warn(response.message)
             
         except Exception as e:
             response.success = False
             response.value = ""
-            response.message = f"Parameter {param_name} not found"
-            self.get_logger().warn(response.message)
+            response.message = f"Error getting status: {str(e)}"
+            self.get_logger().error(response.message)
         
         return response
     
@@ -307,50 +300,33 @@ class RobotStatusNode(Node):
             request.ns: Empty = list all, otherwise filter by namespace
         """
         try:
-            # Build status tree by iterating through _parameters
-            status_tree = {}
-            namespaces = set()
-            
             with self.lock:
-                # Get all parameter names from the node's internal parameter storage
-                param_names = list(self._parameters.keys())
+                # Get status from Redis
+                namespace_filter = request.ns if request.ns else None
+                status_dict = self._redis_backend.list_status(namespace_filter)
             
-            for param_name in param_names:
-                # Skip non-hierarchical parameters
-                if '.' not in param_name:
-                    continue
-                
-                # Split namespace and key
-                parts = param_name.split('.', 1)
-                namespace = parts[0]
-                key = parts[1] if len(parts) > 1 else ""
-                
-                # Filter by requested namespace if specified
-                if request.ns and namespace != request.ns:
-                    continue
-                
-                namespaces.add(namespace)
-                
-                # Initialize namespace dict if needed
-                if namespace not in status_tree:
-                    status_tree[namespace] = {}
-                
-                # Get parameter value (already in base64-encoded pickle format)
-                try:
-                    with self.lock:
-                        value = self.get_parameter(param_name).value
-                    # Keep the base64-encoded pickle string for transmission
-                    status_tree[namespace][key] = value
-                except Exception as e:
-                    self.get_logger().warn(f"Error reading {param_name}: {e}")
+            # Extract namespaces
+            namespaces = sorted(list(status_dict.keys()))
             
-            # Build response
+            # Convert to pickle base64 format for service response
+            result_tree = {}
+            for namespace, keys in status_dict.items():
+                result_tree[namespace] = {}
+                for key, value_dict in keys.items():
+                    # value_dict should have 'pickle' key with base64 string
+                    if isinstance(value_dict, dict) and 'pickle' in value_dict:
+                        result_tree[namespace][key] = value_dict['pickle']
+                    else:
+                        # Legacy format or direct value, re-pickle it
+                        pickled = pickle.dumps(value_dict)
+                        result_tree[namespace][key] = base64.b64encode(pickled).decode('ascii')
+            
             response.success = True
-            response.namespaces = sorted(list(namespaces))
-            response.status_dict = json.dumps(status_tree, indent=2)
+            response.namespaces = namespaces
+            response.status_dict = json.dumps(result_tree, indent=2)
             response.message = f"Found {len(namespaces)} namespace(s)"
             
-            self.get_logger().debug(f"List: {len(namespaces)} namespaces, {len(param_names)} total params")
+            self.get_logger().debug(f"List: {len(namespaces)} namespaces")
             
         except Exception as e:
             response.success = False
@@ -370,59 +346,35 @@ class RobotStatusNode(Node):
             request.key: Status key to delete (empty = delete entire namespace)
         """
         try:
-            if request.key:
-                # Delete specific key
-                param_name = f"{request.ns}.{request.key}"
-                deleted = False
-                
-                with self.lock:
-                    if self.has_parameter(param_name):
-                        # ROS2 doesn't have undeclare_parameter, so we set it to empty
-                        # and remove from internal dict
-                        if param_name in self._parameters:
-                            del self._parameters[param_name]
-                        
+            with self.lock:
+                if request.key:
+                    # Delete specific key
+                    success = self._redis_backend.delete_status(request.ns, request.key)
+                    
+                    if success:
                         response.success = True
-                        response.message = f"Deleted {param_name}"
-                        self.get_logger().info(f"Deleted: {param_name}")
-                        deleted = True
+                        response.message = f"Deleted {request.ns}.{request.key}"
+                        self.get_logger().info(f"Deleted: {request.ns}.{request.key}")
                     else:
                         response.success = False
-                        response.message = f"Parameter {param_name} not found"
+                        response.message = f"Key {request.ns}.{request.key} not found"
                         self.get_logger().warn(response.message)
-                
-                # Auto-save after successful delete (outside lock to avoid deadlock)
-                if deleted:
-                    self._save_status_to_file()
-            else:
-                # Delete entire namespace
-                deleted_count = 0
-                params_to_delete = []
-                
-                with self.lock:
-                    # Find all parameters in this namespace
-                    for param_name in list(self._parameters.keys()):
-                        if param_name.startswith(f"{request.ns}."):
-                            params_to_delete.append(param_name)
-                    
-                    # Delete them
-                    for param_name in params_to_delete:
-                        if param_name in self._parameters:
-                            del self._parameters[param_name]
-                            deleted_count += 1
-                
-                if deleted_count > 0:
-                    response.success = True
-                    response.message = f"Deleted namespace '{request.ns}' ({deleted_count} parameters)"
-                    self.get_logger().info(response.message)
                 else:
-                    response.success = False
-                    response.message = f"Namespace '{request.ns}' not found or empty"
-                    self.get_logger().warn(response.message)
-                
-                # Auto-save after successful delete (outside lock to avoid deadlock)
-                if deleted_count > 0:
-                    self._save_status_to_file()
+                    # Delete entire namespace
+                    success = self._redis_backend.delete_status(request.ns)
+                    
+                    if success:
+                        response.success = True
+                        response.message = f"Deleted namespace '{request.ns}'"
+                        self.get_logger().info(response.message)
+                    else:
+                        response.success = False
+                        response.message = f"Namespace '{request.ns}' not found or empty"
+                        self.get_logger().warn(response.message)
+            
+            # Auto-save after successful delete
+            if response.success:
+                self._save_status_to_file()
                     
         except Exception as e:
             response.success = False

@@ -87,7 +87,7 @@ The dashboard auto-refreshes every 2 seconds and displays all status organized b
 
 ## Service Interface
 
-The ROS2 service interface is provided by the optional `robot_status_node.py` for file-based backup. For normal operations, use the Python Client API which directly accesses Redis.
+The ROS2 service interface provides compatibility with the original `robot_status` package. Services write to Redis (same backend as Python client), so data is immediately visible in the web dashboard and accessible via both service API and Python client API.
 
 ### Set Status
 
@@ -718,13 +718,9 @@ robot_status_redis/
 ### Data Flow
 
 ```
-Python Client → RobotStatusClient → RedisBackend → Redis Server
-                                                        ↓
-Web Browser → WebDashboard (Flask) → RedisBackend → Redis Server
-                                                        ↓
-                                            Optional: robot_status_redis node
-                                                        ↓
-                                              File backup (JSON)
+Python Client → RobotStatusClient → RedisBackend → Redis Server ← ROS2 Services (robot_status_node)
+                                                        ↓                              ↓
+Web Browser → WebDashboard (Flask) → RedisBackend → Redis Server         File backup (JSON)
 ```
 
 ### Key Architecture Benefits
