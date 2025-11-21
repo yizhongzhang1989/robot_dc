@@ -53,14 +53,15 @@ import threading
 class RobotStatusClient:
     """Helper class for interacting with robot_status service."""
     
-    def __init__(self, node: Node, timeout_sec=5.0, auto_spin=True):
+    def __init__(self, node: Node, **kwargs):
         """
         Initialize client.
         
         Args:
             node: ROS2 node instance
-            timeout_sec: Timeout for waiting for services
-            auto_spin: If True, automatically create executor and spin in background thread.
+            **kwargs: Additional parameters:
+                timeout_sec: Timeout for waiting for services (default: 5.0)
+                auto_spin: If True, automatically create executor and spin in background thread (default: True)
                       
                       When to use auto_spin=True (default):
                       - Standalone scripts that don't have an existing executor
@@ -78,6 +79,8 @@ class RobotStatusClient:
                       to work. With auto_spin=False, ensure your node is spinning elsewhere.
         """
         self.node = node
+        timeout_sec = kwargs.get('timeout_sec', 5.0)
+        auto_spin = kwargs.get('auto_spin', True)
         
         # Cache for async access (avoids spin_until_future_complete in callbacks/threads)
         # Cache stores tuples of (value, timestamp)
