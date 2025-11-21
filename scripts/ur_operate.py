@@ -48,6 +48,7 @@ class UROperate:
         
         # Task position information storage
         self.task_position_offset = None
+        self.task_position_offset_type = None  # 'single' or 'multiple'
 
         # ========================= Initialization =========================
         self._setup_paths()
@@ -57,12 +58,11 @@ class UROperate:
         
         # Automatically load neccessary parameters
         self._load_camera_params_from_service()
-        self._load_3d_positioning_result_from_servive()
+        self._load_ref_joint_angles_from_json()
+        self._load_3d_positioning_result_from_service()
         self._load_local_coordinate_system_from_service()
         self._load_wobj_coordinate_system_from_service()
-        self._load_ref_joint_angles_from_json()
-
-        self._load_task_position_information()
+        self._load_task_position_offset_from_service()
     
     def _setup_paths(self):
         """Setup directory paths for script, dataset, data and results"""
@@ -159,7 +159,7 @@ class UROperate:
             print(f'✗ Failed to initialize robot status client: {e}')
             self.robot_status_client = None
     
-    def _load_3d_positioning_result_from_servive(self):
+    def _load_3d_positioning_result_from_service(self):
         """
         Load estimated keypoints coordinates from robot status service
         """
@@ -328,50 +328,98 @@ class UROperate:
             print(f"Error loading reference joint angles: {e}")
             return None
     
-    def _load_task_position_information(self):
+    def _load_task_position_offset_from_service(self):
         """
-        Load task position offset information from task_position_information.json
+        Load task position offset information from robot status service
         The offsets are represented in the local coordinate system
+        Can load single offset or multiple steps (step1, step2)
+        All offsets are stored as dictionaries with 'x', 'y', 'z' keys
         Returns: Dictionary with offset information if successful, None otherwise
         """
-        task_position_file = os.path.join(
-            self.data_dir,
-            "task_position_information.json"
-        )
-        
         try:
-            with open(task_position_file, 'r') as f:
-                data = json.load(f)
+            # Get operation_config from robot status
+            operation_config = self.robot_status_client.get_status('operation_config', self.operation_name)
             
-            required_fields = ['x_offset_in_local', 'y_offset_in_local', 'z_offset_in_local']
-            missing_fields = [field for field in required_fields if field not in data]
-            
-            if missing_fields:
-                print(f"Missing fields in task position information file: {missing_fields}")
+            if operation_config is None:
+                print(f"Failed to get operation_config.{self.operation_name} from robot status")
                 return None
             
-            self.task_position_offset = {
-                'x': data['x_offset_in_local'],
-                'y': data['y_offset_in_local'],
-                'z': data['z_offset_in_local']
-            }
+            self.task_position_offset = {}
             
-            print(f"Task position information loaded successfully")
-            print(f"Offset (in local coordinate system): x={self.task_position_offset['x']:.6f}, "
-                  f"y={self.task_position_offset['y']:.6f}, "
-                  f"z={self.task_position_offset['z']:.6f}")
+            # Check if it's a multi-step operation
+            if isinstance(operation_config, dict):
+                # Check for step1/step2 pattern
+                if 'step1' in operation_config or 'step2' in operation_config:
+                    # Multi-step operation
+                    self.task_position_offset_type = 'multiple'
+                    for step_key in ['step1', 'step2']:
+                        if step_key in operation_config:
+                            step_data = operation_config[step_key]
+                            if isinstance(step_data, list) and len(step_data) == 3:
+                                self.task_position_offset[step_key] = {
+                                    'x': step_data[0],
+                                    'y': step_data[1],
+                                    'z': step_data[2]
+                                }
+                    
+                    if not self.task_position_offset:
+                        print(f"No valid step data found in operation_config.{self.operation_name}")
+                        return None
+                    
+                    print(f"Task position information loaded successfully (multi-step)")
+                    for step_key, offset in self.task_position_offset.items():
+                        print(f"  {step_key}: x={offset['x']:.6f}, y={offset['y']:.6f}, z={offset['z']:.6f}")
+                else:
+                    print(f"Unexpected format for operation_config.{self.operation_name}")
+                    return None
+            elif isinstance(operation_config, list) and len(operation_config) == 3:
+                # Single offset operation
+                self.task_position_offset_type = 'single'
+                self.task_position_offset = {
+                    'x': operation_config[0],
+                    'y': operation_config[1],
+                    'z': operation_config[2]
+                }
+                
+                print(f"Task position information loaded successfully (single offset)")
+                print(f"  offset: x={self.task_position_offset['x']:.6f}, "
+                      f"y={self.task_position_offset['y']:.6f}, "
+                      f"z={self.task_position_offset['z']:.6f}")
+            else:
+                print(f"Invalid format for operation_config.{self.operation_name}")
+                return None
             
             return self.task_position_offset
             
-        except FileNotFoundError:
-            print(f"Task position information file not found: {task_position_file}")
-            return None
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON file: {e}")
-            return None
         except Exception as e:
             print(f"Error loading task position information: {e}")
             return None
+
+    # ============================= Robot Movement and Control Methods =============================
+    def movej_to_reference_position(self):
+        """
+        Move robot to reference joint positions
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.ref_joint_angles is None:
+            print("Reference joint angles not loaded")
+            return -1
+        
+        print("Moving robot to reference joint positions...")
+        print(f"Target joint angles: {self.ref_joint_angles}")
+        
+        res = self.robot.movej(self.ref_joint_angles, a=0.5, v=0.5)
+        
+        if res == 0:
+            print("Robot moved to reference position successfully")
+        else:
+            print(f"Failed to move robot to reference position (error code: {res})")
+        
+        return res
 
 
 if __name__ == "__main__":
@@ -392,4 +440,5 @@ if __name__ == "__main__":
         robot_port=args.robot_port,
         operation_name=args.operation_name
     )
+    
     
