@@ -34,24 +34,15 @@ class ImageLabelingServiceNode(Node):
         self.process = None
         
         # Find the launch_server.py path
-        # Use ROS_WORKSPACE environment variable or search from common locations
+        # Search from current file location to find workspace root
         workspace_root = None
         
-        # Try to get from environment
-        if 'ROS_WORKSPACE' in os.environ:
-            workspace_root = Path(os.environ['ROS_WORKSPACE']).parent
-        elif 'COLCON_PREFIX_PATH' in os.environ:
-            # COLCON_PREFIX_PATH points to install directory
-            colcon_path = Path(os.environ['COLCON_PREFIX_PATH'].split(':')[0])
-            workspace_root = colcon_path.parent.parent  # Go up from install/image_labeling_service
-        else:
-            # Fallback: try to find from current file location
-            current_file = Path(__file__).resolve()
-            # Look for 'robot_dc' in the path
-            for parent in current_file.parents:
-                if parent.name == 'robot_dc' or (parent / 'scripts' / 'ThirdParty').exists():
-                    workspace_root = parent
-                    break
+        current_file = Path(__file__).resolve()
+        # Look for 'robot_dc' in the path or a directory containing 'scripts/ThirdParty'
+        for parent in current_file.parents:
+            if parent.name == 'robot_dc' or (parent / 'scripts' / 'ThirdParty').exists():
+                workspace_root = parent
+                break
         
         if workspace_root is None:
             # Last resort: assume standard layout from home

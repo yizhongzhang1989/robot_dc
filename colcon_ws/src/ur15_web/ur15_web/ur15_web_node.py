@@ -2172,7 +2172,7 @@ class UR15WebNode(Node):
                     })
 
                 # 3. Get camera parameters from calibration results
-                camera_params = self._get_camera_parameters_from_calibration(calibration_data_dir)
+                camera_params = self._get_camera_parameters_from_status(calibration_data_dir)
                 if not camera_params['success']:
                     return jsonify({
                         'success': False, 
@@ -2371,7 +2371,7 @@ class UR15WebNode(Node):
                             }
                         
                         # Get camera parameters
-                        camera_params = self._get_camera_parameters_from_calibration(calibration_data_dir)
+                        camera_params = self._get_camera_parameters_from_status(calibration_data_dir)
                         if not camera_params['success']:
                             raise Exception(camera_params['message'])
                         
@@ -2424,6 +2424,20 @@ class UR15WebNode(Node):
                     })
                 
                 self.push_web_log(f'Capture x3 completed: {len(captured_files)} images captured', 'success')
+                
+                # Upload the absolute path of ref_img_1.jpg to robot_status
+                try:
+                    ref_img_1_path = os.path.join(expanded_task_path, 'ref_img_1.jpg')
+                    abs_ref_img_1_path = os.path.abspath(ref_img_1_path)
+                    if self.status_client.set_status('ur15', 'last_picture', abs_ref_img_1_path):
+                        self.get_logger().info(f"✅ Uploaded last_picture path to robot_status: {abs_ref_img_1_path}")
+                        self.push_web_log(f"✅ Saved last_picture path: {abs_ref_img_1_path}", 'success')
+                    else:
+                        self.get_logger().warning("⚠️ Failed to upload last_picture path to robot_status")
+                        self.push_web_log("⚠️ Failed to save last_picture path", 'warning')
+                except Exception as e:
+                    self.get_logger().error(f"❌ Error uploading last_picture to robot_status: {e}")
+                    self.push_web_log(f"⚠️ Error saving last_picture: {e}", 'warning')
                 
                 return jsonify({
                     'success': True,
@@ -3699,94 +3713,65 @@ class UR15WebNode(Node):
         
         return img
 
-    def _get_camera_parameters_from_calibration(self, calibration_data_dir):
-        """Get camera parameters from calibration result files."""
+    def _get_camera_parameters_from_status(self, calibration_data_dir):
+        """Get camera parameters from robot_status (ur15 namespace)."""
         try:
-            # Expand ~ in path and construct paths to calibration result files
-            expanded_calibration_data_dir = os.path.expanduser(calibration_data_dir)
-            calib_data_parent = os.path.dirname(expanded_calibration_data_dir)
-            calibration_result_dir = os.path.join(calib_data_parent, 'ur15_cam_calibration_result')
-            camera_params_dir = os.path.join(calibration_result_dir, 'ur15_camera_parameters')
+            # Read camera parameters from robot_status
+            camera_matrix = self.status_client.get_status('ur15', 'camera_matrix')
+            distortion_coefficients = self.status_client.get_status('ur15', 'distortion_coefficients')
+            cam2end_matrix = self.status_client.get_status('ur15', 'cam2end_matrix')
             
-            intrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
-            extrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
-            
-            self.get_logger().info(f"Looking for calibration files:")
-            self.get_logger().info(f"  Intrinsic: {intrinsic_file}")
-            self.get_logger().info(f"  Extrinsic: {extrinsic_file}")
-            
-            # Load intrinsic parameters
-            intrinsics = None
-            if os.path.exists(intrinsic_file):
-                try:
-                    with open(intrinsic_file, 'r') as f:
-                        intrinsic_data = json.load(f)
-                    
-                    if intrinsic_data.get('success', False):
-                        intrinsics = {
-                            'camera_matrix': intrinsic_data['camera_matrix'],
-                            'distortion_coefficients': intrinsic_data['distortion_coefficients']
-                        }
-                        self.get_logger().info("✅ Successfully loaded intrinsic parameters from file")
-                    else:
-                        self.get_logger().warning("Intrinsic calibration file indicates failure")
-                except Exception as e:
-                    self.get_logger().error(f"Failed to load intrinsic file: {e}")
-            else:
-                self.get_logger().warning(f"Intrinsic file not found: {intrinsic_file}")
-            
-            # Load extrinsic parameters
-            extrinsics = None
-            if os.path.exists(extrinsic_file):
-                try:
-                    with open(extrinsic_file, 'r') as f:
-                        extrinsic_data = json.load(f)
-                    
-                    if extrinsic_data.get('success', False):
-                        # Calculate current camera pose based on robot TCP and hand-eye calibration
-                        cam2end_matrix = np.array(extrinsic_data['cam2end_matrix'], dtype=np.float64)
-                        
-                        # Save the cam2end_matrix directly as extrinsics
-                        # This is the fixed transformation from camera to end-effector from calibration
-                        extrinsics = {
-                            'cam2end_matrix': cam2end_matrix.tolist()
-                        }
-                        self.get_logger().info("✅ Successfully loaded cam2end_matrix as extrinsic parameters")
-                    else:
-                        self.get_logger().warning("Extrinsic calibration file indicates failure")
-                except Exception as e:
-                    self.get_logger().error(f"Failed to load extrinsic file: {e}")
-            else:
-                self.get_logger().warning(f"Extrinsic file not found: {extrinsic_file}")
+            self.get_logger().info(f"Reading calibration parameters from robot_status (ur15 namespace)")
             
             # Check if we have required parameters
-            if intrinsics is None:
+            if camera_matrix is None or distortion_coefficients is None:
                 return {
                     'success': False,
-                    'message': f'Camera intrinsic parameters not found in {camera_params_dir}. Please run calibration first.'
+                    'message': 'Camera intrinsic parameters (camera_matrix, distortion_coefficients) not found in robot_status. Please run calibration first.'
                 }
             
-            # Compile camera parameters - only intrinsics and extrinsics
+            # Convert numpy arrays to lists for JSON serialization
+            if isinstance(camera_matrix, np.ndarray):
+                camera_matrix = camera_matrix.tolist()
+            if isinstance(distortion_coefficients, np.ndarray):
+                distortion_coefficients = distortion_coefficients.tolist()
+            
+            # Build intrinsics dictionary
+            intrinsics = {
+                'camera_matrix': camera_matrix,
+                'distortion_coefficients': distortion_coefficients
+            }
+            self.get_logger().info("✅ Successfully loaded intrinsic parameters from robot_status")
+            
+            # Build camera parameters dictionary
             camera_params = {
                 'intrinsics': intrinsics
             }
             
-            # Only add extrinsics if available
-            if extrinsics is not None:
+            # Add extrinsics if available
+            if cam2end_matrix is not None:
+                # Convert to list if it's a numpy array
+                if isinstance(cam2end_matrix, np.ndarray):
+                    cam2end_matrix = cam2end_matrix.tolist()
+                
+                extrinsics = {
+                    'cam2end_matrix': cam2end_matrix
+                }
                 camera_params['extrinsics'] = extrinsics
-            
-            source_description = f"Calibration results from {os.path.basename(calibration_result_dir)}"
+                self.get_logger().info("✅ Successfully loaded cam2end_matrix from robot_status")
+            else:
+                self.get_logger().warning("cam2end_matrix not found in robot_status")
             
             return {
                 'success': True, 
                 'data': camera_params,
-                'source': source_description
+                'source': 'robot_status (ur15 namespace)'
             }
             
         except Exception as e:
             return {
                 'success': False,
-                'message': f'Error reading calibration files: {str(e)}'
+                'message': f'Error reading calibration parameters from robot_status: {str(e)}'
             }
 
 
