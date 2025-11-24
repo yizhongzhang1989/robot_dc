@@ -13,8 +13,8 @@ import subprocess
 import signal
 import sys
 import os
-import time
 from pathlib import Path
+from common.workspace_utils import get_workspace_root
 
 
 class Positioning3DServiceNode(Node):
@@ -38,32 +38,15 @@ class Positioning3DServiceNode(Node):
         # Process handle (initialize early to avoid AttributeError in cleanup)
         self.process = None
         
-        # Find the app.py path (in ThirdParty/robot_vision submodule)
-        # Use ROS_WORKSPACE environment variable or search from common locations
-        workspace_root = None
-        
-        # Try to get from environment
-        if 'ROS_WORKSPACE' in os.environ:
-            workspace_root = Path(os.environ['ROS_WORKSPACE']).parent
-        elif 'COLCON_PREFIX_PATH' in os.environ:
-            # COLCON_PREFIX_PATH points to install directory
-            colcon_path = Path(os.environ['COLCON_PREFIX_PATH'].split(':')[0])
-            workspace_root = colcon_path.parent.parent  # Go up from install/positioning_3d_service
-        else:
-            # Fallback: try to find from current file location
-            current_file = Path(__file__).resolve()
-            # Look for 'robot_dc' in the path
-            for parent in current_file.parents:
-                if parent.name == 'robot_dc' or (parent / 'scripts' / 'ThirdParty').exists():
-                    workspace_root = parent
-                    break
-        
+        # Get workspace root using common utilities
+        workspace_root = get_workspace_root()
         if workspace_root is None:
-            # Last resort: assume standard layout from home
-            workspace_root = Path.home() / 'Documents' / 'robot_dc'
+            self.get_logger().error("Could not determine workspace root directory")
+            self.get_logger().error("Please ensure you're running from within the robot_dc workspace")
+            sys.exit(1)
         
-        # Store workspace root for resolving relative paths
-        self.workspace_root = workspace_root
+        # Store workspace root as Path object
+        self.workspace_root = Path(workspace_root)
         
         self.app_path = workspace_root / 'scripts' / 'ThirdParty' / 'robot_vision' / 'web' / 'positioning_3d' / 'app.py'
         

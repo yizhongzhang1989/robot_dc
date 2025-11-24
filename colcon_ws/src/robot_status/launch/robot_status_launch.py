@@ -15,6 +15,7 @@ from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
 from pathlib import Path
+from common.workspace_utils import get_workspace_root
 import os
 
 
@@ -23,17 +24,9 @@ def generate_launch_description():
     
     # Determine default auto-save path (temp/robot_status_auto_save.json in robot_dc root)
     try:
-        current_dir = Path.cwd()
-        robot_dc_root = None
-        
-        # Find robot_dc root directory
-        for parent in [current_dir] + list(current_dir.parents):
-            if parent.name == 'robot_dc':
-                robot_dc_root = parent
-                break
-        
-        if robot_dc_root is not None:
-            default_save_path = str(robot_dc_root / 'temp' / 'robot_status_auto_save.json')
+        workspace_root = get_workspace_root()
+        if workspace_root is not None:
+            default_save_path = str(Path(workspace_root) / 'temp' / 'robot_status_auto_save.json')
         else:
             default_save_path = 'robot_status_auto_save.json'
     except Exception:

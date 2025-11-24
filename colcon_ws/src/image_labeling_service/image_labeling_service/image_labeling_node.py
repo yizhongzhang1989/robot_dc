@@ -12,8 +12,8 @@ import subprocess
 import signal
 import sys
 import os
-import time
 from pathlib import Path
+from common.workspace_utils import get_workspace_root
 
 
 class ImageLabelingServiceNode(Node):
@@ -33,23 +33,15 @@ class ImageLabelingServiceNode(Node):
         # Process handle (initialize early to avoid AttributeError in cleanup)
         self.process = None
         
-        # Find the launch_server.py path
-        # Search from current file location to find workspace root
-        workspace_root = None
-        
-        current_file = Path(__file__).resolve()
-        # Look for 'robot_dc' in the path or a directory containing 'scripts/ThirdParty'
-        for parent in current_file.parents:
-            if parent.name == 'robot_dc' or (parent / 'scripts' / 'ThirdParty').exists():
-                workspace_root = parent
-                break
-        
+        # Get workspace root using common utilities
+        workspace_root = get_workspace_root()
         if workspace_root is None:
-            # Last resort: assume standard layout from home
-            workspace_root = Path.home() / 'Documents' / 'robot_dc'
+            self.get_logger().error("Could not determine workspace root directory")
+            self.get_logger().error("Please ensure you're running from within the robot_dc workspace")
+            sys.exit(1)
         
-        # Store workspace root
-        self.workspace_root = workspace_root
+        # Store workspace root as Path object
+        self.workspace_root = Path(workspace_root)
         
         self.app_path = workspace_root / 'scripts' / 'ThirdParty' / 'robot_vision' / 'ThirdParty' / 'ImageLabelingWeb' / 'launch_server.py'
         
