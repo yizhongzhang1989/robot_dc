@@ -78,7 +78,16 @@ class URLocate(URCapture):
         
         # Store verbose flag
         self.verbose = verbose
-        
+
+        # Collection movement offsets (in tcp coordinate system, unit: meters)
+        self.movements = {
+            "movement1": [0, 0, 0, 0, 0, 0],         # No offset
+            "movement2": [0.05, 0, 0, 0, 0, 0],      # X+1cm
+            "movement3": [-0.05, 0, 0, 0, 0, 0],     # X-1cm
+            "movement4": [0, 0.05, 0, 0, 0, 0],      # Y+1cm
+            "movement5": [0, -0.05, 0, 0, 0, 0]      # Y-1cm
+        }
+
         # ===================== Instances =====================
         self.positioning_client = None
         self.robot_status_client = None

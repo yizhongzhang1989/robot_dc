@@ -16,9 +16,9 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
-
-# Import the parent class
-from ur_capture import URCapture
+# ROS2 imports
+import rclpy
+from rclpy.executors import MultiThreadedExecutor
 
 # Add ThirdParty robot_vision to path for Web API client
 sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vision'))
@@ -26,19 +26,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vis
 # Import Web API client (with error handling)
 from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_params_from_json
 
-
-# Robot control imports
-from ur15_robot_arm.ur15 import UR15Robot
-
-# ROS2 imports
-import rclpy
-from rclpy.node import Node
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import ReentrantCallbackGroup
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
-
-# Robot status imports
+from ur_capture import URCapture
 from robot_status.client_utils import RobotStatusClient
 
 
@@ -79,7 +67,7 @@ class URLocate(URCapture):
         # Store verbose flag
         self.verbose = verbose
         
-        # ===================== Instances =====================
+        # ===================== Instance variables=====================
         self.positioning_client = None
         self.robot_status_client = None
 
@@ -694,9 +682,9 @@ class URLocate(URCapture):
             
             validation_success = self.validate_positioning_results(self.session_dir, result, verbose=self.verbose)
             if validation_success:
-                self.get_logger().info("✓ wobj validation completed successfully!")
+                self.get_logger().info("✓ Positioning validation completed successfully!")
             else:
-                self.get_logger().warn("⚠ wobj validation completed with warnings")
+                self.get_logger().warn("⚠ Positioning validation completed with warnings")
             
             return result
             
@@ -932,26 +920,26 @@ class URLocate(URCapture):
             traceback.print_exc()
             return False
 
-    # =================================== functions for wobj frame building ===================================
-    def perform_wobj_frame_building(self, session_result_dir=None, kp_index_for_wobj_x_axis=[0, 1]):
+    # =================================== functions for local frame building ===================================
+    def perform_local_frame_building(self, session_result_dir=None, kp_index_for_local_x_axis=[0, 1]):
         """
-        Build a wobj coordinate system based on 3D positioning keypoints.
+        Build a local coordinate system based on 3D positioning keypoints.
         
         The coordinate system is defined as follows:
-        - Origin: at keypoint[kp_index_for_wobj_x_axis[0]]
-        - X-axis: keypoint[kp_index_for_wobj_x_axis[0]] → keypoint[kp_index_for_wobj_x_axis[1]] direction
+        - Origin: at keypoint[kp_index_for_local_x_axis[0]]
+        - X-axis: keypoint[kp_index_for_local_x_axis[0]] → keypoint[kp_index_for_local_x_axis[1]] direction
         - Z-axis: positive direction aligns with base Z-axis (upward)
         - Y-axis: follows right-hand rule (Z × X)
         
         Args:
             session_result_dir (str): Path to session result directory (e.g., 'result/20231119_143022')
                                      If None, uses the most recent session
-            kp_index_for_wobj_x_axis (list): [start_index, end_index] for X-axis definition
+            kp_index_for_local_x_axis (list): [start_index, end_index] for X-axis definition
             
         Returns:
             dict: Coordinate system information or None if failed
         """
-        self.get_logger().info(">>> Building wobj Coordinate System")
+        self.get_logger().info(">>> Building Local Frame Coordinate System")
         
         try:
             # Determine session result directory
@@ -1004,12 +992,12 @@ class URLocate(URCapture):
             self.get_logger().info(f"✓ Loaded {len(points_3d)} 3D points")
             
             # Get keypoint indices for X-axis
-            kp_start_idx = kp_index_for_wobj_x_axis[0]
-            kp_end_idx = kp_index_for_wobj_x_axis[1]
+            kp_start_idx = kp_index_for_local_x_axis[0]
+            kp_end_idx = kp_index_for_local_x_axis[1]
             
             if len(points_3d) < max(kp_start_idx, kp_end_idx) + 1:
                 self.get_logger().error(
-                    f"Insufficient keypoints for wobj coordinate system "
+                    f"Insufficient keypoints for local frame coordinate system "
                     f"(need at least {max(kp_start_idx, kp_end_idx) + 1}, got {len(points_3d)})"
                 )
                 return None
@@ -1018,7 +1006,7 @@ class URLocate(URCapture):
             kp_start = np.array(points_3d[kp_start_idx])
             kp_end = np.array(points_3d[kp_end_idx])
             
-            self.get_logger().info(f"✓ Using keypoints for wobj coordinate system:")
+            self.get_logger().info(f"✓ Using keypoints for local frame coordinate system:")
             self.get_logger().info(f"  KP{kp_start_idx}: ({kp_start[0]:.6f}, {kp_start[1]:.6f}, {kp_start[2]:.6f})")
             self.get_logger().info(f"  KP{kp_end_idx}: ({kp_end[0]:.6f}, {kp_end[1]:.6f}, {kp_end[2]:.6f})")
             
@@ -1137,46 +1125,46 @@ class URLocate(URCapture):
                     {"index": kp_start_idx, "coordinates": [float(kp_start[0]), float(kp_start[1]), float(kp_start[2])]},
                     {"index": kp_end_idx, "coordinates": [float(kp_end[0]), float(kp_end[1]), float(kp_end[2])]}
                 ],
-                "kp_index_for_wobj_x_axis": kp_index_for_wobj_x_axis,
+                "kp_index_for_local_x_axis": kp_index_for_local_x_axis,
                 "timestamp": datetime.now().isoformat(),
                 "method": f"kp{kp_start_idx}_kp{kp_end_idx}_based_coordinate_system",
                 "source_file": positioning_result_file
             }
             
             # Save coordinate system to session result directory
-            coord_system_path = os.path.join(session_result_dir, 'wobj_frame_building_result.json')
+            coord_system_path = os.path.join(session_result_dir, 'local_frame_building_result.json')
             with open(coord_system_path, 'w') as f:
                 json.dump(coord_system, f, indent=2)
             
-            self.get_logger().info(f"💾 Wobj coordinate system saved to: {coord_system_path}")
-            self.get_logger().info(f"🎯 Wobj coordinate system established successfully!")
+            self.get_logger().info(f"💾 Local frame coordinate system saved to: {coord_system_path}")
+            self.get_logger().info(f"🎯 Local frame coordinate system established successfully!")
             
-            # Save wobj coordinate system to robot_status
+            # Save local frame coordinate system to robot_status
             if self.robot_status_client:
                 try:
                     # Save origin
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_origin', [float(origin[0]), float(origin[1]), float(origin[2])]):
-                        self.get_logger().info(f"✓ wobj_origin saved to robot_status")
+                    if self.robot_status_client.set_status(self.operation_name, 'local_origin', [float(origin[0]), float(origin[1]), float(origin[2])]):
+                        self.get_logger().info(f"✓ local_origin saved to robot_status")
                     
                     # Save x_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_x', [float(x_vec[0]), float(x_vec[1]), float(x_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_x saved to robot_status")
+                    if self.robot_status_client.set_status(self.operation_name, 'local_x', [float(x_vec[0]), float(x_vec[1]), float(x_vec[2])]):
+                        self.get_logger().info(f"✓ local_x saved to robot_status")
                     
                     # Save y_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_y', [float(y_vec[0]), float(y_vec[1]), float(y_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_y saved to robot_status")
+                    if self.robot_status_client.set_status(self.operation_name, 'local_y', [float(y_vec[0]), float(y_vec[1]), float(y_vec[2])]):
+                        self.get_logger().info(f"✓ local_y saved to robot_status")
                     
                     # Save z_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_z', [float(z_vec[0]), float(z_vec[1]), float(z_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_z saved to robot_status")
+                    if self.robot_status_client.set_status(self.operation_name, 'local_z', [float(z_vec[0]), float(z_vec[1]), float(z_vec[2])]):
+                        self.get_logger().info(f"✓ local_z saved to robot_status")
                     
-                    self.get_logger().info(f"✓ Wobj coordinate system saved to robot_status (namespace: {self.operation_name})")
+                    self.get_logger().info(f"✓ Local frame coordinate system saved to robot_status (namespace: {self.operation_name})")
                 except Exception as e:
-                    self.get_logger().warning(f"Error saving wobj coordinate system to robot_status: {e}")
+                    self.get_logger().warning(f"Error saving local frame coordinate system to robot_status: {e}")
             
-            # Validate wobj frame building results
-            self.get_logger().info(">>> Validating wobj frame building results...")
-            validation_success = self.validate_wobj_frame_building_results(
+            # Validate local frame building results
+            self.get_logger().info(">>> Validating local frame building results...")
+            validation_success = self.validate_local_frame_building_results(
                 session_result_dir, 
                 coord_system, 
                 verbose=self.verbose
@@ -1190,14 +1178,14 @@ class URLocate(URCapture):
             return coord_system
             
         except Exception as e:
-            self.get_logger().error(f"Error building wobj coordinate system: {e}")
+            self.get_logger().error(f"Error building local coordinate system: {e}")
             import traceback
             traceback.print_exc()
             return None
 
-    def validate_wobj_frame_building_results(self, session_result_dir, coord_system, verbose=True):
+    def validate_local_frame_building_results(self, session_result_dir, coord_system, verbose=True):
         """
-        Validate workpiece coordinate system by drawing it on captured images.
+        Validate local frame coordinate system by drawing it on captured images.
         
         Draws the coordinate system axes on each captured image by:
         1. Projecting the 3D origin and axis endpoints to 2D image coordinates
@@ -1206,14 +1194,14 @@ class URLocate(URCapture):
         Args:
             session_result_dir (str): Path to session result directory
             coord_system (dict): Dictionary containing coordinate system information
-                                (output from perform_wobj_frame_building)
+                                (output from perform_local_frame_building)
             verbose (bool): If True, saves validation images to disk
             
         Returns:
             bool: True if validation successful, False otherwise
         """
 
-        self.get_logger().info("Drawing Wobj Coordinate System on Images")
+        self.get_logger().info("Drawing Local Frame Coordinate System on Images")
         
         try:
             if coord_system is None:
@@ -1383,11 +1371,11 @@ class URLocate(URCapture):
                 axes[idx].axis('off')
             
             # Add overall title
-            fig.suptitle('Workpiece Coordinate System Validation\nRed: X-axis | Green: Y-axis | Blue: Z-axis',
+            fig.suptitle('Local Frame Coordinate System Validation\nRed: X-axis | Green: Y-axis | Blue: Z-axis',
                         fontsize=14, fontweight='bold', y=0.98)
             
             # Add coordinate system information as text
-            kp_indices = coord_system.get('kp_index_for_wobj_x_axis', [0, 1])
+            kp_indices = coord_system.get('kp_index_for_local_x_axis', [0, 1])
             info_text = (
                 f"Coordinate System Properties:\n"
                 f"Origin: ({origin_3d[0]:.4f}, {origin_3d[1]:.4f}, {origin_3d[2]:.4f}) m\n"
@@ -1402,10 +1390,10 @@ class URLocate(URCapture):
             
             # Save figure to session result directory (if verbose)
             if verbose:
-                output_path = os.path.join(session_result_dir, 'wobj_coordinate_system_validation.jpg')
+                output_path = os.path.join(session_result_dir, 'local_frame_coordinate_system_validation.jpg')
                 plt.tight_layout()
                 plt.savefig(output_path, dpi=150, bbox_inches='tight')
-                self.get_logger().info(f"💾 Wobj frame visualization result saved to: {output_path}")
+                self.get_logger().info(f"💾 Local frame visualization result saved to: {output_path}")
             
             # Close plot to free memory
             plt.close(fig)
@@ -1488,14 +1476,14 @@ def main():
                     except Exception as e:
                         print(f"⚠️  Error sending last_points_3d to ur15 workspace: {e}")
                 
-                # Perform workpiece frame building
-                print(">>> Building Workpiece Coordinate System...")
+                # Perform local frame building
+                print(">>> Building Local Frame Coordinate System...")
                 
-                coord_system = ur_locate.perform_wobj_frame_building()
+                coord_system = ur_locate.perform_local_frame_building()
                 
                 if coord_system:
                     print("\n" + "="*60)
-                    print("✓ Wobj Coordinate System built successfully!")
+                    print("✓ Local Frame Coordinate System built successfully!")
                     origin = coord_system['origin']
                     pose = coord_system['pose_representation']
                     print(f"  Origin: ({origin['x']:.4f}, {origin['y']:.4f}, {origin['z']:.4f}) m")
@@ -1503,7 +1491,7 @@ def main():
                     print(f"        rx={pose['rx']:.4f}, ry={pose['ry']:.4f}, rz={pose['rz']:.4f}")
                     print("="*60 + "\n")
                 else:
-                    print("\n✗ Wobj Coordinate System building failed!")
+                    print("\n✗ Local Frame Coordinate System building failed!")
             else:
                 print("\n✗ 3D Positioning failed!")
                 

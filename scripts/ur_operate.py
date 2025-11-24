@@ -6,7 +6,7 @@ from ur15_robot_arm.ur15 import UR15Robot
 import time
 import socket
 import argparse
-from robot_status.client_utils import RobotStatusClient
+from robot_status_redis.client_utils import RobotStatusClient
 from scipy.spatial.transform import Rotation as R
 
 
@@ -14,12 +14,9 @@ class UROperate:
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002, operation_name="test_operation"):
 
         # =========================== Configurable Parameters ===========================
-        # IP address and port for UR15 robot
         self.robot_ip = robot_ip
         self.robot_port = robot_port
-        # Port for RS485 connection of UR15 (fixed)
         self.rs485_port = 54321
-        # Operation name for data organization
         self.operation_name = operation_name
 
         # ========================= Instance variables =========================
@@ -37,9 +34,9 @@ class UROperate:
         self.local_transformation_matrix = None
         self.local_origin = None
         
-        # Crack coordinate system storage
-        self.wobj_origin = None
+        # Wobj coordinate system storage
         self.wobj_transformation_matrix = None
+        self.wobj_origin = None
 
         # Reference pose storage
         self.ref_joint_angles = None
@@ -48,8 +45,8 @@ class UROperate:
         self.estimated_keypoints = None
         
         # Task position information storage
-        self.task_position_offset = None
-        self.task_position_offset_type = None  # 'single' or 'multiple'
+        self.offset_in_local = None
+        self.offset_in_local_type = None  # 'single' or 'multiple'
 
         # ========================= Initialization =========================
         self._setup_paths()
@@ -61,10 +58,11 @@ class UROperate:
         self._load_camera_params_from_service()
         self._load_ref_joint_angles_from_json()
         self._load_3d_positioning_result_from_service()
-        self._load_local_coordinate_system_from_service()
-        self._load_wobj_coordinate_system_from_service()
-        self._load_task_position_offset_from_service()
+        self._load_local_information_from_service()
+        self._load_wobj_information_from_service()
+        self._load_operation_config_from_service()
     
+    # ================================== Private Helper Methods ==================================
     def _setup_paths(self):
         """Setup directory paths for script, dataset, data and results"""
         # Get the script directory for relative paths
@@ -108,14 +106,24 @@ class UROperate:
             print(f'Initializing robot status client...')
             self.robot_status_client = RobotStatusClient()
             print('✓ Robot status client initialized successfully')
+        except ConnectionError as e:
+            print(f'✗ Redis connection error: {e}')
+            print('  Make sure Redis server is running: sudo systemctl start redis-server')
+            self.robot_status_client = None
         except Exception as e:
             print(f'✗ Failed to initialize robot status client: {e}')
+            import traceback
+            traceback.print_exc()
             self.robot_status_client = None
 
     def _load_camera_params_from_service(self):
         """
         Load camera parameters (intrinsic and extrinsic) from robot status service
         """
+        if self.robot_status_client is None:
+            print("Robot status client is not initialized, skipping camera parameters loading")
+            return False
+        
         try:
             # Get camera matrix
             camera_matrix = self.robot_status_client.get_status('ur15', 'camera_matrix')
@@ -159,6 +167,10 @@ class UROperate:
         """
         Load estimated keypoints coordinates from robot status service
         """
+        if self.robot_status_client is None:
+            print("Robot status client is not initialized, skipping 3D positioning result loading")
+            return None
+        
         try:
             # Get 3D points using operation_name and 'points_3d' parameter
             points_3d = self.robot_status_client.get_status(self.operation_name, 'points_3d')
@@ -179,41 +191,45 @@ class UROperate:
             print(f"Error loading estimated keypoints: {e}")
             return None
     
-    def _load_local_coordinate_system_from_service(self):
+    def _load_local_information_from_service(self):
         """
         Load local coordinate system from robot status service
         Returns: Dictionary with 'transformation_matrix' and 'origin' if successful, None otherwise
         """
+        if self.robot_status_client is None:
+            print("Robot status client is not initialized, skipping local information loading")
+            return None
+        
         try:
-            # Get wobj_origin
-            wobj_origin = self.robot_status_client.get_status(self.operation_name, 'wobj_origin')
-            if wobj_origin is None:
-                print(f"Failed to get wobj_origin from robot status for operation '{self.operation_name}'")
+            # Get local_origin
+            local_origin = self.robot_status_client.get_status(self.operation_name, 'local_origin')
+            if local_origin is None:
+                print(f"Failed to get local_origin from robot status for operation '{self.operation_name}'")
                 return None
             
-            # Get wobj_x axis
-            wobj_x = self.robot_status_client.get_status(self.operation_name, 'wobj_x')
-            if wobj_x is None:
-                print(f"Failed to get wobj_x from robot status for operation '{self.operation_name}'")
+            # Get local_x axis
+            local_x = self.robot_status_client.get_status(self.operation_name, 'local_x')
+            if local_x is None:
+                print(f"Failed to get local_x from robot status for operation '{self.operation_name}'")
                 return None
             
-            # Get wobj_y axis
-            wobj_y = self.robot_status_client.get_status(self.operation_name, 'wobj_y')
-            if wobj_y is None:
-                print(f"Failed to get wobj_y from robot status for operation '{self.operation_name}'")
+            # Get local_y axis
+            local_y = self.robot_status_client.get_status(self.operation_name, 'local_y')
+            if local_y is None:
+                print(f"Failed to get local_y from robot status for operation '{self.operation_name}'")
                 return None
             
-            # Get wobj_z axis
-            wobj_z = self.robot_status_client.get_status(self.operation_name, 'wobj_z')
-            if wobj_z is None:
-                print(f"Failed to get wobj_z from robot status for operation '{self.operation_name}'")
+            # Get local_z axis
+            local_z = self.robot_status_client.get_status(self.operation_name, 'local_z')
+            if local_z is None:
+                print(f"Failed to get local_z from robot status for operation '{self.operation_name}'")
                 return None
             
             # Convert to numpy arrays
-            origin = np.array(wobj_origin)
-            x_axis = np.array(wobj_x)
-            y_axis = np.array(wobj_y)
-            z_axis = np.array(wobj_z)
+            origin = np.array(local_origin)
+            x_axis = np.array(local_x)
+            y_axis = np.array(local_y)
+            z_axis = np.array(local_z)
             
             # Build transformation matrix from axes
             transformation_matrix = np.eye(4)
@@ -240,10 +256,14 @@ class UROperate:
             print(f"Error loading local coordinate system: {e}")
             return None
 
-    def _load_wobj_coordinate_system_from_service(self):
+    def _load_wobj_information_from_service(self):
         """
         Load the crack local coordinate system from robot status service
         """
+        if self.robot_status_client is None:
+            print("Robot status client is not initialized, skipping wobj information loading")
+            return None
+        
         try:
             # Get wobj_origin
             wobj_origin = self.robot_status_client.get_status('wobj', 'wobj_origin')
@@ -324,7 +344,7 @@ class UROperate:
             print(f"Error loading reference joint angles: {e}")
             return None
     
-    def _load_task_position_offset_from_service(self):
+    def _load_operation_config_from_service(self):
         """
         Load task position offset information from robot status service
         The offsets are represented in the local coordinate system
@@ -332,6 +352,10 @@ class UROperate:
         All offsets are stored as dictionaries with 'x', 'y', 'z' keys
         Returns: Dictionary with offset information if successful, None otherwise
         """
+        if self.robot_status_client is None:
+            print("Robot status client is not initialized, skipping operation config loading")
+            return None
+        
         try:
             # Get operation_config from robot status
             operation_config = self.robot_status_client.get_status('operation_config', self.operation_name)
@@ -340,52 +364,52 @@ class UROperate:
                 print(f"Failed to get operation_config.{self.operation_name} from robot status")
                 return None
             
-            self.task_position_offset = {}
+            self.offset_in_local = {}
             
             # Check if it's a multi-step operation
             if isinstance(operation_config, dict):
                 # Check for step1/step2 pattern
                 if 'step1' in operation_config or 'step2' in operation_config:
                     # Multi-step operation
-                    self.task_position_offset_type = 'multiple'
+                    self.offset_in_local_type = 'multiple'
                     for step_key in ['step1', 'step2']:
                         if step_key in operation_config:
                             step_data = operation_config[step_key]
                             if isinstance(step_data, list) and len(step_data) == 3:
-                                self.task_position_offset[step_key] = {
+                                self.offset_in_local[step_key] = {
                                     'x': step_data[0],
                                     'y': step_data[1],
                                     'z': step_data[2]
                                 }
                     
-                    if not self.task_position_offset:
+                    if not self.offset_in_local:
                         print(f"No valid step data found in operation_config.{self.operation_name}")
                         return None
                     
                     print(f"Task position information loaded successfully (multi-step)")
-                    for step_key, offset in self.task_position_offset.items():
+                    for step_key, offset in self.offset_in_local.items():
                         print(f"  {step_key}: x={offset['x']:.6f}, y={offset['y']:.6f}, z={offset['z']:.6f}")
                 else:
                     print(f"Unexpected format for operation_config.{self.operation_name}")
                     return None
             elif isinstance(operation_config, list) and len(operation_config) == 3:
                 # Single offset operation
-                self.task_position_offset_type = 'single'
-                self.task_position_offset = {
+                self.offset_in_local_type = 'single'
+                self.offset_in_local = {
                     'x': operation_config[0],
                     'y': operation_config[1],
                     'z': operation_config[2]
                 }
                 
                 print(f"Task position information loaded successfully (single offset)")
-                print(f"  offset: x={self.task_position_offset['x']:.6f}, "
-                      f"y={self.task_position_offset['y']:.6f}, "
-                      f"z={self.task_position_offset['z']:.6f}")
+                print(f"  offset: x={self.offset_in_local['x']:.6f}, "
+                      f"y={self.offset_in_local['y']:.6f}, "
+                      f"z={self.offset_in_local['z']:.6f}")
             else:
                 print(f"Invalid format for operation_config.{self.operation_name}")
                 return None
             
-            return self.task_position_offset
+            return self.offset_in_local
             
         except Exception as e:
             print(f"Error loading task position information: {e}")
@@ -642,7 +666,7 @@ class UROperate:
         
         return res
     
-    def get_target_position(self, step_key=None):
+    def calculate_start_position_in_base(self, step_key=None):
         """
         Calculate target position in base coordinate system from offset in local coordinate system
         Uses the local-to-base transformation matrix and the task position offset
@@ -657,25 +681,25 @@ class UROperate:
             print("Local coordinate system transformation matrix not loaded")
             return None
         
-        if self.task_position_offset is None:
+        if self.offset_in_local is None:
             print("Task position offset not loaded")
             return None
         
         # Determine which offset to use
-        if self.task_position_offset_type == 'multiple':
+        if self.offset_in_local_type == 'multiple':
             # Multi-step operation
             if step_key is None:
                 step_key = 'step1'  # Default to step1
             
-            if step_key not in self.task_position_offset:
+            if step_key not in self.offset_in_local:
                 print(f"Step '{step_key}' not found in task position offset")
-                print(f"Available steps: {list(self.task_position_offset.keys())}")
+                print(f"Available steps: {list(self.offset_in_local.keys())}")
                 return None
             
-            offset = self.task_position_offset[step_key]
+            offset = self.offset_in_local[step_key]
         else:
             # Single offset operation
-            offset = self.task_position_offset
+            offset = self.offset_in_local
         
         # Create homogeneous coordinates for the offset point in local coordinate system
         offset_local = np.array([
@@ -692,7 +716,7 @@ class UROperate:
         # Extract x, y, z from homogeneous coordinates
         position_base = position_base_homogeneous[:3]
         
-        step_info = f" ({step_key})" if self.task_position_offset_type == 'multiple' else ""
+        step_info = f" ({step_key})" if self.offset_in_local_type == 'multiple' else ""
         print(f"Target position calculation{step_info}:")
         print(f"  Offset in local coordinate system: ({offset['x']:.6f}, "
               f"{offset['y']:.6f}, {offset['z']:.6f})")
@@ -701,18 +725,18 @@ class UROperate:
         
         return position_base
     
-    def movel_to_start_position(self, step_key=None, y_offset=0.0):
+    def movel_to_start_position(self, step_key=None, execution_order=[1, 3, 2]):
         """
         Move robot to start position using linear movement based on wobj coordinate system.
-        This method moves in two steps to avoid collision:
-        1. Move along wobj X and Z directions first
-        2. Then move along wobj Y direction with optional offset
+        This method moves in multiple steps according to execution_order to avoid collision.
         
         Args:
             step_key: For multi-step operations, specify 'step1' or 'step2'. 
                      For single offset operations, leave as None.
-            y_offset: Additional offset in wobj Y direction (meters), default 0.0
-                     Negative value moves away from target along Y axis
+            execution_order: List of integers [1,2,3] representing movement sequence along wobj axes.
+                            1=X axis, 2=Y axis, 3=Z axis
+                            e.g., [1,2,3] means move along X first, then Y, then Z
+                            e.g., [1,3,2] means move along X first, then Z, then Y (default)
         
         Returns: 0 if successful, error code otherwise
         """
@@ -724,8 +748,18 @@ class UROperate:
             print("Wobj coordinate system transformation matrix not loaded")
             return -1
         
+        # Validate execution_order parameter
+        if not isinstance(execution_order, list) or len(execution_order) != 3:
+            print("[ERROR] execution_order must be a list of 3 integers")
+            return -1
+        
+        if set(execution_order) != {1, 2, 3}:
+            print("[ERROR] execution_order must contain exactly [1,2,3] in any order")
+            print(f"       Received: {execution_order}")
+            return -1
+        
         # Get target position in base coordinate system
-        target_position = self.get_target_position(step_key)
+        target_position = self.calculate_start_position_in_base(step_key)
         if target_position is None:
             print("Failed to calculate target position")
             return -1
@@ -738,9 +772,13 @@ class UROperate:
         
         # Extract wobj coordinate system axes from transformation matrix
         wobj_rotation = self.wobj_transformation_matrix[:3, :3]
-        wobj_x = wobj_rotation[:, 0]  # Wobj X+ direction in base coordinates
-        wobj_y = wobj_rotation[:, 1]  # Wobj Y+ direction in base coordinates
-        wobj_z = wobj_rotation[:, 2]  # Wobj Z+ direction in base coordinates
+        # Normalize axes to ensure they are unit vectors for accurate projection
+        wobj_axes = {
+            1: wobj_rotation[:, 0] / np.linalg.norm(wobj_rotation[:, 0]),  # Wobj X+ direction (normalized)
+            2: wobj_rotation[:, 1] / np.linalg.norm(wobj_rotation[:, 1]),  # Wobj Y+ direction (normalized)
+            3: wobj_rotation[:, 2] / np.linalg.norm(wobj_rotation[:, 2])   # Wobj Z+ direction (normalized)
+        }
+        axis_names = {1: 'X', 2: 'Y', 3: 'Z'}
 
         # Calculate movement vector from current position to target
         current_position = np.array(current_pose[:3])
@@ -749,69 +787,110 @@ class UROperate:
         print(f"\nMovement vector in base coordinates: {movement_vector}")
         
         # Project movement vector onto wobj coordinate system axes
-        movement_wobj_x = np.dot(movement_vector, wobj_x)
-        movement_wobj_y = np.dot(movement_vector, wobj_y) 
-        movement_wobj_z = np.dot(movement_vector, wobj_z)
+        movement_components = {
+            1: np.dot(movement_vector, wobj_axes[1]),  # X component
+            2: np.dot(movement_vector, wobj_axes[2]),  # Y component
+            3: np.dot(movement_vector, wobj_axes[3])   # Z component
+        }
         
-        print(f"Movement in wobj frame: X={movement_wobj_x:.6f}, Y={movement_wobj_y:.6f}, Z={movement_wobj_z:.6f}")
+        print(f"Movement in wobj frame: X={movement_components[1]:.6f}, Y={movement_components[2]:.6f}, Z={movement_components[3]:.6f}")
+        print(f"Execution order: {[axis_names[i] for i in execution_order]}")
 
-        # Step 1: Move along wobj X and Z directions (keep wobj Y unchanged)
-        # Calculate intermediate position by adding wobj X and Z movements
-        intermediate_movement_x = movement_wobj_x * wobj_x
-        intermediate_movement_z = movement_wobj_z * wobj_z
-        intermediate_movement = intermediate_movement_x + intermediate_movement_z
-        intermediate_position = current_position + intermediate_movement
+        # Execute movements according to execution_order
+        accumulated_position = current_position.copy()
         
-        intermediate_pose = [
-            intermediate_position[0], # x
-            intermediate_position[1], # y
-            intermediate_position[2], # z
-            current_pose[3],          # rx (keep current orientation)
-            current_pose[4],          # ry
-            current_pose[5]           # rz
-        ]
-        
-        print(f"\nStep 1: Moving along wobj X and Z directions...")
-        print(f"Intermediate pose: {intermediate_pose}")
-        
-        res = self.robot.movel(intermediate_pose, a=0.1, v=0.1)
-        time.sleep(0.5)
+        for step_idx, axis_id in enumerate(execution_order, start=1):
+            axis_name = axis_names[axis_id]
+            axis_vector = wobj_axes[axis_id]
+            movement_amount = movement_components[axis_id]
+            
+            # Calculate next position by adding current axis movement
+            movement_delta = movement_amount * axis_vector
+            accumulated_position = accumulated_position + movement_delta
+            
+            next_pose = [
+                accumulated_position[0],  # x
+                accumulated_position[1],  # y
+                accumulated_position[2],  # z
+                current_pose[3],          # rx (keep current orientation)
+                current_pose[4],          # ry
+                current_pose[5]           # rz
+            ]
+            
+            print(f"\nStep {step_idx}: Moving along wobj {axis_name} direction...")
+            print(f"  Movement amount: {movement_amount:.6f}m")
+            print(f"  Target pose: {next_pose}")
+            
+            res = self.robot.movel(next_pose, a=0.1, v=0.1)
+            time.sleep(0.5)
 
-        if res != 0:
-            print(f"Failed to move along wobj X and Z (error code: {res})")
-            return res
+            if res != 0:
+                print(f"[ERROR] Failed to move along wobj {axis_name} (error code: {res})")
+                return res
+            
+            print(f"Step {step_idx} completed successfully")
         
-        print("Step 1 completed successfully")
+        print("\n✓ Robot moved to start position successfully")
+        return 0
+    
+    # ============================ Quick Changer Control Methods =============================
+    def lock_quick_changer(self):
+        """
+        Lock the quick changer via RS485 command
+        Returns: True if successful, False otherwise
+        """
+        if self.rs485_socket is None:
+            print("RS485 socket is not initialized")
+            return False
         
-        # Step 2: Move along wobj Y direction to final target with offset
-        final_movement_y = (movement_wobj_y + y_offset) * wobj_y
-        final_position = intermediate_position + final_movement_y
+        try:
+            lock_command = [0x53, 0x26, 0x01, 0x01, 0x01, 0x3A, 0xD4]
+            print("Sending lock command to quick changer...")
+            
+            self.rs485_socket.sendall(bytes(lock_command))
+            time.sleep(0.5)
+            
+            rs485_data = self.rs485_socket.recv(1024)
+            print(f"✓ RS485 Received Data: {' '.join(f'0x{b:02x}' for b in rs485_data)}")
+            time.sleep(0.5)
+            
+            print("Quick changer locked successfully")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Failed to lock quick changer: {e}")
+            return False
+    
+    def unlock_quick_changer(self):
+        """
+        Unlock the quick changer via RS485 command
+        Returns: True if successful, False otherwise
+        """
+        if self.rs485_socket is None:
+            print("RS485 socket is not initialized")
+            return False
         
-        final_pose = [
-            final_position[0],        # x
-            final_position[1],        # y
-            final_position[2],        # z
-            current_pose[3],          # rx (keep current orientation)
-            current_pose[4],          # ry
-            current_pose[5]           # rz
-        ]
-        
-        offset_info = f" with Y offset={y_offset:.6f}m" if y_offset != 0.0 else ""
-        print(f"\nStep 2: Moving along wobj Y direction{offset_info}...")
-        print(f"Final pose: {final_pose}")
-        
-        res = self.robot.movel(final_pose, a=0.1, v=0.1)
-        time.sleep(0.5)
-
-        if res == 0:
-            print("Robot moved to start position successfully")
-        else:
-            print(f"Failed to move along wobj Y (error code: {res})")
-        
-        return res
+        try:
+            unlock_command = [0x53, 0x26, 0x01, 0x01, 0x02, 0x7A, 0xD5]
+            print("Sending unlock command to quick changer...")
+            
+            self.rs485_socket.sendall(bytes(unlock_command))
+            time.sleep(0.5)
+            
+            rs485_data = self.rs485_socket.recv(1024)
+            print(f"✓ RS485 Received Data: {' '.join(f'0x{b:02x}' for b in rs485_data)}")
+            time.sleep(0.5)
+            
+            print("Quick changer unlocked successfully")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Failed to unlock quick changer: {e}")
+            return False
     
 
 if __name__ == "__main__":
+    # Initialize ROS2
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='UROperate - Robot operation and control system')
     parser.add_argument('--robot-ip', type=str, default='192.168.1.15',

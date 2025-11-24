@@ -197,54 +197,13 @@ function confirmDataDirChange() {
 
 // Operation Name Functions
 function changeOperationName() {
-    const currentName = document.getElementById('operationName').value;
-    const modal = document.getElementById('operationPathModal');
-    const input = document.getElementById('operationPathInput');
+    const inputElement = document.getElementById('operationName');
+    const newName = inputElement.value.trim();
     
-    // Set current name as default value (if not default text)
-    if (currentName !== 'input operation name') {
-        input.value = currentName;
-    } else {
-        input.value = '';
-    }
-    
-    // Show modal
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
-    
-    // Focus on input
-    setTimeout(() => input.focus(), 100);
-    
-    // Handle Enter key
-    input.onkeypress = function(e) {
-        if (e.key === 'Enter') {
-            confirmOperationNameChange();
-        }
-    };
-}
-
-function closeOperationPathModal() {
-    const modal = document.getElementById('operationPathModal');
-    modal.classList.add('hidden');
-    modal.style.display = 'none';
-}
-
-// Alias for backward compatibility
-function changeOperationPath() {
-    changeOperationName();
-}
-
-function confirmOperationPathChange() {
-    confirmOperationNameChange();
-}
-
-function confirmOperationNameChange() {
-    const currentName = document.getElementById('operationName').value;
-    const input = document.getElementById('operationPathInput');
-    const newName = input.value.trim();
-    
-    if (newName === '' || newName === currentName) {
-        closeOperationPathModal();
+    // Check if the name is empty or still the default placeholder
+    if (newName === '' || newName === 'input operation name') {
+        logToWeb('Please enter a valid operation name', 'warning');
+        inputElement.focus();
         return;
     }
     
@@ -257,8 +216,7 @@ function confirmOperationNameChange() {
     logToWeb(`Setting operation name: ${newName}`, 'info');
     logToWeb(`Full operation path: ${fullOperationPath}`, 'info');
     
-    // Update the display name and store the full path
-    document.getElementById('operationName').value = newName;
+    // Store the full path
     currentOperationPath = fullOperationPath;
     
     // Send to server (if needed for backend persistence)
@@ -276,21 +234,26 @@ function confirmOperationNameChange() {
     .then(data => {
         if (data.success) {
             logToWeb(`Operation set successfully: ${newName}`, 'success');
-            closeOperationPathModal();
             // Enable the Locate Last Operation button
-            const locateLastOperationBtn = document.getElementById('locateLastOperationBtn');
-            if (locateLastOperationBtn) {
-                locateLastOperationBtn.disabled = false;
+            const locateBtn = document.getElementById('locateLastOperationBtn');
+            if (locateBtn) {
+                locateBtn.disabled = false;
+                locateBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                locateBtn.classList.add('hover:bg-purple-600');
             }
         } else {
-            console.error('Failed to set operation:', data.message || 'Unknown error');
             logToWeb(`Failed to set operation: ${data.message || 'Unknown error'}`, 'error');
         }
     })
     .catch(error => {
-        console.error('Failed to set operation:', error);
-        logToWeb(`Failed to set operation: ${error}`, 'error');
+        logToWeb(`Error setting operation: ${error.message}`, 'error');
+        console.error('Error:', error);
     });
+}
+
+// Alias for backward compatibility
+function changeOperationPath() {
+    changeOperationName();
 }
 
 function updateAllTaskPaths(datasetDir) {
