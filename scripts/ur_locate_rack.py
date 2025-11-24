@@ -57,7 +57,7 @@ class URLocateRack:
             raise FileNotFoundError(f"ur_3d_positioning.py not found at: {self.ur_3d_positioning_path}")
         
         # Define rack operations in order
-        self.rack_operations = ["rack1", "rack2", "rack3"]
+        self.rack_operations = ["rack1", "rack2", "rack3", "rack4"]
         
         # Initialize RobotStatusClient
         self.robot_status_client = None
@@ -153,7 +153,7 @@ class URLocateRack:
         
         return results
     
-    def perform_wobj_frame_building(self, rack1_result_path=None, rack2_result_path=None, rack3_result_path=None):
+    def perform_wobj_frame_building(self, rack1_result_path=None, rack2_result_path=None, rack3_result_path=None, rack4_result_path=None):
         """
         Build a wobj coordinate system based on 3D positioning keypoints from rack1, rack2, and rack3.
         
@@ -167,6 +167,7 @@ class URLocateRack:
             rack1_result_path (str): Path to rack1 3d_positioning_result.json file
             rack2_result_path (str): Path to rack2 3d_positioning_result.json file
             rack3_result_path (str): Path to rack3 3d_positioning_result.json file
+            rack4_result_path (str): Path to rack4 3d_positioning_result.json file
             
         Returns:
             dict: Coordinate system information or None if failed
@@ -212,12 +213,13 @@ class URLocateRack:
                     print(f"✗ 3d_positioning_result.json not found in {os.path.join(result_dir, latest_session)}")
                     return None
             
-            # Find all three result files
+            # Find all four result files
             rack1_file = find_latest_result("rack1", rack1_result_path)
             rack2_file = find_latest_result("rack2", rack2_result_path)
             rack3_file = find_latest_result("rack3", rack3_result_path)
+            rack4_file = find_latest_result("rack4", rack4_result_path)
             
-            if not all([rack1_file, rack2_file, rack3_file]):
+            if not all([rack1_file, rack2_file, rack3_file, rack4_file]):
                 print("\n✗ Failed to locate all required result files")
                 return None
             
@@ -236,6 +238,10 @@ class URLocateRack:
                 rack3_data = json.load(f)
             rack3_points_3d = rack3_data.get('points_3d', [])
             
+            with open(rack4_file, 'r') as f:
+                rack4_data = json.load(f)
+            rack4_points_3d = rack4_data.get('points_3d', [])
+            
             # Validate we have enough points
             if not rack1_points_3d:
                 print("✗ No keypoints found in rack1")
@@ -246,10 +252,14 @@ class URLocateRack:
             if not rack3_points_3d:
                 print("✗ No keypoints found in rack3")
                 return None
+            if not rack4_points_3d:
+                print("✗ No keypoints found in rack4")
+                return None
             
             print(f"✓ Loaded {len(rack1_points_3d)} rack1 points")
             print(f"✓ Loaded {len(rack2_points_3d)} rack2 points")
             print(f"✓ Loaded {len(rack3_points_3d)} rack3 points")
+            print(f"✓ Loaded {len(rack4_points_3d)} rack4 points")
             
             # ===================== Build wobj coordinate system =====================
             print("\n🔧 Building coordinate system...")
@@ -383,6 +393,9 @@ class URLocateRack:
                     ],
                     "rack3": [
                         {"index": 0, "name": "point", "coordinates": [float(rack3_kp[0]), float(rack3_kp[1]), float(rack3_kp[2])]}
+                    ],
+                    "rack4": [
+                        {"index": 0, "name": "point", "coordinates": [float(rack4_points_3d[0][0]), float(rack4_points_3d[0][1]), float(rack4_points_3d[0][2])]}
                     ]
                 },
                 "timestamp": datetime.now().isoformat(),
@@ -390,7 +403,8 @@ class URLocateRack:
                 "source_files": {
                     "rack1": rack1_file,
                     "rack2": rack2_file,
-                    "rack3": rack3_file
+                    "rack3": rack3_file,
+                    "rack4": rack4_file
                 }
             }
             
@@ -443,21 +457,23 @@ class URLocateRack:
             return None
     
     def validate_wobj_frame_building(self, coord_system, rack1_result_path=None, 
-                                      rack2_result_path=None, rack3_result_path=None, 
-                                      verbose=True):
+                                      rack2_result_path=None, rack3_result_path=None,
+                                      rack4_result_path=None, verbose=True):
         """
-        Validate workpiece coordinate system by drawing it on rack1, rack2, and rack3 images.
+        Validate workpiece coordinate system by drawing it on rack1, rack2, rack3, and rack4 images.
         
         Draws the coordinate system axes on captured images:
         - For rack1 images: Origin at rack1_point (wobj origin)
         - For rack2 images: Origin at rack2_point, but axes follow wobj orientation
         - For rack3 images: Origin at rack3_point, but axes follow wobj orientation
+        - For rack4 images: Origin at rack4_point, but axes follow wobj orientation
         
         Args:
             coord_system (dict): Dictionary containing coordinate system information
             rack1_result_path (str): Path to rack1 3d_positioning_result.json file
             rack2_result_path (str): Path to rack2 3d_positioning_result.json file
             rack3_result_path (str): Path to rack3 3d_positioning_result.json file
+            rack4_result_path (str): Path to rack4 3d_positioning_result.json file
             verbose (bool): If True, saves validation images to disk
             
         Returns:
@@ -524,7 +540,8 @@ class URLocateRack:
             
             for rack_name, result_path in [('rack1', rack1_result_path), 
                                            ('rack2', rack2_result_path),
-                                           ('rack3', rack3_result_path)]:
+                                           ('rack3', rack3_result_path),
+                                           ('rack4', rack4_result_path)]:
                 
                 print(f"\n>>> Processing {rack_name} images...")
                 
@@ -538,7 +555,7 @@ class URLocateRack:
                 print(f"  Session directory: {session_dir}")
                 
                 # Get the appropriate origin for this rack
-                keypoints_for_rack = coord_system['keypoints_used'][rack_name]
+                keypoints_for_rack = coord_system['keypoints_used'].get(rack_name, [])
                 if keypoints_for_rack:
                     origin_coords = keypoints_for_rack[0]['coordinates']
                     origin_3d = np.array(origin_coords)

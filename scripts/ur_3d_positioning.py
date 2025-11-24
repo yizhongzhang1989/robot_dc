@@ -76,6 +76,46 @@ class URLocate(URCapture):
         self.ref_keypoints = None 
         self.ref_pose = None
         
+        # Template points for Fitting mode (local coordinates)
+        # Define all rack corner points in local coordinate system
+        self.all_template_points = {
+            "rack1": [
+                {
+                    "name": "GB200_Rack_Lower_Left_Corner",
+                    "x": 0,
+                    "y": 0,
+                    "z": 0.0
+                }
+            ],
+            "rack2": [
+                {
+                    "name": "GB200_Rack_Lower_Right_Corner",
+                    "x": 0.55,
+                    "y": 0,
+                    "z": 0.0
+                }
+            ],
+            "rack3": [
+                {
+                    "name": "GB200_Rack_Top_Left_Corner",
+                    "x": 0,
+                    "y": 0,
+                    "z": 2.145
+                }
+            ],
+            "rack4": [
+                {
+                    "name": "GB200_Rack_Top_Right_Corner",
+                    "x": 0.55,
+                    "y": 0,
+                    "z": 2.145
+                }
+            ]
+        }
+        
+        # Select template points based on operation_name
+        self.template_points = self.all_template_points.get(self.operation_name, None)
+        
         # Store verbose flag
         self.verbose = verbose
 
@@ -321,9 +361,10 @@ class URLocate(URCapture):
                                     # Load camera parameters
                                     intrinsic, distortion, extrinsic = load_camera_params_from_json(pose_path)
                                     
-                                    # Upload view
+                                    # Upload view with reference_name
                                     result = self.positioning_client.upload_view(
                                         session_id=session_id,
+                                        reference_name=self.operation_name,
                                         image=image,
                                         intrinsic=intrinsic,
                                         distortion=distortion,
@@ -408,209 +449,53 @@ class URLocate(URCapture):
             self.get_logger().error(f"Error uploading references: {e}")
             return False
 
-    def estimate_3d_position_of_test_image(self, test_image_path, operation_name):
-        """
-        Perform 3D triangulation using multiple camera views from /test/session folder in operation directory.
-        
-        This function follows the standard workflow:
-        1. Find and validate test images
-        2. Check service health
-        3. Verify reference image exists
-        4. Initialize session
-        5. Upload camera views
-        6. Wait for triangulation result
-        7. Terminate session and cleanup
-        
-        Args:
-            test_image_path (str): Path to directory containing test images and pose files
-                                   Expected files: image.jpg and image_pose.json for each view
-            operation_name (str): Name of the reference to use for triangulation
-            
-        Returns:
-            dict: Triangulation result or None if failed
-        """
-        if self.positioning_client is None:
-            self.get_logger().error("Positioning client not initialized")
-            return None
-        
-        try:
-            # Step 1: Find and validate test images
-            self.get_logger().info(">>> I: Finding test images...")
-            
-            test_img_dir = Path(test_image_path)
-            
-            if not test_img_dir.exists():
-                self.get_logger().error(f"✗ Test image directory not found: {test_image_path}")
-                return None
-            
-            image_files = sorted(test_img_dir.glob("*.jpg"))
-            if not image_files:
-                self.get_logger().error(f"✗ No images found in {test_image_path}")
-                return None
-            
-            self.get_logger().info(f"✓ Found {len(image_files)} images in test image directory: {test_image_path}")
-            
-            # Step 2: Check service health
-            self.get_logger().info(">>> II: Checking service health...")
-            
-            health = self.positioning_client.check_health()
-            if not health.get('success'):
-                self.get_logger().error(f"✗ Service not available: {health.get('error')}")
-                return None
-            
-            self.get_logger().info("✓ Positioning service is running normally")
-            
-            # Step 3: Check if reference exists
-            self.get_logger().info(f">>> III: Checking reference data of '{operation_name}'...")
-            
-            refs = self.positioning_client.list_references()
-            if not refs.get('success') or operation_name not in refs.get('references', {}):
-                self.get_logger().error(f"✗ Reference '{operation_name}' not found")
-                available_refs = list(refs.get('references', {}).keys())
-                self.get_logger().error(f" Available references: {available_refs}")
-                return None
-            
-            self.get_logger().info(f"✓ Successfully, reference data to '{operation_name}' is loaded")
-            
-            session_id = None
-            try:
-                # Step 4: Initialize session
-                self.get_logger().info(f">>> IV: Initializing a web session to execute...")
-                
-                session_result = self.positioning_client.init_session(reference_name=operation_name)
-                
-                if not session_result.get('success'):
-                    self.get_logger().error(f"✗ Failed to initialize session: {session_result.get('error')}")
-                    return None
-                
-                session_id = session_result['session_id']
-                self.get_logger().info(f"✓ Web session created: {session_id}")
-                
-                # Step 5: Upload camera views
-                self.get_logger().info(f">>> V: Uploading {len(image_files)} camera views from {test_image_path}...")
-                
-                for idx, img_file in enumerate(image_files):
-                    # Find corresponding pose file
-                    pose_file = img_file.parent / f"{img_file.stem}_pose.json"
-                    
-                    if not pose_file.exists():
-                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: pose file not found")
-                        continue
-                    
-                    # Load image
-                    image = cv2.imread(str(img_file))
-                    if image is None:
-                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: failed to load image")
-                        continue
-                    
-                    # Load camera parameters
-                    try:
-                        intrinsic, distortion, extrinsic = load_camera_params_from_json(str(pose_file))
-                    except Exception as e:
-                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: failed to load pose - {e}")
-                        continue
-                    
-                    # Upload view              
-                    result = self.positioning_client.upload_view(
-                        session_id=session_id,
-                        image=image,
-                        intrinsic=intrinsic,
-                        distortion=distortion,
-                        extrinsic=extrinsic
-                    )
-                    
-                    if result.get('success'):
-                        self.get_logger().info(f"   ✓ View {idx+1}/{len(image_files)} uploaded, queue position: {result.get('queue_position', 'N/A')}")
-                    else:
-                        self.get_logger().error(f"   ✗ {result.get('error')}")
-                
-                # Step 6: Wait for triangulation result
-                self.get_logger().info(">>> VI: Waiting for positioning results (timeout: 30s)...")
-                
-                result = self.positioning_client.get_result(session_id, timeout=30000)  # 30 seconds
-                
-                if not result.get('success'):
-                    self.get_logger().error(f"✗ Failed to get result: {result.get('error')}")
-                    return None
-                
-                # Check if we got the final result or timed out
-                if 'result' not in result:
-                    if result.get('timeout'):
-                        self.get_logger().error("\n✗ Timeout waiting for triangulation")
-                    else:
-                        session_info = result.get('session', {})
-                        session_status = session_info.get('status')
-                        if session_status == 'failed':
-                            self.get_logger().error(f"\n✗ Session failed: {session_info.get('error_message', 'Unknown error')}")
-                        else:
-                            self.get_logger().error(f"\n✗ Triangulation not completed (status: {session_status})")
-                    return None
-                
-                self.get_logger().info("✓ Triangulation completed!")
-                
-                triangulation_result = result['result']
-                points_3d = np.array(triangulation_result['points_3d'])
-                mean_error = triangulation_result['mean_error']
-                processing_time = triangulation_result.get('processing_time', 0)
-                views_data = result.get('views', [])
-                
-                self.get_logger().info(f"   Number of 3D points: {len(points_3d)}")
-                self.get_logger().info(f"   Mean reprojection error: {mean_error:.3f} pixels")
-                self.get_logger().info(f"   Processing time: {processing_time:.2f} seconds")
-                self.get_logger().info(f"   Number of views: {len(views_data)}")
-                
-                return result
-                
-            finally:
-                # Step 7: Terminate session and cleanup
-                if session_id is not None:
-                    self.get_logger().info(">>> VII: Terminating session...")
-                    
-                    term_result = self.positioning_client.terminate_session(session_id)
-                    if term_result.get('success'):
-                        self.get_logger().info(f"✓ Session {session_id} terminated and cleaned up")
-                    else:
-                        self.get_logger().warn(f"⚠️  Failed to terminate session: {term_result.get('error')}")
-                
-        except Exception as e:
-            self.get_logger().error(f"Error during triangulation: {e}")
-            return None
-
     def perform_3d_positioning(self):
         """
         Complete 3D positioning workflow: upload references, collect data, and estimate position.
         
         This method orchestrates the full positioning process:
-        1. Upload reference data to FFPP web service
+        1. Check and upload reference data if needed (smart upload)
         2. Automatically collect camera images from multiple viewpoints
-        3. Estimate 3D position using triangulation
+        3. Estimate 3D position using triangulation (with minimal waiting)
         
         Returns:
             dict: Triangulation result containing 3D points and errors, or None if failed
         """
         try:
-            # Step 1: Upload reference data
-            msg = "Step 1: Uploading reference data to FFPP web service..."
+            # Step 1: Check if reference exists, upload only if needed
+            msg = "Step 1: Checking reference availability..."
             self.get_logger().info(msg)
             print(msg)
             
-            upload_success = self.upload_reference_data_to_ffpp_web()
-            if not upload_success:
-                msg = "✗ Failed to upload reference data. Aborting positioning."
-                self.get_logger().error(msg)
+            refs = self.positioning_client.list_references()
+            reference_exists = refs.get('success') and self.operation_name in refs.get('references', {})
+            
+            if not reference_exists:
+                msg = f"Reference '{self.operation_name}' not found, uploading to FFPP server..."
+                self.get_logger().info(msg)
                 print(msg)
-                return None
-            
-            msg = "✓ Reference data uploaded successfully!"
-            self.get_logger().info(msg)
-            print(msg)
+                
+                upload_success = self.upload_reference_data_to_ffpp_web()
+                if not upload_success:
+                    msg = "✗ Failed to upload reference data. Aborting positioning."
+                    self.get_logger().error(msg)
+                    print(msg)
+                    return None
+                
+                msg = "✓ Reference data uploaded successfully!"
+                self.get_logger().info(msg)
+                print(msg)
+            else:
+                msg = f"✓ Reference '{self.operation_name}' already loaded, skipping upload"
+                self.get_logger().info(msg)
+                print(msg)
             
             # Step 2: Initialize session for real-time upload
             msg = "Step 2: Initializing session for data collection..."
             self.get_logger().info(msg)
             print(msg)
             
-            session_result = self.positioning_client.init_session(reference_name=self.operation_name)
+            session_result = self.positioning_client.init_session()
             if not session_result.get('success'):
                 msg = f"✗ Failed to initialize session: {session_result.get('error')}"
                 self.get_logger().error(msg)
@@ -641,12 +526,26 @@ class URLocate(URCapture):
             self.get_logger().info(msg)
             print(msg)
             
-            # Step 4: Wait for triangulation result
-            msg = "Step 4: Waiting for positioning results (timeout: 30s)..."
-            self.get_logger().info(msg)
-            print(msg)
+            # Step 4: Get triangulation/fitting result (minimal wait due to parallel tracking)
+            if self.template_points:
+                msg = f"Step 4: Getting fitting results with {len(self.template_points)} template points..."
+                self.get_logger().info(msg)
+                print(msg)
+                msg = f"  → Fitting mode: estimating local2world transformation"
+                self.get_logger().info(msg)
+                print(msg)
+            else:
+                msg = "Step 4: Getting triangulation results..."
+                self.get_logger().info(msg)
+                print(msg)
             
-            result = self.positioning_client.get_result(session_id, timeout=30000)
+            # Most views should already be tracked due to parallel processing
+            # Only need short timeout for any remaining views
+            result = self.positioning_client.get_result(
+                session_id, 
+                template_points=self.template_points,  # None for standard mode, list for fitting mode
+                timeout=10000
+            )
             
             if not result.get('success'):
                 msg = f"✗ Failed to get result: {result.get('error')}"
@@ -677,9 +576,15 @@ class URLocate(URCapture):
                 self.positioning_client.terminate_session(session_id)
                 return None
             
-            msg = "✓ Triangulation completed!"
-            self.get_logger().info(msg)
-            print(msg)
+            # Display results based on mode
+            if self.template_points:
+                msg = "✓ Fitting completed!"
+                self.get_logger().info(msg)
+                print(msg)
+            else:
+                msg = "✓ Triangulation completed!"
+                self.get_logger().info(msg)
+                print(msg)
             
             triangulation_result = result['result']
             points_3d = np.array(triangulation_result['points_3d'])
@@ -699,6 +604,17 @@ class URLocate(URCapture):
             msg = f"   Number of views: {len(views_data)}"
             self.get_logger().info(msg)
             print(msg)
+            
+            # Display local2world transformation if in fitting mode
+            if self.template_points and 'local2world' in triangulation_result:
+                local2world = triangulation_result['local2world']
+                msg = "\n   Local-to-World Transformation Matrix:"
+                self.get_logger().info(msg)
+                print(msg)
+                for i, row in enumerate(local2world):
+                    row_str = f"    [{row[0]:8.4f}  {row[1]:8.4f}  {row[2]:8.4f}  {row[3]:8.4f}]"
+                    self.get_logger().info(row_str)
+                    print(row_str)
             
             # Terminate session
             msg = "Step 5: Terminating session..."
@@ -734,8 +650,13 @@ class URLocate(URCapture):
                 'points_3d': result['result']['points_3d'],
                 'mean_error': result['result']['mean_error'],
                 'processing_time': result['result'].get('processing_time', 0),
-                'views': result.get('views', [])
+                'views': result.get('views', []),
+                'fitting_mode': self.template_points is not None
             }
+            
+            # Save local2world transformation if in fitting mode
+            if self.template_points and 'local2world' in result['result']:
+                result_data['local2world'] = result['result']['local2world']
             
             # Save to JSON file
             positioning_result_file_path = os.path.join(self.session_result_dir, '3d_positioning_result.json')
