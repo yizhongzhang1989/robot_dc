@@ -23,13 +23,16 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vis
 from core.positioning_3d_webapi import load_camera_params_from_json
 from robot_status.client_utils import RobotStatusClient
 
+# Import URCapture base class
+from ur_capture import URCapture
 
-class URLocateRack:
+
+class URLocateRack(URCapture):
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002, 
                  camera_topic="/ur15_camera/image_raw",
                  camera_params_path="../temp/ur15_cam_calibration_result/ur15_camera_parameters",
                  verbose=True,
-                 ros_node=None):
+                 operation_name="rack_locate"):
         """
         Initialize URLocateRack class for automated rack location operations
         
@@ -39,17 +42,20 @@ class URLocateRack:
             camera_topic (str): ROS topic name for camera images
             camera_params_path (str): Path to camera calibration parameters directory
             verbose (bool): If True, saves validation images and error logs to disk
-            ros_node (Node): ROS2 node instance for RobotStatusClient (optional)
+            operation_name (str): Name of the operation for data directory
         """
-        self.robot_ip = robot_ip
-        self.robot_port = robot_port
-        self.camera_topic = camera_topic
-        self.camera_params_path = camera_params_path
-        self.verbose = verbose
-        self.ros_node = ros_node
+        # Call parent class constructor
+        super().__init__(
+            robot_ip=robot_ip,
+            robot_port=robot_port,
+            camera_topic=camera_topic,
+            operation_name=operation_name,
+            camera_params_path=camera_params_path
+        )
         
-        # Get the directory where this script is located
-        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.verbose = verbose
+        
+        # ur_3d_positioning.py path (script_dir already set by parent class)
         self.ur_3d_positioning_path = os.path.join(self.script_dir, "ur_3d_positioning.py")
         
         # Verify ur_3d_positioning.py exists
@@ -61,13 +67,63 @@ class URLocateRack:
         
         # Initialize RobotStatusClient
         self.robot_status_client = None
-        if self.ros_node:
-            try:
-                self.robot_status_client = RobotStatusClient(self.ros_node, timeout_sec=5.0)
-                print("✓ RobotStatusClient initialized successfully")
-            except Exception as e:
-                print(f"⚠ Failed to initialize RobotStatusClient: {e}")
-                self.robot_status_client = None
+        try:
+            self.robot_status_client = RobotStatusClient(self, timeout_sec=5.0)
+            print("✓ RobotStatusClient initialized successfully")
+        except Exception as e:
+            print(f"⚠ Failed to initialize RobotStatusClient: {e}")
+            self.robot_status_client = None
+        
+        # Initialize recorded positions storage
+        self.recorded_positions = {}
+    
+    def load_recorded_positions(self):
+        """
+        Load recorded positions from robot_dc/temp/recorded_GB200_locate_positions.json
+        and convert from degrees to radians.
+        
+        Stores the positions in self.recorded_positions as a dictionary where:
+        - Keys are the position names (e.g., "rack1", "rack2", etc.)
+        - Values are lists of 6 joint angles in radians
+        
+        Returns:
+            bool: True if successfully loaded, False otherwise
+        """
+        try:
+            # Construct path to recorded positions file
+            temp_dir = os.path.join(self.script_dir, "..", "temp")
+            positions_file = os.path.join(temp_dir, "recorded_GB200_locate_positions.json")
+            
+            if not os.path.exists(positions_file):
+                print(f"⚠ Recorded positions file not found: {positions_file}")
+                return False
+            
+            # Load JSON file
+            with open(positions_file, 'r') as f:
+                positions_data = json.load(f)
+            
+            # Convert degrees to radians and store
+            self.recorded_positions = {}
+            for key, position_deg in positions_data.items():
+                if isinstance(position_deg, list) and len(position_deg) == 6:
+                    # Convert from degrees to radians
+                    position_rad = [np.deg2rad(angle) for angle in position_deg]
+                    self.recorded_positions[key] = position_rad
+                    print(f"✓ Loaded position '{key}': {position_deg} deg -> {position_rad} rad")
+                else:
+                    print(f"⚠ Invalid position format for '{key}': {position_deg}")
+            
+            print(f"\n✓ Successfully loaded {len(self.recorded_positions)} recorded positions")
+            return True
+            
+        except json.JSONDecodeError as e:
+            print(f"✗ Failed to parse JSON file: {e}")
+            return False
+        except Exception as e:
+            print(f"✗ Error loading recorded positions: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def auto_capture(self):
         """
@@ -832,21 +888,14 @@ def main():
         # Initialize ROS2
         rclpy.init()
         
-        # Create a simple ROS2 node for RobotStatusClient
-        class URLocateRackNode(Node):
-            def __init__(self):
-                super().__init__('ur_locate_rack_node')
-        
-        ros_node = URLocateRackNode()
-        
-        # Create URLocateRack instance
+        # Create URLocateRack instance (inherits from URCapture which is a Node)
         ur_locate_rack = URLocateRack(
             robot_ip=args.robot_ip,
             robot_port=args.robot_port,
             camera_topic=args.camera_topic,
             camera_params_path=args.camera_params_path,
             verbose=args.verbose,
-            ros_node=ros_node
+            operation_name='rack_locate'
         )
         
         # Execute auto capture

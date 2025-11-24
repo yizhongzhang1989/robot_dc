@@ -787,7 +787,7 @@
                         <div style="display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.5rem;">
                             <!-- Row 1 -->
                             <div class="rack-row" data-rack="1" style="display: flex; gap: 1rem; padding: 0.35rem 0.5rem; background: #f8f9fa; border-radius: 4px; transition: all 0.2s; align-items: center;">
-                                <span onclick="selectRack(1)" style="min-width: 95px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer;">Lower Left:</span>
+                                <input id="rackLabel1" type="text" value="Lower Left" onchange="updateRackLabel(1, this.value)" onclick="selectRack(1)" style="width: 100px; max-width: 100px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer; border: 1px solid #dee2e6; border-radius: 3px; padding: 0.15rem 0.3rem; background: white;" /><span style="margin-right: -0.5rem;">:</span>
                                 <span id="rack1_j0" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
                                 <span id="rack1_j1" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
                                 <span id="rack1_j2" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
@@ -798,7 +798,7 @@
                             </div>
                             <!-- Row 2 -->
                             <div class="rack-row" data-rack="2" style="display: flex; gap: 1rem; padding: 0.35rem 0.5rem; background: #f8f9fa; border-radius: 4px; transition: all 0.2s; align-items: center;">
-                                <span onclick="selectRack(2)" style="min-width: 95px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer;">Lower Right:</span>
+                                <input id="rackLabel2" type="text" value="Lower Right" onchange="updateRackLabel(2, this.value)" onclick="selectRack(2)" style="width: 100px; max-width: 100px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer; border: 1px solid #dee2e6; border-radius: 3px; padding: 0.15rem 0.3rem; background: white;" /><span style="margin-right: -0.5rem;">:</span>
                                 <span id="rack2_j0" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
                                 <span id="rack2_j1" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
                                 <span id="rack2_j2" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
@@ -809,7 +809,7 @@
                             </div>
                             <!-- Row 3 -->
                             <div class="rack-row" data-rack="3" style="display: flex; gap: 1rem; padding: 0.35rem 0.5rem; background: #f8f9fa; border-radius: 4px; transition: all 0.2s; align-items: center;">
-                                <span onclick="selectRack(3)" style="min-width: 95px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer;">Top Left:</span>
+                                <input id="rackLabel3" type="text" value="Top Left" onchange="updateRackLabel(3, this.value)" onclick="selectRack(3)" style="width: 100px; max-width: 100px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer; border: 1px solid #dee2e6; border-radius: 3px; padding: 0.15rem 0.3rem; background: white;" /><span style="margin-right: -0.5rem;">:</span>
                                 <span id="rack3_j0" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
                                 <span id="rack3_j1" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
                                 <span id="rack3_j2" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
@@ -820,7 +820,7 @@
                             </div>
                             <!-- Row 4 -->
                             <div class="rack-row" data-rack="4" style="display: flex; gap: 1rem; padding: 0.35rem 0.5rem; background: #f8f9fa; border-radius: 4px; transition: all 0.2s; align-items: center;">
-                                <span onclick="selectRack(4)" style="min-width: 95px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer;">Top Right:</span>
+                                <input id="rackLabel4" type="text" value="Top Right" onchange="updateRackLabel(4, this.value)" onclick="selectRack(4)" style="width: 100px; max-width: 100px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer; border: 1px solid #dee2e6; border-radius: 3px; padding: 0.15rem 0.3rem; background: white;" /><span style="margin-right: -0.5rem;">:</span>
                                 <span id="rack4_j0" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
                                 <span id="rack4_j1" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
                                 <span id="rack4_j2" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>

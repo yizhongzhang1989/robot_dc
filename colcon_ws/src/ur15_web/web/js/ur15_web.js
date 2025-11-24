@@ -1035,41 +1035,62 @@ function confirmDeleteImage() {
     });
 }
 
-// Load rack positions on page load
-function loadRackPositions() {
+// Load rack labels and positions based on JSON key order
+function loadRackLabelsAndKeys() {
     fetch('/load_rack_positions')
     .then(response => response.json())
     .then(data => {
         if (data.success && data.data) {
-            // Map rack numbers to new key names
-            const rackKeyMap = {
-                1: 'lower_left',
-                2: 'lower_right',
-                3: 'top_left',
-                4: 'top_right'
-            };
+            // Get keys in their order from JSON
+            const keys = Object.keys(data.data);
             
-            // Update rackPositions object and display
-            for (let rackNum = 1; rackNum <= 4; rackNum++) {
-                const rackKey = rackKeyMap[rackNum];
-                if (data.data[rackKey] && Array.isArray(data.data[rackKey]) && data.data[rackKey].length === 6) {
-                    rackPositions[rackNum] = [...data.data[rackKey]];
-                    
-                    // Update the display
-                    for (let i = 0; i < 6; i++) {
-                        const element = document.getElementById(`rack${rackNum}_j${i}`);
+            // Map the first 4 keys to rack rows 1-4
+            for (let i = 0; i < Math.min(keys.length, 4); i++) {
+                const rackNum = i + 1;
+                const key = keys[i];
+                
+                // Store the JSON key
+                rackJsonKeys[rackNum] = key;
+                
+                // Convert key to display format (e.g., "lower_left" -> "Lower Left")
+                const displayName = key.split('_').map(word => 
+                    word.charAt(0).toUpperCase() + word.slice(1)
+                ).join(' ');
+                
+                // Update display name
+                rackDisplayNames[rackNum] = displayName;
+                
+                // Update input field
+                const labelInput = document.getElementById(`rackLabel${rackNum}`);
+                if (labelInput) {
+                    labelInput.value = displayName;
+                }
+                
+                // Update position display
+                const positions = data.data[key];
+                if (Array.isArray(positions) && positions.length === 6) {
+                    rackPositions[rackNum] = [...positions];
+                    for (let j = 0; j < 6; j++) {
+                        const element = document.getElementById(`rack${rackNum}_j${j}`);
                         if (element) {
-                            element.textContent = data.data[rackKey][i].toFixed(2);
+                            element.textContent = positions[j].toFixed(2);
                         }
                     }
                 }
             }
+            
             logToWeb('📂 Loaded saved rack positions', 'info');
         }
     })
     .catch(error => {
         logToWeb(`⚠️ Could not load saved rack positions: ${error.message}`, 'warning');
     });
+}
+
+// Load rack positions on page load
+function loadRackPositions() {
+    // Use the combined function that loads both labels and positions in order
+    loadRackLabelsAndKeys();
 }
 
 // Load rack positions when page loads
@@ -2453,13 +2474,75 @@ let rackPositions = {
     4: null
 };
 
-// Map rack numbers to display names
-const rackDisplayNames = {
+// Map rack numbers to display names (now editable)
+let rackDisplayNames = {
     1: 'Lower Left',
     2: 'Lower Right',
     3: 'Top Left',
     4: 'Top Right'
 };
+
+// Store the actual JSON keys in order (populated from server)
+let rackJsonKeys = {
+    1: 'lower_left',
+    2: 'lower_right',
+    3: 'top_left',
+    4: 'top_right'
+};
+
+// Map rack numbers to JSON key names (now directly from rackJsonKeys)
+function getRackKeyMap() {
+    return rackJsonKeys;
+}
+
+// Update rack label and sync with backend
+function updateRackLabel(rackNumber, newLabel) {
+    if (!newLabel || newLabel.trim() === '') {
+        logToWeb('⚠️ Label cannot be empty', 'warning');
+        // Restore previous value
+        document.getElementById(`rackLabel${rackNumber}`).value = rackDisplayNames[rackNumber];
+        return;
+    }
+    
+    const oldLabel = rackDisplayNames[rackNumber];
+    const oldKey = rackJsonKeys[rackNumber];
+    const newKey = newLabel.trim().toLowerCase().replace(/\s+/g, '_');
+    
+    // Update display name and JSON key
+    rackDisplayNames[rackNumber] = newLabel.trim();
+    rackJsonKeys[rackNumber] = newKey;
+    
+    // Notify backend to rename the key in JSON at specific position
+    fetch('/rename_rack_key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            rack_number: rackNumber,
+            old_key: oldKey,
+            new_key: newKey,
+            position: rackNumber - 1  // 0-indexed position in JSON
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ Renamed rack ${rackNumber}: "${oldLabel}" → "${newLabel.trim()}"`, 'success');
+        } else {
+            logToWeb(`⚠️ Failed to rename rack key: ${data.message}`, 'warning');
+            // Rollback on failure
+            rackDisplayNames[rackNumber] = oldLabel;
+            rackJsonKeys[rackNumber] = oldKey;
+            document.getElementById(`rackLabel${rackNumber}`).value = oldLabel;
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Error renaming rack key: ${error.message}`, 'error');
+        // Rollback on error
+        rackDisplayNames[rackNumber] = oldLabel;
+        rackJsonKeys[rackNumber] = oldKey;
+        document.getElementById(`rackLabel${rackNumber}`).value = oldLabel;
+    });
+}
 
 function selectRack(rackNumber) {
     // Remove selected class from all rack rows
@@ -2518,12 +2601,14 @@ function recordPosition() {
         }
     }
     
-    // Save to JSON file
+    // Save to JSON file with dynamic key name
+    const rackKeyMap = getRackKeyMap();
     fetch('/save_rack_positions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             rack_number: selectedRack,
+            rack_key: rackKeyMap[selectedRack],
             positions: jointPositions
         })
     })
@@ -2552,12 +2637,13 @@ function play() {
             return;
         }
         
-        // Map rack keys to order: lower_left, lower_right, top_left, top_right
+        // Map rack keys dynamically based on current labels
+        const rackKeyMap = getRackKeyMap();
         const rackSequence = [
-            { key: 'lower_left', name: 'Lower Left' },
-            { key: 'lower_right', name: 'Lower Right' },
-            { key: 'top_left', name: 'Top Left' },
-            { key: 'top_right', name: 'Top Right' }
+            { key: rackKeyMap[1], name: rackDisplayNames[1] },
+            { key: rackKeyMap[2], name: rackDisplayNames[2] },
+            { key: rackKeyMap[3], name: rackDisplayNames[3] },
+            { key: rackKeyMap[4], name: rackDisplayNames[4] }
         ];
         
         // Convert degrees to radians and prepare positions

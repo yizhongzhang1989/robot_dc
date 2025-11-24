@@ -3360,6 +3360,7 @@ class UR15WebNode(Node):
                 data = request.get_json()
                 rack_number = data.get('rack_number')
                 positions = data.get('positions')
+                rack_key = data.get('rack_key')  # Now accept custom key name
                 
                 if rack_number is None or positions is None:
                     return jsonify({'success': False, 'message': 'Missing rack_number or positions'})
@@ -3374,13 +3375,17 @@ class UR15WebNode(Node):
                 
                 json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
                 
-                # Map rack numbers to key names
-                rack_key_map = {
-                    1: 'lower_left',
-                    2: 'lower_right',
-                    3: 'top_left',
-                    4: 'top_right'
-                }
+                # Default rack key mapping if not provided
+                if rack_key is None:
+                    rack_key_map = {
+                        1: 'lower_left',
+                        2: 'lower_right',
+                        3: 'top_left',
+                        4: 'top_right'
+                    }
+                    rack_key = rack_key_map.get(rack_number)
+                    if rack_key is None:
+                        return jsonify({'success': False, 'message': 'Invalid rack number'})
                 
                 # Read existing data or create new
                 if os.path.exists(json_path):
@@ -3394,10 +3399,7 @@ class UR15WebNode(Node):
                         'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
                     }
                 
-                # Update the specific rack
-                rack_key = rack_key_map.get(rack_number)
-                if rack_key is None:
-                    return jsonify({'success': False, 'message': 'Invalid rack number'})
+                # Update the specific rack with the custom key name
                 rack_data[rack_key] = positions
                 
                 # Save to file
@@ -3405,12 +3407,94 @@ class UR15WebNode(Node):
                 with open(json_path, 'w') as f:
                     json.dump(rack_data, f, indent=4)
                 
-                self.get_logger().info(f"Saved rack {rack_number} positions to {json_path}")
+                self.get_logger().info(f"Saved rack {rack_number} (key: {rack_key}) positions to {json_path}")
                 
                 return jsonify({'success': True, 'message': f'Rack {rack_number} positions saved'})
                 
             except Exception as e:
                 self.get_logger().error(f"Error saving rack positions: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/rename_rack_key', methods=['POST'])
+        def rename_rack_key():
+            """Rename a rack key in the JSON file while preserving order."""
+            from flask import request, jsonify
+            import json
+            from collections import OrderedDict
+            
+            try:
+                data = request.get_json()
+                rack_number = data.get('rack_number')
+                old_key = data.get('old_key')
+                new_key = data.get('new_key')
+                position = data.get('position')  # 0-indexed position
+                
+                if not old_key or not new_key:
+                    return jsonify({'success': False, 'message': 'Missing old_key or new_key'})
+                
+                if position is None:
+                    position = rack_number - 1 if rack_number else 0
+                
+                # Get the JSON file path
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
+                
+                # Read existing data
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        # Load as regular dict first
+                        rack_data = json.load(f)
+                else:
+                    # If file doesn't exist, create with new key
+                    rack_data = OrderedDict()
+                    rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+                    with open(json_path, 'w') as f:
+                        json.dump(rack_data, f, indent=4)
+                    return jsonify({'success': True, 'message': f'Created new key: {new_key}'})
+                
+                # Get keys in order
+                keys = list(rack_data.keys())
+                
+                # Find the position of old_key
+                old_position = keys.index(old_key) if old_key in keys else -1
+                
+                # Create new ordered dict
+                new_rack_data = OrderedDict()
+                
+                if old_position >= 0:
+                    # Rename the key at the specific position
+                    for i, key in enumerate(keys):
+                        if i == old_position:
+                            # Replace old key with new key at this position
+                            new_rack_data[new_key] = rack_data[old_key]
+                        else:
+                            new_rack_data[key] = rack_data[key]
+                else:
+                    # Old key doesn't exist, insert at specified position
+                    inserted = False
+                    for i, key in enumerate(keys):
+                        if i == position and not inserted:
+                            new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                            inserted = True
+                        new_rack_data[key] = rack_data[key]
+                    
+                    # If position is at the end or beyond
+                    if not inserted:
+                        new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                
+                # Save to file (regular dict will maintain insertion order in Python 3.7+)
+                with open(json_path, 'w') as f:
+                    json.dump(dict(new_rack_data), f, indent=4)
+                
+                self.get_logger().info(f"Renamed rack key from '{old_key}' to '{new_key}' at position {position}")
+                return jsonify({'success': True, 'message': f'Renamed key from {old_key} to {new_key}'})
+                
+            except Exception as e:
+                self.get_logger().error(f"Error renaming rack key: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
         @self.app.route('/load_rack_positions', methods=['GET'])
