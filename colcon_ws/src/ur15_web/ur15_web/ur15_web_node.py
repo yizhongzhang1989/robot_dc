@@ -2713,7 +2713,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_rack', methods=['POST'])
         def locate_rack():
-            """Execute locate rack script (ur_locate_base.py)."""
+            """Execute locate rack script (ur_locate_rack.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -2727,7 +2727,7 @@ class UR15WebNode(Node):
                         'message': 'Could not find scripts directory'
                     })
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_base.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate_rack.py')
                 
                 # Check if script exists
                 if not os.path.exists(script_path):
@@ -2912,7 +2912,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_unlock_knob', methods=['POST'])
         def locate_unlock_knob():
-            """Execute locate unlock knob script (ur_locate_knob.py)."""
+            """Execute locate unlock knob script (ur_locate.py --operation-name unlock_knob)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -2922,11 +2922,11 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_knob.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                cmd = ['python3', script_path, '--operation-name', 'unlock_knob']
                 self.get_logger().info(f"Locate unlock knob command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -2960,7 +2960,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_open_handle', methods=['POST'])
         def locate_open_handle():
-            """Execute locate open handle script (ur_locate_prepull.py)."""
+            """Execute locate open handle script (ur_locate.py --operation-name open_handle)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -2970,11 +2970,11 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_prepull.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                cmd = ['python3', script_path, '--operation-name', 'open_handle']
                 self.get_logger().info(f"Locate open handle command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3008,7 +3008,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_close_left', methods=['POST'])
         def locate_close_left():
-            """Execute locate close left script (ur_locate_close_left.py)."""
+            """Execute locate close left script (ur_locate.py --operation-name close_left)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3018,11 +3018,11 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_close_left.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                cmd = ['python3', script_path, '--operation-name', 'close_left']
                 self.get_logger().info(f"Locate close left command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3056,7 +3056,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_close_right', methods=['POST'])
         def locate_close_right():
-            """Execute locate close right script (ur_locate_close_right.py)."""
+            """Execute locate close right script (ur_locate.py --operation-name close_right)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3066,11 +3066,11 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_close_right.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                cmd = ['python3', script_path, '--operation-name', 'close_right']
                 self.get_logger().info(f"Locate close right command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3104,7 +3104,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_unlock_knob', methods=['POST'])
         def execute_unlock_knob():
-            """Execute unlock knob script (ur_execute_knob.py)."""
+            """Execute unlock knob script (ur_op_unlock_knob.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3114,7 +3114,7 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_execute_knob.py')
+                script_path = os.path.join(scripts_dir, 'ur_op_unlock_knob.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
@@ -3152,7 +3152,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_open_handle', methods=['POST'])
         def execute_open_handle():
-            """Execute open handle script (ur_execute_prepull.py)."""
+            """Execute open handle script (ur_op_open_handle.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3162,7 +3162,7 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_execute_prepull.py')
+                script_path = os.path.join(scripts_dir, 'ur_op_open_handle.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
@@ -3200,7 +3200,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_close_left', methods=['POST'])
         def execute_close_left():
-            """Execute close left script (ur_execute_close_left.py)."""
+            """Execute close left script (ur_op_close_left.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3210,7 +3210,7 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_execute_close_left.py')
+                script_path = os.path.join(scripts_dir, 'ur_op_close_left.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
@@ -3248,7 +3248,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_close_right', methods=['POST'])
         def execute_close_right():
-            """Execute close right script (ur_execute_close_right.py)."""
+            """Execute close right script (ur_op_close_right.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3258,7 +3258,7 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_execute_close_right.py')
+                script_path = os.path.join(scripts_dir, 'ur_op_close_right.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
