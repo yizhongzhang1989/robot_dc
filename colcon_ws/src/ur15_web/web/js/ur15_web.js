@@ -1035,6 +1035,46 @@ function confirmDeleteImage() {
     });
 }
 
+// Load rack positions on page load
+function loadRackPositions() {
+    fetch('/load_rack_positions')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.data) {
+            // Map rack numbers to new key names
+            const rackKeyMap = {
+                1: 'lower_left',
+                2: 'lower_right',
+                3: 'top_left',
+                4: 'top_right'
+            };
+            
+            // Update rackPositions object and display
+            for (let rackNum = 1; rackNum <= 4; rackNum++) {
+                const rackKey = rackKeyMap[rackNum];
+                if (data.data[rackKey] && Array.isArray(data.data[rackKey]) && data.data[rackKey].length === 6) {
+                    rackPositions[rackNum] = [...data.data[rackKey]];
+                    
+                    // Update the display
+                    for (let i = 0; i < 6; i++) {
+                        const element = document.getElementById(`rack${rackNum}_j${i}`);
+                        if (element) {
+                            element.textContent = data.data[rackKey][i].toFixed(2);
+                        }
+                    }
+                }
+            }
+            logToWeb('📂 Loaded saved rack positions', 'info');
+        }
+    })
+    .catch(error => {
+        logToWeb(`⚠️ Could not load saved rack positions: ${error.message}`, 'warning');
+    });
+}
+
+// Load rack positions when page loads
+loadRackPositions();
+
 // Update status every 200ms
 setInterval(() => {
     updateStatus();
@@ -2402,4 +2442,224 @@ function emergencyStop() {
             logToWeb(`❌ Network error: ${error.message}`, 'error');
         });
     }
+}
+
+// Rack position recording functionality
+let selectedRack = null;
+let rackPositions = {
+    1: null,
+    2: null,
+    3: null,
+    4: null
+};
+
+// Map rack numbers to display names
+const rackDisplayNames = {
+    1: 'Lower Left',
+    2: 'Lower Right',
+    3: 'Top Left',
+    4: 'Top Right'
+};
+
+function selectRack(rackNumber) {
+    // Remove selected class from all rack rows
+    document.querySelectorAll('.rack-row').forEach(row => {
+        row.classList.remove('selected');
+    });
+    
+    // Add selected class to the clicked rack row
+    const selectedRow = document.querySelector(`.rack-row[data-rack="${rackNumber}"]`);
+    if (selectedRow) {
+        selectedRow.classList.add('selected');
+        selectedRack = rackNumber;
+        logToWeb(`🎯 Selected ${rackDisplayNames[rackNumber]}`, 'info');
+    }
+}
+
+function recordPosition() {
+    if (selectedRack === null) {
+        logToWeb('⚠️ Please select a rack first!', 'warning');
+        return;
+    }
+    
+    // Directly read current joint positions from the already-updated input fields
+    const jointPositions = [];
+    let allValid = true;
+    
+    for (let i = 1; i <= 6; i++) {
+        const element = document.getElementById(`joint${i}Value`);
+        if (element && element.value !== '--') {
+            const value = parseFloat(element.value);
+            if (!isNaN(value)) {
+                jointPositions.push(value);
+            } else {
+                allValid = false;
+                break;
+            }
+        } else {
+            allValid = false;
+            break;
+        }
+    }
+    
+    if (!allValid || jointPositions.length !== 6) {
+        logToWeb('❌ Joint positions not available yet', 'error');
+        return;
+    }
+    
+    // Store the joint positions for the selected rack
+    rackPositions[selectedRack] = [...jointPositions];
+    
+    // Update the display
+    for (let i = 0; i < 6; i++) {
+        const element = document.getElementById(`rack${selectedRack}_j${i}`);
+        if (element) {
+            element.textContent = jointPositions[i].toFixed(2);
+        }
+    }
+    
+    // Save to JSON file
+    fetch('/save_rack_positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            rack_number: selectedRack,
+            positions: jointPositions
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ Recorded position for ${rackDisplayNames[selectedRack]}: [${jointPositions.map(v => v.toFixed(1)).join(', ')}]° (saved to file)`, 'success');
+        } else {
+            logToWeb(`⚠️ Position recorded but failed to save: ${data.message}`, 'warning');
+        }
+    })
+    .catch(error => {
+        logToWeb(`⚠️ Position recorded but file save error: ${error.message}`, 'warning');
+    });
+}
+
+function play() {
+    logToWeb('▶️ Starting playback sequence for all rack positions...', 'info');
+    
+    // Load rack positions from JSON file
+    fetch('/load_rack_positions')
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success || !data.data) {
+            logToWeb('❌ Failed to load rack positions', 'error');
+            return;
+        }
+        
+        // Map rack keys to order: lower_left, lower_right, top_left, top_right
+        const rackSequence = [
+            { key: 'lower_left', name: 'Lower Left' },
+            { key: 'lower_right', name: 'Lower Right' },
+            { key: 'top_left', name: 'Top Left' },
+            { key: 'top_right', name: 'Top Right' }
+        ];
+        
+        // Convert degrees to radians and prepare positions
+        const positions = [];
+        for (const rack of rackSequence) {
+            if (data.data[rack.key] && Array.isArray(data.data[rack.key]) && data.data[rack.key].length === 6) {
+                const degreePositions = data.data[rack.key];
+                // Convert degrees to radians
+                const radPositions = degreePositions.map(deg => deg * Math.PI / 180.0);
+                positions.push({
+                    name: rack.name,
+                    positions: radPositions
+                });
+            } else {
+                logToWeb(`⚠️ Skipping ${rack.name} - no valid position data`, 'warning');
+            }
+        }
+        
+        if (positions.length === 0) {
+            logToWeb('❌ No valid positions to execute', 'error');
+            return;
+        }
+        
+        // Execute movements sequentially
+        executeSequentialMovej(positions, 0);
+    })
+    .catch(error => {
+        logToWeb(`❌ Error loading positions: ${error.message}`, 'error');
+    });
+}
+
+// Helper function to execute movej commands sequentially
+function executeSequentialMovej(positions, index) {
+    if (index >= positions.length) {
+        logToWeb('✅ Playback sequence completed!', 'success');
+        return;
+    }
+    
+    const current = positions[index];
+    logToWeb(`📍 Moving to ${current.name}...`, 'info');
+    
+    // Send movej command with blocking=true for sequential execution
+    fetch('/movej', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            joint_positions: current.positions,
+            blocking: true  // Use blocking mode to wait for movement completion
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ Reached ${current.name}`, 'success');
+            // Wait 2 seconds before moving to next position
+            setTimeout(() => {
+                executeSequentialMovej(positions, index + 1);
+            }, 2000);
+        } else {
+            logToWeb(`❌ Failed to move to ${current.name}: ${data.message}`, 'error');
+            // Continue to next position even if one fails (no delay on failure)
+            executeSequentialMovej(positions, index + 1);
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Error moving to ${current.name}: ${error.message}`, 'error');
+        // Continue to next position even if one fails (no delay on error)
+        executeSequentialMovej(positions, index + 1);
+    });
+}
+
+function deleteRackPosition(rackNumber) {
+    // Clear the position from memory
+    rackPositions[rackNumber] = null;
+    
+    // Clear the display
+    for (let i = 0; i < 6; i++) {
+        const element = document.getElementById(`rack${rackNumber}_j${i}`);
+        if (element) {
+            element.textContent = '0.00';
+        }
+    }
+    
+    // Save to JSON file (with all zeros)
+    const zeroPositions = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    fetch('/save_rack_positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            rack_number: rackNumber,
+            positions: zeroPositions
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`🗑️ Cleared position for ${rackDisplayNames[rackNumber]}`, 'info');
+        } else {
+            logToWeb(`⚠️ Position cleared but failed to save: ${data.message}`, 'warning');
+        }
+    })
+    .catch(error => {
+        logToWeb(`⚠️ Position cleared but file save error: ${error.message}`, 'warning');
+    });
 }

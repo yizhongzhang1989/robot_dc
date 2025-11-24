@@ -2516,6 +2516,9 @@ class UR15WebNode(Node):
                         'message': 'Joint positions not provided'
                     })
                 
+                # Get blocking parameter (default: False)
+                blocking = request_data.get('blocking', False)
+                
                 # Validate joint positions
                 if not isinstance(joint_positions, list) or len(joint_positions) != 6:
                     return jsonify({
@@ -2558,16 +2561,16 @@ class UR15WebNode(Node):
                     
                     # Send movej command
                     try:
-                        self.get_logger().info(f"Moving robot to joint positions: {joint_positions_rad}")
+                        self.get_logger().info(f"Moving robot to joint positions: {joint_positions_rad}, blocking: {blocking}")
                         result = self.ur15_robot.movej(
                             joint_positions_rad,
                             a=0.5,  # acceleration 0.5 rad/s^2
                             v=0.3,  # velocity 0.3 rad/s
-                            blocking=False  # Don't block web interface
+                            blocking=blocking  # Use blocking parameter from request
                         )
                         
                         if result == 0:
-                            self.push_web_log(f"🤖 Moving to joints: {[f'{pos:.3f}' for pos in joint_positions_rad]}", 'info')
+                            # Don't push to web log to avoid duplicate logs from frontend
                             return jsonify({
                                 'success': True,
                                 'message': 'Robot movement started',
@@ -3294,74 +3297,103 @@ class UR15WebNode(Node):
                 self.push_web_log(f"❌ Failed to start execute close right: {str(e)}", 'error')
                 return jsonify({'success': False, 'message': str(e)})
         
-        @self.app.route('/emergency_stop', methods=['POST'])
-        def emergency_stop():
-            """Execute emergency stop via UR Dashboard Server."""
-            from flask import jsonify
-            import socket
+        @self.app.route('/save_rack_positions', methods=['POST'])
+        def save_rack_positions():
+            """Save rack positions to JSON file."""
+            from flask import request, jsonify
+            import json
             
             try:
-                # Get robot IP from node parameters
-                robot_ip = self.ur15_ip if hasattr(self, 'ur15_ip') else '192.168.1.15'
-                dashboard_port = 29999
+                data = request.get_json()
+                rack_number = data.get('rack_number')
+                positions = data.get('positions')
                 
-                self.get_logger().warn(f"🚨 EMERGENCY STOP triggered! Connecting to {robot_ip}:{dashboard_port}")
-                self.push_web_log(f"🚨 EMERGENCY STOP: Connecting to robot...", 'error')
+                if rack_number is None or positions is None:
+                    return jsonify({'success': False, 'message': 'Missing rack_number or positions'})
                 
-                # Create socket connection to Dashboard Server
-                dash = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                dash.settimeout(5.0)  # 5 second timeout
+                if len(positions) != 6:
+                    return jsonify({'success': False, 'message': 'Positions must contain 6 values'})
                 
-                try:
-                    dash.connect((robot_ip, dashboard_port))
-                    self.get_logger().info("Connected to UR Dashboard Server")
-                    
-                    # Send stop command
-                    dash.send(b"stop\n")
-                    self.get_logger().warn("Emergency stop command sent")
-                    
-                    # Wait for response
-                    response = dash.recv(1024).decode('utf-8').strip()
-                    self.get_logger().info(f"Dashboard Server response: {response}")
-                    
-                    dash.close()
-                    
-                    self.push_web_log("🛑 EMERGENCY STOP executed successfully!", 'error')
-                    self.push_web_log(f"📡 Server response: {response}", 'info')
-                    
-                    return jsonify({
-                        'success': True,
-                        'message': 'Emergency stop command sent successfully',
-                        'response': response
-                    })
-                    
-                except socket.timeout:
-                    dash.close()
-                    error_msg = "Connection to Dashboard Server timed out"
-                    self.get_logger().error(error_msg)
-                    self.push_web_log(f"❌ Emergency stop failed: {error_msg}", 'error')
-                    return jsonify({
-                        'success': False,
-                        'message': error_msg
-                    })
-                    
-                except socket.error as e:
-                    dash.close()
-                    error_msg = f"Socket error: {str(e)}"
-                    self.get_logger().error(error_msg)
-                    self.push_web_log(f"❌ Emergency stop failed: {error_msg}", 'error')
-                    return jsonify({
-                        'success': False,
-                        'message': error_msg
-                    })
-                    
+                # Get the JSON file path
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
+                
+                # Map rack numbers to key names
+                rack_key_map = {
+                    1: 'lower_left',
+                    2: 'lower_right',
+                    3: 'top_left',
+                    4: 'top_right'
+                }
+                
+                # Read existing data or create new
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        rack_data = json.load(f)
+                else:
+                    rack_data = {
+                        'lower_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'lower_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'top_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    }
+                
+                # Update the specific rack
+                rack_key = rack_key_map.get(rack_number)
+                if rack_key is None:
+                    return jsonify({'success': False, 'message': 'Invalid rack number'})
+                rack_data[rack_key] = positions
+                
+                # Save to file
+                os.makedirs(os.path.dirname(json_path), exist_ok=True)
+                with open(json_path, 'w') as f:
+                    json.dump(rack_data, f, indent=4)
+                
+                self.get_logger().info(f"Saved rack {rack_number} positions to {json_path}")
+                
+                return jsonify({'success': True, 'message': f'Rack {rack_number} positions saved'})
+                
             except Exception as e:
-                self.get_logger().error(f"Error in emergency stop: {e}")
-                self.push_web_log(f"❌ Emergency stop error: {str(e)}", 'error')
-                return jsonify({
-                    'success': False,
-                    'message': str(e)
-                })
+                self.get_logger().error(f"Error saving rack positions: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/load_rack_positions', methods=['GET'])
+        def load_rack_positions():
+            """Load rack positions from JSON file."""
+            from flask import jsonify
+            import json
+            
+            try:
+                # Get the JSON file path
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
+                
+                # Read data
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        rack_data = json.load(f)
+                    
+                    self.get_logger().info(f"Loaded rack positions from {json_path}")
+                    return jsonify({'success': True, 'data': rack_data})
+                else:
+                    # Return default values if file doesn't exist
+                    default_data = {
+                        'lower_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'lower_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'top_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    }
+                    return jsonify({'success': True, 'data': default_data})
+                
+            except Exception as e:
+                self.get_logger().error(f"Error loading rack positions: {e}")
+                return jsonify({'success': False, 'message': str(e)})
     
     def _get_camera_calib_params(self):
         """
