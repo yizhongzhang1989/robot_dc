@@ -262,6 +262,89 @@
     </div>
     
     <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- ACTION MODE TESTING SECTION (ROS2 Action vs Topic Comparison) -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    
+    <!-- Row 1.5: Action-based Goto Height Control (Testing) -->
+    <div class="grid grid-cols-1 gap-4">
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
+        <h2 class="font-bold text-lg mb-3 text-orange-700 flex items-center gap-2">
+          🚀 Goto Height - Action Mode (Testing)
+          <span class="text-xs font-normal text-gray-500 ml-2">(ROS2 Action Server)</span>
+        </h2>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <!-- LEFT: Action Control -->
+          <div>
+            <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-orange-100 px-2 py-1 rounded">
+              🎯 Action Control
+            </h3>
+            <div class="space-y-2">
+              <div class="flex gap-2 items-center">
+                <span class="text-xs font-medium w-24 text-gray-600">Target Height:</span>
+                <input id="targetHeightAction" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-orange-300 rounded text-xs w-28 focus:ring-2 focus:ring-orange-400" value="750">
+                <span class="text-xs text-gray-600 font-medium">mm</span>
+              </div>
+              <div class="flex gap-2">
+                <button id="gotoHeightActionBtn" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium rounded flex-1 transition">
+                  🚀 Send Action Goal
+                </button>
+                <button id="cancelActionBtn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded flex-1 transition" disabled>
+                  ⏹️ Cancel
+                </button>
+              </div>
+              <div id="actionStatus" class="text-xs p-2 bg-slate-50 rounded text-center text-gray-500">Ready</div>
+            </div>
+          </div>
+          
+          <!-- RIGHT: Action Feedback & Progress -->
+          <div>
+            <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-orange-100 px-2 py-1 rounded">
+              📊 Action Feedback
+            </h3>
+            <div class="space-y-2">
+              <!-- Goal Status -->
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-medium w-24 text-gray-600">Goal Status:</span>
+                <span id="actionGoalStatus" class="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded">IDLE</span>
+              </div>
+              
+              <!-- Progress Bar -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-medium text-gray-600">Progress:</span>
+                  <span id="actionProgressPercent" class="text-xs font-mono text-orange-600">0%</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                  <div id="actionProgressBar" class="bg-orange-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+              </div>
+              
+              <!-- Real-time Feedback -->
+              <div class="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2 rounded">
+                <div>Current: <span id="actionCurrentHeight" class="font-mono text-blue-600">-</span> mm</div>
+                <div>Target: <span id="actionTargetHeight" class="font-mono text-green-600">-</span> mm</div>
+                <div>Error: <span id="actionError" class="font-mono text-amber-600">-</span> mm</div>
+                <div>State: <span id="actionMovementState" class="font-mono font-semibold">-</span></div>
+              </div>
+              
+              <!-- Result Info -->
+              <div id="actionResultBox" class="hidden p-2 bg-green-50 rounded border border-green-200">
+                <div class="text-xs font-semibold text-green-800 mb-1">✅ Result:</div>
+                <div class="text-xs space-y-1">
+                  <div>Success: <span id="actionResultSuccess" class="font-mono font-semibold">-</span></div>
+                  <div>Final Height: <span id="actionResultFinalHeight" class="font-mono">-</span> mm</div>
+                  <div>Execution Time: <span id="actionResultExecutionTime" class="font-mono">-</span> s</div>
+                  <div>Reason: <span id="actionResultReason" class="font-mono text-green-700">-</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- ═══════════════════════════════════════════════════════════════ -->
     <!-- CALIBRATION SECTION -->
     <!-- ═══════════════════════════════════════════════════════════════ -->
     
@@ -560,6 +643,10 @@
   
 <script>
 let ws=null, lastReceive=null; let intervals=[]; let usePolling=false; let pollTimer=null; let readInterval=1000;
+// Emergency reset display state (frontend maintains 5s display even if backend is idle)
+let emergencyResetDisplayUntil = null;
+let emergencyResetCompletionReason = null;
+let lastEmergencyResetEndTime = null;  // Track last reset to avoid duplicate 5s countdowns
 function $(id){return document.getElementById(id);} 
 function setState(type,text){ const d=$('stateDot'); d.className='dot '+type; $('stateText').textContent=text; }
 function connect(){ const proto=location.protocol==='https:'?'wss':'ws'; ws=new WebSocket(proto+'://'+location.host+'/ws'); ws.onopen=()=>{usePolling=false; $('mode').textContent='WebSocket'; setState('live','Live'); if(pollTimer){clearInterval(pollTimer);} }; ws.onmessage=e=>{ if(e.data==='ping') return; handle(e.data); }; ws.onclose=()=>{ setState('disc','Disconnected'); fallback(); setTimeout(connect,3000); }; ws.onerror=()=> setState('disc','Error'); }
@@ -624,20 +711,36 @@ function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
   let mergedReason = '-';
   let activeStatus = null;
   
-  // Determine merged state: running takes priority
+  // Check if we should display emergency_reset (even if backend is idle)
+  const now = Date.now();
+  
+  // Get state info first
   const platformState = platformStatus?.task_state || 'idle';
   const pushrodState = pushrodStatus?.task_state || 'idle';
+  const platformCompletionReason = platformStatus?.completion_reason;
+  const pushrodCompletionReason = pushrodStatus?.completion_reason;
   
+  // PRIORITY 1: Check if new task started (running/completed) - clear emergency display immediately
   if (platformState === 'running' || pushrodState === 'running') {
+    // Clear emergency reset display if new task started
+    if (emergencyResetDisplayUntil) {
+      console.log(`[Emergency Reset] Cleared by running state`);
+    }
+    emergencyResetDisplayUntil = null;
+    lastEmergencyResetEndTime = null;
+    emergencyResetCompletionReason = null;
     mergedState = 'running';
-    // Use the running one's info
     activeStatus = platformState === 'running' ? platformStatus : pushrodStatus;
-  } else if (platformState === 'emergency_stop' || pushrodState === 'emergency_stop') {
-    mergedState = 'emergency_stop';
-    activeStatus = platformState === 'emergency_stop' ? platformStatus : pushrodStatus;
   } else if (platformState === 'completed' || pushrodState === 'completed') {
+    // Clear emergency reset display if task completed
+    if (emergencyResetDisplayUntil) {
+      console.log(`[Emergency Reset] Cleared by completed state`);
+    }
+    emergencyResetDisplayUntil = null;
+    lastEmergencyResetEndTime = null;
+    emergencyResetCompletionReason = null;
+    
     mergedState = 'completed';
-    // Prefer the most recently completed one (has task_end_time)
     if (platformStatus?.task_end_time && pushrodStatus?.task_end_time) {
       activeStatus = platformStatus.task_end_time > pushrodStatus.task_end_time ? platformStatus : pushrodStatus;
     } else if (platformStatus?.task_end_time) {
@@ -647,14 +750,44 @@ function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
     } else {
       activeStatus = platformStatus || pushrodStatus;
     }
-  } else {
-    // Both idle - show idle state normally
-    mergedState = 'idle';
+  } else if (emergencyResetDisplayUntil && now < emergencyResetDisplayUntil) {
+    // PRIORITY 2: If in 5s emergency window (and no new task), display emergency_reset
+    mergedState = 'emergency_reset';
+    mergedReason = emergencyResetCompletionReason || 'emergency_reset';
+    const elapsed = (now - (emergencyResetDisplayUntil - 5000)) / 1000;
+    mergedDuration = elapsed.toFixed(1) + 's / 5s';
     activeStatus = platformStatus || pushrodStatus;
+  } else {
+    // PRIORITY 3: Normal idle state detection
+    // Detect new emergency_reset from backend (completion_reason indicates reset happened)
+    // Use task_end_time to identify NEW reset events (avoid re-triggering for same reset)
+    const hasEmergencyReset = (platformCompletionReason === 'emergency_reset' && platformState === 'idle') ||
+                               (pushrodCompletionReason === 'emergency_reset' && pushrodState === 'idle');
+    
+    if (hasEmergencyReset) {
+      const currentEndTime = platformStatus?.task_end_time || pushrodStatus?.task_end_time;
+      
+      // Detect NEW emergency reset (different task_end_time)
+      if (currentEndTime && currentEndTime !== lastEmergencyResetEndTime) {
+        emergencyResetDisplayUntil = now + 5000;
+        emergencyResetCompletionReason = 'emergency_reset';
+        lastEmergencyResetEndTime = currentEndTime;
+        console.log(`[Emergency Reset] New reset detected, end_time=${currentEndTime}, display until ${new Date(emergencyResetDisplayUntil).toISOString()}`);
+      }
+      
+      // 5s expired but completion_reason still emergency_reset - show as idle
+      mergedState = 'idle';
+      mergedReason = emergencyResetCompletionReason || 'emergency_reset';
+      activeStatus = platformStatus || pushrodStatus;
+    } else {
+      // Both idle - keep emergency_reset display if within 5s window
+      mergedState = 'idle';
+      activeStatus = platformStatus || pushrodStatus;
+    }
   }
   
-  // Extract info from active status
-  if (activeStatus) {
+  // Extract info from active status (if not already set by emergency_reset logic)
+  if (activeStatus && mergedState !== 'emergency_reset') {
     mergedType = activeStatus.task_type || '-';
     mergedReason = activeStatus.completion_reason || '-';
     
@@ -677,8 +810,8 @@ function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
     taskStateEl.className += ' bg-blue-500 text-white animate-pulse shadow-lg';
   } else if (mergedState === 'completed') {
     taskStateEl.className += ' bg-green-500 text-white shadow-md';
-  } else if (mergedState === 'emergency_stop') {
-    taskStateEl.className += ' bg-red-500 text-white shadow-lg';
+  } else if (mergedState === 'emergency_reset') {
+    taskStateEl.className += ' bg-yellow-500 text-white animate-pulse shadow-lg';
   } else {
     taskStateEl.className += ' bg-gray-400 text-white';
   }
@@ -696,8 +829,8 @@ function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
       taskStatusBadgeEl.className += ' bg-blue-500 text-white animate-pulse';
     } else if (mergedState === 'completed') {
       taskStatusBadgeEl.className += ' bg-green-500 text-white';
-    } else if (mergedState === 'emergency_stop') {
-      taskStatusBadgeEl.className += ' bg-red-500 text-white';
+    } else if (mergedState === 'emergency_reset') {
+      taskStatusBadgeEl.className += ' bg-yellow-500 text-white animate-pulse';
     } else {
       taskStatusBadgeEl.className += ' bg-gray-300 text-gray-700';
     }
@@ -809,6 +942,173 @@ $('hybridControlBtn').addEventListener('click', async ()=>{
     setTimeout(()=>$('cmdStatus').textContent='',3000);
   } catch(e){ $('cmdStatus').textContent='Error'; }
 });
+
+// ═══════════════════════════════════════════════════════════════
+// ACTION MODE: Goto Height Action (ROS2 Action Server)
+// ═══════════════════════════════════════════════════════════════
+let actionPollingInterval = null;
+
+// Send Action Goal
+$('gotoHeightActionBtn').addEventListener('click', async ()=>{
+  const targetHeight = parseFloat($('targetHeightAction').value);
+  if(isNaN(targetHeight)){
+    $('actionStatus').textContent='❌ Invalid height value';
+    $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
+    setTimeout(()=>{
+      $('actionStatus').textContent='Ready';
+      $('actionStatus').className='text-xs p-2 bg-slate-50 rounded text-center text-gray-500';
+    },2000);
+    return;
+  }
+  
+  // Update UI: Goal sending
+  $('actionStatus').textContent='🚀 Sending Action Goal: '+targetHeight+'mm...';
+  $('actionStatus').className='text-xs p-2 bg-blue-50 rounded text-center text-blue-600';
+  $('actionGoalStatus').textContent='SENDING';
+  $('actionGoalStatus').className='px-2 py-1 bg-blue-200 text-blue-700 text-xs font-semibold rounded';
+  $('gotoHeightActionBtn').disabled = true;
+  
+  try {
+    const r=await fetch('/api/action/goto_height',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({target_height:targetHeight})
+    });
+    
+    if(!r.ok){ 
+      $('actionStatus').textContent='❌ Failed to send Action Goal'; 
+      $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
+      $('actionGoalStatus').textContent='FAILED';
+      $('actionGoalStatus').className='px-2 py-1 bg-red-200 text-red-700 text-xs font-semibold rounded';
+      $('gotoHeightActionBtn').disabled = false;
+      return; 
+    }
+    
+    const resp=await r.json();
+    
+    // Update UI: Goal accepted
+    $('actionStatus').textContent='✅ Action Goal Accepted - Executing...';
+    $('actionStatus').className='text-xs p-2 bg-green-50 rounded text-center text-green-600';
+    $('actionGoalStatus').textContent='EXECUTING';
+    $('actionGoalStatus').className='px-2 py-1 bg-yellow-200 text-yellow-700 text-xs font-semibold rounded animate-pulse';
+    $('actionTargetHeight').textContent = targetHeight.toFixed(2);
+    $('cancelActionBtn').disabled = false;
+    
+    // Hide previous result
+    $('actionResultBox').classList.add('hidden');
+    
+    // Start polling for feedback
+    startActionPolling();
+    
+  } catch(e){ 
+    $('actionStatus').textContent='❌ Error: '+e.message; 
+    $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
+    $('gotoHeightActionBtn').disabled = false;
+  }
+});
+
+// Cancel Action
+$('cancelActionBtn').addEventListener('click', async ()=>{
+  $('actionStatus').textContent='⏹️ Cancelling Action...';
+  $('actionStatus').className='text-xs p-2 bg-orange-50 rounded text-center text-orange-600';
+  
+  try {
+    const r=await fetch('/api/action/cancel_goto_height',{method:'POST'});
+    if(!r.ok){ 
+      $('actionStatus').textContent='❌ Failed to cancel'; 
+      $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
+      return; 
+    }
+    
+    $('actionStatus').textContent='⏹️ Action Cancelled';
+    $('actionStatus').className='text-xs p-2 bg-orange-50 rounded text-center text-orange-600';
+    $('actionGoalStatus').textContent='CANCELLED';
+    $('actionGoalStatus').className='px-2 py-1 bg-orange-200 text-orange-700 text-xs font-semibold rounded';
+    
+    stopActionPolling();
+    resetActionUI();
+    
+  } catch(e){ 
+    $('actionStatus').textContent='❌ Cancel error: '+e.message;
+    $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
+  }
+});
+
+// Start polling Action status/feedback (10Hz)
+function startActionPolling(){
+  if(actionPollingInterval) clearInterval(actionPollingInterval);
+  
+  actionPollingInterval = setInterval(async ()=>{
+    try {
+      const r=await fetch('/api/action/status');
+      if(!r.ok) return;
+      
+      const data=await r.json();
+      
+      // Update feedback display
+      if(data.feedback){
+        $('actionCurrentHeight').textContent = data.feedback.current_height?.toFixed(2) || '-';
+        $('actionError').textContent = data.feedback.error?.toFixed(2) || '-';
+        $('actionMovementState').textContent = data.feedback.movement_state || '-';
+        $('actionProgressPercent').textContent = (data.feedback.progress*100).toFixed(0)+'%';
+        $('actionProgressBar').style.width = (data.feedback.progress*100)+'%';
+      }
+      
+      // Check if completed
+      if(data.status === 'succeeded'){
+        $('actionStatus').textContent='✅ Action Completed Successfully';
+        $('actionStatus').className='text-xs p-2 bg-green-50 rounded text-center text-green-600';
+        $('actionGoalStatus').textContent='SUCCEEDED';
+        $('actionGoalStatus').className='px-2 py-1 bg-green-200 text-green-700 text-xs font-semibold rounded';
+        
+        // Show result
+        if(data.result){
+          $('actionResultSuccess').textContent = data.result.success ? 'True' : 'False';
+          $('actionResultFinalHeight').textContent = data.result.final_height?.toFixed(2) || '-';
+          $('actionResultExecutionTime').textContent = data.result.execution_time?.toFixed(2) || '-';
+          $('actionResultReason').textContent = data.result.completion_reason || '-';
+          $('actionResultBox').classList.remove('hidden');
+        }
+        
+        stopActionPolling();
+        resetActionUI();
+        
+      } else if(data.status === 'aborted' || data.status === 'cancelled'){
+        $('actionStatus').textContent='⚠️ Action '+data.status.toUpperCase();
+        $('actionStatus').className='text-xs p-2 bg-orange-50 rounded text-center text-orange-600';
+        $('actionGoalStatus').textContent=data.status.toUpperCase();
+        $('actionGoalStatus').className='px-2 py-1 bg-orange-200 text-orange-700 text-xs font-semibold rounded';
+        
+        stopActionPolling();
+        resetActionUI();
+      }
+      
+    } catch(e){
+      console.error('Action polling error:', e);
+    }
+  }, 100); // 10Hz polling
+}
+
+// Stop polling
+function stopActionPolling(){
+  if(actionPollingInterval){
+    clearInterval(actionPollingInterval);
+    actionPollingInterval = null;
+  }
+}
+
+// Reset Action UI state
+function resetActionUI(){
+  $('gotoHeightActionBtn').disabled = false;
+  $('cancelActionBtn').disabled = true;
+  
+  setTimeout(()=>{
+    if($('actionGoalStatus').textContent !== 'EXECUTING'){
+      $('actionStatus').textContent='Ready';
+      $('actionStatus').className='text-xs p-2 bg-slate-50 rounded text-center text-gray-500';
+    }
+  }, 3000);
+}
 
 // Emergency Reset button
 $('resetBtn').addEventListener('click', async ()=>{
@@ -1046,121 +1346,117 @@ async function detectPlatformRange(){
   const statusMsg = $('rangeStatusMsg');
   $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-blue-500 text-white';
   statusMsg.textContent='🔁 Detecting platform range...';
+  
   try {
-    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'timed_down',target:'pushrod',duration:7.0})});
+    // Step 1: Pushrod down
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'timed_down',target:'pushrod',duration:1.0})});
     statusMsg.textContent='⏳ Waiting for pushrod down...';
-    await new Promise(r=>setTimeout(r,2000));
+    await new Promise(r=>setTimeout(r,2000)); // Wait for pushrod to finish
 
-    statusMsg.textContent='⬇️ Moving platform DOWN (waiting for stall)...';
-    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'down',target:'platform'})});
-    const STALL_MS = 2000;
-    const RESET_DELTA = 0.005;
-    const STABLE_DELTA = 0.02;
-    let firstHeight = null; let prevHeight = null; let lastChangeTime = Date.now();
-    while(true){
-      await new Promise(r=>setTimeout(r,100));
+    // Step 2: Start range scan (Action version uses range_scan_down command)
+    statusMsg.textContent='⬇️ Scanning DOWN for LOW endpoint...';
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'range_scan_down',target:'platform'})});
+    
+    // Wait and monitor for scan completion
+    let scanTimeout = 180000; // 180 second (3 minute) timeout
+    let scanStart = Date.now();
+    let scanStarted = false; // Track if scan has actually started
+    while(Date.now() - scanStart < scanTimeout){
+      await new Promise(r=>setTimeout(r,500));
       const res = await fetch('/api/status');
       if(!res.ok) continue;
-      const current = (await res.json()).platform?.current_height;
-      if(current===null || current===undefined) continue;
-      if(firstHeight===null) firstHeight=current;
-      if(Math.abs(current-firstHeight)<RESET_DELTA){lastChangeTime=Date.now();prevHeight=current;continue;}
-      if(prevHeight!==null && Math.abs(current-prevHeight)>STABLE_DELTA){lastChangeTime=Date.now();}
-      if(Date.now()-lastChangeTime>STALL_MS){
-        regionMinHeight=current;
-        await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'stop',target:'platform'})});
+      const status = await res.json();
+      const platformStatus = status.platform;
+      
+      // Track if scan has started
+      if(platformStatus?.range_scan_active){
+        scanStarted = true;
+      }
+      
+      // Check if scan completed
+      if(platformStatus?.task_state === 'completed' && platformStatus?.task_type === 'range_scan'){
+        regionMinHeight = platformStatus.range_scan_low_height;
+        regionMaxHeight = platformStatus.range_scan_high_height;
         break;
       }
-      prevHeight=current;
-    }
-    if(regionMinHeight===null){
-      statusMsg.textContent='❌ Failed to detect minimum height';
-      $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
-      return;
-    }
-    statusMsg.textContent=`✅ Min: ${regionMinHeight.toFixed(2)}mm | ⬆️ Detecting max...`;    
-
-    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'up',target:'platform'})});
-    let upStartHeight = null; let prevUp = null; let lastUpChange = Date.now();
-    while(true){
-      await new Promise(r=>setTimeout(r,100));
-      const res = await fetch('/api/status');
-      if(!res.ok) continue;
-      const current = (await res.json()).platform?.current_height;
-      if(current===null || current===undefined) continue;
-      if(upStartHeight===null){
-        if(Math.abs(current-regionMinHeight)>5.0){upStartHeight=current;lastUpChange=Date.now();}
-        prevUp=current;
-        continue;
+      
+      // Update status message based on scan progress
+      if(platformStatus?.range_scan_low_height !== null && platformStatus?.range_scan_low_height !== undefined){
+        statusMsg.textContent=`✅ Min: ${platformStatus.range_scan_low_height.toFixed(2)}mm | ⬆️ Scanning UP for HIGH endpoint...`;
+      } else if(platformStatus?.range_scan_active && platformStatus?.range_scan_direction === 'down'){
+        statusMsg.textContent='⬇️ Scanning DOWN for LOW endpoint...';
       }
-      if(prevUp!==null && Math.abs(current-prevUp)>STABLE_DELTA){lastUpChange=Date.now();}
-      if(Date.now()-lastUpChange>STALL_MS){
-        regionMaxHeight=current;
-        await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'stop',target:'platform'})});
-        break;
+      
+      // Check if scan stopped unexpectedly (only after it has started and not completed)
+      if(scanStarted && !platformStatus?.range_scan_active && platformStatus?.task_state !== 'completed' && platformStatus?.task_type === 'range_scan'){
+        throw new Error('Range scan stopped unexpectedly');
       }
-      prevUp=current;
     }
-    if(regionMaxHeight===null){
-      statusMsg.textContent='❌ Failed to detect maximum height';
+    
+    if(Date.now() - scanStart >= scanTimeout){
+      throw new Error('Range scan timeout');
+    }
+    
+    if(regionMinHeight===null || regionMinHeight===undefined || regionMaxHeight===null || regionMaxHeight===undefined){
+      statusMsg.textContent='❌ Failed to detect range endpoints';
       $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
       return;
     }
     
-    // Calculate safe bounds
-    const actualMin = regionMinHeight;
-    const actualMax = regionMaxHeight;
-    const safeMin = actualMin + 50.0;
-    const safeMax = actualMax - 50.0;
-    
-    if (safeMax <= safeMin) {
-      statusMsg.textContent = '❌ Range too small for 50mm margins';
-      $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
-      return;
-    }
-    
-    // Save to backend
-    const res = await fetch('/api/range/set', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({actual_min: actualMin, actual_max: actualMax, safe_min: safeMin, safe_max: safeMax})
-    });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error || 'Failed to save range');
-    
-    statusMsg.textContent = `✅ Range saved: ${safeMin.toFixed(1)} ~ ${safeMax.toFixed(1)}mm`;
+    // Range detected successfully
+    statusMsg.textContent = `✅ Range detected: ${regionMinHeight.toFixed(1)} ~ ${regionMaxHeight.toFixed(1)}mm`;
     $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+    
+    // Update display
+    $('rangeActualMin').textContent = regionMinHeight.toFixed(1);
+    $('rangeActualMax').textContent = regionMaxHeight.toFixed(1);
+    
+    // Note: Backend already saved config in _save_range_config()
     await updateRangeStatus();
+    
   } catch(e){
     statusMsg.textContent='❌ Detection failed: '+e.message;
     $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+    
+    // Cancel any active scan
+    try {
+      await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'range_scan_cancel',target:'platform'})});
+    } catch(cancelErr) {
+      console.error('Failed to cancel range scan:', cancelErr);
+    }
   }
 }
 
 async function updateRangeStatus() {
   try {
+    // Read from config file via /api/range/get
     const res = await fetch('/api/range/get');
     if (res.ok) {
-      const data = await res.json();
-      if (data.has_range) {
-        $('rangeActualMin').textContent = data.actual_min?.toFixed(1) || '--';
-        $('rangeActualMax').textContent = data.actual_max?.toFixed(1) || '--';
-        $('rangeSafeMin').textContent = data.safe_min?.toFixed(1) || '--';
-        $('rangeSafeMax').textContent = data.safe_max?.toFixed(1) || '--';
+      const rangeData = await res.json();
+      
+      // Check if range is calibrated
+      if (rangeData.has_range) {
+        $('rangeActualMin').textContent = rangeData.actual_min.toFixed(1);
+        $('rangeActualMax').textContent = rangeData.actual_max.toFixed(1);
+        $('rangeSafeMin').textContent = rangeData.safe_min.toFixed(1);
+        $('rangeSafeMax').textContent = rangeData.safe_max.toFixed(1);
         
-        const timestamp = data.detected_at_iso || '';
         $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
-        $('rangeStatusBadge').textContent = timestamp ? `Calibrated ${timestamp}` : 'Calibrated';
+        $('rangeStatusBadge').textContent = 'Calibrated';
         
         // Enable overshoot calibration
         $('overshootStartCalibrationBtn').disabled = false;
+        
+        // Store in local variables
+        regionMinHeight = rangeData.actual_min;
+        regionMaxHeight = rangeData.actual_max;
       } else {
         $('rangeActualMin').textContent = '--';
         $('rangeActualMax').textContent = '--';
         $('rangeSafeMin').textContent = '--';
         $('rangeSafeMax').textContent = '--';
         $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
-        $('rangeStatusBadge').textContent = 'Default';
+        $('rangeStatusBadge').textContent = 'Not Calibrated';
         
         // Disable overshoot calibration
         $('overshootStartCalibrationBtn').disabled = true;
@@ -1209,6 +1505,10 @@ async function waitForMovementComplete() {
     // Task complete when state is idle or completed
     if (platform?.task_state === 'idle' || platform?.task_state === 'completed') {
       console.log(`Movement complete: task_state=${platform.task_state}, task_type=${platform.task_type}`);
+      // Check if task failed due to emergency_reset
+      if (platform?.completion_reason === 'emergency_reset') {
+        throw new Error('Movement failed: emergency reset triggered');
+      }
       break;
     }
     
@@ -1385,7 +1685,18 @@ async function overshootStartCalibration() {
       await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: targetHeight})});
       
-      await waitForMovementComplete();
+      try {
+        await waitForMovementComplete();
+      } catch (error) {
+        console.error(`❌ DOWN #${completedDown + 1}: Movement failed - ${error.message}`);
+        $('overshootStatusMsg').textContent = `❌ Movement failed at DOWN #${completedDown + 1}: ${error.message}`;
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;  // Abort calibration on movement failure
+      }
       
       const statusRes = await fetch('/api/status');
       const platform = (await statusRes.json()).platform;
@@ -1455,7 +1766,18 @@ async function overshootStartCalibration() {
       await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: targetHeight})});
       
-      await waitForMovementComplete();
+      try {
+        await waitForMovementComplete();
+      } catch (error) {
+        console.error(`❌ UP #${completedUp + 1}: Movement failed - ${error.message}`);
+        $('overshootStatusMsg').textContent = `❌ Movement failed at UP #${completedUp + 1}: ${error.message}`;
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;  // Abort calibration on movement failure
+      }
       
       const statusRes = await fetch('/api/status');
       const platform = (await statusRes.json()).platform;

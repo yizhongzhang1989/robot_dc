@@ -105,6 +105,47 @@ class LiftRobotWeb(Node):
         self.cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
         self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
 
+        # ═══════════════════════════════════════════════════════════════
+        # ROS2 Action Clients: All 4 Action types
+        # ═══════════════════════════════════════════════════════════════
+        self.action_clients = {}  # Dict of action_name -> ActionClient
+        self.action_goal_handles = {}  # Dict of action_name -> goal_handle
+        self.action_feedback = {}  # Dict of action_name -> feedback
+        self.action_result = {}  # Dict of action_name -> result
+        self.action_status = {}  # Dict of action_name -> status
+        self.action_lock = threading.Lock()
+        
+        try:
+            from rclpy.action import ActionClient
+            from lift_robot_interfaces.action import GotoHeight, ForceControl, HybridControl, ManualMove
+            
+            # Create all 4 Action Clients
+            self.action_clients['goto_height'] = ActionClient(self, GotoHeight, '/lift_robot/goto_height')
+            self.action_clients['force_control'] = ActionClient(self, ForceControl, '/lift_robot/force_control')
+            self.action_clients['hybrid_control'] = ActionClient(self, HybridControl, '/lift_robot/hybrid_control')
+            self.action_clients['manual_move'] = ActionClient(self, ManualMove, '/lift_robot/manual_move')
+            
+            # Initialize status for all actions
+            for action_name in self.action_clients.keys():
+                self.action_status[action_name] = 'idle'
+                self.action_goal_handles[action_name] = None
+                self.action_feedback[action_name] = None
+                self.action_result[action_name] = None
+            
+            self.get_logger().info("[Action] All 4 Action Clients created - waiting for servers...")
+            
+            # Wait for action servers (non-blocking, 2s timeout each)
+            for action_name, client in self.action_clients.items():
+                if client.wait_for_server(timeout_sec=2.0):
+                    self.get_logger().info(f"[Action] ✅ {action_name} Server available")
+                else:
+                    self.get_logger().warn(f"[Action] ⚠️ {action_name} Server not available yet")
+                    
+        except ImportError as e:
+            self.get_logger().warn(f"[Action] Cannot import actions - interface not built or installed: {e}")
+        except Exception as e:
+            self.get_logger().error(f"[Action] Failed to create Action Clients: {e}")
+
         self.get_logger().info(f"Web server subscribing: {self.sensor_topic}")
         self.start_server()
 
@@ -189,6 +230,73 @@ class LiftRobotWeb(Node):
         except Exception as e:
             self.get_logger().warn(f"Combined force update error: {e}")
     
+    # ═══════════════════════════════════════════════════════════════
+    # Action Client Callback Methods (Generic for all 4 Actions)
+    # ═══════════════════════════════════════════════════════════════
+    
+    def _create_goal_response_callback(self, action_name):
+        """Create goal response callback for specific action"""
+        def callback(future):
+            goal_handle = future.result()
+            if not goal_handle.accepted:
+                self.get_logger().warn(f'[Action:{action_name}] ❌ Goal rejected')
+                with self.action_lock:
+                    self.action_status[action_name] = 'aborted'
+                return
+            
+            self.get_logger().info(f'[Action:{action_name}] ✅ Goal accepted, executing...')
+            with self.action_lock:
+                self.action_goal_handles[action_name] = goal_handle
+                self.action_status[action_name] = 'executing'
+                self.get_logger().debug(f'[Action:{action_name}] Stored goal_handle id={id(goal_handle)}')
+            
+            # Register result callback
+            get_result_future = goal_handle.get_result_async()
+            get_result_future.add_done_callback(self._create_result_callback(action_name, goal_handle))
+        return callback
+    
+    def _create_feedback_callback(self, action_name):
+        """Create feedback callback for specific action"""
+        def callback(feedback_msg):
+            feedback = feedback_msg.feedback
+            with self.action_lock:
+                # Store all feedback fields (different Actions have different fields)
+                self.action_feedback[action_name] = feedback
+        return callback
+    
+    def _create_result_callback(self, action_name, goal_handle):
+        """Create result callback for specific action"""
+        def callback(future):
+            result = future.result().result
+            status = future.result().status
+            
+            with self.action_lock:
+                # Only update status if this is still the active goal_handle
+                # This prevents old Action results from overwriting new Action status
+                if self.action_goal_handles.get(action_name) is goal_handle:
+                    self.action_result[action_name] = result
+                    
+                    # Map action status codes to string
+                    if status == 4:  # SUCCEEDED
+                        self.action_status[action_name] = 'succeeded'
+                        self.get_logger().info(f'[Action:{action_name}] ✅ SUCCEEDED - reason={result.completion_reason}')
+                    elif status == 6:  # ABORTED
+                        self.action_status[action_name] = 'aborted'
+                        self.get_logger().warn(f'[Action:{action_name}] ⚠️ ABORTED - reason={result.completion_reason}')
+                    elif status == 5:  # CANCELED
+                        self.action_status[action_name] = 'cancelled'
+                        self.get_logger().info(f'[Action:{action_name}] ⏹️ CANCELLED - reason={result.completion_reason}')
+                    else:
+                        self.action_status[action_name] = 'unknown'
+                        self.get_logger().warn(f'[Action:{action_name}] ❓ Unknown status: {status}')
+                else:
+                    # Old Action result - ignore to prevent overwriting new Action status
+                    self.get_logger().debug(
+                        f'[Action:{action_name}] Ignoring old result (handle_id={id(goal_handle)}, '
+                        f'current_handle_id={id(self.action_goal_handles.get(action_name))})'
+                    )
+        return callback
+    
     def platform_status_cb(self, msg: String):
         try:
             self.platform_status = json.loads(msg.data)
@@ -244,93 +352,236 @@ class LiftRobotWeb(Node):
                 cmd = payload.get('command')
                 target = payload.get('target','platform')
                 duration = payload.get('duration')
-                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height','force_up','force_down','height_force_hybrid','reset'}
+                allowed = {'up','down','stop','timed_up','timed_down','stop_timed','goto_point','goto_height','force_up','force_down','height_force_hybrid','reset','range_scan_down','range_scan_up','range_scan_cancel'}
                 if cmd not in allowed:
                     return JSONResponse({'error':'invalid command'}, status_code=400)
                 
-                # CRITICAL: Reset command sends to BOTH platform and pushrod
-                if cmd == 'reset':
-                    if target != 'platform':
-                        return JSONResponse({'error':'reset command only valid for platform target (auto-sends to pushrod too)'}, status_code=400)
-                    # Send reset to both platform and pushrod
-                    reset_msg = String()
-                    reset_msg.data = json.dumps({'command': 'reset'})
-                    self.cmd_pub.publish(reset_msg)  # Platform
-                    self.pushrod_cmd_pub.publish(reset_msg)  # Pushrod
-                    return {'status':'ok','command':'reset','target':'both (platform + pushrod)'}
-                
-                # Timed commands only meaningful for pushrod target currently
-                if cmd.startswith('timed') and target != 'pushrod':
-                    return JSONResponse({'error':'timed commands only supported for pushrod target'}, status_code=400)
-                if cmd == 'goto_point':
-                    if target != 'pushrod':
-                        return JSONResponse({'error':'goto_point only valid for pushrod target'}, status_code=400)
-                    point = payload.get('point')
-                    if not point:
-                        return JSONResponse({'error':'point field required for goto_point'}, status_code=400)
-                if cmd == 'goto_height':
-                    # goto_height now supports both platform and pushrod targets
-                    target_height = payload.get('target_height')
-                    if target_height is None:
-                        return JSONResponse({'error':'target_height field required for goto_height'}, status_code=400)
-                if cmd in ('force_up','force_down'):
-                    if target != 'platform':
-                        return JSONResponse({'error':'force_up/force_down only valid for platform target'}, status_code=400)
-                    target_force = payload.get('target_force')
-                    if target_force is None:
-                        return JSONResponse({'error':'target_force field required for force_up/force_down'}, status_code=400)
-                    try:
-                        tf = float(target_force)
-                        if tf <= 0:
-                            return JSONResponse({'error':'target_force must be > 0'}, status_code=400)
-                    except Exception:
-                        return JSONResponse({'error':'invalid target_force'}, status_code=400)
-                if cmd == 'height_force_hybrid':
-                    # NEW: Height-Force Hybrid control - platform only
-                    if target != 'platform':
-                        return JSONResponse({'error':'height_force_hybrid only valid for platform target'}, status_code=400)
-                    target_height = payload.get('target_height')
-                    target_force = payload.get('target_force')
-                    if target_height is None or target_force is None:
-                        return JSONResponse({'error':'height_force_hybrid requires both target_height and target_force fields'}, status_code=400)
-                    try:
-                        th = float(target_height)
-                        tf = float(target_force)
-                        if tf <= 0:
-                            return JSONResponse({'error':'target_force must be > 0'}, status_code=400)
-                    except Exception:
-                        return JSONResponse({'error':'invalid target_height or target_force'}, status_code=400)
-                # Auto inject 5s for timed_up if not provided
-                if cmd == 'timed_up' and (duration is None):
-                    duration = 3.5
-                if cmd == 'timed_down' and (duration is None):
-                    # Provide a default if user omits (optional design choice)
-                    duration = 3.5
-                if duration is not None:
-                    try:
-                        duration = float(duration)
-                        if duration <= 0:
-                            return JSONResponse({'error':'duration must be > 0'}, status_code=400)
-                    except Exception:
-                        return JSONResponse({'error':'invalid duration'}, status_code=400)
-                body = {'command': cmd}
-                if cmd == 'goto_point':
-                    body['point'] = payload.get('point')
-                if cmd == 'goto_height':
-                    body['target_height'] = payload.get('target_height')
-                if cmd in ('force_up','force_down'):
-                    body['target_force'] = float(payload.get('target_force'))
-                if cmd == 'height_force_hybrid':
-                    body['target_height'] = float(payload.get('target_height'))
-                    body['target_force'] = float(payload.get('target_force'))
-                if duration is not None:
-                    body['duration'] = duration
-                msg = String(); msg.data = json.dumps(body)
-                if target == 'pushrod':
+                # ═══════════════════════════════════════════════════════════════
+                # PLATFORM COMMANDS: Route to Actions (pure Action architecture)
+                # ═══════════════════════════════════════════════════════════════
+                if target == 'platform':
+                    # Platform now uses Action-only control (no topic commands)
+                    
+                    # --- ManualMove Action: up/down/stop/reset ---
+                    if cmd in ('up', 'down', 'stop', 'reset'):
+                        if cmd == 'stop':
+                            # Cancel all running actions
+                            self.get_logger().info('[CMD] STOP requested')
+                            cancelled_any = False
+                            with self.action_lock:
+                                self.get_logger().info(f'[CMD] Current goal_handles: {list(self.action_goal_handles.keys())}')
+                                self.get_logger().info(f'[CMD] Current statuses: {self.action_status}')
+                                for action_name, goal_handle in self.action_goal_handles.items():
+                                    if goal_handle and self.action_status.get(action_name) == 'executing':
+                                        self.get_logger().info(f'[CMD] Cancelling {action_name} action (handle_id={id(goal_handle)})...')
+                                        goal_handle.cancel_goal_async()
+                                        cancelled_any = True
+                                    else:
+                                        self.get_logger().info(f'[CMD] Skip {action_name}: handle={goal_handle is not None}, status={self.action_status.get(action_name)}')
+                            self.get_logger().info(f'[CMD] STOP complete: cancelled_any={cancelled_any}')
+                            return {'status':'ok','command':'stop','cancelled':cancelled_any}
+                        
+                        elif cmd == 'reset':
+                            # Emergency reset: cancel all Actions + send reset topic
+                            self.get_logger().warn('[CMD] 🔴 EMERGENCY RESET requested')
+                            cancelled_count = 0
+                            with self.action_lock:
+                                for action_name, goal_handle in self.action_goal_handles.items():
+                                    if goal_handle and self.action_status.get(action_name) == 'executing':
+                                        self.get_logger().info(f'[CMD] Cancelling {action_name} for reset...')
+                                        goal_handle.cancel_goal_async()
+                                        cancelled_count += 1
+                            
+                            # Send reset topic for hardware cleanup
+                            reset_msg = String()
+                            reset_msg.data = json.dumps({'command': 'reset'})
+                            self.cmd_pub.publish(reset_msg)
+                            self.pushrod_cmd_pub.publish(reset_msg)
+                            
+                            # Don't manually set platform_status - let ROS topic update it
+                            # The lift_robot_node will publish emergency_reset state via /lift_robot_platform/status
+                            
+                            self.get_logger().warn(f'[CMD] Reset complete: cancelled {cancelled_count} Actions, waiting for status update...')
+                            return {'status':'ok','command':'reset','cancelled':cancelled_count}
+                        
+                        else:  # up or down
+                            # Create ManualMove goal
+                            from lift_robot_interfaces.action import ManualMove
+                            goal_msg = ManualMove.Goal()
+                            goal_msg.direction = cmd
+                            
+                            # Send action goal
+                            send_goal_future = self.action_clients['manual_move'].send_goal_async(
+                                goal_msg,
+                                feedback_callback=self._create_feedback_callback('manual_move')
+                            )
+                            send_goal_future.add_done_callback(
+                                self._create_goal_response_callback('manual_move')
+                            )
+                            
+                            with self.action_lock:
+                                self.action_status['manual_move'] = 'sending'
+                            
+                            return {'status':'ok','command':cmd,'action':'manual_move','action_status':'sending'}
+                    
+                    # --- GotoHeight Action ---
+                    elif cmd == 'goto_height':
+                        target_height = payload.get('target_height')
+                        if target_height is None:
+                            return JSONResponse({'error':'target_height required for goto_height'}, status_code=400)
+                        
+                        try:
+                            target_height = float(target_height)
+                        except:
+                            return JSONResponse({'error':'invalid target_height'}, status_code=400)
+                        
+                        from lift_robot_interfaces.action import GotoHeight
+                        goal_msg = GotoHeight.Goal()
+                        goal_msg.target_height = target_height
+                        
+                        send_goal_future = self.action_clients['goto_height'].send_goal_async(
+                            goal_msg,
+                            feedback_callback=self._create_feedback_callback('goto_height')
+                        )
+                        send_goal_future.add_done_callback(
+                            self._create_goal_response_callback('goto_height')
+                        )
+                        
+                        with self.action_lock:
+                            self.action_status['goto_height'] = 'sending'
+                        
+                        return {'status':'ok','command':cmd,'action':'goto_height','target_height':target_height,'action_status':'sending'}
+                    
+                    # --- ForceControl Action: force_up/force_down ---
+                    elif cmd in ('force_up', 'force_down'):
+                        target_force = payload.get('target_force')
+                        if target_force is None:
+                            return JSONResponse({'error':'target_force required for force control'}, status_code=400)
+                        
+                        try:
+                            target_force = float(target_force)
+                            if target_force <= 0:
+                                return JSONResponse({'error':'target_force must be > 0'}, status_code=400)
+                        except:
+                            return JSONResponse({'error':'invalid target_force'}, status_code=400)
+                        
+                        from lift_robot_interfaces.action import ForceControl
+                        goal_msg = ForceControl.Goal()
+                        goal_msg.target_force = target_force
+                        goal_msg.direction = cmd.replace('force_', '')  # 'force_up' -> 'up'
+                        
+                        send_goal_future = self.action_clients['force_control'].send_goal_async(
+                            goal_msg,
+                            feedback_callback=self._create_feedback_callback('force_control')
+                        )
+                        send_goal_future.add_done_callback(
+                            self._create_goal_response_callback('force_control')
+                        )
+                        
+                        with self.action_lock:
+                            self.action_status['force_control'] = 'sending'
+                        
+                        return {'status':'ok','command':cmd,'action':'force_control','target_force':target_force,'action_status':'sending'}
+                    
+                    # --- HybridControl Action ---
+                    elif cmd == 'height_force_hybrid':
+                        target_height = payload.get('target_height')
+                        target_force = payload.get('target_force')
+                        
+                        if target_height is None or target_force is None:
+                            return JSONResponse({'error':'height_force_hybrid requires both target_height and target_force'}, status_code=400)
+                        
+                        try:
+                            target_height = float(target_height)
+                            target_force = float(target_force)
+                            if target_force <= 0:
+                                return JSONResponse({'error':'target_force must be > 0'}, status_code=400)
+                        except:
+                            return JSONResponse({'error':'invalid target_height or target_force'}, status_code=400)
+                        
+                        # Determine direction based on target_height vs current_height
+                        # Default to 'up' if current height not available
+                        direction = 'up'
+                        if self.platform_status and 'current_height' in self.platform_status:
+                            current_height = self.platform_status['current_height']
+                            if target_height < current_height:
+                                direction = 'down'
+                        
+                        from lift_robot_interfaces.action import HybridControl
+                        goal_msg = HybridControl.Goal()
+                        goal_msg.target_height = target_height
+                        goal_msg.target_force = target_force
+                        goal_msg.direction = direction
+                        
+                        send_goal_future = self.action_clients['hybrid_control'].send_goal_async(
+                            goal_msg,
+                            feedback_callback=self._create_feedback_callback('hybrid_control')
+                        )
+                        send_goal_future.add_done_callback(
+                            self._create_goal_response_callback('hybrid_control')
+                        )
+                        
+                        with self.action_lock:
+                            self.action_status['hybrid_control'] = 'sending'
+                        
+                            return {'status':'ok','command':cmd,'action':'hybrid_control','target_height':target_height,'target_force':target_force,'direction':direction,'action_status':'sending'}
+                    
+                    # --- Range Scan Commands (Topic-based) ---
+                    elif cmd in ('range_scan_down', 'range_scan_up', 'range_scan_cancel'):
+                        # Range scan uses topic commands (not Actions)
+                        msg = String()
+                        msg.data = json.dumps({'command': cmd})
+                        self.cmd_pub.publish(msg)
+                        self.get_logger().info(f'[CMD] Range scan command sent: {cmd}')
+                        return {'status':'ok','command':cmd,'method':'topic'}
+                    
+                    else:
+                        return JSONResponse({'error':f'unknown platform command: {cmd}'}, status_code=400)                # ═══════════════════════════════════════════════════════════════
+                # PUSHROD COMMANDS: Still use Topic (not migrated to Action yet)
+                # ═══════════════════════════════════════════════════════════════
+                elif target == 'pushrod':
+                    # Timed commands only meaningful for pushrod target currently
+                    if cmd.startswith('timed'):
+                        pass  # allowed
+                    elif cmd == 'goto_point':
+                        point = payload.get('point')
+                        if not point:
+                            return JSONResponse({'error':'point field required for goto_point'}, status_code=400)
+                    elif cmd == 'goto_height':
+                        target_height = payload.get('target_height')
+                        if target_height is None:
+                            return JSONResponse({'error':'target_height field required for goto_height'}, status_code=400)
+                    
+                    # Auto inject default duration for timed commands
+                    if cmd == 'timed_up' and (duration is None):
+                        duration = 3.5
+                    if cmd == 'timed_down' and (duration is None):
+                        duration = 3.5
+                    
+                    if duration is not None:
+                        try:
+                            duration = float(duration)
+                            if duration <= 0:
+                                return JSONResponse({'error':'duration must be > 0'}, status_code=400)
+                        except Exception:
+                            return JSONResponse({'error':'invalid duration'}, status_code=400)
+                    
+                    # Build topic message body
+                    body = {'command': cmd}
+                    if cmd == 'goto_point':
+                        body['point'] = payload.get('point')
+                    if cmd == 'goto_height':
+                        body['target_height'] = payload.get('target_height')
+                    if duration is not None:
+                        body['duration'] = duration
+                    
+                    msg = String()
+                    msg.data = json.dumps(body)
                     self.pushrod_cmd_pub.publish(msg)
+                    return {'status':'ok','command':cmd,'target':'pushrod','duration':duration}
+                
                 else:
-                    self.cmd_pub.publish(msg)
-                return {'status':'ok','command':cmd,'target':target,'duration':duration}
+                    return JSONResponse({'error':f'invalid target: {target}'}, status_code=400)
             
             @app.get('/api/status')
             def get_status():
@@ -349,11 +600,17 @@ class LiftRobotWeb(Node):
                         'current_height': self.platform_status.get('current_height'),
                         'target_height': self.platform_status.get('target_height'),
                         'limit_exceeded': self.platform_status.get('limit_exceeded', False),
+                        # Overshoot calibration data
                         'last_goto_target': self.platform_status.get('last_goto_target'),
                         'last_goto_actual': self.platform_status.get('last_goto_actual'),
                         'last_goto_stop_height': self.platform_status.get('last_goto_stop_height'),
                         'last_goto_direction': self.platform_status.get('last_goto_direction'),
                         'last_goto_timestamp': self.platform_status.get('last_goto_timestamp'),
+                        # Range scan data
+                        'range_scan_active': self.platform_status.get('range_scan_active'),
+                        'range_scan_direction': self.platform_status.get('range_scan_direction'),
+                        'range_scan_low_height': self.platform_status.get('range_scan_low_height'),
+                        'range_scan_high_height': self.platform_status.get('range_scan_high_height'),
                     }
                 if self.pushrod_status:
                     response['pushrod'] = {
@@ -2524,6 +2781,84 @@ class LiftRobotWeb(Node):
                     import traceback
                     traceback.print_exc()
                     return JSONResponse({'success': False, 'error': str(e)})
+
+            # ═══════════════════════════════════════════════════════════════
+            # ROS2 Action API Endpoints (Testing Action vs Topic)
+            # ═══════════════════════════════════════════════════════════════
+            
+            @app.post('/api/action/goto_height')
+            async def send_action_goal(payload: dict):
+                """Send GotoHeight Action goal"""
+                if not self.action_client:
+                    return JSONResponse({'error': 'Action client not available'}, status_code=503)
+                
+                target_height = payload.get('target_height')
+                if target_height is None:
+                    return JSONResponse({'error': 'target_height required'}, status_code=400)
+                
+                try:
+                    from lift_robot_interfaces.action import GotoHeight
+                    
+                    # Create goal
+                    goal_msg = GotoHeight.Goal()
+                    goal_msg.target_height = float(target_height)
+                    
+                    self.get_logger().info(f'[Action] Sending goal: target_height={target_height}mm')
+                    
+                    # Reset state
+                    with self.action_lock:
+                        self.action_status = 'sending'
+                        self.action_feedback = None
+                        self.action_result = None
+                        self.action_goal_handle = None
+                    
+                    # Send goal (non-blocking)
+                    send_goal_future = self.action_client.send_goal_async(
+                        goal_msg, 
+                        feedback_callback=self.action_feedback_callback
+                    )
+                    send_goal_future.add_done_callback(self.action_goal_response_callback)
+                    
+                    return JSONResponse({
+                        'status': 'goal_sent',
+                        'target_height': target_height
+                    })
+                    
+                except ImportError:
+                    return JSONResponse({'error': 'GotoHeight action not available - interface not built'}, status_code=503)
+                except Exception as e:
+                    self.get_logger().error(f'[Action] Send goal error: {e}')
+                    return JSONResponse({'error': str(e)}, status_code=500)
+            
+            @app.post('/api/action/cancel_goto_height')
+            async def cancel_action():
+                """Cancel active Action goal"""
+                with self.action_lock:
+                    if not self.action_goal_handle:
+                        return JSONResponse({'error': 'No active goal to cancel'}, status_code=400)
+                    
+                    goal_handle = self.action_goal_handle
+                
+                try:
+                    self.get_logger().info('[Action] Cancelling goal...')
+                    cancel_future = goal_handle.cancel_goal_async()
+                    # Note: Result will be handled by result callback
+                    
+                    return JSONResponse({'status': 'cancel_sent'})
+                    
+                except Exception as e:
+                    self.get_logger().error(f'[Action] Cancel error: {e}')
+                    return JSONResponse({'error': str(e)}, status_code=500)
+            
+            @app.get('/api/action/status')
+            async def get_action_status():
+                """Get current Action status and feedback (polled by frontend)"""
+                with self.action_lock:
+                    return JSONResponse({
+                        'status': self.action_status,
+                        'feedback': self.action_feedback,
+                        'result': self.action_result
+                    })
 
             @app.websocket('/ws')
             async def ws_endpoint(ws: WebSocket):

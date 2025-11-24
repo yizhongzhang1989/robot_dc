@@ -81,17 +81,17 @@ class LiftRobotController(ModbusDevice):
     def stop(self, seq_id=None):
         """Stop motion (pulse relay 0)."""
         self.node.get_logger().info(f"[SEQ {seq_id}] Stop command (relay 0 pulse)")
-        self.start_flash_async(relay_address=0, seq_id=seq_id)
+        self.start_flash_async(relay_address=0, seq_id=seq_id, max_attempts=10)
 
     def up(self, seq_id=None):
         """Move up (pulse relay 1). Pulse width is fixed, velocity is hardware-defined."""
         self.node.get_logger().info(f"[SEQ {seq_id}] Up command (relay 1 pulse)")
-        self.start_flash_async(relay_address=1, seq_id=seq_id)
+        self.start_flash_async(relay_address=1, seq_id=seq_id, max_attempts=10)
 
     def down(self, seq_id=None):
         """Move down (pulse relay 2). Pulse width is fixed, velocity is hardware-defined."""
         self.node.get_logger().info(f"[SEQ {seq_id}] Down command (relay 2 pulse)")
-        self.start_flash_async(relay_address=2, seq_id=seq_id)
+        self.start_flash_async(relay_address=2, seq_id=seq_id, max_attempts=10)
 
     def open_relay(self, relay_address, seq_id=None):
         """Open relay.
@@ -161,8 +161,10 @@ class LiftRobotController(ModbusDevice):
         self.node.get_logger().info(f"[SEQ {seq_id}] Async flash start: {relay_name} (max_attempts={max_attempts})")
         self._flash_attempt_on()
         # Start watchdog to avoid indefinite lock if read never returns
+        # Timeout = max_attempts * ~140ms/attempt * 2 (ON+OFF phases) + 0.5s safety margin
+        watchdog_timeout = max(2.0, max_attempts * 0.14 * 2 + 0.5)
         try:
-            wd = threading.Timer(0.6, self._flash_watchdog)
+            wd = threading.Timer(watchdog_timeout, self._flash_watchdog)
             wd.start()
             self.flash_context['watchdog'] = wd
         except Exception:
@@ -562,7 +564,7 @@ class LiftRobotController(ModbusDevice):
             return False
 
     def _trigger_emergency_reset(self, seq_id, reason):
-        """Trigger emergency reset via node's reset mechanism.
+        """Trigger emergency reset - set state to emergency_reset for temporary display.
         
         Args:
             seq_id: sequence id for logging
@@ -578,7 +580,8 @@ class LiftRobotController(ModbusDevice):
                 self.node.reset_in_progress = True
                 self.node.control_enabled = False
                 self.node.force_control_active = False
-                self.node.task_state = 'emergency_stop'
+                # Set emergency_reset state (flash failures during reset won't block new Actions)
+                self.node.task_state = 'emergency_reset'
                 self.node.completion_reason = f'relay_failure: {reason}'
             
             # Cancel all timers

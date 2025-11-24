@@ -14,6 +14,7 @@ import logging
 import threading
 import time
 import os
+import asyncio  # For non-blocking async sleep in action callbacks
 
 # Configure root logging level
 logging.basicConfig(level=logging.INFO)
@@ -427,6 +428,208 @@ class LiftRobotNode(Node):
             self.get_logger().info("Subscribed force sensors /force_sensor & /force_sensor_2")
         except Exception as e:
             self.get_logger().warn(f"Force sensor subscription error: {e}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # ROS2 Action Server: GotoHeight Action (Testing Action vs Topic)
+        # ═══════════════════════════════════════════════════════════════
+        # Provides Action-based interface for goto_height control
+        # Runs in parallel with existing Topic-based interface for comparison
+        self.action_server = None
+        self.action_goal_handle = None
+        self.action_feedback_msg = None
+        self.action_start_time = None
+        self.action_initial_height = None
+        
+        try:
+            from rclpy.action import ActionServer, CancelResponse, GoalResponse
+            from lift_robot_interfaces.action import GotoHeight
+            
+            # Store classes for use in callbacks
+            self.GoalResponse = GoalResponse
+            self.CancelResponse = CancelResponse
+            
+            self.action_server = ActionServer(
+                self,
+                GotoHeight,
+                '/lift_robot_platform/goto_height',
+                execute_callback=self._execute_goto_height_action,
+                goal_callback=self._goal_callback,
+                cancel_callback=self._cancel_callback
+            )
+            self.get_logger().info("[Action] ✅ GotoHeight Action Server created")
+            
+            # Store action class for later use
+            self.GotoHeightAction = GotoHeight
+            
+        except ImportError as e:
+            self.get_logger().warn(f"[Action] Cannot import GotoHeight action - interface not built: {e}")
+        except Exception as e:
+            self.get_logger().error(f"[Action] Failed to create Action Server: {e}")
+
+    def _goal_callback(self, goal_request):
+        """Accept or reject new Action goals"""
+        self.get_logger().info(f'[Action] Received goal request: target_height={goal_request.target_height}mm')
+        
+        # Check if system is busy
+        if self.system_busy and self.active_control_owner != 'platform':
+            self.get_logger().warn(f'[Action] Goal REJECTED - system busy by {self.active_control_owner}')
+            return self.GoalResponse.REJECT
+        
+        # Validate target height
+        if self.platform_range_enabled:
+            if self.platform_range_min is not None and goal_request.target_height < self.platform_range_min:
+                self.get_logger().warn(f'[Action] Goal REJECTED - target below min range ({self.platform_range_min}mm)')
+                return self.GoalResponse.REJECT
+            if self.platform_range_max is not None and goal_request.target_height > self.platform_range_max:
+                self.get_logger().warn(f'[Action] Goal REJECTED - target above max range ({self.platform_range_max}mm)')
+                return self.GoalResponse.REJECT
+        
+        self.get_logger().info('[Action] Goal ACCEPTED')
+        return self.GoalResponse.ACCEPT
+    
+    def _cancel_callback(self, goal_handle):
+        """Handle cancel requests"""
+        self.get_logger().info('[Action] Received cancel request')
+        return self.CancelResponse.ACCEPT
+    
+    async def _execute_goto_height_action(self, goal_handle):
+        """Execute GotoHeight Action - main action logic"""
+        self.get_logger().info(f'[Action] Executing goal: target_height={goal_handle.request.target_height}mm')
+        
+        # Initialize action state
+        self.action_goal_handle = goal_handle
+        self.action_start_time = time.time()
+        self.action_initial_height = self.current_height
+        target_height = goal_handle.request.target_height
+        
+        # Create feedback message
+        feedback_msg = self.GotoHeightAction.Feedback()
+        
+        # Disable any existing control modes
+        if self.control_enabled:
+            self.control_enabled = False
+            self.get_logger().info('[Action] Disabled existing height control')
+        if self.force_control_active:
+            self.force_control_active = False
+            self.get_logger().info('[Action] Disabled existing force control')
+        if self.hybrid_control_active:
+            self.hybrid_control_active = False
+            self.get_logger().info('[Action] Disabled existing hybrid control')
+        
+        # Acquire system lock
+        # Use 'goto_height' (not 'goto_height_action') to match existing control_loop checks
+        self._start_task('goto_height', owner='platform')
+        
+        # Enable height control with target (CRITICAL: Use lock for thread safety)
+        with self.control_lock:
+            self.target_height = target_height
+            self.control_enabled = True
+            self.control_mode = 'auto'
+        
+        # Log control state at DEBUG level
+        self.get_logger().debug(
+            f'[Action] Started closed-loop control: target={target_height}mm, current={self.current_height}mm, '
+            f'control_enabled={self.control_enabled}, mode={self.control_mode}, task_type={self.task_type}, task_state={self.task_state}'
+        )
+        
+        # Feedback publishing (10Hz)
+        # SOLUTION: Spin executor manually to allow control_loop timer to run
+        # This is the correct pattern for long-running Action callbacks in ROS2
+        feedback_interval = 0.1  # 10Hz = 100ms
+        last_feedback_time = time.time()
+        
+        try:
+            while rclpy.ok():
+                # Check if cancelled
+                if goal_handle.is_cancel_requested:
+                    goal_handle.canceled()
+                    with self.control_lock:
+                        self.control_enabled = False
+                    self._complete_task('cancelled')
+                    
+                    result = self.GotoHeightAction.Result()
+                    result.success = False
+                    result.final_height = self.current_height
+                    result.execution_time = time.time() - self.action_start_time
+                    result.completion_reason = 'cancelled'
+                    
+                    self.get_logger().info(f'[Action] ⏹️ Goal CANCELLED - final_height={result.final_height:.2f}mm')
+                    return result
+                
+                # Check if task completed (monitor task_state set by control_loop)
+                if self.task_state == 'completed':
+                    goal_handle.succeed()
+                    
+                    result = self.GotoHeightAction.Result()
+                    result.success = True
+                    result.final_height = self.current_height
+                    result.execution_time = time.time() - self.action_start_time
+                    result.completion_reason = self.completion_reason or 'target_reached'
+                    
+                    self.get_logger().info(
+                        f'[Action] ✅ Goal SUCCEEDED - final_height={result.final_height:.2f}mm, '
+                        f'time={result.execution_time:.2f}s, reason={result.completion_reason}'
+                    )
+                    return result
+                
+                # Check if task failed (emergency stop)
+                if self.task_state == 'emergency_stop':
+                    goal_handle.abort()
+                    with self.control_lock:
+                        self.control_enabled = False
+                    
+                    result = self.GotoHeightAction.Result()
+                    result.success = False
+                    result.final_height = self.current_height
+                    result.execution_time = time.time() - self.action_start_time
+                    result.completion_reason = self.completion_reason or 'emergency_stop'
+                    
+                    self.get_logger().error(
+                        f'[Action] ❌ Goal ABORTED - reason={result.completion_reason}'
+                    )
+                    return result
+                
+                # Publish feedback at 10Hz (only when interval has elapsed)
+                current_time = time.time()
+                if current_time - last_feedback_time >= feedback_interval:
+                    # Calculate progress
+                    if self.action_initial_height is not None:
+                        total_distance = abs(target_height - self.action_initial_height)
+                        if total_distance > 0.1:  # Avoid division by zero
+                            current_distance = abs(self.current_height - self.action_initial_height)
+                            progress = min(1.0, current_distance / total_distance)
+                        else:
+                            progress = 1.0
+                    else:
+                        progress = 0.0
+                    
+                    # Publish feedback
+                    feedback_msg.current_height = self.current_height
+                    feedback_msg.error = target_height - self.current_height
+                    feedback_msg.progress = progress
+                    feedback_msg.movement_state = self.movement_state
+                    goal_handle.publish_feedback(feedback_msg)
+                    
+                    last_feedback_time = current_time
+                
+                # CRITICAL: Yield to executor to allow control_loop timer to fire
+                # Use spin_once to process other callbacks (timers, subscriptions, etc.)
+                # This is the ONLY correct way in single-threaded ROS2 executor
+                rclpy.spin_once(self, timeout_sec=0.01)
+                
+        except Exception as e:
+            self.get_logger().error(f'[Action] Execution error: {e}')
+            goal_handle.abort()
+            self.control_enabled = False
+            self._complete_task('error')
+            
+            result = self.GotoHeightAction.Result()
+            result.success = False
+            result.final_height = self.current_height
+            result.execution_time = time.time() - self.action_start_time
+            result.completion_reason = f'error: {str(e)}'
+            
+            return result
 
     def command_callback(self, msg):
         """Handle command message"""
@@ -1364,20 +1567,15 @@ class LiftRobotNode(Node):
         # ─────────────────────────────────────────────────────────────
         # Height auto control branch
         # ─────────────────────────────────────────────────────────────
-        try:
-            if not self.control_enabled or self.control_mode != 'auto':
-                return
-
-            # Calculate position error
-            error = self.target_height - self.current_height
-            abs_error = abs(error)
-
-            # 时间戳仍保留用于调试或未来扩展（比如统计命令频率）
-            now = self.get_clock().now()
-
-        except Exception as e:
-            self.get_logger().error(f"[Control] Loop error (calculation): {e}")
+        if not self.control_enabled or self.control_mode != 'auto':
             return
+
+        # Calculate position error (MUST be outside try block for use in safety checks)
+        error = self.target_height - self.current_height
+        abs_error = abs(error)
+        
+        # 时间戳仍保留用于调试或未来扩展（比如统计命令频率）
+        now = self.get_clock().now()
         
         # ═══════════════════════════════════════════════════════════════
         # HEIGHT CONTROL SAFETY: Check for excessive overshoot
@@ -1388,6 +1586,7 @@ class LiftRobotNode(Node):
         height_overshoot_threshold = 10.0  # mm
         
         # Check overshoot during active goto_height task (even if control disabled)
+        # Support both Topic mode (goto_height) and Action mode (same type now)
         if self.task_type == 'goto_height' and self.task_state == 'running':
             # Determine expected movement direction based on error
             error = self.target_height - self.current_height
@@ -1506,16 +1705,6 @@ class LiftRobotNode(Node):
         
         # Priority 3: Send movement command based on error direction
         try:
-            """10Hz timer callback: Detect stationary endpoints during range scan.
-            Logic:
-            - Active only when range_scan_active=True.
-            - Track reference height. If movement exceeds tolerance, refresh reference & timer.
-            - If height remains within tolerance for range_scan_duration_required seconds:
-                * Mark endpoint for current direction.
-                * Record height.
-                * If scanning DOWN and HIGH not yet found, automatically start UP scan.
-                * If both endpoints found, stop scan and complete task.
-            """
             if error > POSITION_TOLERANCE:
                 # Need to move up - only send command if not already sent
                 if self.movement_state != 'up' and not self.movement_command_sent:

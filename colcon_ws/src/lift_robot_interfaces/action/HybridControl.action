@@ -1,0 +1,22 @@
+# HybridControl.action - 高度-力混合控制Action接口定义
+
+# Goal
+float64 target_height      # 目标高度（mm）
+float64 target_force      # 目标力值（N）
+string direction          # 方向：'up' 或 'down'
+---
+# Result
+bool success              # 是否成功
+float64 final_height      # 最终高度（mm）
+float64 final_force       # 最终力值（N）
+float64 execution_time    # 执行时间（秒）
+string completion_reason  # 完成原因：'height_reached', 'force_reached', 'cancelled', 'emergency_stop'
+string stop_condition     # 停止条件：'height' 或 'force'
+---
+# Feedback
+float64 current_height    # 当前高度（mm）
+float64 current_force     # 当前力值（N）
+float64 height_error      # 高度误差（mm）
+float64 force_error       # 力误差（N）
+float64 progress          # 进度 0.0-1.0
+string movement_state     # 运动状态：'up', 'down', 'stop'
