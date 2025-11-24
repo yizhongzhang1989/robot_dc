@@ -21,6 +21,7 @@ import threading
 import sys
 import os
 from pathlib import Path
+from common.workspace_utils import get_workspace_root, get_temp_directory
 
 
 class RobotStatusNode(Node):
@@ -96,28 +97,11 @@ class RobotStatusNode(Node):
     def _get_default_save_path(self):
         """Get the default auto-save file path in robot_dc/temp directory."""
         try:
-            # Find robot_dc root directory
-            current_dir = Path.cwd()
-            robot_dc_root = None
-            
-            # Search up the directory tree for robot_dc
-            for parent in [current_dir] + list(current_dir.parents):
-                if parent.name == 'robot_dc':
-                    robot_dc_root = parent
-                    break
-            
-            if robot_dc_root is None:
-                # If not found, use current directory
-                self.get_logger().warn("Could not find robot_dc root, using current directory")
-                robot_dc_root = current_dir
-            
-            # Create temp directory in robot_dc root if it doesn't exist
-            temp_dir = robot_dc_root / 'temp'
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            
-            return str(temp_dir / 'robot_status_auto_save.json')
+            # Use common utility to get temp directory
+            temp_dir = get_temp_directory()
+            return str(Path(temp_dir) / 'robot_status_auto_save.json')
         except Exception as e:
-            self.get_logger().warn(f"Failed to determine robot_dc root: {e}")
+            self.get_logger().warn(f"Failed to determine temp directory: {e}")
             return 'robot_status_auto_save.json'
     
     def _load_status_from_file(self):
