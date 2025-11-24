@@ -818,10 +818,28 @@ class UR15WebNode(Node):
                 # Build the image URL that can be accessed from browser
                 image_url = url_for('serve_last_captured_image', _external=True)
                 
+                # Check for corresponding ref_img_*.json file
+                # Extract base name and construct json filename
+                image_dir = os.path.dirname(image_path)
+                image_filename = os.path.basename(image_path)
+                json_filename = os.path.splitext(image_filename)[0] + '.json'
+                json_path = os.path.join(image_dir, json_filename)
+                
                 # Use the same hostname as the request to build labeling URL
                 host = request.host.split(':')[0]  # Extract hostname without port
                 encoded_image_path = quote(image_path)
+                
+                # Build labeling URL with optional labels parameter
                 labeling_url = f'http://{host}:8007?imageUrl={image_url}&imagePath={encoded_image_path}'
+                
+                # If JSON file exists, add labelsUrl parameter
+                if os.path.exists(json_path):
+                    labels_url = url_for('serve_labels_json', _external=True)
+                    labeling_url += f'&labelsUrl={labels_url}'
+                    self.get_logger().info(f"Found existing labels file: {json_path}")
+                    self.get_logger().info(f"Labels URL: {labels_url}")
+                else:
+                    self.get_logger().info(f"No existing labels file found at: {json_path}")
                 
                 self.get_logger().info(f"Preparing last captured image: {image_path}")
                 self.get_logger().info(f"Image URL: {image_url}")
@@ -831,7 +849,8 @@ class UR15WebNode(Node):
                     'status': 'success',
                     'image_url': image_url,
                     'labeling_url': labeling_url,
-                    'image_path': image_path
+                    'image_path': image_path,
+                    'json_path': json_path if os.path.exists(json_path) else None
                 })
                 
             except Exception as e:
@@ -867,6 +886,40 @@ class UR15WebNode(Node):
                 
             except Exception as e:
                 self.get_logger().error(f"Error serving last captured image: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/serve_labels_json', methods=['GET'])
+        def serve_labels_json():
+            """Serve the JSON labels file corresponding to the last captured image."""
+            from flask import send_file, jsonify, make_response
+            
+            try:
+                # Get last_picture path from robot_status service
+                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                
+                if image_path is None:
+                    return jsonify({'error': 'No image has been captured yet'}), 404
+                
+                # Construct JSON file path
+                image_dir = os.path.dirname(image_path)
+                image_filename = os.path.basename(image_path)
+                json_filename = os.path.splitext(image_filename)[0] + '.json'
+                json_path = os.path.join(image_dir, json_filename)
+                
+                if not os.path.exists(json_path):
+                    return jsonify({'error': 'Labels file not found'}), 404
+                
+                self.get_logger().info(f"Serving labels JSON: {json_path}")
+                
+                # Send the file with CORS headers to allow cross-origin access
+                response = make_response(send_file(json_path, mimetype='application/json'))
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                return response
+                
+            except Exception as e:
+                self.get_logger().error(f"Error serving labels JSON: {e}")
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/save_labels', methods=['POST', 'OPTIONS'])

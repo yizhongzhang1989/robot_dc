@@ -295,6 +295,7 @@ class URLocate(URCapture):
                                     # Upload view
                                     result = self.positioning_client.upload_view(
                                         session_id=session_id,
+                                        reference_name=self.operation_name,
                                         image=image,
                                         intrinsic=intrinsic,
                                         distortion=distortion,
@@ -448,7 +449,7 @@ class URLocate(URCapture):
                 # Step 4: Initialize session
                 self.get_logger().info(f">>> IV: Initializing a web session to execute...")
                 
-                session_result = self.positioning_client.init_session(reference_name=operation_name)
+                session_result = self.positioning_client.init_session()
                 
                 if not session_result.get('success'):
                     self.get_logger().error(f"✗ Failed to initialize session: {session_result.get('error')}")
@@ -484,6 +485,7 @@ class URLocate(URCapture):
                     # Upload view              
                     result = self.positioning_client.upload_view(
                         session_id=session_id,
+                        reference_name=operation_name,
                         image=image,
                         intrinsic=intrinsic,
                         distortion=distortion,
@@ -573,7 +575,7 @@ class URLocate(URCapture):
             # Step 2: Initialize session for real-time upload
             self.get_logger().info("Step 2: Initializing session for data collection...")
             
-            session_result = self.positioning_client.init_session(reference_name=self.operation_name)
+            session_result = self.positioning_client.init_session()
             if not session_result.get('success'):
                 self.get_logger().error(f"✗ Failed to initialize session: {session_result.get('error')}")
                 return None
