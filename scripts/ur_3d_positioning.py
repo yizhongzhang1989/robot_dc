@@ -1004,492 +1004,6 @@ class URLocate(URCapture):
             traceback.print_exc()
             return False
 
-    # =================================== functions for wobj frame building ===================================
-    def perform_wobj_frame_building(self, session_result_dir=None, kp_index_for_wobj_x_axis=[0, 1]):
-        """
-        Build a wobj coordinate system based on 3D positioning keypoints.
-        
-        The coordinate system is defined as follows:
-        - Origin: at keypoint[kp_index_for_wobj_x_axis[0]]
-        - X-axis: keypoint[kp_index_for_wobj_x_axis[0]] → keypoint[kp_index_for_wobj_x_axis[1]] direction
-        - Z-axis: positive direction aligns with base Z-axis (upward)
-        - Y-axis: follows right-hand rule (Z × X)
-        
-        Args:
-            session_result_dir (str): Path to session result directory (e.g., 'result/20231119_143022')
-                                     If None, uses the most recent session
-            kp_index_for_wobj_x_axis (list): [start_index, end_index] for X-axis definition
-            
-        Returns:
-            dict: Coordinate system information or None if failed
-        """
-        self.get_logger().info(">>> Building wobj Coordinate System")
-        
-        try:
-            # Determine session result directory
-            if session_result_dir is None:
-                # Use current session result directory if available
-                if hasattr(self, 'session_result_dir') and self.session_result_dir:
-                    session_result_dir = self.session_result_dir
-                    self.get_logger().info(f"Using current session: {os.path.basename(session_result_dir)}")
-                else:
-                    # Find most recent session in result directory
-                    if not os.path.exists(self.result_dir):
-                        self.get_logger().error(f"Result directory not found: {self.result_dir}")
-                        return None
-                    
-                    sessions = [d for d in os.listdir(self.result_dir) 
-                               if os.path.isdir(os.path.join(self.result_dir, d))]
-                    
-                    if not sessions:
-                        self.get_logger().error("No session directories found in result directory")
-                        return None
-                    
-                    # Sort by name (assuming timestamp-based naming)
-                    sessions.sort(reverse=True)
-                    session_result_dir = os.path.join(self.result_dir, sessions[0])
-                    self.get_logger().info(f"Using most recent session: {os.path.basename(session_result_dir)}")
-            
-            # Verify session result directory exists
-            if not os.path.exists(session_result_dir):
-                self.get_logger().error(f"Session result directory not found: {session_result_dir}")
-                return None
-            
-            # Load 3D positioning result from session result directory
-            positioning_result_file = os.path.join(session_result_dir, '3d_positioning_result.json')
-            
-            if not os.path.exists(positioning_result_file):
-                self.get_logger().error(f"3D positioning result file not found: {positioning_result_file}")
-                return None
-            
-            self.get_logger().info(f"📖 Loading 3D positioning results from: {positioning_result_file}")
-            
-            with open(positioning_result_file, 'r') as f:
-                positioning_data = json.load(f)
-            
-            points_3d = positioning_data.get('points_3d', [])
-            
-            if len(points_3d) == 0:
-                self.get_logger().error("No 3D points found in positioning results")
-                return None
-            
-            self.get_logger().info(f"✓ Loaded {len(points_3d)} 3D points")
-            
-            # Get keypoint indices for X-axis
-            kp_start_idx = kp_index_for_wobj_x_axis[0]
-            kp_end_idx = kp_index_for_wobj_x_axis[1]
-            
-            if len(points_3d) < max(kp_start_idx, kp_end_idx) + 1:
-                self.get_logger().error(
-                    f"Insufficient keypoints for wobj coordinate system "
-                    f"(need at least {max(kp_start_idx, kp_end_idx) + 1}, got {len(points_3d)})"
-                )
-                return None
-            
-            # Extract 3D coordinates of the specified keypoints
-            kp_start = np.array(points_3d[kp_start_idx])
-            kp_end = np.array(points_3d[kp_end_idx])
-            
-            self.get_logger().info(f"✓ Using keypoints for wobj coordinate system:")
-            self.get_logger().info(f"  KP{kp_start_idx}: ({kp_start[0]:.6f}, {kp_start[1]:.6f}, {kp_start[2]:.6f})")
-            self.get_logger().info(f"  KP{kp_end_idx}: ({kp_end[0]:.6f}, {kp_end[1]:.6f}, {kp_end[2]:.6f})")
-            
-            # Origin of the coordinate system is at the start keypoint
-            origin = kp_start.copy()
-            self.get_logger().info(f"  Origin defined at KP{kp_start_idx}: ({origin[0]:.6f}, {origin[1]:.6f}, {origin[2]:.6f})")
-            
-            # X-axis: from start keypoint to end keypoint
-            x_vec_raw = kp_end - kp_start
-            x_axis_length = np.linalg.norm(x_vec_raw)
-            x_vec = x_vec_raw / x_axis_length
-            
-            self.get_logger().info(f"  X-axis defined as from KP{kp_start_idx}→KP{kp_end_idx}:")
-            self.get_logger().info(f"  X = [{x_vec[0]:.6f}, {x_vec[1]:.6f}, {x_vec[2]:.6f}]")
-            
-            # Z-axis: should align with base Z-axis (positive upward)
-            base_z = np.array([0.0, 0.0, 1.0])
-            
-            # Make Z-axis orthogonal to X-axis using Gram-Schmidt process
-            # Project base_z onto plane perpendicular to X-axis
-            z_vec_raw = base_z - np.dot(base_z, x_vec) * x_vec
-            z_vec_norm = np.linalg.norm(z_vec_raw)
-            
-            if z_vec_norm < 1e-6:
-                self.get_logger().warn("Warning: X-axis is nearly parallel to base Z-axis, using alternative Z-axis")
-                # Use alternative: pick perpendicular vector
-                if abs(x_vec[2]) < 0.9:
-                    z_vec_raw = np.cross(np.array([1.0, 0.0, 0.0]), x_vec)
-                else:
-                    z_vec_raw = np.cross(np.array([0.0, 1.0, 0.0]), x_vec)
-                z_vec_norm = np.linalg.norm(z_vec_raw)
-            
-            z_vec = z_vec_raw / z_vec_norm
-            
-            # Check alignment with base Z
-            z_dot_base_z = np.dot(z_vec, base_z)
-            self.get_logger().info(f"  Z-axis defined align with base Z:")
-            self.get_logger().info(f"  Z = [{z_vec[0]:.6f}, {z_vec[1]:.6f}, {z_vec[2]:.6f}]")
-            
-            # Y-axis: right-hand rule (Z × X)
-            y_vec = np.cross(z_vec, x_vec)
-            y_vec = y_vec / np.linalg.norm(y_vec)
-            
-            self.get_logger().info(f"  Y-axis defined follow from right-hand rule (Y = Z × X)")
-            self.get_logger().info(f"  Y = [{y_vec[0]:.6f}, {y_vec[1]:.6f}, {y_vec[2]:.6f}]")
-            
-            # Verify orthogonality
-            dot_xy = np.dot(x_vec, y_vec)
-            dot_xz = np.dot(x_vec, z_vec)
-            dot_yz = np.dot(y_vec, z_vec)
-            
-            self.get_logger().info(f"\n🔍 Orthogonality check:")
-            self.get_logger().info(f"  X·Y = {dot_xy:.8f} (should be ~0)")
-            self.get_logger().info(f"  X·Z = {dot_xz:.8f} (should be ~0)")
-            self.get_logger().info(f"  Y·Z = {dot_yz:.8f} (should be ~0)")
-            
-            # Build rotation matrix (columns are the axis vectors)
-            rot_matrix = np.column_stack([x_vec, y_vec, z_vec])
-            
-            # Verify it's a valid rotation matrix
-            det_R = np.linalg.det(rot_matrix)
-            self.get_logger().info(f"  det(R) = {det_R:.8f} (should be ~1)")
-            
-            if abs(det_R - 1.0) > 0.01:
-                self.get_logger().warn(f"⚠ Warning: Rotation matrix determinant is not 1, may indicate numerical issues")
-            
-            # Build 4x4 transformation matrix
-            T = np.eye(4)
-            T[:3, :3] = rot_matrix  # Rotation part
-            T[:3, 3] = origin  # Translation part
-            
-            # Convert rotation matrix to axis-angle representation for robot use
-            rotation_scipy = R.from_matrix(rot_matrix)
-            rotvec = rotation_scipy.as_rotvec()
-            rx, ry, rz = rotvec[0], rotvec[1], rotvec[2]
-            
-            # Create coordinate system information
-            coord_system = {
-                "origin": {
-                    "x": float(origin[0]),
-                    "y": float(origin[1]), 
-                    "z": float(origin[2])
-                },
-                "axes": {
-                    "x_axis": {
-                        "vector": [float(x_vec[0]), float(x_vec[1]), float(x_vec[2])],
-                        "source": f"KP{kp_start_idx}→KP{kp_end_idx}",
-                        "length": float(x_axis_length)
-                    },
-                    "y_axis": {
-                        "vector": [float(y_vec[0]), float(y_vec[1]), float(y_vec[2])],
-                        "source": "right_hand_rule_Z_cross_X"
-                    },
-                    "z_axis": {
-                        "vector": [float(z_vec[0]), float(z_vec[1]), float(z_vec[2])],
-                        "source": "aligned_with_base_z",
-                        "alignment_with_base_z": float(z_dot_base_z)
-                    }
-                },
-                "transformation_matrix": T.tolist(),
-                "pose_representation": {
-                    "x": float(origin[0]),
-                    "y": float(origin[1]),
-                    "z": float(origin[2]),
-                    "rx": float(rx),
-                    "ry": float(ry),
-                    "rz": float(rz)
-                },
-                "orthogonality_check": {
-                    "x_dot_y": float(dot_xy),
-                    "x_dot_z": float(dot_xz),
-                    "y_dot_z": float(dot_yz),
-                    "determinant": float(det_R)
-                },
-                "keypoints_used": [
-                    {"index": kp_start_idx, "coordinates": [float(kp_start[0]), float(kp_start[1]), float(kp_start[2])]},
-                    {"index": kp_end_idx, "coordinates": [float(kp_end[0]), float(kp_end[1]), float(kp_end[2])]}
-                ],
-                "kp_index_for_wobj_x_axis": kp_index_for_wobj_x_axis,
-                "timestamp": datetime.now().isoformat(),
-                "method": f"kp{kp_start_idx}_kp{kp_end_idx}_based_coordinate_system",
-                "source_file": positioning_result_file
-            }
-            
-            # Save coordinate system to session result directory
-            coord_system_path = os.path.join(session_result_dir, 'wobj_frame_building_result.json')
-            with open(coord_system_path, 'w') as f:
-                json.dump(coord_system, f, indent=2)
-            
-            self.get_logger().info(f"💾 Wobj coordinate system saved to: {coord_system_path}")
-            self.get_logger().info(f"🎯 Wobj coordinate system established successfully!")
-            
-            # Save wobj coordinate system to robot_status
-            if self.robot_status_client:
-                try:
-                    # Save origin
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_origin', [float(origin[0]), float(origin[1]), float(origin[2])]):
-                        self.get_logger().info(f"✓ wobj_origin saved to robot_status")
-                    
-                    # Save x_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_x', [float(x_vec[0]), float(x_vec[1]), float(x_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_x saved to robot_status")
-                    
-                    # Save y_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_y', [float(y_vec[0]), float(y_vec[1]), float(y_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_y saved to robot_status")
-                    
-                    # Save z_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_z', [float(z_vec[0]), float(z_vec[1]), float(z_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_z saved to robot_status")
-                    
-                    self.get_logger().info(f"✓ Wobj coordinate system saved to robot_status (namespace: {self.operation_name})")
-                except Exception as e:
-                    self.get_logger().warning(f"Error saving wobj coordinate system to robot_status: {e}")
-            
-            # Validate wobj frame building results
-            self.get_logger().info(">>> Validating wobj frame building results...")
-            validation_success = self.validate_wobj_frame_building_results(
-                session_result_dir, 
-                coord_system, 
-                verbose=self.verbose
-            )
-            
-            if validation_success:
-                self.get_logger().info("✓ Validation completed successfully!")
-            else:
-                self.get_logger().warn("⚠ Validation completed with warnings")
-            
-            return coord_system
-            
-        except Exception as e:
-            self.get_logger().error(f"Error building wobj coordinate system: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
-    def validate_wobj_frame_building_results(self, session_result_dir, coord_system, verbose=True):
-        """
-        Validate workpiece coordinate system by drawing it on captured images.
-        
-        Draws the coordinate system axes on each captured image by:
-        1. Projecting the 3D origin and axis endpoints to 2D image coordinates
-        2. Drawing arrows for X (red), Y (green), Z (blue) axes on the images
-        
-        Args:
-            session_result_dir (str): Path to session result directory
-            coord_system (dict): Dictionary containing coordinate system information
-                                (output from perform_wobj_frame_building)
-            verbose (bool): If True, saves validation images to disk
-            
-        Returns:
-            bool: True if validation successful, False otherwise
-        """
-
-        self.get_logger().info("Drawing Wobj Coordinate System on Images")
-        
-        try:
-            if coord_system is None:
-                self.get_logger().error("Error: coord_system is None")
-                return False
-            
-            # Extract origin and axes from coord_system
-            origin_3d = np.array([
-                coord_system['origin']['x'],
-                coord_system['origin']['y'],
-                coord_system['origin']['z']
-            ])
-            
-            x_axis = np.array(coord_system['axes']['x_axis']['vector'])
-            y_axis = np.array(coord_system['axes']['y_axis']['vector'])
-            z_axis = np.array(coord_system['axes']['z_axis']['vector'])
-                        
-            # Define arrow length in 3D space (meters)
-            arrow_length = 0.10  # 5cm arrows
-            
-            # Calculate 3D endpoints of axes
-            x_end_3d = origin_3d + x_axis * arrow_length
-            y_end_3d = origin_3d + y_axis * arrow_length
-            z_end_3d = origin_3d + z_axis * arrow_length
-            
-            # Get session_dir from session_result_dir
-            session_name = os.path.basename(session_result_dir)
-            session_dir = os.path.join(self.data_dir, session_name)
-            
-            if not os.path.exists(session_dir):
-                self.get_logger().error(f"Session data directory not found: {session_dir}")
-                return False
-            
-            # Find all test images and their pose files
-            test_img_dir = Path(session_dir)
-            image_files = sorted(test_img_dir.glob("*.jpg"))
-            
-            if len(image_files) == 0:
-                self.get_logger().error(f"No images found in {session_dir}")
-                return False
-            
-            self.get_logger().info(f"📖 Found {len(image_files)} images for validation")
-            
-            # Create visualization for each image
-            num_images = len(image_files)
-            cols = min(3, num_images)
-            rows = (num_images + cols - 1) // cols
-            
-            import matplotlib.pyplot as plt
-            fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
-            if num_images == 1:
-                axes = np.array([axes])
-            axes = axes.flatten() if num_images > 1 else axes
-            
-            for idx, img_file in enumerate(image_files):
-                if idx >= len(axes):
-                    break
-                
-                ax = axes[idx]
-                
-                # Load image
-                img = cv2.imread(str(img_file))
-                if img is None:
-                    self.get_logger().warn(f"⚠ Failed to load image: {img_file}")
-                    ax.axis('off')
-                    continue
-                
-                # Convert BGR to RGB for matplotlib
-                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                
-                # Load camera parameters for this view
-                pose_file = img_file.parent / f"{img_file.stem}_pose.json"
-                if not pose_file.exists():
-                    self.get_logger().warn(f"⚠ Pose file not found: {pose_file}")
-                    ax.axis('off')
-                    continue
-                
-                try:
-                    intrinsic, distortion, extrinsic = load_camera_params_from_json(str(pose_file))
-                except Exception as e:
-                    self.get_logger().warn(f"⚠ Failed to load pose: {e}")
-                    ax.axis('off')
-                    continue
-                
-                # extrinsic is already base2cam (world to camera transformation)
-                # Convert to rvec and tvec for cv2.projectPoints
-                base2cam = extrinsic
-                rotation_matrix = base2cam[:3, :3]
-                translation_vector = base2cam[:3, 3]
-                rvec, _ = cv2.Rodrigues(rotation_matrix)
-                tvec = translation_vector.reshape(3, 1)
-                
-                # Prepare 3D points for projection: origin and axis endpoints
-                points_3d_to_project = np.array([
-                    origin_3d,
-                    x_end_3d,
-                    y_end_3d,
-                    z_end_3d
-                ], dtype=np.float32)
-                
-                # Project all points using cv2.projectPoints
-                dist_coeffs = distortion if distortion is not None else np.zeros(5, dtype=np.float32)
-                projected_points, _ = cv2.projectPoints(
-                    points_3d_to_project,
-                    rvec,
-                    tvec,
-                    intrinsic,
-                    dist_coeffs
-                )
-                projected_points = projected_points.reshape(-1, 2)
-                
-                # Extract projected 2D points
-                origin_2d = tuple(projected_points[0])
-                x_end_2d = tuple(projected_points[1])
-                y_end_2d = tuple(projected_points[2])
-                z_end_2d = tuple(projected_points[3])
-                
-                # Draw on image
-                img_draw = img_rgb.copy()
-                arrow_thickness = 3
-                circle_radius = 5
-                
-                if origin_2d is not None:
-                    # Draw origin as black circle
-                    cv2.circle(img_draw, (int(origin_2d[0]), int(origin_2d[1])), 
-                              circle_radius, (0, 0, 0), -1)
-                    
-                    # Draw X-axis (red arrow)
-                    if x_end_2d is not None:
-                        cv2.arrowedLine(img_draw, 
-                                       (int(origin_2d[0]), int(origin_2d[1])),
-                                       (int(x_end_2d[0]), int(x_end_2d[1])),
-                                       (255, 0, 0), arrow_thickness, tipLength=0.3)
-                        cv2.putText(img_draw, 'X', 
-                                   (int(x_end_2d[0]) + 10, int(x_end_2d[1])),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
-                    
-                    # Draw Y-axis (green arrow)
-                    if y_end_2d is not None:
-                        cv2.arrowedLine(img_draw, 
-                                       (int(origin_2d[0]), int(origin_2d[1])),
-                                       (int(y_end_2d[0]), int(y_end_2d[1])),
-                                       (0, 255, 0), arrow_thickness, tipLength=0.3)
-                        cv2.putText(img_draw, 'Y', 
-                                   (int(y_end_2d[0]) + 10, int(y_end_2d[1])),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                    
-                    # Draw Z-axis (blue arrow)
-                    if z_end_2d is not None:
-                        cv2.arrowedLine(img_draw, 
-                                       (int(origin_2d[0]), int(origin_2d[1])),
-                                       (int(z_end_2d[0]), int(z_end_2d[1])),
-                                       (0, 0, 255), arrow_thickness, tipLength=0.3)
-                        cv2.putText(img_draw, 'Z', 
-                                   (int(z_end_2d[0]) + 10, int(z_end_2d[1])),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                
-                # Display image with coordinate system
-                ax.imshow(img_draw)
-                ax.set_title(f'View {idx}\n{img_file.name}', fontsize=10)
-                ax.axis('off')
-                
-                self.get_logger().info(f"  ✓ Drawn coordinate system on {img_file.name}")
-            
-            # Hide unused subplots
-            for idx in range(num_images, len(axes)):
-                axes[idx].axis('off')
-            
-            # Add overall title
-            fig.suptitle('Workpiece Coordinate System Validation\nRed: X-axis | Green: Y-axis | Blue: Z-axis',
-                        fontsize=14, fontweight='bold', y=0.98)
-            
-            # Add coordinate system information as text
-            kp_indices = coord_system.get('kp_index_for_wobj_x_axis', [0, 1])
-            info_text = (
-                f"Coordinate System Properties:\n"
-                f"Origin: ({origin_3d[0]:.4f}, {origin_3d[1]:.4f}, {origin_3d[2]:.4f}) m\n"
-                f"X-axis: KP{kp_indices[0]}→KP{kp_indices[1]}, length: {coord_system['axes']['x_axis']['length']:.4f}m\n"
-                f"Z alignment with base: {coord_system['axes']['z_axis']['alignment_with_base_z']:.4f}\n"
-                f"Arrow length: {arrow_length:.3f}m"
-            )
-            
-            fig.text(0.02, 0.02, info_text, fontsize=9,
-                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
-                    verticalalignment='bottom')
-            
-            # Save figure to session result directory (if verbose)
-            if verbose:
-                output_path = os.path.join(session_result_dir, 'wobj_coordinate_system_validation.jpg')
-                plt.tight_layout()
-                plt.savefig(output_path, dpi=150, bbox_inches='tight')
-                self.get_logger().info(f"💾 Wobj frame visualization result saved to: {output_path}")
-            
-            # Close plot to free memory
-            plt.close(fig)
-            
-            return True
-            
-        except Exception as e:
-            self.get_logger().error(f"Error validating coordinate system: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-
 
 def main():
     """
@@ -1512,8 +1026,9 @@ def main():
     
     args = parser.parse_args()
     
-    # Initialize ROS2
-    rclpy.init()
+    # Initialize ROS2 (only if not already initialized)
+    if not rclpy.ok():
+        rclpy.init()
     
     try:
         # Initialize URLocate instance with command line arguments
@@ -1535,8 +1050,16 @@ def main():
         executor = MultiThreadedExecutor()
         executor.add_node(ur_locate)
         
+        # Flag to control executor spinning
+        stop_spinning = threading.Event()
+        
+        def spin_executor():
+            """Spin executor until stop signal is received."""
+            while not stop_spinning.is_set() and rclpy.ok():
+                executor.spin_once(timeout_sec=0.1)
+        
         # Start executor in a separate thread
-        executor_thread = threading.Thread(target=executor.spin, daemon=True)
+        executor_thread = threading.Thread(target=spin_executor, daemon=False)
         executor_thread.start()
         
         print('URLocate node is running. Waiting for camera image...')
@@ -1560,22 +1083,6 @@ def main():
                     except Exception as e:
                         print(f"⚠️  Error sending last_points_3d to ur15 workspace: {e}")
                 
-                # # Perform workpiece frame building
-                # print(">>> Building Workpiece Coordinate System...")
-                
-                # coord_system = ur_locate.perform_wobj_frame_building()
-                
-                # if coord_system:
-                #     print("\n" + "="*60)
-                #     print("✓ Wobj Coordinate System built successfully!")
-                #     origin = coord_system['origin']
-                #     pose = coord_system['pose_representation']
-                #     print(f"  Origin: ({origin['x']:.4f}, {origin['y']:.4f}, {origin['z']:.4f}) m")
-                #     print(f"  Pose: x={pose['x']:.4f}, y={pose['y']:.4f}, z={pose['z']:.4f}")
-                #     print(f"        rx={pose['rx']:.4f}, ry={pose['ry']:.4f}, rz={pose['rz']:.4f}")
-                #     print("="*60 + "\n")
-                # else:
-                #     print("\n✗ Wobj Coordinate System building failed!")
             else:
                 print("\n✗ 3D Positioning failed!")
                 
@@ -1590,15 +1097,36 @@ def main():
                 print("Disconnecting robot...")
                 ur_locate.robot.close()
                 print("✓ Robot disconnected")
+            
+            # Proper cleanup sequence to avoid threading issues
+            try:
+                # Signal executor thread to stop
+                stop_spinning.set()
                 
-            # Shutdown executor
-            executor.shutdown()
-            # Destroy ROS node
-            ur_locate.destroy_node()
+                # Wait for executor thread to finish
+                if executor_thread.is_alive():
+                    executor_thread.join(timeout=3.0)
+                    if executor_thread.is_alive():
+                        print("⚠️  Executor thread did not finish in time")
+                
+                # Shutdown executor
+                executor.shutdown()
+                
+                # Destroy the node
+                try:
+                    ur_locate.destroy_node()
+                except Exception as e:
+                    print(f"⚠️  Warning during node destruction: {e}")
+            except Exception as e:
+                print(f"⚠️  Warning during executor cleanup: {e}")
     
     finally:
-        # Shutdown ROS2
-        rclpy.shutdown()
+        # Shutdown ROS2 (only if we initialized it)
+        if rclpy.ok():
+            try:
+                rclpy.shutdown()
+            except Exception as e:
+                print(f"⚠️  Warning during ROS2 shutdown: {e}")
 
 
 if __name__ == "__main__":

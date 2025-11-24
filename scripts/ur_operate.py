@@ -7,6 +7,7 @@ import time
 import socket
 import argparse
 from robot_status.client_utils import RobotStatusClient
+from scipy.spatial.transform import Rotation as R
 
 
 class UROperate:
@@ -71,13 +72,46 @@ class UROperate:
         
         # Dataset directory path
         self.dataset_dir = os.path.join(self.script_dir, '..', 'dataset', self.operation_name)
-        
-        # Data directory path (for storing collected data)
-        self.data_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_data')
-        
-        # Result directory path (for storing results)
-        self.result_dir = os.path.join(self.script_dir, '..', 'temp', 'ur_locate_crack_result')
     
+    def _initialize_robot(self):
+        """Initialize UR15 robot instance and establish connection"""
+        try:
+            print(f'Initializing UR15 robot at {self.robot_ip}:{self.robot_port}...')
+            self.robot = UR15Robot(ip=self.robot_ip, port=self.robot_port)
+            
+            # Attempt to connect
+            res = self.robot.open()
+            if res == 0:
+                print('✓ UR15 robot connected successfully')
+            else:
+                print(f'✗ Failed to connect to UR15 robot (error code: {res})')
+                self.robot = None
+        except Exception as e:
+            print(f'Failed to initialize robot: {e}')
+            self.robot = None
+    
+    def _init_rs485_socket(self):
+        """Initialize RS485 socket connection"""
+        try:
+            print(f'Initializing RS485 socket connection at {self.robot_ip}:{self.rs485_port}...')
+            # Open RS485 socket connection
+            self.rs485_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            rs485_start_res = self.rs485_socket.connect((self.robot_ip, self.rs485_port))
+            print(f"✓ RS485 socket connection result: {rs485_start_res}")
+        except Exception as e:
+            print(f'✗ Failed to initialize RS485 socket: {e}')
+            self.rs485_socket = None
+    
+    def _initialize_robot_status_client(self):
+        """Initialize robot status client for getting camera parameters and other status"""
+        try:
+            print(f'Initializing robot status client...')
+            self.robot_status_client = RobotStatusClient()
+            print('✓ Robot status client initialized successfully')
+        except Exception as e:
+            print(f'✗ Failed to initialize robot status client: {e}')
+            self.robot_status_client = None
+
     def _load_camera_params_from_service(self):
         """
         Load camera parameters (intrinsic and extrinsic) from robot status service
@@ -120,45 +154,7 @@ class UROperate:
             print(f"Error loading camera parameters: {e}")
             return False
     
-    def _initialize_robot(self):
-        """Initialize UR15 robot instance and establish connection"""
-        try:
-            print(f'Initializing UR15 robot at {self.robot_ip}:{self.robot_port}...')
-            self.robot = UR15Robot(ip=self.robot_ip, port=self.robot_port)
-            
-            # Attempt to connect
-            res = self.robot.open()
-            if res == 0:
-                print('✓ UR15 robot connected successfully')
-            else:
-                print(f'✗ Failed to connect to UR15 robot (error code: {res})')
-                self.robot = None
-        except Exception as e:
-            print(f'Failed to initialize robot: {e}')
-            self.robot = None
-    
-    def _init_rs485_socket(self):
-        """Initialize RS485 socket connection"""
-        try:
-            print(f'Initializing RS485 socket connection at {self.robot_ip}:{self.rs485_port}...')
-            # Open RS485 socket connection
-            self.rs485_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            rs485_start_res = self.rs485_socket.connect((self.robot_ip, self.rs485_port))
-            print(f"✓ RS485 socket connection result: {rs485_start_res}")
-        except Exception as e:
-            print(f'✗ Failed to initialize RS485 socket: {e}')
-            self.rs485_socket = None
-    
-    def _initialize_robot_status_client(self):
-        """Initialize robot status client for getting camera parameters and other status"""
-        try:
-            print(f'Initializing robot status client...')
-            self.robot_status_client = RobotStatusClient()
-            print('✓ Robot status client initialized successfully')
-        except Exception as e:
-            print(f'✗ Failed to initialize robot status client: {e}')
-            self.robot_status_client = None
-    
+
     def _load_3d_positioning_result_from_service(self):
         """
         Load estimated keypoints coordinates from robot status service
@@ -250,27 +246,27 @@ class UROperate:
         """
         try:
             # Get wobj_origin
-            wobj_origin = self.robot_status_client.get_status('rack', 'wobj_origin')
+            wobj_origin = self.robot_status_client.get_status('wobj', 'wobj_origin')
             if wobj_origin is None:
-                print(f"Failed to get wobj_origin from robot status for 'rack'")
+                print(f"Failed to get wobj_origin from robot status for 'wobj'")
                 return None
             
             # Get wobj_x axis
-            wobj_x = self.robot_status_client.get_status('rack', 'wobj_x')
+            wobj_x = self.robot_status_client.get_status('wobj', 'wobj_x')
             if wobj_x is None:
-                print(f"Failed to get wobj_x from robot status for 'rack'")
+                print(f"Failed to get wobj_x from robot status for 'wobj'")
                 return None
             
             # Get wobj_y axis
-            wobj_y = self.robot_status_client.get_status('rack', 'wobj_y')
+            wobj_y = self.robot_status_client.get_status('wobj', 'wobj_y')
             if wobj_y is None:
-                print(f"Failed to get wobj_y from robot status for 'rack'")
+                print(f"Failed to get wobj_y from robot status for 'wobj'")
                 return None
             
             # Get wobj_z axis
-            wobj_z = self.robot_status_client.get_status('rack', 'wobj_z')
+            wobj_z = self.robot_status_client.get_status('wobj', 'wobj_z')
             if wobj_z is None:
-                print(f"Failed to get wobj_z from robot status for 'rack'")
+                print(f"Failed to get wobj_z from robot status for 'wobj'")
                 return None
             
             # Convert to numpy arrays
@@ -420,7 +416,400 @@ class UROperate:
             print(f"Failed to move robot to reference position (error code: {res})")
         
         return res
+    
+    def movel_in_wobj_frame(self, offset):
+        """
+        Move robot based on "offset" (dx, dy, dz) in wobj coordinate system.   
+        Args:
+            offset: List/tuple [dx, dy, dz] in wobj coordinate system (meters)
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.wobj_transformation_matrix is None:
+            print("Wobj coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Parse offset parameter - must be a 3D array
+        if isinstance(offset, (list, tuple)) and len(offset) == 3:
+            wobj_local_displacement = np.array(offset)
+        else:
+            print("Invalid offset parameter. Must be [dx, dy, dz] in wobj coordinate system")
+            return -1
+        
+        # Extract rotation matrix from wobj coordinate system transformation matrix (3x3)
+        wobj_rotation = self.wobj_transformation_matrix[:3, :3]
+        
+        # Transform displacement from wobj coordinate system to base coordinate system
+        # displacement_base = R_wobj_to_base * displacement_wobj
+        base_displacement = wobj_rotation @ wobj_local_displacement
+        
+        # Calculate target pose in base coordinate system
+        target_pose = [
+            current_pose[0] + base_displacement[0],  # x
+            current_pose[1] + base_displacement[1],  # y
+            current_pose[2] + base_displacement[2],  # z
+            current_pose[3],                         # rx (keep current orientation)
+            current_pose[4],                         # ry
+            current_pose[5]                          # rz
+        ]
+        
+        print(f"[INFO] Moving robot: {wobj_local_displacement} in wobj frame...")
+        print(f"Wobj displacement (wobj frame): {wobj_local_displacement}")
 
+        res = self.robot.movel(target_pose, a=0.1, v=0.1)
+        time.sleep(0.5)
+
+        if res == 0:
+            print("[INFO] Successfully moved robot")
+        else:
+            print(f"[ERROR] Failed to move robot (error code: {res})")
+        
+        return res
+    
+    def movel_to_correct_tcp_pose(self, tcp_x_to_wobj=[1, 0, 0], tcp_y_to_wobj=[0, 0, -1], tcp_z_to_wobj=[0, 1, 0], angle_deg=31):
+        """
+        Correct tool TCP orientation based on wobj coordinate system.
+        
+        Args:
+            tcp_x_to_wobj: List [x, y, z] indicating TCP X+ axis alignment to wobj axes
+                          e.g., [1, 0, 0] means TCP X+ aligns with Wobj X+
+                                [0, 1, 0] means TCP X+ aligns with Wobj Y+
+                                [0, 0, -1] means TCP X+ aligns with Wobj Z- (default: [1, 0, 0])
+            tcp_y_to_wobj: List [x, y, z] indicating TCP Y+ axis alignment to wobj axes (default: [0, 0, -1])
+            tcp_z_to_wobj: List [x, y, z] indicating TCP Z+ axis alignment to wobj axes (default: [0, 1, 0])
+            angle_deg: Additional rotation angle around TCP Z axis in degrees (default: 31)
+        
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.wobj_transformation_matrix is None:
+            print("Wobj coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Convert alignment vectors to numpy arrays
+        tcp_x_align = np.array(tcp_x_to_wobj, dtype=float)
+        tcp_y_align = np.array(tcp_y_to_wobj, dtype=float)
+        tcp_z_align = np.array(tcp_z_to_wobj, dtype=float)
+        
+        # Validate alignment vectors
+        # Check 1: Each vector should have length 1 or sqrt(2) or sqrt(3)
+        tolerance = 1e-6
+        valid_lengths = [1.0, np.sqrt(2), np.sqrt(3)]
+        
+        for vec, name in [(tcp_x_align, 'tcp_x_to_wobj'), 
+                          (tcp_y_align, 'tcp_y_to_wobj'), 
+                          (tcp_z_align, 'tcp_z_to_wobj')]:
+            vec_length = np.linalg.norm(vec)
+            if not any(abs(vec_length - valid_len) < tolerance for valid_len in valid_lengths):
+                print(f"[ERROR] Invalid {name}: length is {vec_length:.6f}, expected 1.0, √2, or √3")
+                print(f"        Values should be from {{-1, 0, 1}} only")
+                return -1
+        
+        # Check 2: Vectors should be mutually orthogonal
+        dot_xy = np.dot(tcp_x_align, tcp_y_align)
+        dot_xz = np.dot(tcp_x_align, tcp_z_align)
+        dot_yz = np.dot(tcp_y_align, tcp_z_align)
+        
+        if abs(dot_xy) > tolerance or abs(dot_xz) > tolerance or abs(dot_yz) > tolerance:
+            print(f"[ERROR] Alignment vectors are not orthogonal:")
+            print(f"        tcp_x · tcp_y = {dot_xy:.6f}")
+            print(f"        tcp_x · tcp_z = {dot_xz:.6f}")
+            print(f"        tcp_y · tcp_z = {dot_yz:.6f}")
+            print(f"        All dot products should be 0")
+            return -1
+        
+        # Check 3: Should form a right-handed coordinate system (cross product check)
+        cross_product = np.cross(tcp_x_align, tcp_y_align)
+        cross_product_normalized = cross_product / np.linalg.norm(cross_product)
+        tcp_z_normalized = tcp_z_align / np.linalg.norm(tcp_z_align)
+        
+        if not np.allclose(cross_product_normalized, tcp_z_normalized, atol=tolerance):
+            print(f"[ERROR] Vectors do not form a right-handed coordinate system")
+            print(f"        tcp_x × tcp_y = {cross_product_normalized}")
+            print(f"        tcp_z (normalized) = {tcp_z_normalized}")
+            print(f"        For right-handed system: tcp_x × tcp_y should equal tcp_z")
+            return -1
+        
+        print("[INFO] Alignment vectors validated successfully")
+        print(f"       TCP X -> Wobj: {tcp_x_align}")
+        print(f"       TCP Y -> Wobj: {tcp_y_align}")
+        print(f"       TCP Z -> Wobj: {tcp_z_align}")
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract rotation matrix from wobj coordinate system transformation matrix (3x3)
+        wobj_rotation = self.wobj_transformation_matrix[:3, :3]
+        
+        # Wobj coordinate system axes in base coordinates
+        wobj_x = wobj_rotation[:, 0]  # Wobj X+ direction
+        wobj_y = wobj_rotation[:, 1]  # Wobj Y+ direction
+        wobj_z = wobj_rotation[:, 2]  # Wobj Z+ direction
+        
+        # Construct target rotation matrix for tool based on alignment parameters
+        # TCP X+ axis direction in base frame
+        tool_x_direction = (tcp_x_align[0] * wobj_x + 
+                           tcp_x_align[1] * wobj_y + 
+                           tcp_x_align[2] * wobj_z)
+        
+        # TCP Y+ axis direction in base frame
+        tool_y_direction = (tcp_y_align[0] * wobj_x + 
+                           tcp_y_align[1] * wobj_y + 
+                           tcp_y_align[2] * wobj_z)
+        
+        # TCP Z+ axis direction in base frame
+        tool_z_direction = (tcp_z_align[0] * wobj_x + 
+                           tcp_z_align[1] * wobj_y + 
+                           tcp_z_align[2] * wobj_z)
+        
+        target_tool_rotation = np.column_stack([
+            tool_x_direction,  # Tool X+ direction
+            tool_y_direction,  # Tool Y+ direction
+            tool_z_direction   # Tool Z+ direction
+        ])
+        
+        # Convert rotation matrix to rotation vector (axis-angle representation)
+        # UR uses rotation vector [rx, ry, rz] where the direction is the axis and the magnitude is the angle in radians
+        rotation_obj = R.from_matrix(target_tool_rotation)
+        rotation_vector = rotation_obj.as_rotvec()
+        
+        # Step 1: Align with wobj coordinate system
+        target_pose = [
+            current_pose[0],      # x (keep current position)
+            current_pose[1],      # y
+            current_pose[2],      # z
+            rotation_vector[0],   # rx
+            rotation_vector[1],   # ry
+            rotation_vector[2]    # rz
+        ]
+        
+        print("\nStep 1: Aligning tool TCP...")
+        print(f"Target pose: {target_pose}")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.1)
+        time.sleep(0.5)
+        
+        if res != 0:
+            print(f"Failed to align tool TCP (error code: {res})")
+            return res
+        else:
+            print("Aligned tool tcp pose with wobj coordinate system successfully")
+        
+        # Step 2: Rotate around TCP Z axis
+        angle_rad = np.deg2rad(angle_deg)
+        
+        # The Z axis in tool corresponds to wobj_y in base coordinates
+        rotation_axis = wobj_y / np.linalg.norm(wobj_y)  # Normalize (should already be normalized)
+        additional_rotation = R.from_rotvec(angle_rad * rotation_axis)
+        
+        # Combine the rotations: first align, then rotate around Z
+        combined_rotation = additional_rotation * rotation_obj
+        combined_rotation_vector = combined_rotation.as_rotvec()
+        
+        final_pose = [
+            current_pose[0],              # x (keep current position)
+            current_pose[1],              # y
+            current_pose[2],              # z
+            combined_rotation_vector[0],  # rx
+            combined_rotation_vector[1],  # ry
+            combined_rotation_vector[2]   # rz
+        ]
+        
+        print(f"\nStep 2: Rotating {angle_deg} degrees around TCP Z axis to correct tool orientation...")
+                
+        res = self.robot.movel(final_pose, a=0.1, v=0.1)
+        time.sleep(0.5)
+
+        if res == 0:
+            print("Tool TCP orientation corrected successfully")
+        else:
+            print(f"Failed to rotate around TCP Z axis (error code: {res})")
+        
+        return res
+    
+    def get_target_position(self, step_key=None):
+        """
+        Calculate target position in base coordinate system from offset in local coordinate system
+        Uses the local-to-base transformation matrix and the task position offset
+        
+        Args:
+            step_key: For multi-step operations, specify 'step1' or 'step2'. 
+                     For single offset operations, leave as None.
+        
+        Returns: numpy array [x, y, z] in base coordinate system if successful, None otherwise
+        """
+        if self.local_transformation_matrix is None:
+            print("Local coordinate system transformation matrix not loaded")
+            return None
+        
+        if self.task_position_offset is None:
+            print("Task position offset not loaded")
+            return None
+        
+        # Determine which offset to use
+        if self.task_position_offset_type == 'multiple':
+            # Multi-step operation
+            if step_key is None:
+                step_key = 'step1'  # Default to step1
+            
+            if step_key not in self.task_position_offset:
+                print(f"Step '{step_key}' not found in task position offset")
+                print(f"Available steps: {list(self.task_position_offset.keys())}")
+                return None
+            
+            offset = self.task_position_offset[step_key]
+        else:
+            # Single offset operation
+            offset = self.task_position_offset
+        
+        # Create homogeneous coordinates for the offset point in local coordinate system
+        offset_local = np.array([
+            offset['x'],
+            offset['y'],
+            offset['z'],
+            1.0  # homogeneous coordinate
+        ])
+        
+        # Transform to base coordinate system
+        # local_transformation_matrix is the local-to-base transformation (4x4)
+        position_base_homogeneous = np.dot(self.local_transformation_matrix, offset_local)
+        
+        # Extract x, y, z from homogeneous coordinates
+        position_base = position_base_homogeneous[:3]
+        
+        step_info = f" ({step_key})" if self.task_position_offset_type == 'multiple' else ""
+        print(f"Target position calculation{step_info}:")
+        print(f"  Offset in local coordinate system: ({offset['x']:.6f}, "
+              f"{offset['y']:.6f}, {offset['z']:.6f})")
+        print(f"  Position in base coordinate system: ({position_base[0]:.6f}, "
+              f"{position_base[1]:.6f}, {position_base[2]:.6f})")
+        
+        return position_base
+    
+    def movel_to_start_position(self, step_key=None, y_offset=0.0):
+        """
+        Move robot to start position using linear movement based on wobj coordinate system.
+        This method moves in two steps to avoid collision:
+        1. Move along wobj X and Z directions first
+        2. Then move along wobj Y direction with optional offset
+        
+        Args:
+            step_key: For multi-step operations, specify 'step1' or 'step2'. 
+                     For single offset operations, leave as None.
+            y_offset: Additional offset in wobj Y direction (meters), default 0.0
+                     Negative value moves away from target along Y axis
+        
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.wobj_transformation_matrix is None:
+            print("Wobj coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get target position in base coordinate system
+        target_position = self.get_target_position(step_key)
+        if target_position is None:
+            print("Failed to calculate target position")
+            return -1
+        
+        # Get current TCP pose to preserve orientation
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract wobj coordinate system axes from transformation matrix
+        wobj_rotation = self.wobj_transformation_matrix[:3, :3]
+        wobj_x = wobj_rotation[:, 0]  # Wobj X+ direction in base coordinates
+        wobj_y = wobj_rotation[:, 1]  # Wobj Y+ direction in base coordinates
+        wobj_z = wobj_rotation[:, 2]  # Wobj Z+ direction in base coordinates
+
+        # Calculate movement vector from current position to target
+        current_position = np.array(current_pose[:3])
+        target_position_array = np.array(target_position)
+        movement_vector = target_position_array - current_position
+        print(f"\nMovement vector in base coordinates: {movement_vector}")
+        
+        # Project movement vector onto wobj coordinate system axes
+        movement_wobj_x = np.dot(movement_vector, wobj_x)
+        movement_wobj_y = np.dot(movement_vector, wobj_y) 
+        movement_wobj_z = np.dot(movement_vector, wobj_z)
+        
+        print(f"Movement in wobj frame: X={movement_wobj_x:.6f}, Y={movement_wobj_y:.6f}, Z={movement_wobj_z:.6f}")
+
+        # Step 1: Move along wobj X and Z directions (keep wobj Y unchanged)
+        # Calculate intermediate position by adding wobj X and Z movements
+        intermediate_movement_x = movement_wobj_x * wobj_x
+        intermediate_movement_z = movement_wobj_z * wobj_z
+        intermediate_movement = intermediate_movement_x + intermediate_movement_z
+        intermediate_position = current_position + intermediate_movement
+        
+        intermediate_pose = [
+            intermediate_position[0], # x
+            intermediate_position[1], # y
+            intermediate_position[2], # z
+            current_pose[3],          # rx (keep current orientation)
+            current_pose[4],          # ry
+            current_pose[5]           # rz
+        ]
+        
+        print(f"\nStep 1: Moving along wobj X and Z directions...")
+        print(f"Intermediate pose: {intermediate_pose}")
+        
+        res = self.robot.movel(intermediate_pose, a=0.1, v=0.1)
+        time.sleep(0.5)
+
+        if res != 0:
+            print(f"Failed to move along wobj X and Z (error code: {res})")
+            return res
+        
+        print("Step 1 completed successfully")
+        
+        # Step 2: Move along wobj Y direction to final target with offset
+        final_movement_y = (movement_wobj_y + y_offset) * wobj_y
+        final_position = intermediate_position + final_movement_y
+        
+        final_pose = [
+            final_position[0],        # x
+            final_position[1],        # y
+            final_position[2],        # z
+            current_pose[3],          # rx (keep current orientation)
+            current_pose[4],          # ry
+            current_pose[5]           # rz
+        ]
+        
+        offset_info = f" with Y offset={y_offset:.6f}m" if y_offset != 0.0 else ""
+        print(f"\nStep 2: Moving along wobj Y direction{offset_info}...")
+        print(f"Final pose: {final_pose}")
+        
+        res = self.robot.movel(final_pose, a=0.1, v=0.1)
+        time.sleep(0.5)
+
+        if res == 0:
+            print("Robot moved to start position successfully")
+        else:
+            print(f"Failed to move along wobj Y (error code: {res})")
+        
+        return res
+    
 
 if __name__ == "__main__":
     # Parse command line arguments

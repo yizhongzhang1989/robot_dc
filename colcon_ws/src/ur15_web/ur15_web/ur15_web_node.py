@@ -2797,7 +2797,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_last_operation', methods=['POST'])
         def locate_last_operation():
-            """Execute locate last operation script (ur_locate_test.py)."""
+            """Execute locate last operation script (ur_3d_positioning.py)."""
             from flask import request, jsonify
             import subprocess
             import threading
@@ -2827,7 +2827,7 @@ class UR15WebNode(Node):
                         'message': 'Could not find scripts directory'
                     })
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_test.py')
+                script_path = os.path.join(scripts_dir, 'ur_3d_positioning.py')
                 
                 # Check if script exists
                 if not os.path.exists(script_path):
@@ -2864,7 +2864,7 @@ class UR15WebNode(Node):
                         for line in process.stdout:
                             line = line.rstrip()
                             if line:
-                                self.get_logger().info(f"[ur_locate_test] {line}")
+                                self.get_logger().info(f"[ur_3d_positioning] {line}")
                                 # Also push important messages to web log
                                 if '✓' in line or '✗' in line or 'Step' in line or 'Error' in line:
                                     if '✗' in line or 'Error' in line or 'failed' in line.lower():
@@ -3454,17 +3454,18 @@ class UR15WebNode(Node):
             # Get camera parameters using helper function
             params = self._get_camera_calib_params()
             if params is None:
+                self.get_logger().warn("Camera calibration parameters not available for rack drawing")
                 return frame
             
             # Get rack work object parameters - client handles caching internally
-            wobj_origin = self.status_client.get_status('rack', 'wobj_origin')
-            wobj_x = self.status_client.get_status('rack', 'wobj_x')
-            wobj_y = self.status_client.get_status('rack', 'wobj_y')
-            wobj_z = self.status_client.get_status('rack', 'wobj_z')
+            wobj_origin = self.status_client.get_status('wobj', 'wobj_origin')
+            wobj_x = self.status_client.get_status('wobj', 'wobj_x')
+            wobj_y = self.status_client.get_status('wobj', 'wobj_y')
+            wobj_z = self.status_client.get_status('wobj', 'wobj_z')
             
             # Check if all work object parameters are available
             if wobj_origin is None or wobj_x is None or wobj_y is None or wobj_z is None:
-                self.get_logger().debug("Rack work object parameters not available yet")
+                self.get_logger().warn(f"Wobj parameters not available - origin: {wobj_origin is not None}, x: {wobj_x is not None}, y: {wobj_y is not None}, z: {wobj_z is not None}", throttle_duration_sec=5.0)
                 return frame
             
             # Convert to numpy arrays
