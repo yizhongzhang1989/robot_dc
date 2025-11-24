@@ -99,6 +99,13 @@ class TestWebNode(Node):
             # Build the image URL that can be accessed from browser
             image_url = url_for('serve_image', _external=True)
             
+            # Check if JSON labels file exists
+            json_path = os.path.splitext(image_path)[0] + '.json'
+            labels_url = None
+            if os.path.exists(json_path):
+                labels_url = url_for('serve_labels', _external=True)
+                self.get_logger().info(f"Labels file found: {json_path}")
+            
             # Use the same hostname as the request to build labeling URL
             # This ensures it works whether accessed via localhost, hostname, or IP
             # Include the image path so it can be returned when saving labels
@@ -107,17 +114,25 @@ class TestWebNode(Node):
             encoded_image_path = quote(image_path)
             labeling_url = f'http://{host}:8007?imageUrl={image_url}&imagePath={encoded_image_path}'
             
+            # Add labels URL if it exists
+            if labels_url:
+                labeling_url += f'&labelsUrl={labels_url}'
+            
             self.get_logger().info(f"Preparing image: {image_path}")
             self.get_logger().info(f"Request host: {request.host}")
             self.get_logger().info(f"Image URL: {image_url}")
             self.get_logger().info(f"Labeling URL: {labeling_url}")
             
-            return jsonify({
+            response_data = {
                 'status': 'success',
                 'image_url': image_url,
                 'labeling_url': labeling_url,
                 'image_path': image_path
-            })
+            }
+            if labels_url:
+                response_data['labels_url'] = labels_url
+            
+            return jsonify(response_data)
         
         @app.route('/serve_image', methods=['GET'])
         def serve_image():
@@ -132,6 +147,21 @@ class TestWebNode(Node):
             
             self.get_logger().info(f"Serving image: {image_path}")
             return send_file(image_path, mimetype='image/jpeg')
+        
+        @app.route('/serve_labels', methods=['GET'])
+        def serve_labels():
+            """Serve the labels JSON file if it exists."""
+            from flask import request
+            
+            # Get image path from query parameter, or use default
+            image_path = request.args.get('path', '/home/ros/Documents/robot_dc/dataset/rack1/ref_img_1.jpg')
+            json_path = os.path.splitext(image_path)[0] + '.json'
+            
+            if not os.path.exists(json_path):
+                return jsonify({'error': 'Labels file not found'}), 404
+            
+            self.get_logger().info(f"Serving labels: {json_path}")
+            return send_file(json_path, mimetype='application/json')
         
         @app.route('/save_labels', methods=['POST'])
         def save_labels():
