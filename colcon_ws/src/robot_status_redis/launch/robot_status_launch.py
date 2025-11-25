@@ -14,53 +14,48 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
+from common.config_manager import ConfigManager
+from common.workspace_utils import get_workspace_root
 from pathlib import Path
-import os
 
 
 def generate_launch_description():
     """Generate launch description for robot status system."""
     
-    # Determine default auto-save path (temp/robot_status_auto_save.json in robot_dc root)
-    try:
-        current_dir = Path.cwd()
-        robot_dc_root = None
-        
-        # Find robot_dc root directory
-        for parent in [current_dir] + list(current_dir.parents):
-            if parent.name == 'robot_dc':
-                robot_dc_root = parent
-                break
-        
-        if robot_dc_root is not None:
-            default_save_path = str(robot_dc_root / 'temp' / 'robot_status_auto_save.json')
-        else:
-            default_save_path = 'robot_status_auto_save.json'
-    except Exception:
-        default_save_path = 'robot_status_auto_save.json'
+    # Load configuration
+    config = ConfigManager()
+    service_config = config.get('services.robot_status_redis')
     
-    # Declare launch arguments
+    # Resolve auto_save_file_path (handle both absolute and relative paths)
+    auto_save_path = service_config['auto_save_file_path']
+    auto_save_path_obj = Path(auto_save_path)
+    if not auto_save_path_obj.is_absolute():
+        # Treat as relative path from workspace root
+        workspace_root = Path(get_workspace_root())
+        auto_save_path = str(workspace_root / auto_save_path)
+    
+    # Declare launch arguments with defaults from config
     auto_save_file_path_arg = DeclareLaunchArgument(
         'auto_save_file_path',
-        default_value=default_save_path,
-        description='Path to JSON file for auto-saving status'
+        default_value=auto_save_path,
+        description='Path to JSON file for auto-saving status (absolute or relative to repo root)'
     )
     
     web_enabled_arg = DeclareLaunchArgument(
         'web_enabled',
-        default_value='true',
+        default_value=str(service_config['web']['enabled']).lower(),
         description='Whether to start the web dashboard'
     )
     
     web_port_arg = DeclareLaunchArgument(
         'web_port',
-        default_value='8005',
+        default_value=str(service_config['web']['port']),
         description='Port for the web dashboard'
     )
     
     web_host_arg = DeclareLaunchArgument(
         'web_host',
-        default_value='0.0.0.0',
+        default_value=service_config['web']['host'],
         description='Host address for the web dashboard'
     )
     

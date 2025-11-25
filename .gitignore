@@ -141,3 +141,9 @@ temp/
 
 # Dataset directory
 dataset/
+
+# Configuration files with real values
+/config/robot_config.yaml
+/config/*.backup
+/config/*~
+/config/.secrets*

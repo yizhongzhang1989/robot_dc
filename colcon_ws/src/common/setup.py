@@ -11,7 +11,10 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'pyyaml',  # For configuration file parsing
+    ],
     zip_safe=True,
     maintainer='Your Name',
     maintainer_email='your-email@example.com',
