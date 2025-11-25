@@ -348,6 +348,13 @@ class UR15WebNode(Node):
         
         self.get_logger().info("Cleaning up resources...")
         
+        # Stop Flask server
+        self.flask_running = False
+        if hasattr(self, 'flask_thread') and self.flask_thread and self.flask_thread.is_alive():
+            self.get_logger().info("Stopping Flask server...")
+            # Flask is in daemon thread, just mark it as stopped
+            # The thread will exit when the main process exits
+        
         # Terminate all child processes
         with self.process_lock:
             for process in self.child_processes:
