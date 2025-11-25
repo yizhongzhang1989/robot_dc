@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""双力传感器 + 拉绳高度传感器实时可视化脚本（绝对时间模式，仅折线）
+"""Dual Force Sensor + Draw-Wire Height Sensor Real-time Visualization Script (Absolute Time Mode, Line Plot Only)
 
-功能:
-    - 订阅 /force_sensor (主力)、/force_sensor_2 (副力)、/draw_wire_sensor/data (高度)
-    - 使用真实时间戳，显示最近 --x-span 秒窗口
-    - 两路力传感器均支持 4 点去极值滤波 (--filter / --no-filter)
-    - 三条曲线：Force1(黄色)、Force2(紫红)、Height(绿色)
-    - 力显示范围默认 35~160N，自动选择整数或小数刻度
+Features:
+    - Subscribe to /force_sensor (primary), /force_sensor_2 (secondary), /draw_wire_sensor/data (height)
+    - Use real timestamps, display recent --x-span seconds window
+    - Both force sensors support 4-point outlier filtering (--filter / --no-filter)
+    - Three curves: Force1(yellow), Force2(magenta), Height(green)
+    - Force display range default 35~160N, auto-select integer or decimal scale
 
-示例:
+Example:
     source install/setup.bash
     python3 scripts/force_sensor_visualizer.py --x-span 3 --x-tick 0.1
 
-关闭滤波:
+Disable filtering:
     python3 scripts/force_sensor_visualizer.py --no-filter
 
-按键: q 退出
+Hotkey: q to exit
 """
 import rclpy
 from rclpy.node import Node
@@ -33,38 +33,38 @@ class ForceVisualizer(Node):
     def __init__(self, args):
         super().__init__('force_sensor_visualizer')
         self.args = args
-        # 当前值
-        self.force_value = None          # 主力传感器
-        self.force2_value = None         # 副力传感器
-        self.height_value = None         # 高度传感器
-        # 历史 (t, filtered)
-        self.force_history = []          # 主力
-        self.force2_history = []         # 副力
-        self.height_history = []         # 高度
-        # 4点去极值滤波队列
-        self.force_raw_queue = []        # 主力
-        self.force2_raw_queue = []       # 副力
-        # 频率估算间隔
+        # Current values
+        self.force_value = None          # Primary force sensor
+        self.force2_value = None         # Secondary force sensor
+        self.height_value = None         # Height sensor
+        # History (t, filtered)
+        self.force_history = []          # Primary force
+        self.force2_history = []         # Secondary force
+        self.height_history = []         # Height
+        # 4-point outlier filtering queue
+        self.force_raw_queue = []        # Primary force
+        self.force2_raw_queue = []       # Secondary force
+        # Sample rate estimation intervals
         self.force_sample_intervals = []
         self.force2_sample_intervals = []
         self.height_sample_intervals = []
         self.window_sec = args.window_sec
         self.last_primary_sample_time = None
         self.last_secondary_sample_time = None
-        # 布局尺寸
+        # Layout dimensions
         self.width = int(args.width)
         self.panel_h = int(args.plot_height)
         self.margin_left = 65
-        self.margin_right = 70  # 右侧仅高度刻度
+        self.margin_right = 70  # Right side for height scale only
         self.margin_top = 40
         self.margin_bottom = 45
         self.height = self.margin_top + self.margin_bottom + self.panel_h
-        # 显示范围（可由参数覆盖）
+        # Display range (can be overridden by parameters)
         self.force_min = args.force_min
         self.force_max = args.force_max
         self.lift_min = args.lift_min
         self.lift_max = args.lift_max
-        # 绝对时间窗口模式
+        # Absolute time window mode
         self.x_span = args.x_span
         # Subscriptions
         self.force_sub = self.create_subscription(Float32, '/force_sensor', self.force_cb, 50)
@@ -74,42 +74,38 @@ class ForceVisualizer(Node):
         self.draw_timer = self.create_timer(1.0/50.0, self.draw)
 
         if cv2 is None:
-            self.get_logger().error('OpenCV 不可用，无法显示窗口。请安装 opencv-python')
+            self.get_logger().error('OpenCV not available, cannot display window. Please install opencv-python')
         else:
-            self.get_logger().info('ForceVisualizer 已启动, 按 q 退出')
+            self.get_logger().info('ForceVisualizer started, press q to exit')
 
     def _filter_value(self, raw_queue, new_value):
-        """使用最近4个值进行去极值滤波，返回滤波后的值。
+        """Filter using the most recent 4 values with outlier removal, return filtered value.
         
         Args:
-            raw_queue: 原始值队列（会被修改）
-            new_value: 新到达的原始值
+            raw_queue: Raw value queue (will be modified)
+            new_value: Newly arrived raw value
             
         Returns:
-            滤波后的值（如果队列不足4个，返回原始值）
+            Filtered value (if queue has less than 4 values, return raw value)
         """
         if not self.args.filter:
-            # 不开启滤波，直接返回原始值
+            # Filter disabled, return raw value directly
             return new_value
         
-        # 添加新值到队列
+        # Add new value to queue
         raw_queue.append(new_value)
-        # 保持队列最多4个元素
+        # Keep queue at most 4 elements
         if len(raw_queue) > 4:
             raw_queue.pop(0)
         
-        # 如果少于4个值，返回原始值
+        # If less than 4 values, return raw value
         if len(raw_queue) < 4:
             return new_value
         
-        # 4点去极值滤波：排序后取中间两个的平均
+        # 4-point outlier filtering: sort and average middle two values
         sorted_vals = sorted(raw_queue)
         filtered = (sorted_vals[1] + sorted_vals[2]) / 2.0
         return filtered
-
-    def force_cb(self, msg: Float32):
-        self.force_value = float(msg.data)
-        self._append_force()
 
     def height_cb(self, msg: String):
         try:
@@ -141,7 +137,7 @@ class ForceVisualizer(Node):
         cutoff = now - self.window_sec
         while history and history[0][0] < cutoff:
             history.pop(0)
-        # 频率估算
+        # Sample rate estimation
         if primary:
             if self.last_primary_sample_time is not None:
                 dt = now - self.last_primary_sample_time
@@ -169,7 +165,7 @@ class ForceVisualizer(Node):
                 self.height_sample_intervals.append(dt)
                 if len(self.height_sample_intervals) > 200:
                     self.height_sample_intervals.pop(0)
-        # 拉绳传感器是数字信号，不需要滤波，直接使用原始值
+        # Draw-wire sensor is digital signal, no filtering needed, use raw value directly
         self.height_history.append((now, self.height_value))
         cutoff = now - self.window_sec
         while self.height_history and self.height_history[0][0] < cutoff:
@@ -189,7 +185,7 @@ class ForceVisualizer(Node):
         w, h = self.width, self.height
         img = np.zeros((h,w,3), dtype=np.uint8); img[:] = (25,25,25)
 
-        # Force samples (已经是滤波后的值)
+        # Force samples (already filtered values)
         times_full = np.array([t for t,_ in self.force_history])
         force_vals_full = np.array([v for _,v in self.force_history])
         height_times_full = np.array([t for t,_ in self.height_history]) if self.height_history else np.array([])
@@ -197,16 +193,16 @@ class ForceVisualizer(Node):
         force2_times_full = np.array([t for t,_ in self.force2_history]) if self.force2_history else np.array([])
         force2_vals_full = np.array([v for _,v in self.force2_history]) if self.force2_history else np.array([])
 
-        # 绝对时间模式：最近 self.x_span 秒
+        # Absolute time mode: recent self.x_span seconds
         now = time.time()
         span = self.x_span if (self.x_span and self.x_span>0) else 2.0
         t_min = now - span
         mask_force = (times_full >= t_min)
         times = times_full[mask_force]
-        force_series = force_vals_full[mask_force]  # 已经是滤波后的数据
+        force_series = force_vals_full[mask_force]  # Already filtered data
         mask_height = (height_times_full >= t_min) if len(height_times_full)>0 else np.array([])
         height_times = height_times_full[mask_height] if len(height_times_full)>0 else np.array([])
-        height_series = height_vals_full[mask_height] if len(height_vals_full)>0 else np.array([])  # 已经是滤波后的数据
+        height_series = height_vals_full[mask_height] if len(height_vals_full)>0 else np.array([])  # Already filtered data
         mask_force2 = (force2_times_full >= t_min) if len(force2_times_full)>0 else np.array([])
         force2_times = force2_times_full[mask_force2] if len(force2_times_full)>0 else np.array([])
         force2_series = force2_vals_full[mask_force2] if len(force2_vals_full)>0 else np.array([])
@@ -216,7 +212,7 @@ class ForceVisualizer(Node):
         x = ((times - t_min)/span)*usable_w + self.margin_left
         x_h_base = ((height_times - t_min)/span)*usable_w + self.margin_left if len(height_times)>0 else np.array([])
         x2_base = ((force2_times - t_min)/span)*usable_w + self.margin_left if len(force2_times)>0 else np.array([])
-        # 使用固定力范围，不再依据自动最大值
+        # Use fixed force range, no longer based on auto-max
         max_force = self.force_max
         min_force = self.force_min
         panel_top = self.margin_top; panel_bottom = panel_top + self.panel_h
@@ -225,7 +221,7 @@ class ForceVisualizer(Node):
         for g in range(6):
             gy = int(panel_top + 10 + g*(self.panel_h-40)/5)
             cv2.line(img,(self.margin_left-49,gy),(w-self.margin_right,gy),(45,45,45),1)
-        # y ticks (auto choose integer vs one decimal based on step size)
+        # Y-axis ticks (auto choose integer vs one decimal based on step size)
         y_ticks = self.args.y_ticks if (hasattr(self.args,'y_ticks') and self.args.y_ticks and self.args.y_ticks>0) else 5
         step = (max_force - min_force)/y_ticks if y_ticks>0 else (max_force - min_force)
         for i in range(y_ticks+1):
@@ -235,44 +231,44 @@ class ForceVisualizer(Node):
             cv2.line(img,(self.margin_left-52,y),(self.margin_left-48,y),(180,180,180),1)
             label = f"{val:.0f}N" if step >= 5 else f"{val:.1f}N"
             cv2.putText(img,label,(self.margin_left-62,y+4),cv2.FONT_HERSHEY_SIMPLEX,0.35,(180,180,180),1)
-        # 数据已经在采集时滤波，直接使用
+        # Data already filtered during acquisition, use directly
         force_clipped = np.clip(force_series, min_force, max_force)
         y_force = (panel_bottom - 20) - ((force_clipped - min_force)/(max_force - min_force))*(self.panel_h-40)
-        # 高度曲线映射到同一 panel 使用右侧刻度
+        # Height curve mapped to same panel using right-side scale
         if len(height_series) > 0:
             height_clipped = np.clip(height_series, self.lift_min, self.lift_max)
             y_height = (panel_bottom - 20) - ((height_clipped - self.lift_min)/(self.lift_max - self.lift_min))*(self.panel_h-40)
-        # 测试力传感器曲线映射（使用独立范围 45-120N，映射到相同 panel）
+        # Secondary force sensor curve mapping (uses independent range 45-120N, mapped to same panel)
         if len(force2_series) > 0:
             force2_clipped = np.clip(force2_series, self.force_min, self.force_max)
             y_force2 = (panel_bottom - 20) - ((force2_clipped - self.force_min)/(self.force_max - self.force_min))*(self.panel_h-40)
-        # 曲线绘制：绝对时间模式 & simple_x 模式下不做样条，仅使用原始折线
+        # Curve drawing: absolute time mode & simple_x mode without spline, use raw polyline only
         if len(x) >= 2:
             for i in range(1,len(x)):
                 cv2.line(img,(int(x[i-1]),int(y_force[i-1])),(int(x[i]),int(y_force[i])),(255,255,0),2)
-        # 高度曲线 (简单折线，不做样条)
+        # Height curve (simple polyline, no spline)
         if len(height_series) > 1:
             x_h = x_h_base
             height_clipped_plot = np.clip(height_series, self.lift_min, self.lift_max)
             y_h_plot = (panel_bottom - 20) - ((height_clipped_plot - self.lift_min)/(self.lift_max - self.lift_min))*(self.panel_h-40)
             for i in range(1,len(x_h)):
                 cv2.line(img,(int(x_h[i-1]),int(y_h_plot[i-1])),(int(x_h[i]),int(y_h_plot[i])),(0,200,100),2)
-        # 测试力传感器曲线 (简单折线，紫红色)
+        # Secondary force sensor curve (simple polyline, magenta)
         if len(force2_series) > 1:
             x2 = x2_base
             for i in range(1,len(x2)):
                 cv2.line(img,(int(x2[i-1]),int(y_force2[i-1])),(int(x2[i]),int(y_force2[i])),(255,100,255),2)
-        # 原始测量点（用小圆点标记）
+        # Raw measurement points (marked with small circles)
         for i in range(len(x)):
             color = (0,255,255) if (force_series[i] < min_force or force_series[i] > max_force) else (200,200,50)
             cv2.circle(img,(int(x[i]),int(y_force[i])),3,color,-1)
-        # 测试力传感器测量点
+        # Secondary force sensor measurement points
         if len(force2_series) > 0:
             for i in range(len(x2_base)):
                 color2 = (255,0,255) if (force2_series[i] < self.force_min or force2_series[i] > self.force_max) else (200,100,200)
                 cv2.circle(img,(int(x2_base[i]),int(y_force2[i])),3,color2,-1)
         if len(height_series)>0:
-            # 高度当前值标记
+            # Height current value marker
             cv2.putText(img,f"Lift: {height_series[-1]:.2f}",(self.margin_left+220,panel_top+18),cv2.FONT_HERSHEY_SIMPLEX,0.7,(0,200,100),2)
         cv2.putText(img,f"Force: {force_series[-1]:.2f} N",(self.margin_left,panel_top+18),cv2.FONT_HERSHEY_SIMPLEX,0.7,(255,255,0),2)
         if len(force2_series) > 0:
@@ -287,14 +283,14 @@ class ForceVisualizer(Node):
         cv2.putText(img,f"span={span:.1f}s f1≈{f1_rate:.1f}Hz f2≈{f2_rate:.1f}Hz h≈{h_rate:.1f}Hz",(self.margin_left,25),cv2.FONT_HERSHEY_SIMPLEX,0.6,(220,220,220),1)
         cv2.putText(img,f"Force(1/2) {min_force:.0f}-{max_force:.0f}N | Lift {self.lift_min:.0f}-{self.lift_max:.0f}",(self.margin_left,h-15),cv2.FONT_HERSHEY_SIMPLEX,0.5,(170,170,170),1)
         cv2.putText(img,"Force (N)",(self.margin_left-55,panel_top-10),cv2.FONT_HERSHEY_SIMPLEX,0.45,(255,255,0),1)
-        # 右侧高度刻度（绿色，靠右）
+        # Right-side height scale (green, right-aligned)
         for i in range(6):
             val = self.lift_min + (i/5)*(self.lift_max - self.lift_min)
             norm = (val - self.lift_min)/(self.lift_max - self.lift_min)
             y = int(panel_bottom - 20 - norm*(self.panel_h-40))
             cv2.putText(img,f"{val:.0f}",(w-self.margin_right-40,y+4),cv2.FONT_HERSHEY_SIMPLEX,0.35,(0,200,100),1)
         cv2.putText(img,"Lift",(w-self.margin_right-50,panel_top-10),cv2.FONT_HERSHEY_SIMPLEX,0.45,(0,200,100),1)
-        # 移除测试力刻度；副力与主力共享左侧刻度
+        # Remove secondary force scale; secondary force shares left scale with primary force
         cv2.putText(img,"Time (s)",(w//2,panel_bottom+25),cv2.FONT_HERSHEY_SIMPLEX,0.5,(200,200,200),1)
         # x ticks
         tick = self.args.x_tick if (self.args.x_tick and self.args.x_tick>0) else 1.0
@@ -312,11 +308,11 @@ class ForceVisualizer(Node):
         cv2.imshow('ForceSensorVisualizer', img)
         k = cv2.waitKey(1)&0xFF
         if k == ord('q'):
-            self.get_logger().info('关闭可视化窗口')
+            self.get_logger().info('Closing visualization window')
             cv2.destroyWindow('ForceSensorVisualizer')
             rclpy.shutdown()
 
-    # 动态跨度与其他模式已移除
+    # Dynamic span and other modes have been removed
 
     def destroy_node(self):
         if cv2 is not None:
@@ -327,19 +323,19 @@ class ForceVisualizer(Node):
         super().destroy_node()
 
 def parse_args():
-    ap = argparse.ArgumentParser(description='双力传感器 + 高度 可视化 (Absolute Time Window)')
-    ap.add_argument('--window-sec', type=float, default=60.0, help='历史窗口秒数 (默认60)')
-    ap.add_argument('--width', type=int, default=1200, help='窗口宽度 (默认1200)')
-    ap.add_argument('--plot-height', type=int, default=350, help='曲线区域高度 (默认350)')
-    ap.add_argument('--x-span', type=float, default=2.0, help='横轴显示跨度秒 (默认2)')
-    ap.add_argument('--x-tick', type=float, default=0.05, help='X轴刻度间隔秒 (默认0.05)')
-    ap.add_argument('--y-ticks', type=int, default=5, help='力刻度数量 (默认5)')
-    ap.add_argument('--force-min', type=float, default=35.0, help='力显示下限 (默认35)')
-    ap.add_argument('--force-max', type=float, default=160.0, help='力显示上限 (默认160)')
-    ap.add_argument('--lift-min', type=float, default=1184.0, help='高度显示下限 (默认1184)')
-    ap.add_argument('--lift-max', type=float, default=1186.0, help='高度显示上限 (默认1186)')
-    ap.add_argument('--filter', action='store_true', default=True, help='启用4点去极值滤波 (默认启用)')
-    ap.add_argument('--no-filter', action='store_false', dest='filter', help='禁用滤波，显示原始值')
+    ap = argparse.ArgumentParser(description='Dual Force Sensor + Height Visualization (Absolute Time Window)')
+    ap.add_argument('--window-sec', type=float, default=60.0, help='History window seconds (default 60)')
+    ap.add_argument('--width', type=int, default=1200, help='Window width (default 1200)')
+    ap.add_argument('--plot-height', type=int, default=350, help='Plot area height (default 350)')
+    ap.add_argument('--x-span', type=float, default=2.0, help='X-axis display span seconds (default 2)')
+    ap.add_argument('--x-tick', type=float, default=0.05, help='X-axis tick interval seconds (default 0.05)')
+    ap.add_argument('--y-ticks', type=int, default=5, help='Force tick count (default 5)')
+    ap.add_argument('--force-min', type=float, default=35.0, help='Force display lower limit (default 35)')
+    ap.add_argument('--force-max', type=float, default=160.0, help='Force display upper limit (default 160)')
+    ap.add_argument('--lift-min', type=float, default=1184.0, help='Height display lower limit (default 1184)')
+    ap.add_argument('--lift-max', type=float, default=1186.0, help='Height display upper limit (default 1186)')
+    ap.add_argument('--filter', action='store_true', default=True, help='Enable 4-point outlier filtering (default enabled)')
+    ap.add_argument('--no-filter', action='store_false', dest='filter', help='Disable filtering, show raw values')
     return ap.parse_args()
 
 def main():
