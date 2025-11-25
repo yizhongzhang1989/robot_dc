@@ -221,7 +221,7 @@ def generate_ur15_base_curve(num_points=73, num_rays=16, ray_length=1.0):
 def generate_gb200rack_curve():
     """
     Generate the shape representing a GB200 rack as a square on the x-z plane.
-    Lower left corner at (0, 0, 0), upper right corner at (0.545, 0, 2.14).
+    Lower left corner at (0, 0, 0), upper right corner at (0.55, 0, 2.145).
     
     Returns:
         dict: Dictionary with keys 'curves' and 'colors'
@@ -229,8 +229,8 @@ def generate_gb200rack_curve():
               - colors: List of corresponding BGR colors
     """
     # Define the corners of the rectangle on x-z plane (y=0)
-    x_min, x_max = 0.0, 0.545
-    z_min, z_max = 0.0, 2.14
+    x_min, x_max = 0.0, 0.55
+    z_min, z_max = 0.0, 2.145
     
     max_segment_length = 0.1
     

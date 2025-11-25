@@ -120,6 +120,9 @@ class URCapture(Node):
         # Parent directory of data_dir (operation directory)
         self.data_parent_dir = os.path.dirname(self.data_dir)
         
+        # Store camera_params_path as instance variable
+        self.camera_params_path = camera_params_path
+        
         # Camera calibration parameters path
         if not os.path.isabs(camera_params_path):
             camera_params_dir = os.path.join(self.script_dir, camera_params_path)
@@ -351,6 +354,26 @@ class URCapture(Node):
                 json.dump(data, f, indent=2)
             
             print(f'✓ Saved pose to: {json_filename}')
+            
+            # Wait for fresh camera image (to ensure image matches current robot position)
+            print('⏳ Waiting for fresh camera image...')
+            old_image = self.latest_image
+            wait_timeout = 2.0  # seconds
+            wait_start = time.time()
+            
+            while time.time() - wait_start < wait_timeout:
+                rclpy.spin_once(self, timeout_sec=0.01)
+                if self.latest_image is not None and self.latest_image != old_image:
+                    print('✓ Fresh image received')
+                    break
+                time.sleep(0.01)
+            else:
+                # Timeout - use whatever image we have
+                if self.latest_image is not None:
+                    print('⚠ Timeout waiting for fresh image, using current image')
+                else:
+                    print('✗ No camera image available')
+                    return False
             
             # Save current camera image if available
             if self.latest_image is not None:

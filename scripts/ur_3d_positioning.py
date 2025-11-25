@@ -81,7 +81,7 @@ class URLocate(URCapture):
         self.all_template_points = {
             "rack1": [
                 {
-                    "name": "GB200_Rack_Lower_Left_Corner",
+                    "name": "GB200_Rack_Bottom_Left_Corner",
                     "x": 0,
                     "y": 0,
                     "z": 0.0
@@ -89,7 +89,7 @@ class URLocate(URCapture):
             ],
             "rack2": [
                 {
-                    "name": "GB200_Rack_Lower_Right_Corner",
+                    "name": "GB200_Rack_Bottom_Right_Corner",
                     "x": 0.55,
                     "y": 0,
                     "z": 0.0
