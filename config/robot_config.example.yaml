@@ -13,15 +13,53 @@ version: "1.0"
 # UR15 Robot Configuration
 # ============================================================================
 ur15:
-  # Network configuration
-  network:
-    robot_ip: "192.168.1.15"  # UPDATE: UR15 robot IP address
+  # Robot configuration (hardware specs and network)
+  robot:
+    type: "ur15"            # Robot type for ur_robot_driver
+    ip: "192.168.1.15"  # UPDATE: UR15 robot IP address
     ports:
       control: 30002          # Primary interface port
       dashboard: 29999        # Dashboard server port
       rtde: 30004            # Real-time data exchange port
       modbus: 502            # Modbus TCP port
       rs485: 54321           # RS485 communication port
+    launch_rviz: false      # Launch RViz visualization
+    max_velocity: 1.0
+    max_acceleration: 1.4
+    joint_names:
+      - "shoulder_pan_joint"
+      - "shoulder_lift_joint"
+      - "elbow_joint"
+      - "wrist_1_joint"
+      - "wrist_2_joint"
+      - "wrist_3_joint"
+  
+  # Launch modules and sequence
+  launch_modules:
+    - package: "robot_status_redis"
+      launch_file: "robot_status_launch.py"
+      delay: 0.0
+      enabled: true
+    - package: "positioning_3d_service"
+      launch_file: "positioning_3d_launch.py"
+      delay: 0.0
+      enabled: true
+    - package: "image_labeling_service"
+      launch_file: "image_labeling_launch.py"
+      delay: 0.0
+      enabled: false
+    - package: "ur15_robot_arm"
+      launch_file: "ur15_control_launch.py"
+      delay: 0.0
+      enabled: true
+    - package: "camera_node"
+      launch_file: "ur15_cam_launch.py"
+      delay: 1.0
+      enabled: true
+    - package: "ur15_web"
+      launch_file: "ur15_web_launch.py"
+      delay: 2.0
+      enabled: true
   
   # Camera configuration
   camera:
@@ -35,11 +73,10 @@ ur15:
     max_width: 800
     publish_ros_image: true
   
-  # Service ports
-  services:
-    web: 8030              # UR15 web interface port
-    positioning_3d: 8004   # 3D positioning service port
-    image_labeling: 8007   # Image labeling service port
+  # Web service configuration
+  web:
+    port: 8030
+    camera_topic: "/ur15_camera/image_raw"
   
   # Paths (relative to workspace root)
   paths:
@@ -47,19 +84,6 @@ ur15:
     calibration_data: "temp/ur15_cam_calibration_result"
     calibration_data_raw: "temp/ur15_cam_calibration_data"
     rack_positions: "temp/ur15_rack_positions.json"
-  
-  # Robot specifications
-  robot:
-    model: "UR15"
-    max_velocity: 1.0
-    max_acceleration: 1.4
-    joint_names:
-      - "shoulder_pan_joint"
-      - "shoulder_lift_joint"
-      - "elbow_joint"
-      - "wrist_1_joint"
-      - "wrist_2_joint"
-      - "wrist_3_joint"
   
   # Camera calibration settings
   calibration:
@@ -77,7 +101,7 @@ ur15:
 duco:
   # Network configuration
   network:
-    robot_ip: "192.168.1.10"  # UPDATE: Duco robot IP address
+    ip: "192.168.1.10"  # UPDATE: Duco robot IP address
     port: 7003                 # Thrift RPC port
   
   # Camera configuration
@@ -92,11 +116,6 @@ duco:
     max_width: 800
     publish_ros_image: true
   
-  # Service ports
-  services:
-    web: 8031            # Duco web interface port
-    arm_control: 8032    # Duco arm control service port
-  
   # Paths
   paths:
     dataset: "dataset_duco"
@@ -104,7 +123,6 @@ duco:
   
   # Robot specifications
   robot:
-    model: "GCR5-910"
     joint_count: 6
     max_velocity: 0.8
     max_acceleration: 1.2
