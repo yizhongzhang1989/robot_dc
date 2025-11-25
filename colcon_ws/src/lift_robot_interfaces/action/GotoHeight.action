@@ -1,0 +1,31 @@
+# GotoHeight.action - Platform/Pushrod height control using ROS2 Action pattern
+# This action moves the platform or pushrod to a target height using closed-loop control
+
+# ─────────────────────────────────────────────────────────────────────
+# GOAL: Command sent by client to start action
+# ─────────────────────────────────────────────────────────────────────
+string target          # "platform" or "pushrod" - which device to control
+float64 target_height  # Target height in mm (interpretation depends on mode)
+string mode            # "absolute" (default) or "relative" - height control mode
+                       # - "absolute": target_height is the absolute target position
+                       # - "relative": target_height is added to current height to get target
+
+---
+
+# ─────────────────────────────────────────────────────────────────────
+# RESULT: Final status when action completes/aborts/cancels
+# ─────────────────────────────────────────────────────────────────────
+bool success                  # True if target reached successfully
+float64 final_height          # Actual height when action finished (mm)
+float64 execution_time        # Total execution time (seconds)
+string completion_reason      # Reason for completion: 'target_reached' | 'force_reached' | 'limit_exceeded' | 'manual_stop' | 'emergency_stop' | 'cancelled'
+
+---
+
+# ─────────────────────────────────────────────────────────────────────
+# FEEDBACK: Progress updates sent continuously during execution (10Hz)
+# ─────────────────────────────────────────────────────────────────────
+float64 current_height        # Real-time height reading (mm)
+float64 error                 # Distance to target: target - current (mm)
+float64 progress              # Progress percentage: 0.0 to 1.0 (0% to 100%)
+string movement_state         # Current movement: 'stop' | 'up' | 'down'

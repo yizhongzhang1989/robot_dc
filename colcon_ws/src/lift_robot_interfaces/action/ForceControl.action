@@ -1,0 +1,17 @@
+# ForceControl.action - 力控制Action接口定义
+
+# Goal
+float64 target_force        # 目标力值（N）
+string direction           # 方向：'up' 或 'down'
+---
+# Result
+bool success               # 是否成功
+float64 final_force       # 最终力值（N）
+float64 execution_time    # 执行时间（秒）
+string completion_reason  # 完成原因：'target_reached', 'cancelled', 'emergency_stop', 'error'
+---
+# Feedback
+float64 current_force     # 当前力值（N）
+float64 error            # 误差（target - current）
+float64 progress         # 进度 0.0-1.0
+string movement_state    # 运动状态：'up', 'down', 'stop'
