@@ -182,6 +182,18 @@ def main(args=None):
     rclpy.init(args=args)
     
     node = None
+    
+    def signal_handler(signum, frame):
+        """Handle termination signals."""
+        if node:
+            node.get_logger().info(f"Received signal {signum}, shutting down...")
+            node.cleanup()
+        sys.exit(0)
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     try:
         node = Positioning3DServiceNode()
         

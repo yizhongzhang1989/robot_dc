@@ -8,10 +8,7 @@ with specified delays and can be enabled/disabled via config.
 """
 
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
-from launch_ros.substitutions import FindPackageShare
+from launch.actions import ExecuteProcess, TimerAction
 from common.config_manager import ConfigManager
 
 
@@ -32,25 +29,13 @@ def generate_launch_description():
         package = module['package']
         launch_file = module['launch_file']
         delay = module.get('delay', 0.0)
-        
-        # Prepare launch arguments if this is ur15_web
-        launch_arguments = {}
-        if package == 'ur15_web' and launch_file == 'ur15_web_launch.py':
-            # Explicitly pass web_port argument to ensure correct port is used
-            launch_arguments = {
-                'web_port': str(ur15_config.get('web.port')),
-            }.items()
-        
-        # Create launch action for this module
-        module_launch = IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([
-                PathJoinSubstitution([
-                    FindPackageShare(package),
-                    'launch',
-                    launch_file
-                ])
-            ]),
-            launch_arguments=launch_arguments
+                
+        # Create launch action using ExecuteProcess to launch as if run directly
+        # This ensures the launch file evaluates its own DeclareLaunchArgument defaults
+        module_launch = ExecuteProcess(
+            cmd=['ros2', 'launch', package, launch_file],
+            output='screen',
+            shell=False
         )
         
         # Add delay if specified
