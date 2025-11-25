@@ -109,8 +109,13 @@ class LiftRobotNodeAction(Node):
         self.pushrod_stall_start_time = None        # Time when stall was first detected
         self.pushrod_stall_active = False           # Flag to track if stall detection is active
         
+        # Range Limit Stall Detection state (for platform min/max)
+        self.range_limit_stall_reference_height = None  # Reference height for range limit stall detection
+        self.range_limit_stall_start_time = None        # Time when stall was first detected at range limit
+        
         # Range Scan state
         self.range_scan_active = False
+        self.range_scan_phase = None  # 'pushrod_home', 'platform_down', 'platform_up'
         self.range_scan_direction = None  # 'up' or 'down'
         self.range_scan_low_height = None
         self.range_scan_high_height = None
@@ -120,6 +125,7 @@ class LiftRobotNodeAction(Node):
         self.range_scan_high_reached = False
         self.range_scan_height_tolerance = 0.1  # mm
         self.range_scan_duration_required = 1.0  # seconds
+        self.range_scan_pushrod_goal_handle = None  # Track pushrod ManualMove action
         
         # ═══════════════════════════════════════════════════════════════
         # Load Configuration Files
@@ -527,11 +533,20 @@ class LiftRobotNodeAction(Node):
                     self.last_goto_stop_height = None
                     self.last_goto_direction = None
                     self.last_goto_timestamp = None
+                    # Clear range scan state
+                    self.range_scan_active = False
+                    self.range_scan_phase = None
+                    self.range_scan_direction = None
+                    self.range_scan_reference_height = None
+                    self.range_scan_stall_start_time = None
+                
+                # Reset pushrod stall detection
+                self._reset_pushrod_stall_detection()
                 
                 self.get_logger().info("[RESET] ✅ Reset complete: system recovered to idle (ready for new Actions)")
             
             elif command == 'range_scan_down':
-                # Start range scan moving downward to find LOW endpoint
+                # Start range scan: Step 1 - pushrod归位, Step 2 - 平台向下, Step 3 - 平台向上
                 if self.range_scan_active:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] range_scan_down rejected - scan already active")
                     return
@@ -545,24 +560,31 @@ class LiftRobotNodeAction(Node):
                 # Initialize scan state
                 with self.state_lock:
                     self.range_scan_active = True
-                    self.range_scan_direction = 'down'
+                    self.range_scan_phase = 'pushrod_home'  # Start with pushrod归位
+                    self.range_scan_direction = None  # Will be set after pushrod homes
                     self.range_scan_low_reached = False
                     self.range_scan_high_reached = False
                     self.range_scan_reference_height = None
                     self.range_scan_stall_start_time = None
                     self.range_scan_low_height = None
                     self.range_scan_high_height = None
+                    self.range_scan_pushrod_goal_handle = None
                     self.task_state = 'running'
                     self.task_type = 'range_scan'
                     self.task_start_time = time.time()
                 
-                # Send initial downward pulse
-                seq_id = abs(hash(seq_id_str)) % 65536
-                self.controller.down(seq_id=seq_id)
+                # Step 1: Send pushrod down command and wait for stall detection
                 self.get_logger().info(
-                    f"[SEQ {seq_id_str}] ▶️ Range scan DOWN started "
+                    f"[SEQ {seq_id_str}] ▶️ Range scan started - Phase 1: Homing pushrod "
                     f"(tolerance={self.range_scan_height_tolerance}mm, duration={self.range_scan_duration_required}s)"
                 )
+                
+                # Reset pushrod stall detection for range scan
+                self._reset_pushrod_stall_detection()
+                
+                # Send pushrod down command
+                seq_id = abs(hash(seq_id_str)) % 65536
+                self.controller.pushrod_down(seq_id=seq_id)
             
             elif command == 'range_scan_up':
                 # Start range scan moving upward to find HIGH endpoint
@@ -599,11 +621,19 @@ class LiftRobotNodeAction(Node):
                 if not self.range_scan_active:
                     self.get_logger().info(f"[SEQ {seq_id_str}] range_scan_cancel - no active scan")
                 else:
+                    phase = None
                     with self.state_lock:
+                        phase = self.range_scan_phase
                         self.range_scan_active = False
+                        self.range_scan_phase = None
                         self.range_scan_direction = None
                         self.range_scan_reference_height = None
                         self.range_scan_stall_start_time = None
+                    
+                    # Reset pushrod stall detection if in pushrod phase
+                    if phase == 'pushrod_home':
+                        self._reset_pushrod_stall_detection()
+                    
                     self.get_logger().info(f"[SEQ {seq_id_str}] ⏹️ Range scan cancelled")
                 
                 # Stop motion safely
@@ -726,8 +756,49 @@ class LiftRobotNodeAction(Node):
         try:
             with self.state_lock:
                 h = self.current_height
+                phase = self.range_scan_phase
                 direction = self.range_scan_direction
             
+            # Phase 1: Waiting for pushrod to home (stall detection)
+            if phase == 'pushrod_home':
+                # Check pushrod stall
+                if self._check_pushrod_stall(h, 'down'):
+                    self.get_logger().info(
+                        f"[RangeScan] ✅ Phase 1 complete: Pushrod homed at {h:.2f}mm, "
+                        f"sending pushrod STOP..."
+                    )
+                    
+                    # Stop pushrod and transition to waiting for stop to complete
+                    with self.state_lock:
+                        self.range_scan_phase = 'pushrod_stopping'
+                    
+                    # Reset pushrod stall detection
+                    self._reset_pushrod_stall_detection()
+                    
+                    # Send pushrod stop command
+                    self.controller.pushrod_stop()
+                return
+            
+            # Phase 1.5: Waiting for pushrod stop flash to complete
+            if phase == 'pushrod_stopping':
+                # Check if flash is no longer active
+                if not self.controller.flash_active:
+                    self.get_logger().info(
+                        f"[RangeScan] Pushrod stopped, starting Phase 2: Platform DOWN scan"
+                    )
+                    
+                    # Transition to Phase 2: Platform down scan
+                    with self.state_lock:
+                        self.range_scan_phase = 'platform_down'
+                        self.range_scan_direction = 'down'
+                        self.range_scan_reference_height = None
+                        self.range_scan_stall_start_time = None
+                    
+                    # Send platform down command
+                    self.controller.down()
+                return
+            
+            # Phase 2 & 3: Platform scanning (down then up)
             if direction is None:
                 return
             
@@ -756,28 +827,30 @@ class LiftRobotNodeAction(Node):
                     )
                 
                 if stall_elapsed >= self.range_scan_duration_required:
-                    # Endpoint detected
-                    if direction == 'down' and not self.range_scan_low_reached:
+                    # Endpoint detected based on phase
+                    if phase == 'platform_down' and not self.range_scan_low_reached:
                         with self.state_lock:
                             self.range_scan_low_reached = True
                             self.range_scan_low_height = h
                         self.get_logger().info(
-                            f"[RangeScan] ✅ LOW endpoint detected: height={h:.2f}mm "
-                            f"stall={stall_elapsed:.2f}s tolerance={self.range_scan_height_tolerance}mm"
+                            f"[RangeScan] ✅ Phase 2 complete: LOW endpoint at {h:.2f}mm "
+                            f"stall={stall_elapsed:.2f}s, starting Phase 3: Platform UP scan"
                         )
-                        # Switch to UP direction
+                        # Switch to Phase 3: Platform UP
+                        with self.state_lock:
+                            self.range_scan_phase = 'platform_up'
+                            self.range_scan_direction = 'up'
+                            self.range_scan_reference_height = None
+                            self.range_scan_stall_start_time = None
                         self.controller.up()
-                        self.range_scan_direction = 'up'
-                        self.range_scan_reference_height = None
-                        self.range_scan_stall_start_time = None
                     
-                    elif direction == 'up' and not self.range_scan_high_reached:
+                    elif phase == 'platform_up' and not self.range_scan_high_reached:
                         with self.state_lock:
                             self.range_scan_high_reached = True
                             self.range_scan_high_height = h
                         self.get_logger().info(
-                            f"[RangeScan] ✅ HIGH endpoint detected: height={h:.2f}mm "
-                            f"stall={stall_elapsed:.2f}s tolerance={self.range_scan_height_tolerance}mm"
+                            f"[RangeScan] ✅ Phase 3 complete: HIGH endpoint at {h:.2f}mm "
+                            f"stall={stall_elapsed:.2f}s"
                         )
                         
                         # Both endpoints found - save and complete
@@ -792,6 +865,7 @@ class LiftRobotNodeAction(Node):
                         self.controller.stop()
                         with self.state_lock:
                             self.range_scan_active = False
+                            self.range_scan_phase = None
                             self.range_scan_direction = None
                             self.task_state = 'completed'
                             self.task_end_time = time.time()
@@ -940,8 +1014,15 @@ class LiftRobotNodeAction(Node):
         """Check if platform has reached range limits.
         
         只在运动方向达到限制时才触发紧急停止:
-        - 向下运动 AND 达到 min+1mm
-        - 向上运动 AND 达到 max-1mm
+        - 向下运动 AND 达到 min+1mm AND 检测到stall(长时间不动)
+        - 向上运动 AND 达到 max-1mm AND 检测到stall(长时间不动)
+        
+        Args:
+            current_height: Current height reading (mm)
+            direction: Movement direction ('up' or 'down')
+        
+        Returns:
+            True if range limit reached AND stall detected
         """
         if not self.platform_range_enabled:
             return False
@@ -950,13 +1031,43 @@ class LiftRobotNodeAction(Node):
         if self.range_scan_active:
             return False
         
-        # 只在运动方向达到限制时才触发
+        # Check if height is at range limit (direction-specific)
+        at_range_limit = False
         if direction == 'down' and self.platform_range_min is not None:
-            if current_height <= self.platform_range_min + 1.0:
-                return True
+            at_range_limit = current_height <= self.platform_range_min + 1.0
         elif direction == 'up' and self.platform_range_max is not None:
-            if current_height >= self.platform_range_max - 1.0:
+            at_range_limit = current_height >= self.platform_range_max - 1.0
+        
+        # If not at range limit, reset stall detection and return False
+        if not at_range_limit:
+            self._reset_range_limit_stall_detection()
+            return False
+        
+        # At range limit - now check for stall (platform not moving)
+        # Initialize reference height on first check
+        if self.range_limit_stall_reference_height is None:
+            self.range_limit_stall_reference_height = current_height
+            self.range_limit_stall_start_time = time.time()
+            return False
+        
+        # Calculate height change from reference
+        height_change = abs(current_height - self.range_limit_stall_reference_height)
+        
+        # Check if height is stable (not moving)
+        if height_change <= PUSHROD_STALL_TOLERANCE:
+            # Height stable - check duration
+            if self.range_limit_stall_start_time is None:
+                self.range_limit_stall_start_time = time.time()
+            
+            stall_duration = time.time() - self.range_limit_stall_start_time
+            
+            # Stall confirmed if stable for required duration
+            if stall_duration >= PUSHROD_STALL_DURATION:
                 return True
+        else:
+            # Height changed - reset stall detection
+            self.range_limit_stall_reference_height = current_height
+            self.range_limit_stall_start_time = time.time()
         
         return False
     
@@ -1005,6 +1116,11 @@ class LiftRobotNodeAction(Node):
         self.pushrod_stall_reference_height = None
         self.pushrod_stall_start_time = None
         self.pushrod_stall_active = False
+    
+    def _reset_range_limit_stall_detection(self):
+        """Reset range limit stall detection state."""
+        self.range_limit_stall_reference_height = None
+        self.range_limit_stall_start_time = None
     
     # ═══════════════════════════════════════════════════════════════
     # GotoHeight Action
