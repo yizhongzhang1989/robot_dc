@@ -48,7 +48,7 @@ class Positioning3DServiceNode(Node):
         # Store workspace root as Path object
         self.workspace_root = Path(workspace_root)
         
-        self.app_path = workspace_root / 'scripts' / 'ThirdParty' / 'robot_vision' / 'web' / 'positioning_3d' / 'app.py'
+        self.app_path = self.workspace_root / 'scripts' / 'ThirdParty' / 'robot_vision' / 'web' / 'positioning_3d' / 'app.py'
         
         if not self.app_path.exists():
             self.get_logger().error(f"app.py not found at: {self.app_path}")
@@ -79,7 +79,7 @@ class Positioning3DServiceNode(Node):
             # Resolve dataset path - if relative, make it relative to workspace root
             dataset_path = Path(self.dataset_path)
             if not dataset_path.is_absolute():
-                dataset_path = self.workspace_root / dataset_path
+                dataset_path = Path(self.workspace_root) / dataset_path
             
             # Build command
             cmd = [
