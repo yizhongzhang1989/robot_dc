@@ -1,0 +1,2124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>lift_robot</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { 
+    font-family: system-ui, Arial, sans-serif; 
+    padding-top: 140px; /* Reserve space for fixed header */
+  }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+  .live { background:#10b981; }
+  .stale { background:#f59e0b; }
+  .disc { background:#ef4444; }
+  pre { font-size:12px; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+  .animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  /* Fixed header styles */
+  .fixed-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #f1f5f9;
+    z-index: 1000;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    padding: 0.75rem;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body class="bg-slate-100">
+  
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- FIXED HEADER: Task Status, Emergency Control, Height Sensor, Force Sensors -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="fixed-header">
+    <div class="max-w-7xl mx-auto">
+      <div class="grid grid-cols-4 gap-3">
+        
+        <!-- Task Status -->
+        <div class="bg-white rounded-lg shadow p-3 border-l-4 border-purple-500">
+          <h2 class="font-bold text-sm mb-2 text-purple-700">📋 Task Status</h2>
+          <div id="taskStatusBadge" class="inline-block px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700 mb-1">IDLE</div>
+          <div id="taskProgress" class="text-xs text-gray-600">—</div>
+        </div>
+
+        <!-- Emergency Control -->
+        <div class="bg-white rounded-lg shadow p-3 border-l-4 border-red-500">
+          <h2 class="font-bold text-sm mb-2 text-red-700">🚨 Emergency Control</h2>
+          <button id="resetBtn" class="w-full px-3 py-2 bg-red-600 text-white text-sm font-semibold rounded hover:bg-red-700 transition">RESET</button>
+        </div>
+
+        <!-- Height Sensor -->
+        <div class="bg-white rounded-lg shadow p-3 border-l-4 border-blue-500">
+          <h2 class="font-bold text-sm mb-2 text-blue-700">📏 Height Sensor</h2>
+          <div>
+            <span id="heightVal" class="font-mono font-bold text-2xl text-blue-600">—</span>
+            <span class="text-gray-600 ml-1 text-sm">mm</span>
+          </div>
+          <div class="text-xs text-gray-600 mt-1">
+            <span>Freq:</span> <span id="heightFreq" class="font-mono">—</span>
+            <span class="ml-2">Seq:</span> <span id="seq" class="font-mono">—</span>
+          </div>
+        </div>
+
+        <!-- Force Sensors -->
+        <div class="bg-white rounded-lg shadow p-3 border-l-4 border-amber-500">
+          <h2 class="font-bold text-sm mb-2 text-amber-700">⚡ Force Sensors</h2>
+          <div class="grid grid-cols-3 gap-1 text-center">
+            <div>
+              <div class="text-xs text-gray-600">Right</div>
+              <div id="rightForceVal" class="font-mono font-bold text-lg text-blue-600">—</div>
+              <div class="text-xs text-gray-600">N</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-600">Left</div>
+              <div id="leftForceVal" class="font-mono font-bold text-lg text-blue-600">—</div>
+              <div class="text-xs text-gray-600">N</div>
+            </div>
+            <div class="border-l border-amber-300">
+              <div class="text-xs text-amber-700 font-semibold">Total</div>
+              <div id="combinedForceVal" class="font-mono font-bold text-lg text-amber-700">—</div>
+              <div class="text-xs text-gray-600">N</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- MAIN CONTENT AREA (scrollable) -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="max-w-7xl mx-auto px-4 space-y-4">
+    
+    <!-- Row 1: Platform Control (Left) + System Status (Right) -->
+    <div class="grid grid-cols-2 gap-4">
+      
+      <!-- LEFT: Platform Control Panel -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+        <h2 class="font-bold text-lg mb-3 text-blue-700 flex items-center gap-2">
+          🏗️ Platform Control
+        </h2>
+        
+        <!-- Platform Manual Control -->
+        <div class="mb-3 pb-3 border-b border-gray-200">
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-gray-100 px-2 py-1 rounded">
+            🕹️ Manual Control
+          </h3>
+          <div class="flex gap-2 pl-2">
+            <button data-cmd="up" data-target="platform" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded flex-1 transition">↑ Up</button>
+            <button data-cmd="down" data-target="platform" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">↓ Down</button>
+            <button data-cmd="stop" data-target="platform" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded flex-1 transition">■ Stop</button>
+          </div>
+        </div>
+        
+        <!-- Platform Height Control -->
+        <div class="mb-3 pb-3 border-b border-gray-200">
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-blue-100 px-2 py-1 rounded">
+            📏 Height Control
+          </h3>
+          <div class="flex gap-2 pl-2">
+            <input id="targetHeightPlatform" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-blue-300 rounded text-xs w-28 focus:ring-2 focus:ring-blue-400" value="750">
+            <button id="gotoHeightPlatformBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">→ Go to Height</button>
+          </div>
+        </div>
+        
+        <!-- Platform Force Control -->
+        <div class="mb-3 pb-3 border-b border-gray-200">
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-amber-100 px-2 py-1 rounded">
+            ⚡ Force Control
+          </h3>
+          <div class="space-y-2 pl-2">
+            <div class="flex gap-2 items-center">
+              <input id="targetForcePlatform" type="number" placeholder="Force (N)" class="px-2 py-1.5 border border-amber-300 rounded text-xs w-28 focus:ring-2 focus:ring-amber-400" value="240">
+              <span class="text-xs text-gray-600 font-medium">N</span>
+            </div>
+            <div class="flex gap-2">
+              <button id="forceUpBtn" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded flex-1 transition">↑ Force Up</button>
+              <button id="forceDownBtn" class="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white text-xs font-medium rounded flex-1 transition">↓ Force Down</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Platform Hybrid Control -->
+        <div class="mb-2">
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-teal-100 px-2 py-1 rounded">
+            🎯 Hybrid Control (Height OR Force)
+          </h3>
+          <div class="space-y-2 pl-2">
+            <div class="flex gap-2 items-center">
+              <span class="text-xs font-medium w-16 text-gray-600">Height:</span>
+              <input id="targetHeightHybrid" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-teal-300 rounded text-xs w-24 focus:ring-2 focus:ring-teal-400" value="750">
+              <span class="text-xs text-gray-600">mm</span>
+            </div>
+            <div class="flex gap-2 items-center">
+              <span class="text-xs font-medium w-16 text-gray-600">Force:</span>
+              <input id="targetForceHybrid" type="number" placeholder="Target (N)" class="px-2 py-1.5 border border-teal-300 rounded text-xs w-24 focus:ring-2 focus:ring-teal-400" value="240">
+              <span class="text-xs text-gray-600">N</span>
+            </div>
+            <button id="hybridControlBtn" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium rounded w-full transition">→ Go to Target</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- RIGHT: System Status -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-slate-500">
+        <h2 class="font-bold text-lg mb-3 text-slate-700 flex items-center gap-2">
+          📊 System Status
+        </h2>
+        
+        <!-- Task Status -->
+        <div class="mb-3 pb-3 border-b border-gray-200">
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-indigo-100 px-2 py-1 rounded">
+            📋 Task Status
+          </h3>
+          <div class="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2 rounded">
+            <div>State: <span id="taskState" class="font-bold">-</span></div>
+            <div>Type: <span id="taskType" class="font-mono">-</span></div>
+            <div>Duration: <span id="taskDuration" class="font-mono text-indigo-600">-</span></div>
+            <div>Reason: <span id="taskCompletionReason" class="font-mono text-green-700">-</span></div>
+          </div>
+        </div>
+        
+        <!-- Connection Info -->
+        <div class="mb-3">
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-slate-100 px-2 py-1 rounded">
+            ℹ️ Connection Info
+          </h3>
+          <div class="text-xs bg-slate-50 p-2 rounded space-y-1">
+            <div class="flex items-center gap-2">
+              <span id="stateDot" class="dot disc"></span>
+              <span id="stateText" class="font-medium">Disconnected</span>
+            </div>
+            <div>Mode: <span id="mode" class="font-mono">WebSocket</span></div>
+            <div>Freq: <span id="freq" class="font-mono">-</span> Hz</div>
+            <div>Latency: <span id="age" class="font-mono">-</span> ms</div>
+            <div class="text-slate-500">Last: <span id="ts" class="font-mono">-</span></div>
+          </div>
+        </div>
+        
+        <!-- Command Status -->
+        <div id="cmdStatus" class="text-xs text-slate-500 p-2 bg-slate-50 rounded text-center"></div>
+      </div>
+    </div>
+    
+    <!-- Row 2: Pushrod Control (Left) + Empty Space (Right) -->
+    <div class="grid grid-cols-2 gap-4">
+      <!-- LEFT: Pushrod Control -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+        <h2 class="font-bold text-lg mb-3 text-purple-700 flex items-center gap-2">
+          🔧 Pushrod Control
+        </h2>
+        
+        <!-- Pushrod Manual Control -->
+        <div class="mb-3 pb-3 border-b border-gray-200">
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-gray-100 px-2 py-1 rounded">
+            🕹️ Manual Control
+          </h3>
+          <div class="flex gap-2 pl-2">
+            <button data-cmd="up" data-target="pushrod" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded flex-1 transition">↑ Up</button>
+            <button data-cmd="down" data-target="pushrod" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">↓ Down</button>
+            <button data-cmd="stop" data-target="pushrod" class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded flex-1 transition">■ Stop</button>
+          </div>
+        </div>
+        
+        <!-- Pushrod Height Control -->
+        <div>
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-purple-100 px-2 py-1 rounded">
+            📏 Height Control
+          </h3>
+          <div class="space-y-2 pl-2">
+            <div class="flex gap-2 items-center">
+              <input id="targetHeightPushrod" type="number" placeholder="Height (mm)" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-24 focus:ring-2 focus:ring-purple-400" value="750">
+              <select id="pushrodMode" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-24 focus:ring-2 focus:ring-purple-400">
+                <option value="absolute">Absolute</option>
+                <option value="relative">Relative</option>
+              </select>
+            </div>
+            <button id="gotoHeightPushrodBtn" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded w-full transition">→ Go to Height</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- RIGHT: Empty Space -->
+    </div>
+    
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- CALIBRATION SECTION -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    
+    <!-- Row 2: Draw Wire (Left) + Force Sensor (Right) -->
+    <div class="grid grid-cols-2 gap-4">
+      
+      <!-- LEFT: Draw Wire Calibration -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-lg text-purple-700 flex items-center gap-2">
+            📏 Draw-Wire Sensor Calibration
+          </h2>
+          <span id="calibStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">Loading...</span>
+        </div>
+        
+        <!-- Instructions -->
+        <div class="mb-3 p-3 bg-amber-50 border border-amber-200 rounded text-xs space-y-1">
+          <div class="font-semibold text-amber-800 mb-1">📋 Calibration Steps:</div>
+          <div class="text-slate-700"><span class="font-semibold">1.</span> Click <span class="font-mono bg-white px-1 rounded">DOWN</span> in Pushrod Control until it reaches the lowest point (auto-stops).</div>
+          <div class="text-slate-700"><span class="font-semibold">2.</span> Click <span class="font-mono bg-white px-1 rounded">UP</span> in Platform Control to a high position, click <span class="font-mono bg-white px-1 rounded">STOP</span>, measure actual height and click <span class="font-mono bg-white px-1 rounded">Add</span>.</div>
+          <div class="text-slate-700"><span class="font-semibold">3.</span> Click <span class="font-mono bg-white px-1 rounded">DOWN</span> in Platform Control to a low position, click <span class="font-mono bg-white px-1 rounded">STOP</span>, measure actual height and click <span class="font-mono bg-white px-1 rounded">Add</span>.</div>
+        </div>
+        
+        <div class="space-y-3">
+          <!-- Current Values -->
+          <div class="grid grid-cols-3 gap-2 p-2 bg-slate-50 rounded">
+            <div class="text-center">
+              <div class="text-xs text-slate-500">Sensor</div>
+              <div id="calibSensorVal" class="text-lg font-bold text-purple-600">--</div>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-slate-500">Height</div>
+              <div id="calibEstHeight" class="text-lg font-bold text-indigo-600">--</div>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-slate-500">Samples</div>
+              <div id="calibSampleCount" class="text-lg font-bold text-emerald-600">0</div>
+            </div>
+          </div>
+          
+          <!-- Calibration Formula -->
+          <div id="calibFormulaBox" class="hidden p-2 bg-blue-50 rounded border-l-4 border-blue-400">
+            <div class="text-xs text-slate-600">Formula:</div>
+            <div id="calibFormula" class="font-mono text-sm text-blue-700">--</div>
+          </div>
+          
+          <!-- Add Sample -->
+          <div class="flex gap-2 items-center">
+            <label class="text-xs font-semibold text-slate-700 w-24">Actual Height:</label>
+            <input id="calibHeightInput" type="number" placeholder="mm" step="0.1" 
+                   class="flex-1 px-2 py-1 border border-slate-300 rounded text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500">
+            <button id="calibAddBtn" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded transition">
+              Add
+            </button>
+          </div>
+          
+          <!-- Sample List -->
+          <div id="calibSamplesList" class="max-h-32 overflow-y-auto border border-slate-200 rounded p-2 text-xs">
+            <div class="text-slate-400 text-center">No samples yet</div>
+          </div>
+          
+          <!-- Action Buttons -->
+          <div class="grid grid-cols-3 gap-2">
+            <button id="calibCalcBtn" class="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded transition">
+              Calculate
+            </button>
+            <button id="calibSaveBtn" class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded transition">
+              Save
+            </button>
+            <button id="calibClearBtn" class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded transition">
+              Clear
+            </button>
+          </div>
+          
+          <!-- Calibration Result -->
+          <div id="calibResult" class="hidden p-2 bg-green-50 rounded border border-green-200">
+            <h3 class="text-xs font-semibold text-green-800 mb-1">Result:</h3>
+            <div class="grid grid-cols-2 gap-1 text-xs">
+              <div>Scale: <span id="calibResScale" class="font-mono font-semibold">--</span></div>
+              <div>Offset: <span id="calibResOffset" class="font-mono font-semibold">--</span></div>
+              <div>R²: <span id="calibResR2" class="font-mono font-semibold">--</span></div>
+              <div>Max Err: <span id="calibResMaxErr" class="font-mono font-semibold">--</span> mm</div>
+              <div class="col-span-2">Avg Err: <span id="calibResAvgErr" class="font-mono font-semibold">--</span> mm</div>
+            </div>
+          </div>
+          
+          <div id="calibStatusMsg" class="text-xs text-slate-500"></div>
+        </div>
+      </div>
+      
+      <!-- RIGHT: Force Sensor Calibration -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-red-500">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-lg text-red-700 flex items-center gap-2">
+            ⚡ Force Sensor Calibration
+          </h2>
+          <span id="forceCalibStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">Loading...</span>
+        </div>
+        
+        <div class="space-y-3">
+          <!-- Channel Selector and Current Values -->
+          <div class="grid grid-cols-3 gap-2 p-2 bg-slate-50 rounded">
+            <div>
+              <label class="block text-xs text-slate-500">Channel</label>
+              <select id="forceCalibChannel" class="w-full px-2 py-1 border rounded text-sm font-semibold">
+                <option value="right">Right (52)</option>
+                <option value="left">Left (53)</option>
+              </select>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-slate-500">Sensor</div>
+              <div id="forceCalibCurrentSensor" class="text-lg font-bold text-red-600">--</div>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-slate-500">Samples</div>
+              <div id="forceCalibSampleCount" class="text-lg font-bold text-emerald-600">0</div>
+            </div>
+          </div>
+          
+          <!-- Tare Button -->
+          <button id="forceCalibTareBtn" class="w-full bg-purple-500 hover:bg-purple-600 text-white px-3 py-1.5 rounded text-xs font-medium transition">
+            🔄 Tare Selected Sensor
+          </button>
+          
+          <!-- Calibration Formula -->
+          <div id="forceCalibFormulaBox" class="hidden p-2 bg-blue-50 rounded border-l-4 border-blue-400">
+            <div class="text-xs text-slate-600">Formula:</div>
+            <div id="forceCalibFormula" class="font-mono text-sm text-blue-700">--</div>
+          </div>
+          
+          <!-- Add Sample -->
+          <div class="flex gap-2 items-center">
+            <label class="text-xs font-semibold text-slate-700 w-24">Actual Force:</label>
+            <input id="forceCalibForce" type="number" placeholder="N" step="0.1" 
+                   class="flex-1 px-2 py-1 border border-slate-300 rounded text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500">
+            <button id="forceCalibAddBtn" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded transition">
+              Add
+            </button>
+          </div>
+          
+          <!-- Sample List -->
+          <div id="forceCalibSamplesList" class="max-h-32 overflow-y-auto border border-slate-200 rounded p-2 text-xs">
+            <div class="text-slate-400 text-center">No samples yet</div>
+          </div>
+          
+          <!-- Action Buttons -->
+          <div class="grid grid-cols-3 gap-2">
+            <button id="forceCalibCalcBtn" class="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded transition">
+              Calculate
+            </button>
+            <button id="forceCalibSaveBtn" class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded transition">
+              Save
+            </button>
+            <button id="forceCalibClearBtn" class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded transition">
+              Clear
+            </button>
+          </div>
+          
+          <!-- Calibration Result -->
+          <div id="forceCalibResult" class="hidden p-2 bg-green-50 rounded border border-green-200">
+            <h3 class="text-xs font-semibold text-green-800 mb-1">Result:</h3>
+            <div class="grid grid-cols-2 gap-1 text-xs">
+              <div>Scale: <span id="forceCalibResScale" class="font-mono font-semibold">--</span></div>
+              <div>Avg Err: <span id="forceCalibResAvgErr" class="font-mono font-semibold">--</span> N</div>
+              <div>Max Err: <span id="forceCalibResMaxErr" class="font-mono font-semibold">--</span> N</div>
+              <div>Samples: <span id="forceCalibResSamples" class="font-mono font-semibold">--</span></div>
+            </div>
+          </div>
+          
+          <div class="text-xs text-slate-500 italic">
+            <strong>Tip:</strong> Tare first, then add weights
+          </div>
+          
+          <div id="forceCalibStatusMsg" class="text-xs text-slate-500"></div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Row 3: Range Detection & Overshoot Calibration (Two Columns) -->
+    <div class="grid grid-cols-2 gap-4">
+      <!-- Left: Platform Range Detection Card -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-lg text-blue-700 flex items-center gap-2">
+            📏 Platform Range Detection
+          </h2>
+          <span id="rangeStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">Default</span>
+        </div>
+
+        <!-- Detected Range Display -->
+        <div class="mb-3 grid grid-cols-2 gap-2 text-xs">
+          <div class="bg-slate-100 rounded p-2">
+            <div class="font-semibold text-slate-600">Actual Min</div>
+            <div id="rangeActualMin" class="font-mono font-bold text-blue-700">--</div>
+          </div>
+          <div class="bg-slate-100 rounded p-2">
+            <div class="font-semibold text-slate-600">Actual Max</div>
+            <div id="rangeActualMax" class="font-mono font-bold text-blue-700">--</div>
+          </div>
+          <div class="bg-green-50 border border-green-200 rounded p-2">
+            <div class="font-semibold text-green-700">Safe Min</div>
+            <div id="rangeSafeMin" class="font-mono font-bold text-green-900">--</div>
+          </div>
+          <div class="bg-green-50 border border-green-200 rounded p-2">
+            <div class="font-semibold text-green-700">Safe Max</div>
+            <div id="rangeSafeMax" class="font-mono font-bold text-green-900">--</div>
+          </div>
+        </div>
+
+        <!-- Detect Button -->
+        <div class="mb-3">
+          <button id="rangeDetectBtn" class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded font-semibold transition">
+            🔍 Detect Range & Set Safe Bounds (±50mm)
+          </button>
+        </div>
+
+        <!-- Status Message -->
+        <div id="rangeStatusMsg" class="text-xs text-slate-500"></div>
+      </div>
+
+      <!-- Right: Overshoot Calibration Card -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-lg text-purple-700 flex items-center gap-2">
+            🔬 Overshoot Calibration
+          </h2>
+          <span id="overshootStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">Default</span>
+        </div>
+
+        <!-- Sample Lists -->
+        <div class="mb-3 grid grid-cols-2 gap-2">
+          <div class="bg-slate-50 rounded p-2 border border-slate-200">
+            <div class="font-semibold text-xs text-green-600 mb-1">⬇️ DOWN Samples</div>
+            <div id="overshootSamplesDownList" class="text-xs space-y-1 max-h-40 overflow-auto">
+              <div class="text-slate-400">No samples</div>
+            </div>
+          </div>
+          <div class="bg-slate-50 rounded p-2 border border-slate-200">
+            <div class="font-semibold text-xs text-blue-600 mb-1">⬆️ UP Samples</div>
+            <div id="overshootSamplesUpList" class="text-xs space-y-1 max-h-40 overflow-auto">
+              <div class="text-slate-400">No samples</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Workflow Buttons -->
+        <div class="space-y-2 mb-3">
+          <div class="flex items-center gap-2">
+            <button id="overshootStartCalibrationBtn" disabled class="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+              ▶️ Start Calibration
+            </button>
+            <button id="overshootAbortBtn" disabled class="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+              ⏹️ Abort
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="overshootShowPlotBtn" disabled class="flex-1 px-3 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+              📊 Show Plot
+            </button>
+            <select id="overshootFitDegree" class="px-2 py-2 border border-slate-300 rounded text-sm">
+              <option value="1">Deg 1</option>
+              <option value="2">Deg 2</option>
+              <option value="3" selected>Deg 3</option>
+              <option value="4">Deg 4</option>
+              <option value="5">Deg 5</option>
+              <option value="6">Deg 6</option>
+            </select>
+            <button id="overshootFitBtn" disabled class="px-3 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+              📈 Fit
+            </button>
+          </div>
+        </div>
+
+        <!-- Plot Image -->
+        <img id="overshootPlotImg" src="" alt="Overshoot plot" class="w-full border border-slate-200 rounded hidden mb-3"/>
+
+        <!-- Action Buttons -->
+        <div class="grid grid-cols-3 gap-2 mb-2">
+          <button id="overshootSaveFitBtn" disabled class="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+            💾 Save Fit
+          </button>
+          <button id="overshootRemoveOutliersBtn" disabled class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+            🧹 Remove Outliers
+          </button>
+          <button id="overshootClearBtn" class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm rounded font-semibold transition">
+            🗑️ Clear
+          </button>
+        </div>
+
+        <!-- Status Message -->
+        <div id="overshootStatusMsg" class="text-xs text-slate-500"></div>
+      </div>
+    </div>
+      <details>
+        <summary class="p-3 font-semibold cursor-pointer hover:bg-slate-50 rounded-t-lg">📄 Raw JSON Data</summary>
+        <div class="p-3 border-t">
+          <pre id="raw" class="bg-slate-50 p-2 rounded max-h-72 overflow-auto text-xs font-mono"></pre>
+        </div>
+      </details>
+    </div>
+    
+  </div>
+  <!-- End main content area -->
+  
+<script>
+let ws=null, lastReceive=null; let intervals=[]; let usePolling=false; let pollTimer=null; let readInterval=1000;
+// Emergency reset display state (frontend maintains 5s display even if backend is idle)
+let emergencyResetDisplayUntil = null;
+let emergencyResetCompletionReason = null;
+let lastEmergencyResetEndTime = null;  // Track last reset to avoid duplicate 5s countdowns
+function $(id){return document.getElementById(id);} 
+function setState(type,text){ const d=$('stateDot'); d.className='dot '+type; $('stateText').textContent=text; }
+function connect(){ const proto=location.protocol==='https:'?'wss':'ws'; ws=new WebSocket(proto+'://'+location.host+'/ws'); ws.onopen=()=>{usePolling=false; $('mode').textContent='WebSocket'; setState('live','Live'); if(pollTimer){clearInterval(pollTimer);} }; ws.onmessage=e=>{ if(e.data==='ping') return; handle(e.data); }; ws.onclose=()=>{ setState('disc','Disconnected'); fallback(); setTimeout(connect,3000); }; ws.onerror=()=> setState('disc','Error'); }
+function fallback(){ if(usePolling) return; usePolling=true; $('mode').textContent='Polling'; pollTimer=setInterval(async()=>{ try{ const r=await fetch('/api/latest'); if(!r.ok) return; handle(JSON.stringify(await r.json())); }catch(e){} }, 1000); }
+function handle(raw){ lastReceive=Date.now(); $('raw').textContent=raw; try{ const data=JSON.parse(raw); update(data); setState('live','Live'); }catch(e){} }
+function update(d){
+  // Compact mode fields
+  if(d.seq_id!==undefined) $('seq').textContent=d.seq_id;
+  if(d.height!==undefined) $('heightVal').textContent = (d.height===null?'-':(d.height.toFixed?d.height.toFixed(2):d.height));
+  if(d.freq_hz!==undefined) $('heightFreq').textContent = (d.freq_hz && d.freq_hz.toFixed? d.freq_hz.toFixed(2): d.freq_hz);
+  // Legacy fallback (timestamp / read_interval)
+  if(d.timestamp){ $('ts').textContent=d.timestamp; }
+  if(d.read_interval){ readInterval=d.read_interval*1000; }
+  
+  // Dual channel force sensors (right=device_id 52, left=device_id 53)
+  if(d.right_force_sensor!==undefined) {
+    const val = (d.right_force_sensor===null?'-':(d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(2):d.right_force_sensor));
+    $('rightForceVal').textContent = val;
+  }
+  if(d.left_force_sensor!==undefined) {
+    const val = (d.left_force_sensor===null?'-':(d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(2):d.left_force_sensor));
+    $('leftForceVal').textContent = val;
+  }
+  if(d.combined_force_sensor!==undefined) {
+    const val = (d.combined_force_sensor===null?'-':(d.combined_force_sensor.toFixed?d.combined_force_sensor.toFixed(2):d.combined_force_sensor));
+    $('combinedForceVal').textContent = val;
+  }
+  
+  // Update unified task status
+  if(d.platform_status || d.pushrod_status) {
+    updateUnifiedTaskStatus(d.platform_status, d.pushrod_status);
+  }
+  
+  computeFreq();
+}
+
+// Update unified task status card (merge platform + pushrod)
+function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
+  let mergedState = 'idle';
+  let mergedType = '-';
+  let mergedDuration = '-';
+  let mergedReason = '-';
+  let activeStatus = null;
+  
+  // Check if we should display emergency_reset (even if backend is idle)
+  const now = Date.now();
+  
+  // Get state info first
+  const platformState = platformStatus?.task_state || 'idle';
+  const pushrodState = pushrodStatus?.task_state || 'idle';
+  const platformCompletionReason = platformStatus?.completion_reason;
+  const pushrodCompletionReason = pushrodStatus?.completion_reason;
+  
+  // PRIORITY 1: Check if new task started (running/completed) - clear emergency display immediately
+  if (platformState === 'running' || pushrodState === 'running') {
+    // Clear emergency reset display if new task started
+    if (emergencyResetDisplayUntil) {
+      console.log(`[Emergency Reset] Cleared by running state`);
+    }
+    emergencyResetDisplayUntil = null;
+    lastEmergencyResetEndTime = null;
+    emergencyResetCompletionReason = null;
+    mergedState = 'running';
+    activeStatus = platformState === 'running' ? platformStatus : pushrodStatus;
+  } else if (platformState === 'completed' || pushrodState === 'completed') {
+    // Clear emergency reset display if task completed
+    if (emergencyResetDisplayUntil) {
+      console.log(`[Emergency Reset] Cleared by completed state`);
+    }
+    emergencyResetDisplayUntil = null;
+    lastEmergencyResetEndTime = null;
+    emergencyResetCompletionReason = null;
+    
+    mergedState = 'completed';
+    if (platformStatus?.task_end_time && pushrodStatus?.task_end_time) {
+      activeStatus = platformStatus.task_end_time > pushrodStatus.task_end_time ? platformStatus : pushrodStatus;
+    } else if (platformStatus?.task_end_time) {
+      activeStatus = platformStatus;
+    } else if (pushrodStatus?.task_end_time) {
+      activeStatus = pushrodStatus;
+    } else {
+      activeStatus = platformStatus || pushrodStatus;
+    }
+  } else if (emergencyResetDisplayUntil && now < emergencyResetDisplayUntil) {
+    // PRIORITY 2: If in 5s emergency window (and no new task), display emergency_reset
+    mergedState = 'emergency_reset';
+    mergedReason = emergencyResetCompletionReason || 'emergency_reset';
+    const elapsed = (now - (emergencyResetDisplayUntil - 5000)) / 1000;
+    mergedDuration = elapsed.toFixed(1) + 's / 5s';
+    activeStatus = platformStatus || pushrodStatus;
+  } else {
+    // PRIORITY 3: Normal idle state detection
+    // Detect new emergency_reset from backend (completion_reason indicates reset happened)
+    // Use task_end_time to identify NEW reset events (avoid re-triggering for same reset)
+    const hasEmergencyReset = (platformCompletionReason === 'emergency_reset' && platformState === 'idle') ||
+                               (pushrodCompletionReason === 'emergency_reset' && pushrodState === 'idle');
+    
+    if (hasEmergencyReset) {
+      const currentEndTime = platformStatus?.task_end_time || pushrodStatus?.task_end_time;
+      
+      // Detect NEW emergency reset (different task_end_time)
+      if (currentEndTime && currentEndTime !== lastEmergencyResetEndTime) {
+        emergencyResetDisplayUntil = now + 5000;
+        emergencyResetCompletionReason = 'emergency_reset';
+        lastEmergencyResetEndTime = currentEndTime;
+        console.log(`[Emergency Reset] New reset detected, end_time=${currentEndTime}, display until ${new Date(emergencyResetDisplayUntil).toISOString()}`);
+      }
+      
+      // 5s expired but completion_reason still emergency_reset - show as idle
+      mergedState = 'idle';
+      mergedReason = emergencyResetCompletionReason || 'emergency_reset';
+      activeStatus = platformStatus || pushrodStatus;
+    } else {
+      // Both idle - keep emergency_reset display if within 5s window
+      mergedState = 'idle';
+      activeStatus = platformStatus || pushrodStatus;
+    }
+  }
+  
+  // Extract info from active status (if not already set by emergency_reset logic)
+  if (activeStatus && mergedState !== 'emergency_reset') {
+    mergedType = activeStatus.task_type || '-';
+    mergedReason = activeStatus.completion_reason || '-';
+    
+    // Calculate duration
+    if (activeStatus.task_duration !== undefined && activeStatus.task_duration !== null) {
+      mergedDuration = activeStatus.task_duration.toFixed(2) + 's';
+    } else if (activeStatus.task_start_time && !activeStatus.task_end_time && mergedState === 'running') {
+      const elapsed = Date.now() / 1000 - activeStatus.task_start_time;
+      mergedDuration = elapsed.toFixed(1) + 's';
+    }
+  }
+  
+  // Update UI - Detailed Status section
+  const taskStateEl = $('taskState');
+  taskStateEl.textContent = mergedState.toUpperCase();
+  
+  // Color coding
+  taskStateEl.className = 'font-bold px-4 py-2 rounded-full text-sm';
+  if (mergedState === 'running') {
+    taskStateEl.className += ' bg-blue-500 text-white animate-pulse shadow-lg';
+  } else if (mergedState === 'completed') {
+    taskStateEl.className += ' bg-green-500 text-white shadow-md';
+  } else if (mergedState === 'emergency_reset') {
+    taskStateEl.className += ' bg-yellow-500 text-white animate-pulse shadow-lg';
+  } else {
+    taskStateEl.className += ' bg-gray-400 text-white';
+  }
+  
+  $('taskType').textContent = mergedType;
+  $('taskDuration').textContent = mergedDuration;
+  $('taskCompletionReason').textContent = mergedReason;
+  
+  // Update UI - Fixed Header Task Status Badge
+  const taskStatusBadgeEl = $('taskStatusBadge');
+  if (taskStatusBadgeEl) {
+    taskStatusBadgeEl.textContent = mergedState.toUpperCase();
+    taskStatusBadgeEl.className = 'inline-block px-2 py-1 rounded text-xs font-semibold mb-1';
+    if (mergedState === 'running') {
+      taskStatusBadgeEl.className += ' bg-blue-500 text-white animate-pulse';
+    } else if (mergedState === 'completed') {
+      taskStatusBadgeEl.className += ' bg-green-500 text-white';
+    } else if (mergedState === 'emergency_reset') {
+      taskStatusBadgeEl.className += ' bg-yellow-500 text-white animate-pulse';
+    } else {
+      taskStatusBadgeEl.className += ' bg-gray-300 text-gray-700';
+    }
+  }
+  
+  // Update Task Progress in Fixed Header
+  const taskProgressEl = $('taskProgress');
+  if (taskProgressEl) {
+    taskProgressEl.textContent = mergedType + ' • ' + mergedDuration;
+  }
+}
+
+function computeFreq(){ intervals.push(Date.now()); if(intervals.length>25) intervals.shift(); if(intervals.length>1){ const diffs=[]; for(let i=1;i<intervals.length;i++) diffs.push(intervals[i]-intervals[i-1]); const avg=diffs.reduce((a,b)=>a+b,0)/diffs.length; $('freq').textContent=(1000/avg).toFixed(2); } }
+setInterval(()=>{ if(!lastReceive){ $('age').textContent='-'; return; } const age=Date.now()-lastReceive; $('age').textContent=age; const staleThreshold=Math.max(2500,2.5*readInterval); if(age>staleThreshold){ setState('stale','Stale'); } },500);
+connect();
+
+// Command buttons
+document.querySelectorAll('button[data-cmd]').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    const command=btn.getAttribute('data-cmd');
+    const target=btn.getAttribute('data-target')||'platform';
+    const durationAttr=btn.getAttribute('data-duration');
+  const duration=durationAttr?parseFloat(durationAttr):undefined;
+  const point=btn.getAttribute('data-point');
+    $('cmdStatus').textContent='Sending '+command+' ...';
+    const payload={command,target};
+  if(duration!==undefined) payload.duration=duration;
+  if(point) payload.point=point;
+    try {
+      const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!r.ok){ $('cmdStatus').textContent='Failed '+command; return; }
+      const resp=await r.json();
+      $('cmdStatus').textContent='Done '+command+(resp.duration?(' ('+resp.duration+'s)'):'');
+      setTimeout(()=>$('cmdStatus').textContent='',2000);
+    } catch(e){ $('cmdStatus').textContent='Error'; }
+  });
+});
+
+// Go to Height button (special handler with input field)
+$('gotoHeightPlatformBtn').addEventListener('click', async ()=>{
+  const targetHeight = parseFloat($('targetHeightPlatform').value);
+  if(isNaN(targetHeight)){
+    $('cmdStatus').textContent='Invalid height value';
+    setTimeout(()=>$('cmdStatus').textContent='',2000);
+    return;
+  }
+  $('cmdStatus').textContent='Platform going to '+targetHeight+'mm ...';
+  const payload={command:'goto_height',target:'platform',target_height:targetHeight};
+  try {
+    const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){ $('cmdStatus').textContent='Failed goto_height (platform)'; return; }
+    const resp=await r.json();
+    $('cmdStatus').textContent='Platform moving to '+targetHeight+'mm';
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+  } catch(e){ $('cmdStatus').textContent='Error'; }
+});
+
+// Pushrod fine adjustment button
+$('gotoHeightPushrodBtn').addEventListener('click', async ()=>{
+  const targetHeight = parseFloat($('targetHeightPushrod').value);
+  const mode = $('pushrodMode').value; // Get selected mode ('absolute' or 'relative')
+  if(isNaN(targetHeight)){
+    $('cmdStatus').textContent='Invalid height value';
+    setTimeout(()=>$('cmdStatus').textContent='',2000);
+    return;
+  }
+  const modeText = mode === 'relative' ? ` (${targetHeight >= 0 ? '+' : ''}${targetHeight}mm)` : 'mm';
+  $('cmdStatus').textContent=`Pushrod ${mode} move to ${targetHeight}${modeText} ...`;
+  const payload={command:'goto_height',target:'pushrod',target_height:targetHeight,mode:mode};
+  try {
+    const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){ $('cmdStatus').textContent='Failed goto_height (pushrod)'; return; }
+    const resp=await r.json();
+    $('cmdStatus').textContent=`Pushrod ${mode} mode: ${targetHeight}${modeText}`;
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+  } catch(e){ $('cmdStatus').textContent='Error'; }
+});
+
+// Platform force control buttons
+async function sendForceCommand(direction){
+  const val = parseFloat($('targetForcePlatform').value);
+  if(isNaN(val) || val<=0){ $('cmdStatus').textContent='Invalid force value'; setTimeout(()=>$('cmdStatus').textContent='',2000); return; }
+  const cmd = direction==='up'?'force_up':'force_down';
+  $('cmdStatus').textContent='Platform '+(direction==='up'?'force-up':'force-down')+' to '+val+'N ...';
+  try{
+    const r = await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd,target:'platform',target_force:val})});
+    if(!r.ok){ $('cmdStatus').textContent='Force command failed'; setTimeout(()=>$('cmdStatus').textContent='',3000); return; }
+    await r.json();
+    $('cmdStatus').textContent='Force '+direction+' command sent'; setTimeout(()=>$('cmdStatus').textContent='',3000);
+  }catch(e){ $('cmdStatus').textContent='Force command error'; setTimeout(()=>$('cmdStatus').textContent='',3000); }
+}
+$('forceUpBtn').addEventListener('click', ()=> sendForceCommand('up'));
+$('forceDownBtn').addEventListener('click', ()=> sendForceCommand('down'));
+
+// Height-Force Hybrid Control button (NEW)
+$('hybridControlBtn').addEventListener('click', async ()=>{
+  const targetHeight = parseFloat($('targetHeightHybrid').value);
+  const targetForce = parseFloat($('targetForceHybrid').value);
+  if(isNaN(targetHeight) || isNaN(targetForce)){
+    $('cmdStatus').textContent='Invalid height or force value';
+    setTimeout(()=>$('cmdStatus').textContent='',2000);
+    return;
+  }
+  $('cmdStatus').textContent='Hybrid control: going to height='+targetHeight+'mm OR force='+targetForce+'N...';
+  const payload={command:'height_force_hybrid',target:'platform',target_height:targetHeight,target_force:targetForce};
+  try {
+    const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){ $('cmdStatus').textContent='Hybrid control failed'; return; }
+    const resp=await r.json();
+    $('cmdStatus').textContent='Hybrid control started (height='+targetHeight+'mm OR force='+targetForce+'N)';
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+  } catch(e){ $('cmdStatus').textContent='Error'; }
+});
+
+// Emergency Reset button
+$('resetBtn').addEventListener('click', async ()=>{
+  $('cmdStatus').textContent='🔴 Sending RESET command...';
+  const payload={command:'reset',target:'platform'}; // backend will send to both
+  try{
+    const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){ $('cmdStatus').textContent='❌ Reset failed'; setTimeout(()=>$('cmdStatus').textContent='',3000); return; }
+    const resp=await r.json();
+    $('cmdStatus').textContent='✅ RESET complete - '+(resp.target||'platform+pushrod');
+    setTimeout(()=>$('cmdStatus').textContent='',5000);
+  }catch(e){ $('cmdStatus').textContent='❌ Reset error: '+e.message; setTimeout(()=>$('cmdStatus').textContent='',3000); }
+});
+
+async function updateCalibrationSamples() {
+  try {
+    const resp = await fetch('/api/calibration/samples');
+    const data = await resp.json();
+    
+    const list = $('calibSamplesList');
+    if (data.samples.length === 0) {
+      list.innerHTML = '<div class="text-xs text-slate-400 text-center">No samples yet</div>';
+      return;
+    }
+    
+    list.innerHTML = data.samples.map((s, i) => `
+      <div class="flex items-center justify-between p-2 mb-1 bg-slate-50 rounded text-xs">
+        <span class="font-semibold text-slate-600">#${i+1}</span>
+        <span class="font-mono">Sensor: ${s.sensor.toFixed(2)}</span>
+        <span class="font-mono">Height: ${s.height.toFixed(2)} mm</span>
+        <button onclick="deleteCalibrationSample(${i})" 
+                class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs">
+          Delete
+        </button>
+      </div>
+    `).join('');
+  } catch (error) {
+    console.error('Failed to update samples:', error);
+  }
+}
+
+// Calibration functions
+async function updateCalibrationStatus() {
+  try {
+    const resp = await fetch('/api/calibration/status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    // Sensor
+    $('calibSensorVal').textContent = data.latest_sensor !== null && data.latest_sensor !== undefined ? Number(data.latest_sensor).toFixed(2) : '--';
+    // Estimated height
+    $('calibEstHeight').textContent = data.estimated_height !== null && data.estimated_height !== undefined ? Number(data.estimated_height).toFixed(2) + ' mm' : '--';
+    // Sample count
+    $('calibSampleCount').textContent = data.num_samples ?? 0;
+    // Formula box
+    if (data.calibrated) {
+      $('calibFormulaBox').classList.remove('hidden');
+      $('calibFormula').textContent = `height = ${Number(data.scale).toFixed(6)} × sensor + ${Number(data.offset).toFixed(6)}`;
+    } else {
+      $('calibFormulaBox').classList.add('hidden');
+    }
+    // Status badge
+    const badge = $('calibStatusBadge');
+    if (data.calibrated_at && data.calibrated_at !== null) {
+      badge.textContent = `Calibrated ${data.calibrated_at}`;
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700';
+    } else if (data.calibrated) {
+      badge.textContent = 'Default';
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-yellow-100 text-yellow-700';
+    } else {
+      badge.textContent = 'Not Calibrated';
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+    }
+    // Samples list
+    await updateCalibrationSamples();
+  } catch (error) {
+    console.error('Failed to update calibration status:', error);
+  }
+}
+
+async function addCalibrationSample() {
+  const input = $('calibHeightInput');
+  const height = parseFloat(input.value);
+  
+  if (isNaN(height)) {
+    $('calibStatusMsg').textContent = '❌ Please enter a valid height';
+    setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+    return;
+  }
+  
+  try {
+    const resp = await fetch('/api/calibration/add_sample', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({height: height})
+    });
+    const data = await resp.json();
+    
+    if (data.success) {
+      input.value = '';
+      $('calibStatusMsg').textContent = `✅ Sample added (${data.total_samples} total)`;
+      setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+      updateCalibrationStatus();
+    } else {
+      $('calibStatusMsg').textContent = '❌ ' + (data.error || 'Failed to add sample');
+      setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+    }
+  } catch (error) {
+    $('calibStatusMsg').textContent = '❌ Failed to add: ' + error.message;
+    setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function deleteCalibrationSample(index) {
+  if (!confirm(`Delete sample #${index+1}?`)) return;
+  
+  try {
+    const resp = await fetch(`/api/calibration/samples/${index}`, {
+      method: 'DELETE'
+    });
+    const data = await resp.json();
+    
+    if (data.success) {
+      $('calibStatusMsg').textContent = '✅ Sample deleted';
+      setTimeout(() => $('calibStatusMsg').textContent = '', 2000);
+      updateCalibrationStatus();
+    } else {
+      $('calibStatusMsg').textContent = '❌ Failed to delete';
+      setTimeout(() => $('calibStatusMsg').textContent = '', 2000);
+    }
+  } catch (error) {
+    $('calibStatusMsg').textContent = '❌ Failed to delete';
+    setTimeout(() => $('calibStatusMsg').textContent = '', 2000);
+  }
+}
+
+async function clearCalibrationSamples() {
+  if (!confirm('Clear all samples?')) return;
+  
+  try {
+    const resp = await fetch('/api/calibration/samples', {
+      method: 'DELETE'
+    });
+    const data = await resp.json();
+    
+    if (data.success) {
+      $('calibResult').classList.add('hidden');
+      $('calibStatusMsg').textContent = `✅ Cleared ${data.cleared} samples`;
+      setTimeout(() => $('calibStatusMsg').textContent = '', 2000);
+      updateCalibrationStatus();
+    }
+  } catch (error) {
+    $('calibStatusMsg').textContent = '❌ Failed to clear';
+    setTimeout(() => $('calibStatusMsg').textContent = '', 2000);
+  }
+}
+
+async function calculateCalibration() {
+  try {
+    const resp = await fetch('/api/calibration/calculate', {
+      method: 'POST'
+    });
+    const data = await resp.json();
+    
+    if (data.success) {
+      // Show result
+      $('calibResult').classList.remove('hidden');
+      $('calibResScale').textContent = data.scale.toFixed(6);
+      $('calibResOffset').textContent = data.offset.toFixed(6);
+      $('calibResR2').textContent = data.r_squared.toFixed(4);
+      $('calibResMaxErr').textContent = data.max_error_mm.toFixed(3);
+      $('calibResAvgErr').textContent = data.avg_error_mm.toFixed(3);
+      
+      $('calibStatusMsg').textContent = '✅ Calibration calculated successfully';
+      setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+      updateCalibrationStatus();
+    } else {
+      $('calibStatusMsg').textContent = '❌ ' + (data.error || 'Failed to calculate');
+      setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+    }
+  } catch (error) {
+    $('calibStatusMsg').textContent = '❌ Calculation failed: ' + error.message;
+    setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function saveCalibration() {
+  try {
+    const resp = await fetch('/api/calibration/save', {
+      method: 'POST'
+    });
+    const data = await resp.json();
+    
+    if (data.success) {
+      $('calibStatusMsg').textContent = `✅ Config saved! ${data.message}`;
+      setTimeout(() => $('calibStatusMsg').textContent = '', 10000);
+    } else {
+      $('calibStatusMsg').textContent = '❌ ' + (data.error || 'Failed to save');
+      setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+    }
+  } catch (error) {
+    $('calibStatusMsg').textContent = '❌ Save failed: ' + error.message;
+    setTimeout(() => $('calibStatusMsg').textContent = '', 3000);
+  }
+}
+
+// Calibration button event listeners
+$('calibAddBtn').addEventListener('click', addCalibrationSample);
+$('calibCalcBtn').addEventListener('click', calculateCalibration);
+$('calibSaveBtn').addEventListener('click', saveCalibration);
+$('calibClearBtn').addEventListener('click', clearCalibrationSamples);
+
+// Enter key to add sample
+$('calibHeightInput').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    addCalibrationSample();
+  }
+});
+
+// Update calibration status every second
+setInterval(updateCalibrationStatus, 1000);
+
+// ═══════════════════════════════════════════════════════════════
+// Range Detection Functions (Separate from Overshoot Calibration)
+// ═══════════════════════════════════════════════════════════════
+
+let rangeDetectionAborted = false;
+let regionMinHeight = null;
+let regionMaxHeight = null;
+
+// Detect platform range
+async function detectPlatformRange(){
+  if (regionMinHeight !== null && regionMaxHeight !== null) {
+    if(!confirm('Range already detected. Redetect?')) return;
+  }
+  const statusMsg = $('rangeStatusMsg');
+  $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-blue-500 text-white';
+  statusMsg.textContent='🔁 Detecting platform range...';
+  
+  try {
+    // Step 1: Pushrod down
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'timed_down',target:'pushrod',duration:1.0})});
+    statusMsg.textContent='⏳ Waiting for pushrod down...';
+    await new Promise(r=>setTimeout(r,2000)); // Wait for pushrod to finish
+
+    // Step 2: Start range scan (Action version uses range_scan_down command)
+    statusMsg.textContent='⬇️ Scanning DOWN for LOW endpoint...';
+    await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'range_scan_down',target:'platform'})});
+    
+    // Wait and monitor for scan completion
+    let scanTimeout = 180000; // 180 second (3 minute) timeout
+    let scanStart = Date.now();
+    let scanStarted = false; // Track if scan has actually started
+    while(Date.now() - scanStart < scanTimeout){
+      await new Promise(r=>setTimeout(r,500));
+      const res = await fetch('/api/status');
+      if(!res.ok) continue;
+      const status = await res.json();
+      const platformStatus = status.platform;
+      
+      // Track if scan has started
+      if(platformStatus?.range_scan_active){
+        scanStarted = true;
+      }
+      
+      // Check if scan completed
+      if(platformStatus?.task_state === 'completed' && platformStatus?.task_type === 'range_scan'){
+        regionMinHeight = platformStatus.range_scan_low_height;
+        regionMaxHeight = platformStatus.range_scan_high_height;
+        break;
+      }
+      
+      // Update status message based on scan progress
+      if(platformStatus?.range_scan_low_height !== null && platformStatus?.range_scan_low_height !== undefined){
+        statusMsg.textContent=`✅ Min: ${platformStatus.range_scan_low_height.toFixed(2)}mm | ⬆️ Scanning UP for HIGH endpoint...`;
+      } else if(platformStatus?.range_scan_active && platformStatus?.range_scan_direction === 'down'){
+        statusMsg.textContent='⬇️ Scanning DOWN for LOW endpoint...';
+      }
+      
+      // Check if scan stopped unexpectedly (only after it has started and not completed)
+      if(scanStarted && !platformStatus?.range_scan_active && platformStatus?.task_state !== 'completed' && platformStatus?.task_type === 'range_scan'){
+        throw new Error('Range scan stopped unexpectedly');
+      }
+    }
+    
+    if(Date.now() - scanStart >= scanTimeout){
+      throw new Error('Range scan timeout');
+    }
+    
+    if(regionMinHeight===null || regionMinHeight===undefined || regionMaxHeight===null || regionMaxHeight===undefined){
+      statusMsg.textContent='❌ Failed to detect range endpoints';
+      $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+      return;
+    }
+    
+    // Range detected successfully
+    statusMsg.textContent = `✅ Range detected: ${regionMinHeight.toFixed(1)} ~ ${regionMaxHeight.toFixed(1)}mm`;
+    $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+    
+    // Update display
+    $('rangeActualMin').textContent = regionMinHeight.toFixed(1);
+    $('rangeActualMax').textContent = regionMaxHeight.toFixed(1);
+    
+    // Note: Backend already saved config in _save_range_config()
+    await updateRangeStatus();
+    
+  } catch(e){
+    statusMsg.textContent='❌ Detection failed: '+e.message;
+    $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+    
+    // Cancel any active scan
+    try {
+      await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:'range_scan_cancel',target:'platform'})});
+    } catch(cancelErr) {
+      console.error('Failed to cancel range scan:', cancelErr);
+    }
+  }
+}
+
+async function updateRangeStatus() {
+  try {
+    // Read from config file via /api/range/get
+    const res = await fetch('/api/range/get');
+    if (res.ok) {
+      const rangeData = await res.json();
+      
+      // Check if range is calibrated
+      if (rangeData.has_range) {
+        $('rangeActualMin').textContent = rangeData.actual_min.toFixed(1);
+        $('rangeActualMax').textContent = rangeData.actual_max.toFixed(1);
+        $('rangeSafeMin').textContent = rangeData.safe_min.toFixed(1);
+        $('rangeSafeMax').textContent = rangeData.safe_max.toFixed(1);
+        
+        $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+        // Show calibration timestamp if available
+        if (rangeData.detected_at_iso && rangeData.detected_at_iso !== null) {
+          $('rangeStatusBadge').textContent = `Calibrated ${rangeData.detected_at_iso}`;
+        } else {
+          $('rangeStatusBadge').textContent = 'Calibrated';
+        }
+        
+        // Enable overshoot calibration
+        $('overshootStartCalibrationBtn').disabled = false;
+        
+        // Store in local variables
+        regionMinHeight = rangeData.actual_min;
+        regionMaxHeight = rangeData.actual_max;
+      } else {
+        $('rangeActualMin').textContent = '--';
+        $('rangeActualMax').textContent = '--';
+        $('rangeSafeMin').textContent = '--';
+        $('rangeSafeMax').textContent = '--';
+        $('rangeStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+        $('rangeStatusBadge').textContent = 'Not Calibrated';
+        
+        // Disable overshoot calibration
+        $('overshootStartCalibrationBtn').disabled = true;
+      }
+    }
+  } catch (e) {
+    console.error('Range status update error:', e);
+  }
+}
+
+$('rangeDetectBtn').addEventListener('click', detectPlatformRange);
+setInterval(updateRangeStatus, 2000);
+
+// ═══════════════════════════════════════════════════════════════
+// Overshoot Calibration Functions (Separate from Range Detection)
+// ═══════════════════════════════════════════════════════════════
+
+let overshootCalibrationAborted = false;
+let overshootLastFitCoeffs = null;
+
+async function waitForMovementComplete() {
+  const maxWaitTime = 60000;
+  const pollInterval = 20;  // 50Hz polling (20ms interval)
+  const startTime = Date.now();
+  
+  // Step 1: Wait for task to start (optional - task may already be running)
+  let taskSeen = false;
+  for (let i = 0; i < 10; i++) {
+    const res = await fetch('/api/status');
+    if (!res.ok) { await new Promise(r => setTimeout(r, pollInterval)); continue; }
+    const platform = (await res.json()).platform;
+    if (platform?.task_type === 'goto_height') {
+      taskSeen = true;
+      break;
+    }
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+  
+  // Step 2: Wait for task to complete (task_state becomes 'idle' or 'completed')
+  // Polling at 50Hz (20ms interval) for fast response
+  while (Date.now() - startTime < maxWaitTime) {
+    const res = await fetch('/api/status');
+    if (!res.ok) { await new Promise(r => setTimeout(r, pollInterval)); continue; }
+    const platform = (await res.json()).platform;
+    
+    // Task complete when state is idle or completed
+    if (platform?.task_state === 'idle' || platform?.task_state === 'completed') {
+      console.log(`Movement complete: task_state=${platform.task_state}, task_type=${platform.task_type}`);
+      // Check if task failed due to emergency_reset
+      if (platform?.completion_reason === 'emergency_reset') {
+        throw new Error('Movement failed: emergency reset triggered');
+      }
+      break;
+    }
+    
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+  
+  // Step 3: Wait for height to stabilize and overshoot measurement
+  // Platform needs: stop relay (100ms) + OVERSHOOT_SETTLE_DELAY (500ms) + measurement + status publish
+  // Total: ~1.0s minimum, use 2.0s for safety
+  await new Promise(r => setTimeout(r, 2000));
+  
+  // Step 4: Verify we have valid goto data, retry if needed
+  let retries = 0;
+  const maxRetries = 5;
+  let finalData = null;
+  
+  while (retries < maxRetries) {
+    const finalRes = await fetch('/api/status');
+    finalData = await finalRes.json();
+    
+    if (finalData.platform?.last_goto_actual !== null && 
+        finalData.platform?.last_goto_actual !== undefined &&
+        finalData.platform?.last_goto_stop_height !== null && 
+        finalData.platform?.last_goto_stop_height !== undefined) {
+      console.log(`Valid goto data found: stop=${finalData.platform.last_goto_stop_height.toFixed(2)}, actual=${finalData.platform.last_goto_actual.toFixed(2)}`);
+      break;
+    }
+    
+    console.warn(`Retry ${retries + 1}/${maxRetries}: Waiting for valid goto data...`);
+    await new Promise(r => setTimeout(r, 500));
+    retries++;
+  }
+  
+  if (retries >= maxRetries) {
+    console.error('Failed to get valid goto data after movement');
+  }
+  
+  return true;
+}
+
+function renderOvershootSamples(samples) {
+  const downList = $('overshootSamplesDownList');
+  const upList = $('overshootSamplesUpList');
+  
+  const downSamples = samples.filter(s => s.direction === 'down');
+  const upSamples = samples.filter(s => s.direction === 'up');
+  
+  if (downSamples.length === 0) {
+    downList.innerHTML = '<div class="text-slate-400">No samples</div>';
+  } else {
+    downList.innerHTML = downSamples.map((s, i) => 
+      `<div class="bg-white p-1 rounded border border-slate-200 text-xs flex items-center justify-between">
+        <div>
+          <span class="font-semibold text-green-700">#${i+1}</span> 
+          ${s.height.toFixed(1)}mm → 
+          <span class="font-bold text-green-700">${Math.abs(s.overshoot).toFixed(2)}mm</span>
+        </div>
+        <button onclick="deleteSample(${i}, 'down')" class="px-2 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded text-xs">✕</button>
+      </div>`
+    ).join('');
+  }
+  
+  if (upSamples.length === 0) {
+    upList.innerHTML = '<div class="text-slate-400">No samples</div>';
+  } else {
+    upList.innerHTML = upSamples.map((s, i) => 
+      `<div class="bg-white p-1 rounded border border-slate-200 text-xs flex items-center justify-between">
+        <div>
+          <span class="font-semibold text-blue-700">#${i+1}</span> 
+          ${s.height.toFixed(1)}mm → 
+          <span class="font-bold text-blue-700">${Math.abs(s.overshoot).toFixed(2)}mm</span>
+        </div>
+        <button onclick="deleteSample(${i}, 'up')" class="px-2 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded text-xs">✕</button>
+      </div>`
+    ).join('');
+  }
+}
+
+async function updateOvershootStatus() {
+  try {
+    const samplesRes = await fetch('/api/systematic/samples');
+    if (samplesRes.ok) {
+      const samplesData = await samplesRes.json();
+      const hasSamples = samplesData.count_total > 0;
+      const hasEnoughSamples = samplesData.count_total >= 3;
+      
+      $('overshootShowPlotBtn').disabled = !hasSamples;
+      $('overshootFitBtn').disabled = !hasSamples;
+      $('overshootRemoveOutliersBtn').disabled = !hasEnoughSamples;
+      
+      // Update badge status
+      if (hasSamples) {
+        // Priority 1: Use fit timestamp if available (most recent calibration)
+        // Priority 2: Use config generated_at (when calibration started)
+        // Priority 3: Use first sample timestamp
+        const timestamp = samplesData.fit_generated_at || samplesData.generated_at || samplesData.samples_all?.[0]?.timestamp;
+        if (timestamp) {
+          const date = new Date(timestamp * 1000);
+          const prefix = samplesData.fit_generated_at ? 'Fitted' : 'Calibration';
+          $('overshootStatusBadge').textContent = `${prefix} ${date.toLocaleString()}`;
+        } else {
+          $('overshootStatusBadge').textContent = `Calibration (${samplesData.count_total} samples)`;
+        }
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-purple-500 text-white';
+      } else {
+        $('overshootStatusBadge').textContent = 'Default';
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+      }
+      
+      // Render sample lists
+      if (samplesData.samples_all && samplesData.samples_all.length > 0) {
+        renderOvershootSamples(samplesData.samples_all);
+      } else {
+        // Clear sample lists when no samples
+        $('overshootSamplesDownList').innerHTML = '<div class="text-slate-400">No samples</div>';
+        $('overshootSamplesUpList').innerHTML = '<div class="text-slate-400">No samples</div>';
+      }
+    }
+  } catch (e) {
+    console.error('Overshoot status update error:', e);
+  }
+}
+
+async function overshootStartCalibration() {
+  try {
+    // Get range data
+    const rangeRes = await fetch('/api/range/get');
+    const rangeData = await rangeRes.json();
+    if (!rangeData.has_range) throw new Error('Please detect range first');
+    
+    const safeMin = rangeData.safe_min;
+    const safeMax = rangeData.safe_max;
+    const interval = 6.0;
+    
+    // Clear previous samples
+    const clearRes = await fetch('/api/systematic/start_calibration', {method: 'POST'});
+    const clearData = await clearRes.json();
+    if (!clearData.success) throw new Error('Failed to clear samples');
+    
+    overshootCalibrationAborted = false;
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-indigo-500 text-white';
+    
+    // Enable abort button, disable start button
+    $('overshootAbortBtn').disabled = false;
+    $('overshootStartCalibrationBtn').disabled = true;
+    
+    // Phase 1: DOWN calibration
+    const targetsDown = [];
+    for (let h = safeMax; h >= safeMin; h -= interval) targetsDown.push(h);
+    
+    // Move to starting position (10mm above safeMax) - DO NOT measure this point
+    $('overshootStatusMsg').textContent = `⬇️ Moving to DOWN starting position (${(safeMax + 10).toFixed(1)}mm)...`;
+    await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: safeMax + 10})});
+    await waitForMovementComplete();
+    console.log(`📍 DOWN starting position reached: ${(safeMax + 10).toFixed(1)}mm (not measured)`);
+    
+    $('overshootStatusMsg').textContent = `⬇️ Calibrating ${targetsDown.length} DOWN points...`;
+    
+    let completedDown = 0;
+    for (const targetHeight of targetsDown) {
+      if (overshootCalibrationAborted) {
+        $('overshootStatusMsg').textContent = '🛑 Calibration aborted';
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;
+      }
+      
+      $('overshootStatusMsg').textContent = `⬇️ DOWN ${completedDown + 1}/${targetsDown.length}: ${targetHeight.toFixed(1)}mm`;
+      
+      await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: targetHeight})});
+      
+      try {
+        await waitForMovementComplete();
+      } catch (error) {
+        console.error(`❌ DOWN #${completedDown + 1}: Movement failed - ${error.message}`);
+        $('overshootStatusMsg').textContent = `❌ Movement failed at DOWN #${completedDown + 1}: ${error.message}`;
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;  // Abort calibration on movement failure
+      }
+      
+      const statusRes = await fetch('/api/status');
+      const platform = (await statusRes.json()).platform;
+      
+      if (platform?.last_goto_actual !== null && platform?.last_goto_actual !== undefined &&
+          platform?.last_goto_stop_height !== null && platform?.last_goto_stop_height !== undefined) {
+        const overshoot = platform.last_goto_actual - platform.last_goto_stop_height;
+        
+        const addRes = await fetch('/api/systematic/add_sample', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({height: platform.last_goto_stop_height, overshoot: overshoot, direction: 'down'})});
+        const addData = await addRes.json();
+        
+        if (addData.success) {
+          console.log(`✅ DOWN #${completedDown + 1}: stop=${platform.last_goto_stop_height.toFixed(2)}, actual=${platform.last_goto_actual.toFixed(2)}, overshoot=${overshoot.toFixed(3)} [saved]`);
+        } else {
+          console.error(`❌ DOWN #${completedDown + 1}: Failed to save sample - ${addData.error || 'unknown error'}`);
+          $('overshootStatusMsg').textContent = `❌ Save failed at DOWN #${completedDown + 1}: ${addData.error || 'unknown error'}`;
+          $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+          
+          // Re-enable start button, disable abort button
+          $('overshootAbortBtn').disabled = true;
+          await updateOvershootStatus();
+          return;  // Abort calibration on save failure
+        }
+      } else {
+        console.warn(`⚠️  DOWN #${completedDown + 1}: No valid overshoot data (stop=${platform?.last_goto_stop_height}, actual=${platform?.last_goto_actual})`);
+        $('overshootStatusMsg').textContent = `⚠️  No valid data at DOWN #${completedDown + 1} - aborting`;
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;  // Abort calibration if no valid data
+      }
+      
+      completedDown++;
+      await updateOvershootStatus();
+    }
+    
+    // Phase 2: UP calibration
+    const targetsUp = [];
+    for (let h = safeMin; h <= safeMax; h += interval) targetsUp.push(h);
+    
+    // Move to starting position (10mm below safeMin) - DO NOT measure this point
+    $('overshootStatusMsg').textContent = `⬆️ Moving to UP starting position (${(safeMin - 10).toFixed(1)}mm)...`;
+    await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: safeMin - 10})});
+    await waitForMovementComplete();
+    console.log(`📍 UP starting position reached: ${(safeMin - 10).toFixed(1)}mm (not measured)`);
+    
+    $('overshootStatusMsg').textContent = `⬆️ Calibrating ${targetsUp.length} UP points...`;
+    
+    let completedUp = 0;
+    for (const targetHeight of targetsUp) {
+      if (overshootCalibrationAborted) {
+        $('overshootStatusMsg').textContent = '🛑 Calibration aborted';
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;
+      }
+      
+      $('overshootStatusMsg').textContent = `⬆️ UP ${completedUp + 1}/${targetsUp.length}: ${targetHeight.toFixed(1)}mm`;
+      
+      await fetch('/api/cmd', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({target: 'platform', command: 'goto_height', target_height: targetHeight})});
+      
+      try {
+        await waitForMovementComplete();
+      } catch (error) {
+        console.error(`❌ UP #${completedUp + 1}: Movement failed - ${error.message}`);
+        $('overshootStatusMsg').textContent = `❌ Movement failed at UP #${completedUp + 1}: ${error.message}`;
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;  // Abort calibration on movement failure
+      }
+      
+      const statusRes = await fetch('/api/status');
+      const platform = (await statusRes.json()).platform;
+      
+      if (platform?.last_goto_actual !== null && platform?.last_goto_actual !== undefined &&
+          platform?.last_goto_stop_height !== null && platform?.last_goto_stop_height !== undefined) {
+        const overshoot = platform.last_goto_actual - platform.last_goto_stop_height;
+        
+        const addRes = await fetch('/api/systematic/add_sample', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({height: platform.last_goto_stop_height, overshoot: overshoot, direction: 'up'})});
+        const addData = await addRes.json();
+        
+        if (addData.success) {
+          console.log(`✅ UP #${completedUp + 1}: stop=${platform.last_goto_stop_height.toFixed(2)}, actual=${platform.last_goto_actual.toFixed(2)}, overshoot=${overshoot.toFixed(3)} [saved]`);
+        } else {
+          console.error(`❌ UP #${completedUp + 1}: Failed to save sample - ${addData.error || 'unknown error'}`);
+          $('overshootStatusMsg').textContent = `❌ Save failed at UP #${completedUp + 1}: ${addData.error || 'unknown error'}`;
+          $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+          
+          // Re-enable start button, disable abort button
+          $('overshootAbortBtn').disabled = true;
+          await updateOvershootStatus();
+          return;  // Abort calibration on save failure
+        }
+      } else {
+        console.warn(`⚠️  UP #${completedUp + 1}: No valid overshoot data (stop=${platform?.last_goto_stop_height}, actual=${platform?.last_goto_actual})`);
+        $('overshootStatusMsg').textContent = `⚠️  No valid data at UP #${completedUp + 1} - aborting`;
+        $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+        
+        // Re-enable start button, disable abort button
+        $('overshootAbortBtn').disabled = true;
+        await updateOvershootStatus();
+        return;  // Abort calibration if no valid data
+      }
+      
+      completedUp++;
+      await updateOvershootStatus();
+    }
+    
+    const now = new Date().toLocaleString();
+    $('overshootStatusMsg').textContent = `✅ Complete: ${completedDown} DOWN + ${completedUp} UP = ${completedDown + completedUp} points`;
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+    $('overshootStatusBadge').textContent = `Calibration ${now}`;
+    
+    // Re-enable start button, disable abort button
+    $('overshootAbortBtn').disabled = true;
+    await updateOvershootStatus();  // This will re-enable start button if range exists
+  } catch (e) {
+    $('overshootStatusMsg').textContent = '❌ Error: ' + e.message;
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white';
+    
+    // Re-enable start button, disable abort button
+    $('overshootAbortBtn').disabled = true;
+    await updateOvershootStatus();
+  }
+}
+
+async function overshootShowPlot() {
+  try {
+    const res = await fetch('/api/systematic/plot', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Plot failed');
+    const plotImg = $('overshootPlotImg');
+    plotImg.src = data.plot_url + '?' + Date.now();
+    plotImg.classList.remove('hidden');
+    $('overshootFitBtn').disabled = false;
+    $('overshootStatusMsg').textContent = `✅ Plot (${data.sample_count_up} UP, ${data.sample_count_down} DOWN)`;
+  } catch (e) {
+    $('overshootStatusMsg').textContent = '❌ Plot error: ' + e.message;
+  }
+}
+
+async function overshootFitCurve() {
+  try {
+    const degree = parseInt($('overshootFitDegree').value);
+    const res = await fetch('/api/systematic/plot', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({degree: degree})});
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Fit failed');
+    const plotImg = $('overshootPlotImg');
+    plotImg.src = data.plot_url + '?' + Date.now();
+    plotImg.classList.remove('hidden');
+    overshootLastFitCoeffs = {degree: data.degree, coeffs_up: data.fit_coeffs_up, coeffs_down: data.fit_coeffs_down};
+    $('overshootSaveFitBtn').disabled = false;
+    $('overshootStatusMsg').textContent = `✅ Fitted degree ${degree}`;
+  } catch (e) {
+    $('overshootStatusMsg').textContent = '❌ Fit error: ' + e.message;
+  }
+}
+
+async function overshootSaveFit() {
+  try {
+    if (!overshootLastFitCoeffs) throw new Error('No fit data. Please fit first.');
+    const res = await fetch('/api/systematic/save_fit', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(overshootLastFitCoeffs)});
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Save failed');
+    const now = new Date().toLocaleString();
+    $('overshootStatusMsg').textContent = `✅ Saved (degree ${data.fit.degree})`;
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white';
+    $('overshootStatusBadge').textContent = `Calibration ${now}`;
+  } catch (e) {
+    $('overshootStatusMsg').textContent = '❌ Save error: ' + e.message;
+  }
+}
+
+async function deleteSample(index, direction) {
+  try {
+    // Get all samples first
+    const samplesRes = await fetch('/api/systematic/samples');
+    const samplesData = await samplesRes.json();
+    
+    // Find the actual sample index in the full list
+    const allSamples = samplesData.samples_all;
+    const filteredSamples = allSamples.filter(s => s.direction === direction);
+    const sampleToDelete = filteredSamples[index];
+    
+    // Find its index in the full list
+    const fullIndex = allSamples.findIndex(s => 
+      s.height === sampleToDelete.height && 
+      s.overshoot === sampleToDelete.overshoot && 
+      s.direction === sampleToDelete.direction &&
+      s.timestamp === sampleToDelete.timestamp
+    );
+    
+    if (fullIndex === -1) {
+      throw new Error('Sample not found');
+    }
+    
+    // Delete via backend API
+    const res = await fetch(`/api/systematic/samples/${fullIndex}`, {method: 'DELETE'});
+    const data = await res.json();
+    
+    if (!data.success) throw new Error(data.error || 'Delete failed');
+    
+    console.log(`✅ Deleted ${direction.toUpperCase()} sample #${index + 1}`);
+    await updateOvershootStatus();
+  } catch (e) {
+    console.error('Delete sample error:', e);
+    $('overshootStatusMsg').textContent = '❌ Delete error: ' + e.message;
+  }
+}
+
+async function overshootRemoveOutliers() {
+  try {
+    const samplesRes = await fetch('/api/systematic/samples');
+    const samplesData = await samplesRes.json();
+    const allSamples = samplesData.samples_all;
+    
+    if (allSamples.length < 3) {
+      $('overshootStatusMsg').textContent = 'Need at least 3 samples to detect outliers';
+      return;
+    }
+    
+    // Separate by direction
+    const downSamples = allSamples.filter(s => s.direction === 'down');
+    const upSamples = allSamples.filter(s => s.direction === 'up');
+    
+    const outlierIndices = [];
+    
+    // Check DOWN samples for outliers (compare adjacent overshoot values)
+    for (let i = 0; i < downSamples.length; i++) {
+      const current = downSamples[i];
+      
+      // Compare with previous sample
+      if (i > 0) {
+        const prev = downSamples[i - 1];
+        const diff = Math.abs(current.overshoot - prev.overshoot);
+        const avgAbs = (Math.abs(current.overshoot) + Math.abs(prev.overshoot)) / 2;
+        
+        if (avgAbs > 0 && diff / avgAbs > 1.0) {  // >100% difference
+          // Find index in full list
+          const fullIdx = allSamples.findIndex(s => 
+            s.height === current.height && s.overshoot === current.overshoot && 
+            s.direction === current.direction && s.timestamp === current.timestamp
+          );
+          if (fullIdx !== -1 && !outlierIndices.includes(fullIdx)) {
+            outlierIndices.push(fullIdx);
+          }
+        }
+      }
+      
+      // Compare with next sample
+      if (i < downSamples.length - 1) {
+        const next = downSamples[i + 1];
+        const diff = Math.abs(current.overshoot - next.overshoot);
+        const avgAbs = (Math.abs(current.overshoot) + Math.abs(next.overshoot)) / 2;
+        
+        if (avgAbs > 0 && diff / avgAbs > 1.0) {  // >100% difference
+          const fullIdx = allSamples.findIndex(s => 
+            s.height === current.height && s.overshoot === current.overshoot && 
+            s.direction === current.direction && s.timestamp === current.timestamp
+          );
+          if (fullIdx !== -1 && !outlierIndices.includes(fullIdx)) {
+            outlierIndices.push(fullIdx);
+          }
+        }
+      }
+    }
+    
+    // Check UP samples for outliers
+    for (let i = 0; i < upSamples.length; i++) {
+      const current = upSamples[i];
+      
+      if (i > 0) {
+        const prev = upSamples[i - 1];
+        const diff = Math.abs(current.overshoot - prev.overshoot);
+        const avgAbs = (Math.abs(current.overshoot) + Math.abs(prev.overshoot)) / 2;
+        
+        if (avgAbs > 0 && diff / avgAbs > 1.0) {
+          const fullIdx = allSamples.findIndex(s => 
+            s.height === current.height && s.overshoot === current.overshoot && 
+            s.direction === current.direction && s.timestamp === current.timestamp
+          );
+          if (fullIdx !== -1 && !outlierIndices.includes(fullIdx)) {
+            outlierIndices.push(fullIdx);
+          }
+        }
+      }
+      
+      if (i < upSamples.length - 1) {
+        const next = upSamples[i + 1];
+        const diff = Math.abs(current.overshoot - next.overshoot);
+        const avgAbs = (Math.abs(current.overshoot) + Math.abs(next.overshoot)) / 2;
+        
+        if (avgAbs > 0 && diff / avgAbs > 1.0) {
+          const fullIdx = allSamples.findIndex(s => 
+            s.height === current.height && s.overshoot === current.overshoot && 
+            s.direction === current.direction && s.timestamp === current.timestamp
+          );
+          if (fullIdx !== -1 && !outlierIndices.includes(fullIdx)) {
+            outlierIndices.push(fullIdx);
+          }
+        }
+      }
+    }
+    
+    if (outlierIndices.length === 0) {
+      $('overshootStatusMsg').textContent = '✅ No outliers detected (>100% difference from neighbors)';
+      return;
+    }
+    
+    if (!confirm(`Found ${outlierIndices.length} outlier(s). Delete them?`)) return;
+    
+    // Delete outliers in reverse order to maintain indices
+    outlierIndices.sort((a, b) => b - a);
+    
+    for (const idx of outlierIndices) {
+      const res = await fetch(`/api/systematic/samples/${idx}`, {method: 'DELETE'});
+      const data = await res.json();
+      if (!data.success) {
+        console.error(`Failed to delete outlier at index ${idx}`);
+      }
+    }
+    
+    $('overshootStatusMsg').textContent = `🧹 Removed ${outlierIndices.length} outlier(s)`;
+    await updateOvershootStatus();
+  } catch (e) {
+    console.error('Remove outliers error:', e);
+    $('overshootStatusMsg').textContent = '❌ Remove outliers error: ' + e.message;
+  }
+}
+
+async function overshootClearAll() {
+  try {
+    if (!confirm('Clear all overshoot calibration data?')) return;
+    const res = await fetch('/api/systematic/samples', {method: 'DELETE'});
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Clear failed');
+    $('overshootPlotImg').classList.add('hidden');
+    $('overshootPlotImg').src = '';
+    overshootLastFitCoeffs = null;
+    $('overshootShowPlotBtn').disabled = true;
+    $('overshootFitBtn').disabled = true;
+    $('overshootSaveFitBtn').disabled = true;
+    await updateOvershootStatus();
+    $('overshootStatusMsg').textContent = `✅ Cleared ${data.cleared_count} samples`;
+    $('overshootStatusBadge').textContent = 'Default';
+    $('overshootStatusBadge').className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+  } catch (e) {
+    $('overshootStatusMsg').textContent = '❌ Clear error: ' + e.message;
+  }
+}
+
+$('overshootStartCalibrationBtn').addEventListener('click', overshootStartCalibration);
+$('overshootAbortBtn').addEventListener('click', () => {
+  overshootCalibrationAborted = true;
+  console.log('🛑 Abort button clicked - calibration will stop after current point');
+});
+$('overshootShowPlotBtn').addEventListener('click', overshootShowPlot);
+$('overshootFitBtn').addEventListener('click', overshootFitCurve);
+$('overshootSaveFitBtn').addEventListener('click', overshootSaveFit);
+$('overshootRemoveOutliersBtn').addEventListener('click', overshootRemoveOutliers);
+$('overshootClearBtn').addEventListener('click', overshootClearAll);
+setInterval(updateOvershootStatus, 2000);
+
+// Force Sensor Calibration Functions (Single Channel Mode)
+// ═══════════════════════════════════════════════════════════════
+
+async function updateForceCalibStatus() {
+  try {
+    const res = await fetch('/api/force_calib/status');
+    if (!res.ok) { console.error('Force calib status fetch failed:', res.status); return; }
+    const data = await res.json();
+    
+    const channel = $('forceCalibChannel').value;
+    
+    // Update status badge (show "both channels" timestamp if both exist, otherwise individual)
+    const badge = $('forceCalibStatusBadge');
+    if (data.calibrated_at_right && data.calibrated_at_left) {
+      // Both calibrated - show right timestamp (or could show "Both calibrated")
+      badge.textContent = `Calibrated ${data.calibrated_at_right}`;
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700';
+    } else if (data.calibrated_at_right || data.calibrated_at_left) {
+      // One channel calibrated
+      const ts = data.calibrated_at_right || data.calibrated_at_left;
+      badge.textContent = `Calibrated ${ts}`;
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700';
+    } else if (data.calibrated_right || data.calibrated_left) {
+      badge.textContent = 'Default';
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-yellow-100 text-yellow-700';
+    } else {
+      badge.textContent = 'Not Calibrated';
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+    }
+    
+    // Update current sensor reading based on selected channel
+    if (channel === 'right') {
+      $('forceCalibCurrentSensor').textContent = data.current_sensor_right !== null ? data.current_sensor_right.toFixed(2) : '--';
+      $('forceCalibSampleCount').textContent = data.count_right || 0;
+      
+      // Update formula and result display
+      if (data.scale_right !== null) {
+        $('forceCalibFormulaBox').classList.remove('hidden');
+        $('forceCalibFormula').textContent = `F_actual = F_sensor × ${data.scale_right.toFixed(6)}`;
+        $('forceCalibResult').classList.remove('hidden');
+        $('forceCalibResScale').textContent = data.scale_right.toFixed(6);
+      } else {
+        $('forceCalibFormulaBox').classList.add('hidden');
+        $('forceCalibResult').classList.add('hidden');
+      }
+    } else {
+      $('forceCalibCurrentSensor').textContent = data.current_sensor_left !== null ? data.current_sensor_left.toFixed(2) : '--';
+      $('forceCalibSampleCount').textContent = data.count_left || 0;
+      
+      // Update formula and result display
+      if (data.scale_left !== null) {
+        $('forceCalibFormulaBox').classList.remove('hidden');
+        $('forceCalibFormula').textContent = `F_actual = F_sensor × ${data.scale_left.toFixed(6)}`;
+        $('forceCalibResult').classList.remove('hidden');
+        $('forceCalibResScale').textContent = data.scale_left.toFixed(6);
+      } else {
+        $('forceCalibFormulaBox').classList.add('hidden');
+        $('forceCalibResult').classList.add('hidden');
+      }
+    }
+    
+  } catch (e) {
+    console.error('Force calib status update error:', e);
+  }
+}
+
+async function updateForceCalibSamples() {
+  try {
+    const res = await fetch('/api/force_calib/samples');
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    const channel = $('forceCalibChannel').value;
+    const samplesList = $('forceCalibSamplesList');
+    
+    // Update samples based on selected channel
+    const samples = channel === 'right' ? data.samples_right : data.samples_left;
+    
+    if (samples && samples.length > 0) {
+      samplesList.innerHTML = samples.map((s, i) => `
+        <div class="flex justify-between items-center bg-slate-50 px-2 py-1 rounded mb-1">
+          <span>S:${s.sensor.toFixed(1)} → F:${s.force.toFixed(1)}N</span>
+          <button onclick="deleteForceCalibSample('${channel}', ${i})" class="text-red-500 hover:text-red-700 text-xs">✕</button>
+        </div>
+      `).join('');
+    } else {
+      samplesList.innerHTML = '<div class="text-xs text-slate-400 text-center">No samples yet</div>';
+    }
+    
+  } catch (e) {
+    console.error('Force calib samples update error:', e);
+  }
+}
+
+// Update display when channel changes
+$('forceCalibChannel').addEventListener('change', async () => {
+  await updateForceCalibStatus();
+  await updateForceCalibSamples();
+});
+
+async function addForceCalibSample() {
+  const channel = $('forceCalibChannel').value;
+  const force = parseFloat($('forceCalibForce').value);
+  
+  if (isNaN(force)) {
+    $('forceCalibStatusMsg').textContent = '❌ Please enter valid force value';
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+    return;
+  }
+  
+  try {
+    const res = await fetch('/api/force_calib/add_sample', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, force })
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forceCalibStatusMsg').textContent = `✓ Added ${channel} sample: sensor=${data.sample.sensor.toFixed(1)}, force=${force.toFixed(1)}N`;
+      $('forceCalibForce').value = '';  // Clear input
+      await updateForceCalibStatus();
+      await updateForceCalibSamples();
+    } else {
+      $('forceCalibStatusMsg').textContent = '❌ ' + (data.error || 'Failed to add');
+    }
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  } catch (e) {
+    $('forceCalibStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function deleteForceCalibSample(channel, index) {
+  try {
+    const res = await fetch(`/api/force_calib/samples/${channel}/${index}`, {
+      method: 'DELETE'
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forceCalibStatusMsg').textContent = `✓ Deleted ${channel} sample #${index + 1}`;
+      await updateForceCalibStatus();
+      await updateForceCalibSamples();
+    } else {
+      $('forceCalibStatusMsg').textContent = '❌ ' + (data.error || 'Failed');
+    }
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  } catch (e) {
+    $('forceCalibStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function clearForceCalibSamples() {
+  const channel = $('forceCalibChannel').value;
+  if (!confirm(`Clear all ${channel} force calibration samples?`)) return;
+  
+  try {
+    const res = await fetch('/api/force_calib/samples', {
+      method: 'DELETE'
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forceCalibStatusMsg').textContent = `✓ Cleared ${data.cleared_right} right + ${data.cleared_left} left samples`;
+      await updateForceCalibStatus();
+      await updateForceCalibSamples();
+    } else {
+      $('forceCalibStatusMsg').textContent = '❌ ' + (data.error || 'Failed');
+    }
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  } catch (e) {
+    $('forceCalibStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function calculateForceCalibration() {
+  try {
+    const res = await fetch('/api/force_calib/calculate', {
+      method: 'POST'
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      const channel = $('forceCalibChannel').value;
+      
+      if (channel === 'right' && data.scale_right !== undefined) {
+        $('forceCalibResScale').textContent = data.scale_right.toFixed(6);
+        $('forceCalibResAvgErr').textContent = data.avg_error_right.toFixed(3);
+        $('forceCalibResMaxErr').textContent = data.max_error_right.toFixed(3);
+        $('forceCalibResSamples').textContent = data.num_samples_right;
+        $('forceCalibStatusMsg').textContent = `✓ Right calibrated: scale=${data.scale_right.toFixed(6)} (${data.num_samples_right} samples)`;
+      } else if (channel === 'left' && data.scale_left !== undefined) {
+        $('forceCalibResScale').textContent = data.scale_left.toFixed(6);
+        $('forceCalibResAvgErr').textContent = data.avg_error_left.toFixed(3);
+        $('forceCalibResMaxErr').textContent = data.max_error_left.toFixed(3);
+        $('forceCalibResSamples').textContent = data.num_samples_left;
+        $('forceCalibStatusMsg').textContent = `✓ Left calibrated: scale=${data.scale_left.toFixed(6)} (${data.num_samples_left} samples)`;
+      } else {
+        $('forceCalibStatusMsg').textContent = '❌ No samples for selected channel';
+      }
+      await updateForceCalibStatus();
+    } else {
+      $('forceCalibStatusMsg').textContent = '❌ ' + (data.error || 'Calculation failed');
+    }
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 5000);
+  } catch (e) {
+    $('forceCalibStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function saveForceCalibration() {
+  try {
+    const res = await fetch('/api/force_calib/save', {
+      method: 'POST'
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forceCalibStatusMsg').textContent = `✓ Saved to: ${data.saved_files.join(', ')} - ${data.message}`;
+      await updateForceCalibStatus(); // Refresh status badge
+    } else {
+      $('forceCalibStatusMsg').textContent = '❌ ' + (data.error || 'Save failed');
+    }
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 5000);
+  } catch (e) {
+    $('forceCalibStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  }
+}
+
+// Force calibration button event listeners
+$('forceCalibAddBtn').addEventListener('click', addForceCalibSample);
+$('forceCalibCalcBtn').addEventListener('click', calculateForceCalibration);
+$('forceCalibSaveBtn').addEventListener('click', saveForceCalibration);
+$('forceCalibClearBtn').addEventListener('click', clearForceCalibSamples);
+$('forceCalibTareBtn').addEventListener('click', tareForceCalibSensor);
+
+// Tare force sensor function
+async function tareForceCalibSensor() {
+  const channel = $('forceCalibChannel').value;
+  const device_id = channel === 'right' ? 52 : 53;
+  const topic = channel === 'right' ? '/force_sensor' : '/force_sensor_2';
+  
+  if (!confirm(`Tare ${channel} sensor (device_id=${device_id}, ${topic})?\n\nThis will zero the current force reading.`)) {
+    return;
+  }
+  
+  try {
+    $('forceCalibStatusMsg').textContent = `⏳ Taring ${channel} sensor (${device_id})...`;
+    
+    const res = await fetch('/api/force_calib/tare', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ channel: channel, device_id: device_id })
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forceCalibStatusMsg').textContent = `✓ ${data.message}`;
+      // Refresh status after tare
+      setTimeout(async () => {
+        await updateForceCalibStatus();
+        $('forceCalibStatusMsg').textContent = '';
+      }, 2000);
+    } else {
+      $('forceCalibStatusMsg').textContent = '❌ ' + (data.error || 'Tare failed');
+    }
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 5000);
+  } catch (e) {
+    $('forceCalibStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forceCalibStatusMsg').textContent = '', 3000);
+  }
+}
+
+// Enter key to add sample
+$('forceCalibForce').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') addForceCalibSample();
+});
+
+// Initialize on page load
+async function initializePage() {
+  // Update draw wire calibration status
+  await updateCalibrationStatus();
+  
+  // Update overshoot calibration status and samples
+  await updateOvershootStatus();
+  await updateOvershootSamples();
+  
+  // Update force sensor calibration status and samples
+  await updateForceCalibStatus();
+  await updateForceCalibSamples();
+  
+  console.log('Page initialized - all calibration data loaded');
+}
+
+// Call initialization when page loads
+document.addEventListener('DOMContentLoaded', initializePage);
+
+// Update force calibration status every second (for real-time sensor readings)
+setInterval(updateForceCalibStatus, 1000);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Manual movement control action
+# Controls platform or pushrod movement in a specific direction until stopped
+# Stop conditions: limit reached, user cancellation, or emergency
+
+# Goal: direction to move
+string target      # "platform" or "pushrod" - which device to control
+string direction   # "up" or "down"
+---
+# Result: outcome of manual movement
+bool success
+float64 final_height        # Final height when stopped (mm)
+float64 execution_time      # Total execution time (seconds)
+string completion_reason    # "limit_reached", "cancelled", "emergency", "error"
+---
+# Feedback: real-time status during movement
+float64 current_height      # Current height (mm)
+string movement_state       # "moving_up", "moving_down", "stopped"
+float64 elapsed_time        # Time elapsed since start (seconds)
+bool limit_warning          # True if approaching limit (within 10mm)
