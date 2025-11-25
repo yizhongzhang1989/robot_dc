@@ -44,12 +44,6 @@ def generate_launch_description():
         'lift_robot_force_sensor_launch.py'
     )
 
-    pushrod_path = os.path.join(
-        get_package_share_directory('lift_robot_pushrod'),
-        'launch',
-        'lift_robot_pushrod_launch.py'
-    )
-
     web_path = os.path.join(
         get_package_share_directory('lift_robot_web'),
         'launch',
@@ -66,13 +60,6 @@ def generate_launch_description():
         period=3.0,  # Wait 3 seconds for modbus driver to initialize
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(lift_robot_path))]
     )
-
-    # Start pushrod controller shortly after platform (stagger to avoid bus burst)
-    # DISABLED: pushrod control is now integrated into platform node (relay 3,4,5)
-    # pushrod_launch = TimerAction(
-    #     period=3.5,
-    #     actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(pushrod_path))]
-    # )
 
     # Start cable sensor after modbus driver is ready
     cable_sensor_launch = TimerAction(
@@ -110,7 +97,6 @@ def generate_launch_description():
         web_port_arg,
         modbus_launch,
         lift_robot_launch,
-        # pushrod_launch,  # DISABLED: pushrod control integrated into platform node
         cable_sensor_launch,
         force_sensor_launch,
         force_sensor_2_launch,

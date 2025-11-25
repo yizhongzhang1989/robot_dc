@@ -52,11 +52,11 @@ class LiftRobotWeb(Node):
         self.latest_obj = None
         self.connections = []
         self.loop = None
-        # 双通道力值：右侧力传感器 (device_id=52) 和左侧力传感器 (device_id=53)
+        # Dual-channel force values: right force sensor (device_id=52) and left force sensor (device_id=53)
         self.right_force_sensor = None  # /force_sensor (device_id=52)
         self.left_force_sensor = None   # /force_sensor_2 (device_id=53)
-        self.combined_force_sensor = None  # 合力 (两个力传感器相加，缺失时退化为单个存在的值)
-        self.last_force_update = None  # 最近力传感器更新时间戳（任一传感器）
+        self.combined_force_sensor = None  # Combined force (sum of two sensors, falls back to single sensor if one missing)
+        self.last_force_update = None  # Latest force sensor update timestamp (either sensor)
         self.platform_status = None
         self.pushrod_status = None
 
@@ -92,7 +92,7 @@ class LiftRobotWeb(Node):
         # Force sensor subscriptions (Float32)
         try:
             from std_msgs.msg import Float32
-            # 订阅两个力传感器话题
+            # Subscribe to two force sensor topics
             self.force_sub_right = self.create_subscription(Float32, '/force_sensor', self.force_cb_right, 10)
             self.force_sub_left = self.create_subscription(Float32, '/force_sensor_2', self.force_cb_left, 10)
             self.get_logger().info("Subscribed to /force_sensor (right) and /force_sensor_2 (left)")
@@ -100,10 +100,8 @@ class LiftRobotWeb(Node):
             self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
         # Status subscriptions
         self.platform_status_sub = self.create_subscription(String, '/lift_robot_platform/status', self.platform_status_cb, 10)
-        self.pushrod_status_sub = self.create_subscription(String, '/lift_robot_pushrod/status', self.pushrod_status_cb, 10)
         
         self.cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
-        self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
 
         # ═══════════════════════════════════════════════════════════════
         # ROS2 Action Clients: Unified Platform+Pushrod (target parameter)
@@ -163,14 +161,14 @@ class LiftRobotWeb(Node):
                 if self.latest_obj is not None:
                     try:
                         merged = dict(self.latest_obj)
-                        # 添加双通道力值
+                        # Add dual-channel force values
                         if self.right_force_sensor is not None:
                             merged['right_force_sensor'] = self.right_force_sensor
                         if self.left_force_sensor is not None:
                             merged['left_force_sensor'] = self.left_force_sensor
                         if self.combined_force_sensor is not None:
                             merged['combined_force_sensor'] = self.combined_force_sensor
-                        # 力传感器数据陈旧检测（超过2s未更新）
+                        # Force sensor stale detection (no update for >2s)
                         if self.last_force_update is not None:
                             if (time.time() - self.last_force_update) > 2.0:
                                 merged['force_stale'] = True
@@ -188,7 +186,7 @@ class LiftRobotWeb(Node):
             # Continue operation
 
     def force_cb_right(self, msg):
-        """右侧力传感器回调 (device_id=52, /force_sensor)"""
+        """Right force sensor callback (device_id=52, /force_sensor)"""
         try:
             if 0 <= msg.data <= 2000:
                 self.right_force_sensor = msg.data
@@ -200,7 +198,7 @@ class LiftRobotWeb(Node):
             self.get_logger().warn(f"Right force callback error: {e}")
     
     def force_cb_left(self, msg):
-        """左侧力传感器回调 (device_id=53, /force_sensor_2)"""
+        """Left force sensor callback (device_id=53, /force_sensor_2)"""
         try:
             if 0 <= msg.data <= 2000:
                 self.left_force_sensor = msg.data
@@ -212,11 +210,11 @@ class LiftRobotWeb(Node):
             self.get_logger().warn(f"Left force callback error: {e}")
 
     def _update_combined_force(self):
-        """更新合力：两个力都存在则求和；只存在一个则等于该值；都不存在为 None；防止 inf 溢出"""
+        """Update combined force: sum if both exist; single value if only one exists; None if neither; prevent inf overflow"""
         try:
             if self.right_force_sensor is not None and self.left_force_sensor is not None:
                 combined = self.right_force_sensor + self.left_force_sensor
-                # 防止溢出到 inf
+                # Prevent overflow to inf
                 if combined > 4000 or combined < -1000:
                     self.get_logger().warn(f"Combined force overflow detected: {combined} (right={self.right_force_sensor}, left={self.left_force_sensor})")
                     self.combined_force_sensor = None
@@ -303,12 +301,6 @@ class LiftRobotWeb(Node):
             self.platform_status = json.loads(msg.data)
         except Exception as e:
             self.get_logger().warn(f"Platform status parse error: {e}")
-    
-    def pushrod_status_cb(self, msg: String):
-        try:
-            self.pushrod_status = json.loads(msg.data)
-        except Exception as e:
-            self.get_logger().warn(f"Pushrod status parse error: {e}")
 
     async def broadcast(self, text):
         drop = []
@@ -397,7 +389,6 @@ class LiftRobotWeb(Node):
                             reset_msg = String()
                             reset_msg.data = json.dumps({'command': 'reset'})
                             self.cmd_pub.publish(reset_msg)
-                            self.pushrod_cmd_pub.publish(reset_msg)
                             
                             # Don't manually set platform_status - let ROS topic update it
                             # The lift_robot_node will publish emergency_reset state via /lift_robot_platform/status
@@ -600,23 +591,6 @@ class LiftRobotWeb(Node):
                             self.action_status['goto_height'] = 'sending'
                         
                         return {'status':'ok','command':cmd,'target':'pushrod','target_height':target_height,'action':'goto_height','action_status':'sending'}
-                    
-                    elif cmd in ('reset', 'goto_point'):
-                        # Keep using topic for reset and goto_point (special commands)
-                        if cmd == 'goto_point':
-                            point = payload.get('point')
-                            if not point:
-                                return JSONResponse({'error':'point field required for goto_point'}, status_code=400)
-                        
-                        # Build topic message body
-                        body = {'command': cmd}
-                        if cmd == 'goto_point':
-                            body['point'] = payload.get('point')
-                        
-                        msg = String()
-                        msg.data = json.dumps(body)
-                        self.pushrod_cmd_pub.publish(msg)
-                        return {'status':'ok','command':cmd,'target':'pushrod'}
                     
                     else:
                         return JSONResponse({'error':f'unknown pushrod command: {cmd}'}, status_code=400)
