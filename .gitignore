@@ -139,3 +139,12 @@ Thumbs.db
 
 # Image storage directory (now in root directory)
 temp/
+
+# Dataset directory
+dataset/
+
+# Configuration files with real values
+/config/robot_config.yaml
+/config/*.backup
+/config/*~
+/config/.secrets*

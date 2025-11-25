@@ -2,446 +2,25 @@ import os
 import json
 import numpy as np
 import requests
+from ur15_robot_arm.ur15 import UR15Robot
 import time
 import socket
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# Lift Platform Controller - Standalone HTTP API Client
-# ═══════════════════════════════════════════════════════════════════════
-class LiftPlatformController:
-    """
-    Standalone controller for lift platform and pushrod via HTTP API
-    Can be used independently without robot dependencies
-    """
-    
-    def __init__(self, base_url="http://192.168.1.3:8090"):
-        """
-        Initialize lift platform controller
-        
-        Args:
-            base_url: HTTP server base URL (default: http://192.168.1.3:8090)
-        """
-        self.lift_web_base = base_url
-    
-    def lift_send_command(self, target, command, **kwargs):
-        """
-        Send command to lift platform/pushrod via HTTP POST
-        
-        Args:
-            target: 'platform' or 'pushrod'
-            command: command name (up, down, stop, goto_height, force_up, force_down, etc.)
-            **kwargs: additional command parameters (target_height, target_force, duration, etc.)
-        
-        Returns:
-            dict with 'success' boolean and optional 'error' message
-        """
-        try:
-            url = f"{self.lift_web_base}/api/cmd"
-            payload = {
-                'command': command,
-                'target': target,
-                **kwargs
-            }
-            
-            # Format kwargs for display
-            kwargs_str = ", ".join([f"{k}={v}" for k, v in kwargs.items()])
-            if kwargs_str:
-                print(f"📤 [{target}] {command} ({kwargs_str})")
-            else:
-                print(f"📤 [{target}] {command}")
-            
-            response = requests.post(url, json=payload, timeout=5)
-            
-            if response.status_code == 200:
-                return {"success": True, "response": response.json()}
-            else:
-                error_msg = f"HTTP {response.status_code}: {response.text}"
-                print(f"❌ Command failed: {error_msg}")
-                return {"success": False, "error": error_msg}
-                
-        except requests.exceptions.Timeout:
-            print("❌ Command request timeout")
-            return {"success": False, "error": "Request timeout"}
-        except Exception as e:
-            print(f"❌ Command request error: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def lift_send_stop(self, target):
-        """
-        Send stop command to platform or pushrod (convenience wrapper)
-        
-        Args:
-            target: 'platform' or 'pushrod'
-        
-        Returns:
-            dict with 'success' boolean
-        """
-        return self.lift_send_command(target, 'stop')
-    
-    def lift_reset_all(self):
-        """
-        EMERGENCY RESET: Disable all controls and clear all relays
-        This is a critical safety function that:
-        1. Disables all control modes (height auto, force control)
-        2. Resets all relays to 0 (platform and pushrod)
-        
-        Use when system is in an unknown state or needs emergency stop.
-        
-        Returns:
-            dict with 'success' boolean
-        """
-        print("🔴 EMERGENCY RESET: Clearing all relays and disabling controls...")
-        result = self.lift_send_command('platform', 'reset')
-        if result['success']:
-            print("✅ System reset complete - all relays cleared")
-        else:
-            print(f"❌ Reset failed: {result.get('error')}")
-        return result
-    
-    def lift_get_status(self):
-        """
-        Query current status of platform and pushrod via HTTP GET
-        
-        Returns:
-            dict with 'platform' and 'pushrod' status, or None on error
-        """
-        try:
-            url = f"{self.lift_web_base}/api/status"
-            response = requests.get(url, timeout=2)
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                print(f"❌ Status query failed: HTTP {response.status_code}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Status query error: {e}")
-            return None
-    
-    def lift_wait_task_complete(self, target, timeout=90, poll_interval=0.2, expected_task_type=None):
-        """
-        Wait for platform or pushrod task to complete by polling status
-        
-        Args:
-            target: 'platform' or 'pushrod'
-            timeout: maximum wait time in seconds
-            poll_interval: status polling interval in seconds
-        
-        Returns:
-            dict with 'success', 'task_state', 'completion_reason', 'duration', 'task_info'
-        """
-        start_time = time.time()
-        last_state = None
-        task_started = False  # Track if we've seen our task start
-        
-        print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
-        
-        while time.time() - start_time < timeout:
-            status = self.lift_get_status()
-            
-            if status and target in status:
-                task_info = status[target]
-                task_state = task_info.get('task_state', 'unknown')
-                task_type = task_info.get('task_type', 'unknown')
-                
-                # Print state changes
-                if task_state != last_state:
-                    elapsed = time.time() - start_time
-                    print(f"  [{elapsed:.1f}s] State: {task_state} | Type: {task_type}")
-                    last_state = task_state
-                
-                # Track if we've seen our task start
-                if task_state == 'running' and (expected_task_type is None or task_type == expected_task_type):
-                    task_started = True
-                
-                # Check completion conditions
-                if task_state == 'completed':
-                    # Verify this is OUR task completing, not leftover from previous task
-                    if expected_task_type is not None and task_type != expected_task_type:
-                        # Wrong task - keep waiting
-                        time.sleep(poll_interval)
-                        continue
-                    
-                    reason = task_info.get('completion_reason', 'unknown')
-                    duration = task_info.get('task_duration', 0)
-                    print(f"✅ Task completed: {reason} (duration: {duration:.2f}s)")
-                    return {
-                        "success": True,
-                        "task_state": task_state,
-                        "completion_reason": reason,
-                        "duration": duration,
-                        "task_info": task_info
-                    }
-                
-                elif task_state == 'emergency_stop':
-                    reason = task_info.get('completion_reason', 'unknown')
-                    print(f"🚨 EMERGENCY STOP: {reason}")
-                    return {
-                        "success": False,
-                        "task_state": task_state,
-                        "completion_reason": reason,
-                        "error": "Emergency stop triggered",
-                        "task_info": task_info
-                    }
-                
-                elif task_state == 'idle' and time.time() - start_time > 1.0:
-                    # Only accept idle if we saw our task start and complete
-                    if task_started:
-                        print(f"⚠️  Returned to idle state")
-                        return {
-                            "success": True,
-                            "task_state": task_state,
-                            "completion_reason": "idle",
-                            "task_info": task_info
-                        }
-                    # Otherwise keep waiting - this might be leftover idle
-            
-            time.sleep(poll_interval)
-        
-        # Timeout
-        print(f"⏱️  Timeout after {timeout}s (last state: {last_state})")
-        return {
-            "success": False,
-            "task_state": last_state,
-            "error": f"Timeout after {timeout}s"
-        }
-    
-    def lift_platform_goto_height(self, target_height, timeout=60):
-        """
-        Platform goto specific height and wait for completion
-        
-        Args:
-            target_height: target height in mm
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and task info
-        """
-        print(f"🎯 [Platform] Moving to height: {target_height:.2f}mm")
-        
-        result = self.lift_send_command('platform', 'goto_height', target_height=target_height)
-        if not result['success']:
-            return result
-        
-        return self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='goto_height')
-    
-    def lift_platform_force_up(self, target_force, timeout=90):
-        """
-        Platform force-controlled up movement and wait for completion
-        
-        Args:
-            target_force: target force in Newtons
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and task info
-        """
-        print(f"⬆️  [Platform] Force-up to: {target_force:.1f}N")
-        
-        result = self.lift_send_command('platform', 'force_up', target_force=target_force)
-        if not result['success']:
-            return result
-        
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='force_up')
-        
-        # Get final sensor data if successful
-        if wait_result['success']:
-            sensor_data = self.lift_get_sensor_data()
-            if sensor_data:
-                height = sensor_data.get('height')
-                force = sensor_data.get('combined_force_sensor')
-                if height is not None and force is not None:
-                    print(f"   📊 Final: height={height:.2f}mm, force={force:.1f}N")
-                    wait_result['final_height'] = height
-                    wait_result['final_force'] = force
-        
-        return wait_result
-    
-    def lift_platform_force_down(self, target_force, timeout=90):
-        """
-        Platform force-controlled down movement and wait for completion
-        
-        Args:
-            target_force: target force in Newtons
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and task info
-        """
-        print(f"⬇️  [Platform] Force-down to: {target_force:.1f}N")
-        
-        result = self.lift_send_command('platform', 'force_down', target_force=target_force)
-        if not result['success']:
-            return result
-        
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='force_down')
-        
-        # Get final sensor data if successful
-        if wait_result['success']:
-            sensor_data = self.lift_get_sensor_data()
-            if sensor_data:
-                height = sensor_data.get('height')
-                force = sensor_data.get('combined_force_sensor')
-                if height is not None and force is not None:
-                    print(f"   📊 Final: height={height:.2f}mm, force={force:.1f}N")
-                    wait_result['final_height'] = height
-                    wait_result['final_force'] = force
-        
-        return wait_result
-    
-    def lift_pushrod_goto_height(self, target_height, timeout=30):
-        """
-        Pushrod goto specific height and wait for completion
-        
-        Args:
-            target_height: target height in mm
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and task info
-        """
-        print(f"🎯 [Pushrod] Moving to height: {target_height:.2f}mm")
-        
-        result = self.lift_send_command('pushrod', 'goto_height', target_height=target_height)
-        if not result['success']:
-            return result
-        
-        return self.lift_wait_task_complete('pushrod', timeout=timeout, expected_task_type='goto_height')
-    
-    def lift_platform_down_timed(self, duration):
-        """
-        Platform down for specified duration then stop and wait for completion
-        
-        Args:
-            duration: down duration in seconds (REQUIRED)
-        
-        Returns:
-            dict with success status
-        """
-        print(f"🔽 [Platform] Timed down for {duration:.1f}s")
-        
-        result = self.lift_send_command('platform', 'timed_down', duration=duration)
-        if not result['success']:
-            return result
-        
-        # Wait for timed operation to complete (duration + small buffer)
-        wait_timeout = duration + 5.0
-        wait_result = self.lift_wait_task_complete('platform', timeout=wait_timeout, expected_task_type='timed_up')
-        
-        if wait_result['success']:
-            print(f"✅ Platform timed down completed")
-        
-        return wait_result
-    
-    def lift_pushrod_down_timed(self, duration):
-        """
-        Pushrod down for specified duration then stop and wait for completion
-        
-        Args:
-            duration: down duration in seconds (REQUIRED)
-        
-        Returns:
-            dict with success status
-        """
-        print(f"🔽 [Pushrod] Timed down for {duration:.1f}s")
-        
-        result = self.lift_send_command('pushrod', 'timed_down', duration=duration)
-        if not result['success']:
-            return result
-        
-        # Wait for timed operation to complete (duration + small buffer)
-        wait_timeout = duration + 5.0
-        wait_result = self.lift_wait_task_complete('pushrod', timeout=wait_timeout, expected_task_type='timed_down')
-        
-        if wait_result['success']:
-            print(f"✅ Pushrod timed down completed")
-        
-        return wait_result
-    
-    def lift_get_sensor_data(self):
-        """
-        Get latest sensor data (height and force)
-        
-        Returns:
-            dict with sensor data or None on error
-        """
-        try:
-            url = f"{self.lift_web_base}/api/latest"
-            response = requests.get(url, timeout=2)
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                return None
-                
-        except Exception as e:
-            return None
-    
-    def lift_platform_down_to_base(self, timeout=30):
-        """
-        Platform down until auto-stop at base (832mm)
-        Task will auto-complete when height < 832mm
-        
-        Args:
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and final height
-        """
-        print(f"🔽 [Platform] Descending to base (auto-stop at 832mm)")
-        
-        result = self.lift_send_command('platform', 'down')
-        if not result['success']:
-            return result
-        
-        # Wait for task to auto-complete
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='manual_down')
-        
-        if wait_result['success']:
-            # Get final height
-            sensor_data = self.lift_get_sensor_data()
-            if sensor_data and 'height' in sensor_data:
-                final_height = sensor_data['height']
-                print(f"   📍 Base height: {final_height:.2f}mm")
-                wait_result['height'] = final_height
-        
-        return wait_result
+class URExecuteBase:
+    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, rs485_port=54321):
 
-
-# ═══════════════════════════════════════════════════════════════════════
-# URExecuteBase - Robot + Lift Platform Integration (requires ur15_robot_arm)
-# ═══════════════════════════════════════════════════════════════════════
-try:
-    from ur15_robot_arm.ur15 import UR15Robot
-    UR15_AVAILABLE = True
-except ImportError:
-    UR15_AVAILABLE = False
-    print("⚠️  Warning: ur15_robot_arm module not available - URExecuteBase will not work")
-
-
-class URExecuteBase(LiftPlatformController):
-    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, rs485_port=54321, base_url="http://192.168.1.3:8090"):
-        # Initialize parent class (LiftPlatformController)
-        super().__init__(base_url=base_url)
-        
-        # Check if robot module is available
-        if not UR15_AVAILABLE:
-            raise ImportError(
-                "ur15_robot_arm module not available. "
-                "Use LiftPlatformController instead for lift-only operations."
-            )
-        
-        # Robot connection parameters
+        # =========================== Configurable Parameters ===========================
+        # IP address and port for UR15 robot
         self.robot_ip = robot_ip
         self.robot_port = robot_port
-        self.robot = None
         
-        # RS485 connection parameters
+        # URL for Lift platform web service
+        self.lift_platform_web_url = "http://192.168.1.3:8090"
+        
+        # Port for RS485 connection of UR15
         self.rs485_port = rs485_port
-        self.rs485_socket = None
-        
+
         # Define the path to camera parameters
         self.camera_params_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -454,16 +33,25 @@ class URExecuteBase(LiftPlatformController):
         self.data_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
-            "ur_test_data"
+            "ur_locate_crack_data"
         )
         
         # Result directory path (for storing results)
         self.result_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "temp",
-            "ur_test_result"
+            "ur_locate_crack_result"
         )
         
+        # File names for coordinate system data
+        self.COORD_SYSTEM_RESULT_FILENAME = "log_local_coordinate_system_result.json"
+
+        # ========================= Instance variables =========================
+        self.robot = None
+
+        self.rs485_socket = None
+        
+        # ========================= Other variables =========================
         # Initialize parameter storage
         self.camera_matrix = None
         self.distortion_coefficients = None
@@ -472,6 +60,11 @@ class URExecuteBase(LiftPlatformController):
         # Local coordinate system storage
         self.local_transformation_matrix = None
         self.local_origin = None
+        
+        # Crack coordinate system storage
+        self.crack_coord_origin = None
+        self.crack_coord_transformation = None
+        self.crack_coord_pose = None
         
         # Reference pose storage
         self.ref_joint_angles = None
@@ -482,6 +75,7 @@ class URExecuteBase(LiftPlatformController):
         # Task position information storage
         self.task_position_offset = None
 
+        # ========================= Initialization =========================
         # Initialize the robot connection
         self._initialize_robot()
         
@@ -493,13 +87,13 @@ class URExecuteBase(LiftPlatformController):
         self._load_camera_extrinsic()
         self._load_estimated_kp_coordinates()
         self._load_local_coordinate_system()
+        self._load_crack_local_coordinate_system()
         self._load_ref_joint_angles()
         self._load_task_position_information()
     
     def _load_camera_intrinsic(self):
         """
         Load camera intrinsic parameters from ur15_cam_calibration_result.json
-        Returns: True if successful, False otherwise
         """
         intrinsic_file = os.path.join(
             self.camera_params_dir, 
@@ -534,7 +128,6 @@ class URExecuteBase(LiftPlatformController):
     def _load_camera_extrinsic(self):
         """
         Load camera extrinsic parameters from ur15_cam_eye_in_hand_result.json
-        Returns: True if successful, False otherwise
         """
         extrinsic_file = os.path.join(
             self.camera_params_dir, 
@@ -597,8 +190,6 @@ class URExecuteBase(LiftPlatformController):
     def _load_estimated_kp_coordinates(self):
         """
         Load estimated keypoints coordinates from log_estimation_result.json
-        Returns: List of keypoint dictionaries if successful, None otherwise
-                 Each keypoint dict contains: keypoint_index, x, y, z, num_views, residual_norm
         """
         estimation_file = os.path.join(
             self.result_dir,
@@ -753,7 +344,160 @@ class URExecuteBase(LiftPlatformController):
         except Exception as e:
             print(f"Error loading task position information: {e}")
             return None
+
+    def _load_crack_local_coordinate_system(self, coord_system_file_path=None):
+        """
+        Load the local coordinate system established for crack detection/tracking
+        """
+        try:
+            print("\n" + "="*50)
+            print("Loading Crack Local Coordinate System")
+            print("="*50)
+            
+            # Determine file path
+            if coord_system_file_path is None:
+                coord_system_file_path = os.path.join(self.result_dir, self.COORD_SYSTEM_RESULT_FILENAME)
+            
+            # Check if file exists
+            if not os.path.exists(coord_system_file_path):
+                error_msg = f"Coordinate system file not found: {coord_system_file_path}"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            print(f"📖 Loading from: {coord_system_file_path}")
+            
+            # Load coordinate system data
+            with open(coord_system_file_path, 'r') as f:
+                coord_data = json.load(f)
+            
+            # Validate required fields
+            required_fields = ['origin', 'transformation_matrix', 'pose_representation', 'axes']
+            missing_fields = [field for field in required_fields if field not in coord_data]
+            
+            if missing_fields:
+                error_msg = f"Missing required fields in coordinate system file: {missing_fields}"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            # Extract origin coordinates
+            origin = coord_data['origin']
+            origin_point = np.array([origin['x'], origin['y'], origin['z']])
+            
+            # Extract transformation matrix
+            transformation_matrix = np.array(coord_data['transformation_matrix'])
+            
+            # Validate transformation matrix shape
+            if transformation_matrix.shape != (4, 4):
+                error_msg = f"Invalid transformation matrix shape: {transformation_matrix.shape} (expected 4x4)"
+                print(f"✗ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'origin': None,
+                    'transformation_matrix': None,
+                    'pose_representation': None,
+                    'axes': None
+                }
+            
+            # Extract pose representation
+            pose_repr = coord_data['pose_representation']
+            
+            # Extract axes information
+            axes_info = coord_data['axes']
+            
+            # ========== Store to instance variables for easy access ==========
+            self.crack_coord_origin = origin_point.copy()
+            self.crack_coord_transformation = transformation_matrix.copy()
+            self.crack_coord_pose = pose_repr.copy()
+            
+            # Print loaded information
+            print("✓ Successfully loaded coordinate system:")
+            print(f"  Origin: ({origin_point[0]:.6f}, {origin_point[1]:.6f}, {origin_point[2]:.6f}) m")
+
+            # Print axes information
+            x_axis = axes_info['x_axis']['vector']
+            y_axis = axes_info['y_axis']['vector']
+            z_axis = axes_info['z_axis']['vector']
+            
+            print(f"  X-axis: [{x_axis[0]:.4f}, {x_axis[1]:.4f}, {x_axis[2]:.4f}] ({axes_info['x_axis']['source']})")
+            print(f"  Y-axis: [{y_axis[0]:.4f}, {y_axis[1]:.4f}, {y_axis[2]:.4f}] ({axes_info['y_axis']['source']})")
+            print(f"  Z-axis: [{z_axis[0]:.4f}, {z_axis[1]:.4f}, {z_axis[2]:.4f}] ({axes_info['z_axis']['source']})")
+                        
+            print("="*50)
+            
+            # Return successful result
+            return {
+                'success': True,
+                'origin': origin,
+                'origin_array': origin_point,
+                'transformation_matrix': transformation_matrix,
+                'pose_representation': pose_repr,
+                'axes': axes_info,
+                'full_data': coord_data,
+                'file_path': coord_system_file_path,
+                'error': None
+            }
+            
+        except FileNotFoundError:
+            error_msg = f"Coordinate system file not found: {coord_system_file_path}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except json.JSONDecodeError as e:
+            error_msg = f"Invalid JSON format in coordinate system file: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except KeyError as e:
+            error_msg = f"Missing key in coordinate system file: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
+        except Exception as e:
+            error_msg = f"Error loading coordinate system: {e}"
+            print(f"✗ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'origin': None,
+                'transformation_matrix': None,
+                'pose_representation': None,
+                'axes': None
+            }
     
+# ============================= Robot Movement and Control Methods =============================
     def movej_to_zero_state(self):
         """
         Move robot to zero state position
@@ -766,7 +510,8 @@ class URExecuteBase(LiftPlatformController):
         zero_position = [0, -1.57, 0, -1.57, 0, 0]
         print("Moving robot to zero state position...")
         
-        res = self.robot.movej(zero_position, a=0.5, v=0.3)
+        res = self.robot.movej(zero_position, a=0.5, v=0.5)
+        time.sleep(0.5)
         
         if res == 0:
             print("Robot moved to zero state successfully")
@@ -836,7 +581,66 @@ class URExecuteBase(LiftPlatformController):
               f"{position_base[1]:.6f}, {position_base[2]:.6f})")
         
         return position_base
-    
+
+    def movel_in_crack_frame(self, offset):
+        """
+        Move robot based on "offset" (dx, dy, dz) in crack local coordinate system.   
+        Args:
+            offset: List/tuple [dx, dy, dz] in crack local coordinate system (meters)
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if not hasattr(self, 'crack_coord_transformation') or self.crack_coord_transformation is None:
+            print("Crack local coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Parse offset parameter - must be a 3D array
+        if isinstance(offset, (list, tuple)) and len(offset) == 3:
+            crack_local_displacement = np.array(offset)
+        else:
+            print("Invalid offset parameter. Must be [dx, dy, dz] in crack local coordinate system")
+            return -1
+        
+        # Extract rotation matrix from crack local coordinate system transformation matrix (3x3)
+        crack_local_rotation = self.crack_coord_transformation[:3, :3]
+        
+        # Transform displacement from crack local coordinate system to base coordinate system
+        # displacement_base = R_crack_local_to_base * displacement_crack_local
+        base_displacement = crack_local_rotation @ crack_local_displacement
+        
+        # Calculate target pose in base coordinate system
+        target_pose = [
+            current_pose[0] + base_displacement[0],  # x
+            current_pose[1] + base_displacement[1],  # y
+            current_pose[2] + base_displacement[2],  # z
+            current_pose[3],                         # rx (keep current orientation)
+            current_pose[4],                         # ry
+            current_pose[5]                          # rz
+        ]
+        
+        print(f"\n[INFO] Moving robot: {crack_local_displacement} in crack local frame...")
+        print(f"Crack local displacement (crack local frame): {crack_local_displacement}")
+        print(f"Base displacement (base frame): {base_displacement}")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.05)
+        time.sleep(0.5)
+
+        if res == 0:
+            print("[INFO] Successfully moved robot")
+        else:
+            print(f"[ERROR] Failed to move robot (error code: {res})")
+        
+        return res
+
+# ============================ Quick Changer Control Methods =============================
     def ur_lock_quick_changer(self):
         """
         Lock the quick changer  via RS485 command
@@ -890,395 +694,140 @@ class URExecuteBase(LiftPlatformController):
         except Exception as e:
             print(f"✗ Failed to unlock quick changer: {e}")
             return False
-    
-    # ═══════════════════════════════════════════════════════════════
-    # Lift Robot HTTP Control Methods (with status monitoring)
-    # ═══════════════════════════════════════════════════════════════
-    
-    def lift_send_command(self, target, command, **kwargs):
+
+# =========================== Lift Platform Control Methods =============================
+    def lift_platform_to_base(self):
         """
-        Send command to lift platform/pushrod via HTTP POST
+        Move the lift platform downward (pulse relay).
         
-        Args:
-            target: 'platform' or 'pushrod'
-            command: command name (up, down, stop, goto_height, force_up, force_down, etc.)
-            **kwargs: additional command parameters (target_height, target_force, duration, etc.)
-        
-        Returns:
-            dict with 'success' boolean and optional 'error' message
+        Sends a POST request to the lift web service to trigger downward motion.
         """
+        print("\n⬇️  Lift Platform Down")
+        print("   Sending DOWN command to lift platform...")
+        
+        url = f"{self.lift_platform_web_url}/api/cmd"
+        payload = {"command": "down", "target": "platform"}
+        headers = {"Content-Type": "application/json"}
+        
         try:
-            url = f"{self.lift_web_base}/api/cmd"
-            payload = {
-                'command': command,
-                'target': target,
-                **kwargs
-            }
-            
-            # Format kwargs for display
-            kwargs_str = ", ".join([f"{k}={v}" for k, v in kwargs.items()])
-            if kwargs_str:
-                print(f"📤 [{target}] {command} ({kwargs_str})")
+            response = requests.post(url, json=payload, headers=headers, timeout=5)
+            if response.ok:
+                print("✅ Lift platform DOWN command sent successfully")
+                return response.json()
             else:
-                print(f"📤 [{target}] {command}")
-            
-            response = requests.post(url, json=payload, timeout=5)
-            
-            if response.status_code == 200:
-                return {"success": True, "response": response.json()}
-            else:
-                error_msg = f"HTTP {response.status_code}: {response.text}"
-                print(f"❌ Command failed: {error_msg}")
-                return {"success": False, "error": error_msg}
-                
+                print(f"❌ Lift platform DOWN command failed: HTTP {response.status_code}")
+                return {"success": False, "status_code": response.status_code}
+        except requests.exceptions.ConnectionError:
+            print("❌ Cannot connect to lift platform web service")
+            return {"success": False, "error": "Connection failed"}
         except requests.exceptions.Timeout:
-            print("❌ Command request timeout")
-            return {"success": False, "error": "Request timeout"}
+            print("❌ Timeout sending lift platform DOWN command")
+            return {"success": False, "error": "Timeout"}
         except Exception as e:
-            print(f"❌ Command request error: {e}")
+            print(f"❌ Error sending lift platform DOWN command: {e}")
             return {"success": False, "error": str(e)}
-    
-    def lift_send_stop(self, target):
+
+    def pushrod_to_base(self):
         """
-        Send stop command to platform or pushrod (convenience wrapper)
+        Move pushrod to 'base' position (home/retracted position).
         
-        Args:
-            target: 'platform' or 'pushrod'
+        Sends goto_point command with point='base'.
+        """
+        print("\n🏠 Pushrod Go to Base")
+        print("   Moving pushrod to base position...")
         
-        Returns:
-            dict with 'success' boolean
-        """
-        return self.lift_send_command(target, 'stop')
-    
-    def lift_reset_all(self):
-        """
-        EMERGENCY RESET: Disable all controls and clear all relays
-        This is a critical safety function that:
-        1. Disables all control modes (height auto, force control)
-        2. Resets all relays to 0 (platform and pushrod)
+        url = f"{self.lift_platform_web_url}/api/cmd"
+        payload = {"command": "goto_point", "target": "pushrod", "point": "base"}
+        headers = {"Content-Type": "application/json"}
         
-        Use when system is in an unknown state or needs emergency stop.
-        
-        Returns:
-            dict with 'success' boolean
-        """
-        print("🔴 EMERGENCY RESET: Clearing all relays and disabling controls...")
-        result = self.lift_send_command('platform', 'reset')
-        if result['success']:
-            print("✅ System reset complete - all relays cleared")
-        else:
-            print(f"❌ Reset failed: {result.get('error')}")
-        return result
-    
-    def lift_get_status(self):
-        """
-        Query current status of platform and pushrod via HTTP GET
-        
-        Returns:
-            dict with 'platform' and 'pushrod' status, or None on error
-        """
         try:
-            url = f"{self.lift_web_base}/api/status"
-            response = requests.get(url, timeout=2)
-            
-            if response.status_code == 200:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            if response.ok:
+                print("✅ Pushrod 'base' command sent successfully")
                 return response.json()
             else:
-                print(f"❌ Status query failed: HTTP {response.status_code}")
-                return None
-                
+                print(f"❌ Pushrod goto 'base' failed: HTTP {response.status_code}")
+                return {"success": False, "status_code": response.status_code}
+        except requests.exceptions.ConnectionError:
+            print("❌ Cannot connect to pushrod web service")
+            return {"success": False, "error": "Connection failed"}
+        except requests.exceptions.Timeout:
+            print("❌ Timeout sending pushrod goto command")
+            return {"success": False, "error": "Timeout"}
         except Exception as e:
-            print(f"❌ Status query error: {e}")
-            return None
-    
-    def lift_wait_task_complete(self, target, timeout=90, poll_interval=0.2, expected_task_type=None):
+            print(f"❌ Error sending pushrod goto command: {e}")
+            return {"success": False, "error": str(e)}
+
+    def lift_platform_coarse_adjust(self, target_height=900.0):
         """
-        Wait for platform or pushrod task to complete by polling status
+        Platform coarse adjustment - Move lift platform to a specific height.
         
         Args:
-            target: 'platform' or 'pushrod'
-            timeout: maximum wait time in seconds
-            poll_interval: status polling interval in seconds
-        
-        Returns:
-            dict with 'success', 'task_state', 'completion_reason', 'duration', 'task_info'
+            target_height: Target height in millimeters (default: 900.0mm)
         """
-        start_time = time.time()
-        last_state = None
-        task_started = False  # Track if we've seen our task start
+        print(f"\n🎯 Platform Coarse Adjustment: {target_height}mm")
         
-        print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
-        
-        while time.time() - start_time < timeout:
-            status = self.lift_get_status()
-            
-            if status and target in status:
-                task_info = status[target]
-                task_state = task_info.get('task_state', 'unknown')
-                task_type = task_info.get('task_type', 'unknown')
-                
-                # Print state changes
-                if task_state != last_state:
-                    elapsed = time.time() - start_time
-                    print(f"  [{elapsed:.1f}s] State: {task_state} | Type: {task_type}")
-                    last_state = task_state
-                
-                # Track if we've seen our task start
-                if task_state == 'running' and (expected_task_type is None or task_type == expected_task_type):
-                    task_started = True
-                
-                # Check completion conditions
-                if task_state == 'completed':
-                    # Verify this is OUR task completing, not leftover from previous task
-                    if expected_task_type is not None and task_type != expected_task_type:
-                        # Wrong task - keep waiting
-                        time.sleep(poll_interval)
-                        continue
-                    
-                    reason = task_info.get('completion_reason', 'unknown')
-                    duration = task_info.get('task_duration', 0)
-                    print(f"✅ Task completed: {reason} (duration: {duration:.2f}s)")
-                    return {
-                        "success": True,
-                        "task_state": task_state,
-                        "completion_reason": reason,
-                        "duration": duration,
-                        "task_info": task_info
-                    }
-                
-                elif task_state == 'emergency_stop':
-                    reason = task_info.get('completion_reason', 'unknown')
-                    print(f"🚨 EMERGENCY STOP: {reason}")
-                    return {
-                        "success": False,
-                        "task_state": task_state,
-                        "completion_reason": reason,
-                        "error": "Emergency stop triggered",
-                        "task_info": task_info
-                    }
-                
-                elif task_state == 'idle' and time.time() - start_time > 1.0:
-                    # Only accept idle if we saw our task start and complete
-                    if task_started:
-                        print(f"⚠️  Returned to idle state")
-                        return {
-                            "success": True,
-                            "task_state": task_state,
-                            "completion_reason": "idle",
-                            "task_info": task_info
-                        }
-                    # Otherwise keep waiting - this might be leftover idle
-            
-            time.sleep(poll_interval)
-        
-        # Timeout
-        print(f"⏱️  Timeout after {timeout}s (last state: {last_state})")
-        return {
-            "success": False,
-            "task_state": last_state,
-            "error": f"Timeout after {timeout}s"
+        url = f"{self.lift_platform_web_url}/api/cmd"
+        payload = {
+            "command": "goto_height",
+            "target": "platform",
+            "target_height": target_height
         }
-    
-    def lift_platform_goto_height(self, target_height, timeout=60):
-        """
-        Platform goto specific height and wait for completion
+        headers = {"Content-Type": "application/json"}
         
-        Args:
-            target_height: target height in mm
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and task info
-        """
-        print(f"🎯 [Platform] Moving to height: {target_height:.2f}mm")
-        
-        result = self.lift_send_command('platform', 'goto_height', target_height=target_height)
-        if not result['success']:
-            return result
-        
-        return self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='goto_height')
-    
-    def lift_platform_force_up(self, target_force, timeout=90):
-        """
-        Platform force-controlled up movement and wait for completion
-        
-        Args:
-            target_force: target force in Newtons
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and task info
-        """
-        print(f"⬆️  [Platform] Force-up to: {target_force:.1f}N")
-        
-        result = self.lift_send_command('platform', 'force_up', target_force=target_force)
-        if not result['success']:
-            return result
-        
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='force_up')
-        
-        # Get final sensor data if successful
-        if wait_result['success']:
-            sensor_data = self.lift_get_sensor_data()
-            if sensor_data:
-                height = sensor_data.get('height')
-                force = sensor_data.get('combined_force_sensor')
-                if height is not None and force is not None:
-                    print(f"   📊 Final: height={height:.2f}mm, force={force:.1f}N")
-                    wait_result['final_height'] = height
-                    wait_result['final_force'] = force
-        
-        return wait_result
-    
-    def lift_platform_force_down(self, target_force, timeout=90):
-        """
-        Platform force-controlled down movement and wait for completion
-        
-        Args:
-            target_force: target force in Newtons
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and task info
-        """
-        print(f"⬇️  [Platform] Force-down to: {target_force:.1f}N")
-        
-        result = self.lift_send_command('platform', 'force_down', target_force=target_force)
-        if not result['success']:
-            return result
-        
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='force_down')
-        
-        # Get final sensor data if successful
-        if wait_result['success']:
-            sensor_data = self.lift_get_sensor_data()
-            if sensor_data:
-                height = sensor_data.get('height')
-                force = sensor_data.get('combined_force_sensor')
-                if height is not None and force is not None:
-                    print(f"   📊 Final: height={height:.2f}mm, force={force:.1f}N")
-                    wait_result['final_height'] = height
-                    wait_result['final_force'] = force
-        
-        return wait_result
-    
-    def lift_pushrod_goto_height(self, target_height, timeout=30):
-        """
-        Pushrod goto specific height and wait for completion
-        
-        Args:
-            target_height: target height in mm
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and task info
-        """
-        print(f"🎯 [Pushrod] Moving to height: {target_height:.2f}mm")
-        
-        result = self.lift_send_command('pushrod', 'goto_height', target_height=target_height)
-        if not result['success']:
-            return result
-        
-        return self.lift_wait_task_complete('pushrod', timeout=timeout, expected_task_type='goto_height')
-    
-    def lift_platform_down_timed(self, duration):
-        """
-        Platform down for specified duration then stop and wait for completion
-        
-        Args:
-            duration: down duration in seconds (REQUIRED)
-        
-        Returns:
-            dict with success status
-        """
-        print(f"🔽 [Platform] Timed down for {duration:.1f}s")
-        
-        result = self.lift_send_command('platform', 'timed_down', duration=duration)
-        if not result['success']:
-            return result
-        
-        # Wait for timed operation to complete (duration + small buffer)
-        wait_timeout = duration + 5.0
-        wait_result = self.lift_wait_task_complete('platform', timeout=wait_timeout, expected_task_type='timed_up')
-        
-        if wait_result['success']:
-            print(f"✅ Platform timed down completed")
-        
-        return wait_result
-    
-    def lift_pushrod_down_timed(self, duration):
-        """
-        Pushrod down for specified duration then stop and wait for completion
-        
-        Args:
-            duration: down duration in seconds (REQUIRED)
-        
-        Returns:
-            dict with success status
-        """
-        print(f"🔽 [Pushrod] Timed down for {duration:.1f}s")
-        
-        result = self.lift_send_command('pushrod', 'timed_down', duration=duration)
-        if not result['success']:
-            return result
-        
-        # Wait for timed operation to complete (duration + small buffer)
-        wait_timeout = duration + 5.0
-        wait_result = self.lift_wait_task_complete('pushrod', timeout=wait_timeout, expected_task_type='timed_down')
-        
-        if wait_result['success']:
-            print(f"✅ Pushrod timed down completed")
-        
-        return wait_result
-    
-    def lift_get_sensor_data(self):
-        """
-        Get latest sensor data (height and force)
-        
-        Returns:
-            dict with sensor data or None on error
-        """
         try:
-            url = f"{self.lift_web_base}/api/latest"
-            response = requests.get(url, timeout=2)
-            
-            if response.status_code == 200:
+            response = requests.post(url, json=payload, headers=headers, timeout=5)
+            if response.ok:
+                print(f"✅ Platform coarse adjustment command sent successfully: {target_height}mm")
                 return response.json()
             else:
-                return None
-                
+                print(f"❌ Platform coarse adjustment command failed: HTTP {response.status_code}")
+                return {"success": False, "status_code": response.status_code}
+        except requests.exceptions.ConnectionError:
+            print("❌ Cannot connect to lift platform web service")
+            return {"success": False, "error": "Connection failed"}
+        except requests.exceptions.Timeout:
+            print("❌ Platform coarse adjustment command timeout")
+            return {"success": False, "error": "Timeout"}
         except Exception as e:
-            return None
-    
-    def lift_platform_down_to_base(self, timeout=30):
+            print(f"❌ Platform coarse adjustment command error: {e}")
+            return {"success": False, "error": str(e)}
+
+
+    def pushrod_fine_adjust(self, target_height=900.0):
         """
-        Platform down until auto-stop at base (832mm)
-        Task will auto-complete when height < 832mm
+        Pushrod fine adjustment - Precise height control using pushrod.
         
         Args:
-            timeout: maximum wait time in seconds
-        
-        Returns:
-            dict with success status and final height
+            target_height: Target height in millimeters (default: 900.0mm)
         """
-        print(f"🔽 [Platform] Descending to base (auto-stop at 832mm)")
+        print(f"\n🔧 Pushrod Fine Adjustment: {target_height}mm")
         
-        result = self.lift_send_command('platform', 'down')
-        if not result['success']:
-            return result
+        url = f"{self.lift_platform_web_url}/api/cmd"
+        payload = {
+            "command": "goto_height",
+            "target": "pushrod",
+            "target_height": target_height
+        }
+        headers = {"Content-Type": "application/json"}
         
-        # Wait for task to auto-complete
-        wait_result = self.lift_wait_task_complete('platform', timeout=timeout, expected_task_type='manual_down')
-        
-        if wait_result['success']:
-            # Get final height
-            sensor_data = self.lift_get_sensor_data()
-            if sensor_data and 'height' in sensor_data:
-                final_height = sensor_data['height']
-                print(f"   � Base height: {final_height:.2f}mm")
-                wait_result['height'] = final_height
-        
-        return wait_result
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=5)
+            if response.ok:
+                print(f"✅ Pushrod fine adjustment command sent successfully: {target_height}mm")
+                return response.json()
+            else:
+                print(f"❌ Pushrod fine adjustment command failed: HTTP {response.status_code}")
+                return {"success": False, "status_code": response.status_code}
+        except requests.exceptions.ConnectionError:
+            print("❌ Cannot connect to lift platform web service")
+            return {"success": False, "error": "Connection failed"}
+        except requests.exceptions.Timeout:
+            print("❌ Pushrod fine adjustment command timeout")
+            return {"success": False, "error": "Timeout"}
+        except Exception as e:
+            print(f"❌ Pushrod fine adjustment command error: {e}")
+            return {"success": False, "error": str(e)}
 
 
 if __name__ == "__main__":

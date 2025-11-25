@@ -28,6 +28,7 @@ import json
 import numpy as np
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 import logging
@@ -437,6 +438,7 @@ class CabinetFrameBuilder:
         # Create results dictionary with requested fields
         results = {
             'success': True,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
             'estimated_cabinet_xyz_in_base': [
                 float(self.origin[0]),
                 float(self.origin[1]), 

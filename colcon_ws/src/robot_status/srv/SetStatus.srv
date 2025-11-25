@@ -1,0 +1,6 @@
+string ns              # Robot or namespace identifier (e.g., "robot1", "robot2", "shared")
+string key             # Status key (e.g., "pose", "battery", "gripper_state")
+string value           # JSON-encoded value
+---
+bool success           # Whether the operation succeeded
+string message         # Error message or confirmation
