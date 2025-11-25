@@ -74,6 +74,7 @@ class UR15WebNode(Node):
         self.declare_parameter('ur15_port', 30002)
         self.declare_parameter('dataset_dir', '/tmp/dataset')
         self.declare_parameter('calib_data_dir', '/tmp/ur15_cam_calibration_data')
+        self.declare_parameter('calib_result_dir', '/tmp/ur15_cam_calibration_result')
         self.declare_parameter('chessboard_config', '/tmp/ur15_cam_calibration_data/chessboard_config.json')
         
         # Get parameters
@@ -83,6 +84,7 @@ class UR15WebNode(Node):
         self.ur15_port = self.get_parameter('ur15_port').value
         self.dataset_dir = self.get_parameter('dataset_dir').value
         self.calibration_data_dir = self.get_parameter('calib_data_dir').value
+        self.calibration_result_dir = self.get_parameter('calib_result_dir').value
         self.chessboard_config = self.get_parameter('chessboard_config').value
         
         # Use only the specified port, clear it if occupied
@@ -1921,12 +1923,8 @@ class UR15WebNode(Node):
                         'message': f'Script not found: {script_path}'
                     })
                 
-                # Calculate output directory: CalibData path's parent directory + '/ur15_cam_calibration_result'
-                calib_data_parent = os.path.dirname(self.calibration_data_dir)
-                output_dir = os.path.join(calib_data_parent, 'ur15_cam_calibration_result')
-                
                 self.get_logger().info(f"Calibration data dir: {self.calibration_data_dir}")
-                self.get_logger().info(f"Output dir: {output_dir}")
+                self.get_logger().info(f"Output dir: {self.calibration_result_dir}")
                 
                 # Prepare log file path
                 log_file_path = os.path.join(self.calibration_data_dir if hasattr(self, 'calibration_data_dir') else '/tmp', 'calibrate_cam_log.txt')
@@ -1937,7 +1935,7 @@ class UR15WebNode(Node):
                 # Prepare command with config-file parameter
                 cmd = ['python3', script_path, 
                        '--data-dir', self.calibration_data_dir,
-                       '--output-dir', output_dir,
+                       '--output-dir', self.calibration_result_dir,
                        '--config-file', config_file_path,
                        '--verbose']
                 
@@ -1979,7 +1977,7 @@ class UR15WebNode(Node):
                                 self.push_web_log("📥 Auto-loading calibration parameters...", 'info')
                                 
                                 # Load intrinsic parameters
-                                camera_params_dir = os.path.join(output_dir, 'ur15_camera_parameters')
+                                camera_params_dir = os.path.join(self.calibration_result_dir, 'ur15_camera_parameters')
                                 intrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
                                 extrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
                                 
@@ -2097,7 +2095,7 @@ class UR15WebNode(Node):
                 self.get_logger().info(f"Started camera calibration monitoring thread")
                 self.get_logger().info(f"  Data directory: {self.calibration_data_dir}")
                 self.get_logger().info(f"  Config file: {config_file_path}")
-                self.get_logger().info(f"  Output directory: {output_dir}")
+                self.get_logger().info(f"  Output directory: {self.calibration_result_dir}")
                 self.get_logger().info(f"  Script output will be logged to: {log_file_path}")
                 
                 # Push start message to web log
@@ -2109,7 +2107,7 @@ class UR15WebNode(Node):
                     'success': True,
                     'message': 'Camera calibration script started. Results will be auto-loaded when complete.',
                     'config_file': self._simplify_path(config_file_path),
-                    'output_dir': self._simplify_path(output_dir),
+                    'output_dir': self._simplify_path(self.calibration_result_dir),
                     'log_file': self._simplify_path(log_file_path)
                 })
                 
@@ -3535,13 +3533,11 @@ class UR15WebNode(Node):
             from common.workspace_utils import get_temp_directory
             
             try:
-                temp_dir = get_temp_directory()
-                
                 if report_type == 'eye_in_hand':
-                    report_dir = os.path.join(temp_dir, 'ur15_cam_calibration_result', 
+                    report_dir = os.path.join(self.calibration_result_dir, 
                                             'ur15_eye_in_hand_calibration_report')
                 elif report_type == 'intrinsic':
-                    report_dir = os.path.join(temp_dir, 'ur15_cam_calibration_result', 
+                    report_dir = os.path.join(self.calibration_result_dir, 
                                             'ur15_intrinsic_calibration_report')
                 else:
                     return jsonify({'error': 'Invalid report type'}), 404
@@ -3563,14 +3559,12 @@ class UR15WebNode(Node):
             from common.workspace_utils import get_temp_directory
             
             try:
-                temp_dir = get_temp_directory()
-                
                 if report_type == 'eye_in_hand':
-                    report_path = os.path.join(temp_dir, 'ur15_cam_calibration_result', 
+                    report_path = os.path.join(self.calibration_result_dir, 
                                              'ur15_eye_in_hand_calibration_report', 
                                              'calibration_report.html')
                 elif report_type == 'intrinsic':
-                    report_path = os.path.join(temp_dir, 'ur15_cam_calibration_result', 
+                    report_path = os.path.join(self.calibration_result_dir,
                                              'ur15_intrinsic_calibration_report', 
                                              'calibration_report.html')
                 else:

@@ -79,6 +79,7 @@ ur15:
     camera_topic: "/ur15_camera/image_raw"
     dataset_path: "dataset"
     calibration_data_path: "temp/ur15_cam_calibration_data"
+    calibration_result_path: "temp/ur15_cam_calibration_result"
     chessboard_config_path: "temp/ur15_cam_calibration_data/chessboard_config.json"
     rack_positions: "temp/ur15_rack_positions.json"
   

@@ -34,6 +34,11 @@ def generate_launch_description():
     if not calib_data_path_obj.is_absolute():
         calib_data_path = str(workspace_root / calib_data_path)
     
+    calib_result_path = ur15_config.get('web.calibration_result_path')
+    calib_result_path_obj = Path(calib_result_path)
+    if not calib_result_path_obj.is_absolute():
+        calib_result_path = str(workspace_root / calib_result_path)
+    
     chessboard_config_path = ur15_config.get('web.chessboard_config_path')
     chessboard_config_path_obj = Path(chessboard_config_path)
     if not chessboard_config_path_obj.is_absolute():
@@ -76,6 +81,12 @@ def generate_launch_description():
         description='Directory for camera calibration data'
     )
     
+    calib_result_dir_arg = DeclareLaunchArgument(
+        'calib_result_dir',
+        default_value=calib_result_path,
+        description='Directory for camera calibration results'
+    )
+    
     chessboard_config_arg = DeclareLaunchArgument(
         'chessboard_config',
         default_value=chessboard_config_path,
@@ -89,6 +100,7 @@ def generate_launch_description():
     ur15_port = LaunchConfiguration('ur15_port')
     dataset_dir = LaunchConfiguration('dataset_dir')
     calib_data_dir = LaunchConfiguration('calib_data_dir')
+    calib_result_dir = LaunchConfiguration('calib_result_dir')
     chessboard_config = LaunchConfiguration('chessboard_config')
     
     # UR15 web node
@@ -104,6 +116,7 @@ def generate_launch_description():
             'ur15_port': ur15_port,
             'dataset_dir': dataset_dir,
             'calib_data_dir': calib_data_dir,
+            'calib_result_dir': calib_result_dir,
             'chessboard_config': chessboard_config
         }]
     )
@@ -116,6 +129,7 @@ def generate_launch_description():
         ur15_port_arg,
         dataset_dir_arg,
         calib_data_dir_arg,
+        calib_result_dir_arg,
         chessboard_config_arg,
         
         # Launch nodes
