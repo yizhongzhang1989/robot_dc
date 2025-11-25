@@ -248,24 +248,32 @@ HTML_TEMPLATE = '''
         }
         .status-timestamp {
             font-size: 0.75em;
-            color: #666;
-            font-weight: normal;
-            padding: 2px 8px;
-            border-radius: 3px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 4px;
             margin-left: 8px;
             display: inline-block;
         }
+        .status-timestamp.very-fresh {
+            color: #b93c00;
+            background: #fdd7c5;
+            border: 1px solid #f28b5d;
+            font-weight: 700;
+        }
         .status-timestamp.fresh {
-            color: #5f6368;
-            background: #f1f3f4;
+            color: #0d652d;
+            background: #a8dab5;
+            border: 1px solid #5cb85c;
         }
         .status-timestamp.stale {
-            color: #ea8600;
-            background: #fef7e0;
+            color: #1a73e8;
+            background: #d2e3fc;
+            border: 1px solid #8ab4f8;
         }
         .status-timestamp.very-stale {
-            color: #d93025;
-            background: #fce8e6;
+            color: #9aa0a6;
+            background: #f1f3f4;
+            border: 1px solid #dadce0;
         }
         .status-value {
             background: #fff;
@@ -279,17 +287,19 @@ HTML_TEMPLATE = '''
             word-break: break-word;
         }
         .delete-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
+            background: #f1f3f4;
+            color: #5f6368;
+            border: 1px solid #dadce0;
             padding: 4px 12px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 0.85em;
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
         .delete-btn:hover {
-            background: #c82333;
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
         }
         .namespace-header {
             display: flex;
@@ -298,17 +308,19 @@ HTML_TEMPLATE = '''
             margin-bottom: 15px;
         }
         .delete-namespace-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
+            background: #f1f3f4;
+            color: #5f6368;
+            border: 1px solid #dadce0;
             padding: 8px 16px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 0.9em;
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
         .delete-namespace-btn:hover {
-            background: #c82333;
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
         }
         .empty-state {
             text-align: center;
@@ -353,35 +365,42 @@ HTML_TEMPLATE = '''
             const now = Date.now() / 1000;  // Convert to seconds
             const ageSeconds = Math.floor(now - timestamp);
             
-            let ageClass = 'fresh';
+            let ageClass = 'very-fresh';
             let ageText = '';
             
             if (ageSeconds < 1) {
                 ageText = '0s ago';
-            } else if (ageSeconds < 60) {
+                ageClass = 'very-fresh';
+            } else if (ageSeconds < 60) {  // < 1 minute - very clear
                 ageText = ageSeconds + 's ago';
-            } else if (ageSeconds < 300) {  // < 5 minutes
+                ageClass = 'very-fresh';
+            } else if (ageSeconds < 1800) {  // < 30 minutes - less clear
                 const minutes = Math.floor(ageSeconds / 60);
                 const seconds = ageSeconds % 60;
                 ageText = `${minutes}m ${seconds}s ago`;
-                ageClass = ageSeconds > 60 ? 'stale' : 'fresh';  // Orange if > 1 minute
-            } else if (ageSeconds < 3600) {  // < 1 hour
-                const minutes = Math.floor(ageSeconds / 60);
-                const seconds = ageSeconds % 60;
-                ageText = `${minutes}m ${seconds}s ago`;
-                ageClass = 'very-stale';  // Red if > 5 minutes
-            } else if (ageSeconds < 86400) {  // < 1 day
+                ageClass = 'fresh';
+            } else if (ageSeconds < 86400) {  // < 1 day - noticeable color
                 const hours = Math.floor(ageSeconds / 3600);
                 const remainingMinutes = Math.floor((ageSeconds % 3600) / 60);
                 const seconds = ageSeconds % 60;
-                ageText = `${hours}h ${remainingMinutes}m ${seconds}s ago`;
-                ageClass = 'very-stale';
-            } else {
+                if (hours > 0) {
+                    ageText = `${hours}h ${remainingMinutes}m ${seconds}s ago`;
+                } else {
+                    ageText = `${remainingMinutes}m ${seconds}s ago`;
+                }
+                ageClass = 'stale';
+            } else {  // > 1 day - dim color
                 const days = Math.floor(ageSeconds / 86400);
                 const remainingHours = Math.floor((ageSeconds % 86400) / 3600);
                 const remainingMinutes = Math.floor((ageSeconds % 3600) / 60);
                 const seconds = ageSeconds % 60;
-                ageText = `${days}d ${remainingHours}h ${remainingMinutes}m ${seconds}s ago`;
+                if (remainingHours > 0) {
+                    ageText = `${days}d ${remainingHours}h ${remainingMinutes}m ${seconds}s ago`;
+                } else if (remainingMinutes > 0) {
+                    ageText = `${days}d ${remainingMinutes}m ${seconds}s ago`;
+                } else {
+                    ageText = `${days}d ${seconds}s ago`;
+                }
                 ageClass = 'very-stale';
             }
             
