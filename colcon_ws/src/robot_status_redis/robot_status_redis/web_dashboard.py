@@ -246,6 +246,27 @@ HTML_TEMPLATE = '''
             margin-left: 10px;
             font-family: monospace;
         }
+        .status-timestamp {
+            font-size: 0.75em;
+            color: #666;
+            font-weight: normal;
+            padding: 2px 8px;
+            border-radius: 3px;
+            margin-left: 8px;
+            display: inline-block;
+        }
+        .status-timestamp.fresh {
+            color: #5f6368;
+            background: #f1f3f4;
+        }
+        .status-timestamp.stale {
+            color: #ea8600;
+            background: #fef7e0;
+        }
+        .status-timestamp.very-stale {
+            color: #d93025;
+            background: #fce8e6;
+        }
         .status-value {
             background: #fff;
             padding: 10px;
@@ -325,6 +346,47 @@ HTML_TEMPLATE = '''
     <script>
         let currentNamespace = null;
         let statusData = {};
+
+        function formatAge(timestamp) {
+            if (!timestamp) return '';
+            
+            const now = Date.now() / 1000;  // Convert to seconds
+            const ageSeconds = Math.floor(now - timestamp);
+            
+            let ageClass = 'fresh';
+            let ageText = '';
+            
+            if (ageSeconds < 1) {
+                ageText = '0s ago';
+            } else if (ageSeconds < 60) {
+                ageText = ageSeconds + 's ago';
+            } else if (ageSeconds < 300) {  // < 5 minutes
+                const minutes = Math.floor(ageSeconds / 60);
+                const seconds = ageSeconds % 60;
+                ageText = `${minutes}m ${seconds}s ago`;
+                ageClass = ageSeconds > 60 ? 'stale' : 'fresh';  // Orange if > 1 minute
+            } else if (ageSeconds < 3600) {  // < 1 hour
+                const minutes = Math.floor(ageSeconds / 60);
+                const seconds = ageSeconds % 60;
+                ageText = `${minutes}m ${seconds}s ago`;
+                ageClass = 'very-stale';  // Red if > 5 minutes
+            } else if (ageSeconds < 86400) {  // < 1 day
+                const hours = Math.floor(ageSeconds / 3600);
+                const remainingMinutes = Math.floor((ageSeconds % 3600) / 60);
+                const seconds = ageSeconds % 60;
+                ageText = `${hours}h ${remainingMinutes}m ${seconds}s ago`;
+                ageClass = 'very-stale';
+            } else {
+                const days = Math.floor(ageSeconds / 86400);
+                const remainingHours = Math.floor((ageSeconds % 86400) / 3600);
+                const remainingMinutes = Math.floor((ageSeconds % 3600) / 60);
+                const seconds = ageSeconds % 60;
+                ageText = `${days}d ${remainingHours}h ${remainingMinutes}m ${seconds}s ago`;
+                ageClass = 'very-stale';
+            }
+            
+            return `<span class="status-timestamp ${ageClass}">${ageText}</span>`;
+        }
 
         function updateConnectionStatus(isConnected) {
             const statusElem = document.getElementById('connection-status');
@@ -426,10 +488,16 @@ HTML_TEMPLATE = '''
                     const item = items[key];
                     let displayValue = '';
                     let typeInfo = '';
+                    let timestampInfo = '';
                     
                     // Handle new format with type and value
                     if (typeof item === 'object' && item.type && item.value !== undefined) {
                         typeInfo = `<span class="status-type">${item.type}</span>`;
+                        
+                        // Format timestamp if available
+                        if (item.timestamp) {
+                            timestampInfo = formatAge(item.timestamp);
+                        }
                         
                         // Format the display value
                         if (typeof item.value === 'object') {
@@ -460,6 +528,7 @@ HTML_TEMPLATE = '''
                                         <span class="copy-tooltip">Click to copy value</span>
                                     </span>
                                     ${typeInfo}
+                                    ${timestampInfo}
                                 </div>
                                 <button class="delete-btn" onclick="deleteStatus('${ns}', '${key}')">🗑️ Delete</button>
                             </div>
@@ -601,7 +670,16 @@ class WebDashboardNode(Node):
         
         for namespace, keys in status_dict.items():
             processed_status[namespace] = {}
-            for key, pickle_str in keys.items():
+            for key, data in keys.items():
+                # Extract pickle_str and timestamp from data dict
+                if isinstance(data, dict):
+                    pickle_str = data.get('pickle')
+                    timestamp = data.get('timestamp')
+                else:
+                    # Fallback for old format (should not happen with new implementation)
+                    pickle_str = data
+                    timestamp = None
+                
                 # Unpickle to get the actual object and its type
                 try:
                     # Decode the base64 pickle string
@@ -636,7 +714,8 @@ class WebDashboardNode(Node):
                     processed_status[namespace][key] = {
                         'type': type_str,
                         'value': display_value,
-                        'pickle': pickle_str  # Keep pickle for reference
+                        'pickle': pickle_str,  # Keep pickle for reference
+                        'timestamp': timestamp  # Include timestamp for age display
                     }
                 except Exception as e:
                     # If unpickling fails, try to extract type from error message
@@ -664,7 +743,8 @@ class WebDashboardNode(Node):
                     processed_status[namespace][key] = {
                         'type': type_str,
                         'value': display_value,
-                        'pickle': pickle_str
+                        'pickle': pickle_str,
+                        'timestamp': timestamp  # Include timestamp for age display
                     }
         
         return processed_status

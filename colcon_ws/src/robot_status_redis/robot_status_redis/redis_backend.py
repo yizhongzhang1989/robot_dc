@@ -191,7 +191,7 @@ class RedisBackend:
         return result
     
     def set_status(self, namespace: str, key: str, value: Any) -> bool:
-        """Set status value.
+        """Set status value with timestamp.
         
         Args:
             namespace: Namespace (e.g., 'ur15', 'duco')
@@ -205,8 +205,12 @@ class RedisBackend:
             redis_key = self._make_key(namespace, key)
             pickle_str = self._serialize_value(value)
             
-            # Store pickle string directly in Redis (same as original robot_status)
-            self._client.set(redis_key, pickle_str)
+            # Store dict with pickle_str and timestamp as JSON
+            data = {
+                'pickle': pickle_str,
+                'timestamp': time.time()
+            }
+            self._client.set(redis_key, json.dumps(data))
             return True
         except Exception:
             return False
@@ -223,12 +227,16 @@ class RedisBackend:
         """
         try:
             redis_key = self._make_key(namespace, key)
-            pickle_str = self._client.get(redis_key)
+            data_str = self._client.get(redis_key)
             
-            if pickle_str is None:
+            if data_str is None:
                 return False, None
             
-            # Deserialize pickle string directly (same as original robot_status)
+            # Parse JSON to get dict with pickle and timestamp
+            data = json.loads(data_str)
+            pickle_str = data['pickle']
+            
+            # Deserialize pickle string
             value = self._deserialize_value(pickle_str)
             return True, value
         except Exception:
@@ -288,10 +296,16 @@ class RedisBackend:
                 if ns not in result:
                     result[ns] = {}
                 
-                # Get pickle string from Redis (same format as original robot_status)
-                pickle_str = self._client.get(redis_key)
-                if pickle_str:
-                    result[ns][key] = pickle_str
+                # Get data (JSON string containing dict)
+                data_str = self._client.get(redis_key)
+                if data_str:
+                    try:
+                        # Parse JSON to get dict with pickle and timestamp
+                        data = json.loads(data_str)
+                        result[ns][key] = data  # Returns {'pickle': ..., 'timestamp': ...}
+                    except json.JSONDecodeError:
+                        # Skip invalid data
+                        pass
             
             return result
         except Exception:
