@@ -106,7 +106,7 @@ class LiftRobotWeb(Node):
         self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
 
         # ═══════════════════════════════════════════════════════════════
-        # ROS2 Action Clients: All 4 Action types
+        # ROS2 Action Clients: Platform (4 types) + Pushrod (2 types)
         # ═══════════════════════════════════════════════════════════════
         self.action_clients = {}  # Dict of action_name -> ActionClient
         self.action_goal_handles = {}  # Dict of action_name -> goal_handle
@@ -119,11 +119,15 @@ class LiftRobotWeb(Node):
             from rclpy.action import ActionClient
             from lift_robot_interfaces.action import GotoHeight, ForceControl, HybridControl, ManualMove
             
-            # Create all 4 Action Clients
+            # Create Platform Action Clients (4 types)
             self.action_clients['goto_height'] = ActionClient(self, GotoHeight, '/lift_robot/goto_height')
             self.action_clients['force_control'] = ActionClient(self, ForceControl, '/lift_robot/force_control')
             self.action_clients['hybrid_control'] = ActionClient(self, HybridControl, '/lift_robot/hybrid_control')
             self.action_clients['manual_move'] = ActionClient(self, ManualMove, '/lift_robot/manual_move')
+            
+            # Create Pushrod Action Clients (2 types)
+            self.action_clients['pushrod_goto_height'] = ActionClient(self, GotoHeight, '/lift_robot_pushrod/goto_height')
+            self.action_clients['pushrod_manual_move'] = ActionClient(self, ManualMove, '/lift_robot_pushrod/manual_move')
             
             # Initialize status for all actions
             for action_name in self.action_clients.keys():
@@ -132,7 +136,7 @@ class LiftRobotWeb(Node):
                 self.action_feedback[action_name] = None
                 self.action_result[action_name] = None
             
-            self.get_logger().info("[Action] All 4 Action Clients created - waiting for servers...")
+            self.get_logger().info("[Action] Platform (4) + Pushrod (2) Action Clients created - waiting for servers...")
             
             # Wait for action servers (non-blocking, 2s timeout each)
             for action_name, client in self.action_clients.items():
@@ -499,19 +503,11 @@ class LiftRobotWeb(Node):
                         except:
                             return JSONResponse({'error':'invalid target_height or target_force'}, status_code=400)
                         
-                        # Determine direction based on target_height vs current_height
-                        # Default to 'up' if current height not available
-                        direction = 'up'
-                        if self.platform_status and 'current_height' in self.platform_status:
-                            current_height = self.platform_status['current_height']
-                            if target_height < current_height:
-                                direction = 'down'
-                        
+                        # Direction is automatically determined by Action server based on height_error
                         from lift_robot_interfaces.action import HybridControl
                         goal_msg = HybridControl.Goal()
                         goal_msg.target_height = target_height
                         goal_msg.target_force = target_force
-                        goal_msg.direction = direction
                         
                         send_goal_future = self.action_clients['hybrid_control'].send_goal_async(
                             goal_msg,
@@ -524,7 +520,7 @@ class LiftRobotWeb(Node):
                         with self.action_lock:
                             self.action_status['hybrid_control'] = 'sending'
                         
-                            return {'status':'ok','command':cmd,'action':'hybrid_control','target_height':target_height,'target_force':target_force,'direction':direction,'action_status':'sending'}
+                        return {'status':'ok','command':cmd,'action':'hybrid_control','target_height':target_height,'target_force':target_force,'action_status':'sending'}
                     
                     # --- Range Scan Commands (Topic-based) ---
                     elif cmd in ('range_scan_down', 'range_scan_up', 'range_scan_cancel'):
@@ -537,48 +533,81 @@ class LiftRobotWeb(Node):
                     
                     else:
                         return JSONResponse({'error':f'unknown platform command: {cmd}'}, status_code=400)                # ═══════════════════════════════════════════════════════════════
-                # PUSHROD COMMANDS: Still use Topic (not migrated to Action yet)
+                # PUSHROD COMMANDS: Use Action architecture (same as Platform)
                 # ═══════════════════════════════════════════════════════════════
                 elif target == 'pushrod':
-                    # Timed commands only meaningful for pushrod target currently
-                    if cmd.startswith('timed'):
-                        pass  # allowed
-                    elif cmd == 'goto_point':
-                        point = payload.get('point')
-                        if not point:
-                            return JSONResponse({'error':'point field required for goto_point'}, status_code=400)
+                    # --- ManualMove Action: up/down/stop ---
+                    if cmd in ('up', 'down'):
+                        # Create ManualMove goal
+                        from lift_robot_interfaces.action import ManualMove
+                        goal_msg = ManualMove.Goal()
+                        goal_msg.direction = cmd
+                        
+                        # Send action goal
+                        send_goal_future = self.action_clients['pushrod_manual_move'].send_goal_async(
+                            goal_msg,
+                            feedback_callback=self._create_feedback_callback('pushrod_manual_move')
+                        )
+                        send_goal_future.add_done_callback(
+                            self._create_goal_response_callback('pushrod_manual_move')
+                        )
+                        
+                        return {'status':'ok','command':cmd,'target':'pushrod'}
+                    
+                    elif cmd == 'stop':
+                        # Cancel running ManualMove action
+                        self.get_logger().info('[CMD] Pushrod STOP requested')
+                        cancelled_any = False
+                        with self.action_lock:
+                            goal_handle = self.action_goal_handles.get('pushrod_manual_move')
+                            if goal_handle and self.action_status.get('pushrod_manual_move') == 'executing':
+                                self.get_logger().info(f'[CMD] Cancelling pushrod_manual_move action...')
+                                goal_handle.cancel_goal_async()
+                                cancelled_any = True
+                        self.get_logger().info(f'[CMD] Pushrod STOP complete: cancelled_any={cancelled_any}')
+                        return {'status':'ok','command':'stop','target':'pushrod','cancelled':cancelled_any}
+                    
                     elif cmd == 'goto_height':
+                        # Extract target_height from payload
                         target_height = payload.get('target_height')
                         if target_height is None:
                             return JSONResponse({'error':'target_height field required for goto_height'}, status_code=400)
+                        
+                        # Create GotoHeight goal
+                        from lift_robot_interfaces.action import GotoHeight
+                        goal_msg = GotoHeight.Goal()
+                        goal_msg.target_height = float(target_height)
+                        
+                        # Send action goal
+                        send_goal_future = self.action_clients['pushrod_goto_height'].send_goal_async(
+                            goal_msg,
+                            feedback_callback=self._create_feedback_callback('pushrod_goto_height')
+                        )
+                        send_goal_future.add_done_callback(
+                            self._create_goal_response_callback('pushrod_goto_height')
+                        )
+                        
+                        return {'status':'ok','command':cmd,'target':'pushrod','target_height':target_height}
                     
-                    # Auto inject default duration for timed commands
-                    if cmd == 'timed_up' and (duration is None):
-                        duration = 3.5
-                    if cmd == 'timed_down' and (duration is None):
-                        duration = 3.5
+                    elif cmd in ('reset', 'goto_point'):
+                        # Keep using topic for reset and goto_point (special commands)
+                        if cmd == 'goto_point':
+                            point = payload.get('point')
+                            if not point:
+                                return JSONResponse({'error':'point field required for goto_point'}, status_code=400)
+                        
+                        # Build topic message body
+                        body = {'command': cmd}
+                        if cmd == 'goto_point':
+                            body['point'] = payload.get('point')
+                        
+                        msg = String()
+                        msg.data = json.dumps(body)
+                        self.pushrod_cmd_pub.publish(msg)
+                        return {'status':'ok','command':cmd,'target':'pushrod'}
                     
-                    if duration is not None:
-                        try:
-                            duration = float(duration)
-                            if duration <= 0:
-                                return JSONResponse({'error':'duration must be > 0'}, status_code=400)
-                        except Exception:
-                            return JSONResponse({'error':'invalid duration'}, status_code=400)
-                    
-                    # Build topic message body
-                    body = {'command': cmd}
-                    if cmd == 'goto_point':
-                        body['point'] = payload.get('point')
-                    if cmd == 'goto_height':
-                        body['target_height'] = payload.get('target_height')
-                    if duration is not None:
-                        body['duration'] = duration
-                    
-                    msg = String()
-                    msg.data = json.dumps(body)
-                    self.pushrod_cmd_pub.publish(msg)
-                    return {'status':'ok','command':cmd,'target':'pushrod','duration':duration}
+                    else:
+                        return JSONResponse({'error':f'unknown pushrod command: {cmd}'}, status_code=400)
                 
                 else:
                     return JSONResponse({'error':f'invalid target: {target}'}, status_code=400)

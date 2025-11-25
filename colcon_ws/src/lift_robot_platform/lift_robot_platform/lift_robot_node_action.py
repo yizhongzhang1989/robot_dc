@@ -1316,7 +1316,7 @@ class LiftRobotNodeAction(Node):
         """Execute HybridControl action - stops when EITHER height OR force target reached"""
         self.get_logger().info(
             f"HybridControl started: height={goal_handle.request.target_height:.2f}mm, "
-            f"force={goal_handle.request.target_force:.2f}N, direction={goal_handle.request.direction}"
+            f"force={goal_handle.request.target_force:.2f}N (direction auto-determined)"
         )
         
         # Register as active action
@@ -1325,7 +1325,6 @@ class LiftRobotNodeAction(Node):
         try:
             target_height = goal_handle.request.target_height
             target_force = goal_handle.request.target_force
-            direction = goal_handle.request.direction
             start_time = time.time()
             
             # Get regionalized overshoot values for target height (CRITICAL: use polynomial fit)
@@ -1343,16 +1342,6 @@ class LiftRobotNodeAction(Node):
                 self.task_end_time = None
                 self.completion_reason = None
             
-            if direction not in ['up', 'down']:
-                result = HybridControl.Result()
-                result.success = False
-                result.final_height = 0.0
-                result.final_force = 0.0
-                result.execution_time = 0.0
-                result.completion_reason = 'invalid_direction'
-                goal_handle.abort()
-                return result
-            
             # Get regionalized overshoot compensation (same as GotoHeight)
             overshoot_up, overshoot_down = self._get_overshoot(target_height)
             self.get_logger().info(
@@ -1366,7 +1355,7 @@ class LiftRobotNodeAction(Node):
                 initial_height = self.current_height
             initial_height_error = target_height - initial_height
             
-            # Determine force control direction (priority: height control > force control)
+            # Determine force control direction automatically from height error
             if initial_height_error > POSITION_TOLERANCE:
                 # Need to move up → force increases
                 force_control_direction = 'up'
@@ -1374,8 +1363,8 @@ class LiftRobotNodeAction(Node):
                 # Need to move down → force decreases
                 force_control_direction = 'down'
             else:
-                # Height already reached, use user's direction parameter as fallback
-                force_control_direction = direction
+                # Height already at target, default to 'up' for force control
+                force_control_direction = 'up'
             
             self.get_logger().info(
                 f"HybridControl force direction: {force_control_direction} "
@@ -1488,9 +1477,10 @@ class LiftRobotNodeAction(Node):
                     self.get_logger().info(f"HybridControl completed: limit reached at {current_height:.2f}mm")
                     return result
                 
-                # Priority 2: Predictive early stop (based on direction and regionalized overshoot)
+                # Priority 2: Predictive early stop (based on actual movement direction from height_error)
                 # Use the overshoot values calculated before the loop (from _get_overshoot)
-                if direction == 'up' and overshoot_up > OVERSHOOT_MIN_MARGIN:
+                if height_error > POSITION_TOLERANCE and overshoot_up > OVERSHOOT_MIN_MARGIN:
+                    # Moving up (height_error > 0)
                     early_stop_height = target_height - max(overshoot_up - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
                     if current_height >= early_stop_height and movement_state == 'up':
                         self.controller.stop()
@@ -1523,7 +1513,8 @@ class LiftRobotNodeAction(Node):
                         self.get_logger().info(f"HybridControl succeeded (early stop): final={final_height:.2f}mm, force={final_force:.2f}N")
                         return result
                         
-                elif direction == 'down' and overshoot_down > OVERSHOOT_MIN_MARGIN:
+                elif height_error < -POSITION_TOLERANCE and overshoot_down > OVERSHOOT_MIN_MARGIN:
+                    # Moving down (height_error < 0)
                     early_stop_height = target_height + max(overshoot_down - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
                     if current_height <= early_stop_height and movement_state == 'down':
                         self.controller.stop()

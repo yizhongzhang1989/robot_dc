@@ -3,7 +3,8 @@
 # Goal
 float64 target_height      # 目标高度（mm）
 float64 target_force      # 目标力值（N）
-string direction          # 方向：'up' 或 'down'
+# 运动方向自动根据初始高度误差判断: height_error = target_height - current_height
+# height_error > 0 → 向上运动, height_error < 0 → 向下运动
 ---
 # Result
 bool success              # 是否成功
