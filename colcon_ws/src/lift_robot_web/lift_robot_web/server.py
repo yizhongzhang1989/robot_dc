@@ -106,7 +106,7 @@ class LiftRobotWeb(Node):
         self.pushrod_cmd_pub = self.create_publisher(String, '/lift_robot_pushrod/command', 10)
 
         # ═══════════════════════════════════════════════════════════════
-        # ROS2 Action Clients: Platform (4 types) + Pushrod (2 types)
+        # ROS2 Action Clients: Unified Platform+Pushrod (target parameter)
         # ═══════════════════════════════════════════════════════════════
         self.action_clients = {}  # Dict of action_name -> ActionClient
         self.action_goal_handles = {}  # Dict of action_name -> goal_handle
@@ -119,15 +119,12 @@ class LiftRobotWeb(Node):
             from rclpy.action import ActionClient
             from lift_robot_interfaces.action import GotoHeight, ForceControl, HybridControl, ManualMove
             
-            # Create Platform Action Clients (4 types)
+            # Create Action Clients (4 types - all support target parameter)
+            # Platform and Pushrod share the same action servers with target='platform'/'pushrod'
             self.action_clients['goto_height'] = ActionClient(self, GotoHeight, '/lift_robot/goto_height')
             self.action_clients['force_control'] = ActionClient(self, ForceControl, '/lift_robot/force_control')
             self.action_clients['hybrid_control'] = ActionClient(self, HybridControl, '/lift_robot/hybrid_control')
             self.action_clients['manual_move'] = ActionClient(self, ManualMove, '/lift_robot/manual_move')
-            
-            # Create Pushrod Action Clients (2 types)
-            self.action_clients['pushrod_goto_height'] = ActionClient(self, GotoHeight, '/lift_robot_pushrod/goto_height')
-            self.action_clients['pushrod_manual_move'] = ActionClient(self, ManualMove, '/lift_robot_pushrod/manual_move')
             
             # Initialize status for all actions
             for action_name in self.action_clients.keys():
@@ -136,7 +133,7 @@ class LiftRobotWeb(Node):
                 self.action_feedback[action_name] = None
                 self.action_result[action_name] = None
             
-            self.get_logger().info("[Action] Platform (4) + Pushrod (2) Action Clients created - waiting for servers...")
+            self.get_logger().info("[Action] Platform+Pushrod unified Action Clients created - waiting for servers...")
             
             # Wait for action servers (non-blocking, 2s timeout each)
             for action_name, client in self.action_clients.items():
@@ -412,6 +409,7 @@ class LiftRobotWeb(Node):
                             # Create ManualMove goal
                             from lift_robot_interfaces.action import ManualMove
                             goal_msg = ManualMove.Goal()
+                            goal_msg.target = 'platform'
                             goal_msg.direction = cmd
                             
                             # Send action goal
@@ -441,6 +439,7 @@ class LiftRobotWeb(Node):
                         
                         from lift_robot_interfaces.action import GotoHeight
                         goal_msg = GotoHeight.Goal()
+                        goal_msg.target = 'platform'
                         goal_msg.target_height = target_height
                         
                         send_goal_future = self.action_clients['goto_height'].send_goal_async(
@@ -538,30 +537,34 @@ class LiftRobotWeb(Node):
                 elif target == 'pushrod':
                     # --- ManualMove Action: up/down/stop ---
                     if cmd in ('up', 'down'):
-                        # Create ManualMove goal
+                        # Create ManualMove goal (unified platform action with target='pushrod')
                         from lift_robot_interfaces.action import ManualMove
                         goal_msg = ManualMove.Goal()
+                        goal_msg.target = 'pushrod'
                         goal_msg.direction = cmd
                         
-                        # Send action goal
-                        send_goal_future = self.action_clients['pushrod_manual_move'].send_goal_async(
+                        # Send action goal (use unified manual_move action)
+                        send_goal_future = self.action_clients['manual_move'].send_goal_async(
                             goal_msg,
-                            feedback_callback=self._create_feedback_callback('pushrod_manual_move')
+                            feedback_callback=self._create_feedback_callback('manual_move')
                         )
                         send_goal_future.add_done_callback(
-                            self._create_goal_response_callback('pushrod_manual_move')
+                            self._create_goal_response_callback('manual_move')
                         )
                         
-                        return {'status':'ok','command':cmd,'target':'pushrod'}
+                        with self.action_lock:
+                            self.action_status['manual_move'] = 'sending'
+                        
+                        return {'status':'ok','command':cmd,'target':'pushrod','action':'manual_move','action_status':'sending'}
                     
                     elif cmd == 'stop':
-                        # Cancel running ManualMove action
+                        # Cancel running ManualMove action (unified action)
                         self.get_logger().info('[CMD] Pushrod STOP requested')
                         cancelled_any = False
                         with self.action_lock:
-                            goal_handle = self.action_goal_handles.get('pushrod_manual_move')
-                            if goal_handle and self.action_status.get('pushrod_manual_move') == 'executing':
-                                self.get_logger().info(f'[CMD] Cancelling pushrod_manual_move action...')
+                            goal_handle = self.action_goal_handles.get('manual_move')
+                            if goal_handle and self.action_status.get('manual_move') == 'executing':
+                                self.get_logger().info(f'[CMD] Cancelling manual_move action (pushrod)...')
                                 goal_handle.cancel_goal_async()
                                 cancelled_any = True
                         self.get_logger().info(f'[CMD] Pushrod STOP complete: cancelled_any={cancelled_any}')
@@ -573,21 +576,30 @@ class LiftRobotWeb(Node):
                         if target_height is None:
                             return JSONResponse({'error':'target_height field required for goto_height'}, status_code=400)
                         
-                        # Create GotoHeight goal
+                        try:
+                            target_height = float(target_height)
+                        except:
+                            return JSONResponse({'error':'invalid target_height'}, status_code=400)
+                        
+                        # Create GotoHeight goal (unified platform action with target='pushrod')
                         from lift_robot_interfaces.action import GotoHeight
                         goal_msg = GotoHeight.Goal()
-                        goal_msg.target_height = float(target_height)
+                        goal_msg.target = 'pushrod'
+                        goal_msg.target_height = target_height
                         
-                        # Send action goal
-                        send_goal_future = self.action_clients['pushrod_goto_height'].send_goal_async(
+                        # Send action goal (use unified goto_height action)
+                        send_goal_future = self.action_clients['goto_height'].send_goal_async(
                             goal_msg,
-                            feedback_callback=self._create_feedback_callback('pushrod_goto_height')
+                            feedback_callback=self._create_feedback_callback('goto_height')
                         )
                         send_goal_future.add_done_callback(
-                            self._create_goal_response_callback('pushrod_goto_height')
+                            self._create_goal_response_callback('goto_height')
                         )
                         
-                        return {'status':'ok','command':cmd,'target':'pushrod','target_height':target_height}
+                        with self.action_lock:
+                            self.action_status['goto_height'] = 'sending'
+                        
+                        return {'status':'ok','command':cmd,'target':'pushrod','target_height':target_height,'action':'goto_height','action_status':'sending'}
                     
                     elif cmd in ('reset', 'goto_point'):
                         # Keep using topic for reset and goto_point (special commands)

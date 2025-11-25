@@ -10,10 +10,15 @@ class LiftRobotController(ModbusDevice):
     """
     Lift platform controller - drives standard relay outputs via Modbus FC05 (write single coil)
 
-    Relay mapping:
+    Relay mapping (Platform):
     - Relay 0: stop
     - Relay 1: up
     - Relay 2: down
+
+    Relay mapping (Pushrod):
+    - Relay 3: stop
+    - Relay 4: down
+    - Relay 5: up
 
     Communication:
     - Baudrate: 115200
@@ -27,6 +32,16 @@ class LiftRobotController(ModbusDevice):
     def __init__(self, device_id, node, use_ack_patch):
         super().__init__(device_id, node, use_ack_patch)
         
+        # Relay address constants
+        # Platform relays
+        self.RELAY_PLATFORM_STOP = 0
+        self.RELAY_PLATFORM_UP = 1
+        self.RELAY_PLATFORM_DOWN = 2
+        # Pushrod relays
+        self.RELAY_PUSHROD_STOP = 3
+        self.RELAY_PUSHROD_DOWN = 4
+        self.RELAY_PUSHROD_UP = 5
+        
         # Timer-based movement attributes
         self.active_timers = {}  # Dictionary to store active timers
         self.timer_lock = threading.Lock()  # Lock for thread safety
@@ -38,6 +53,18 @@ class LiftRobotController(ModbusDevice):
         # Command queue for timed operations
         self.timed_cmd_queue = deque()
         self.waiting_for_timed_ack = False
+
+    def _get_relay_name(self, relay_address):
+        """Get human-readable name for relay address."""
+        relay_names = {
+            0: 'PLATFORM_STOP', 
+            1: 'PLATFORM_UP', 
+            2: 'PLATFORM_DOWN',
+            3: 'PUSHROD_STOP',
+            4: 'PUSHROD_DOWN',
+            5: 'PUSHROD_UP'
+        }
+        return relay_names.get(relay_address, f'Relay{relay_address}')
 
     def initialize(self):
         """Initialize lift platform: reset all relays once Modbus service is ready."""
@@ -78,6 +105,31 @@ class LiftRobotController(ModbusDevice):
         )
         self.send(5, reset_address, [reset_value], seq_id=seq_id)
 
+    def abort_active_flash(self):
+        """Force abort any active flash operation (for emergency reset only)."""
+        with getattr(self, 'flash_lock', threading.Lock()):
+            if getattr(self, 'flash_active', False):
+                ctx = getattr(self, 'flash_context', None)
+                if ctx:
+                    # Cancel watchdog
+                    wd = ctx.get('watchdog')
+                    if wd and wd.is_alive():
+                        try:
+                            wd.cancel()
+                        except Exception:
+                            pass
+                    seq_id = ctx.get('seq_id')
+                    relay_name = self._get_relay_name(ctx.get('relay', -1))
+                    self.node.get_logger().warn(
+                        f"[SEQ {seq_id}] Force aborting active flash: {relay_name} "
+                        f"(phase={ctx.get('phase')}, on_attempts={ctx.get('on_attempts')}, "
+                        f"off_attempts={ctx.get('off_attempts')})"
+                    )
+                self.flash_context = None
+                self.flash_active = False
+                return True
+            return False
+
     def stop(self, seq_id=None):
         """Stop motion (pulse relay 0)."""
         self.node.get_logger().info(f"[SEQ {seq_id}] Stop command (relay 0 pulse)")
@@ -92,6 +144,24 @@ class LiftRobotController(ModbusDevice):
         """Move down (pulse relay 2). Pulse width is fixed, velocity is hardware-defined."""
         self.node.get_logger().info(f"[SEQ {seq_id}] Down command (relay 2 pulse)")
         self.start_flash_async(relay_address=2, seq_id=seq_id, max_attempts=10)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Pushrod Control Methods (Relay 3, 4, 5)
+    # ═══════════════════════════════════════════════════════════════
+    def pushrod_stop(self, seq_id=None):
+        """Stop pushrod motion (pulse relay 3)."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod Stop command (relay 3 pulse)")
+        self.start_flash_async(relay_address=self.RELAY_PUSHROD_STOP, seq_id=seq_id, max_attempts=10)
+
+    def pushrod_up(self, seq_id=None):
+        """Move pushrod up (pulse relay 5). Pulse width is fixed, velocity is hardware-defined."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod Up command (relay 5 pulse)")
+        self.start_flash_async(relay_address=self.RELAY_PUSHROD_UP, seq_id=seq_id, max_attempts=10)
+
+    def pushrod_down(self, seq_id=None):
+        """Move pushrod down (pulse relay 4). Pulse width is fixed, velocity is hardware-defined."""
+        self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod Down command (relay 4 pulse)")
+        self.start_flash_async(relay_address=self.RELAY_PUSHROD_DOWN, seq_id=seq_id, max_attempts=10)
 
     def open_relay(self, relay_address, seq_id=None):
         """Open relay.
@@ -157,7 +227,14 @@ class LiftRobotController(ModbusDevice):
                 'off_eval_done': False,
                 'off_inner_read_count': 0
             }
-        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay_address, f'Relay{relay_address}')
+        relay_name = {
+            0: 'PLATFORM_STOP', 
+            1: 'PLATFORM_UP', 
+            2: 'PLATFORM_DOWN',
+            3: 'PUSHROD_STOP',
+            4: 'PUSHROD_DOWN',
+            5: 'PUSHROD_UP'
+        }.get(relay_address, f'Relay{relay_address}')
         self.node.get_logger().info(f"[SEQ {seq_id}] Async flash start: {relay_name} (max_attempts={max_attempts})")
         self._flash_attempt_on()
         # Start watchdog to avoid indefinite lock if read never returns
@@ -178,7 +255,7 @@ class LiftRobotController(ModbusDevice):
         attempt = ctx['on_attempts']
         relay = ctx['relay']
         seq_id = ctx['seq_id']
-        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
+        relay_name = self._get_relay_name(relay)
         self.node.get_logger().info(f"[SEQ {seq_id}] ON attempt {attempt}/{ctx['max']} for {relay_name}")
         # CRITICAL: Reset evaluation flags for each new attempt so callbacks can run.
         ctx['on_eval_done'] = False
@@ -202,7 +279,7 @@ class LiftRobotController(ModbusDevice):
         req.slave_id = self.device_id
         req.function_code = 1
         req.address = 0x0000
-        req.count = 3
+        req.count = 6  # Read 6 relays (0-5) to support pushrod relays (3,4,5)
         req.values = []
         req.seq_id = seq_id if seq_id is not None else 0
         future = self.cli.call_async(req)
@@ -266,7 +343,7 @@ class LiftRobotController(ModbusDevice):
             return
         relay = ctx['relay']
         seq_id = ctx['seq_id']
-        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
+        relay_name = self._get_relay_name(relay)
         try:
             resp = future.result()
             ok = resp is not None and resp.success and len(resp.response) >= (relay+1)
@@ -304,7 +381,7 @@ class LiftRobotController(ModbusDevice):
         attempt = ctx['off_attempts']
         relay = ctx['relay']
         seq_id = ctx['seq_id']
-        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
+        relay_name = self._get_relay_name(relay)
         self.node.get_logger().info(f"[SEQ {seq_id}] OFF attempt {attempt}/{ctx['max']} for {relay_name}")
         # CRITICAL: Reset evaluation flags for each new OFF attempt
         ctx['off_eval_done'] = False
@@ -325,7 +402,7 @@ class LiftRobotController(ModbusDevice):
         req.slave_id = self.device_id
         req.function_code = 1
         req.address = 0x0000
-        req.count = 3
+        req.count = 6  # Read 6 relays (0-5) to support pushrod relays (3,4,5)
         req.values = []
         req.seq_id = seq_id if seq_id is not None else 0
         future = self.cli.call_async(req)
@@ -357,7 +434,7 @@ class LiftRobotController(ModbusDevice):
         req.slave_id = self.device_id
         req.function_code = 1
         req.address = 0x0000
-        req.count = 3
+        req.count = 6  # Read 6 relays (0-5) to support pushrod relays (3,4,5)
         req.values = []
         req.seq_id = seq_id if seq_id is not None else 0
         second_future = self.cli.call_async(req)
@@ -386,7 +463,7 @@ class LiftRobotController(ModbusDevice):
             return
         relay = ctx['relay']
         seq_id = ctx['seq_id']
-        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
+        relay_name = self._get_relay_name(relay)
         try:
             resp = future.result()
             ok = resp is not None and resp.success and len(resp.response) >= (relay+1)
@@ -416,7 +493,7 @@ class LiftRobotController(ModbusDevice):
             return
         seq_id = ctx['seq_id']
         relay = ctx['relay']
-        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
+        relay_name = self._get_relay_name(relay)
         total_ms = (time.time() - ctx['start_time']) * 1000
         self.node.get_logger().info(f"[SEQ {seq_id}] ✅ Async flash SUCCESS {relay_name} total={total_ms:.1f}ms")
         
@@ -440,8 +517,23 @@ class LiftRobotController(ModbusDevice):
     def _flash_fail(self, reason):
         ctx = self.flash_context
         seq_id = ctx['seq_id'] if ctx else None
-        self.node.get_logger().error(f"[SEQ {seq_id}] ❌ Async flash FAILED: {reason} -> EMERGENCY RESET")
-        # Cancel watchdog before emergency
+        relay_addr = ctx['relay'] if ctx else -1
+        
+        # Check if we're already in emergency reset (to avoid infinite loop)
+        # Emergency reset uses relay 0 (platform stop) and relay 3 (pushrod stop)
+        is_reset_flash = relay_addr in [0, 3] and getattr(self.node, 'reset_in_progress', False)
+        
+        if is_reset_flash:
+            # Flash failure during emergency reset - do NOT trigger another reset
+            self.node.get_logger().error(
+                f"[SEQ {seq_id}] ❌ STOP flash FAILED during emergency reset: {reason} - "
+                f"Relay cleared by reset_all_relays, system will continue to idle state"
+            )
+        else:
+            # Normal flash failure - trigger emergency reset
+            self.node.get_logger().error(f"[SEQ {seq_id}] ❌ Async flash FAILED: {reason} -> EMERGENCY RESET")
+        
+        # Cancel watchdog before cleanup
         if ctx:
             wd = ctx.get('watchdog')
             if wd and wd.is_alive():
@@ -449,11 +541,14 @@ class LiftRobotController(ModbusDevice):
                     wd.cancel()
                 except Exception:
                     pass
-        # Trigger full emergency reset procedure
-        try:
-            self._trigger_emergency_reset(seq_id, reason)
-        except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] Emergency reset invocation error: {e}")
+        
+        # Trigger emergency reset only if not already in reset
+        if not is_reset_flash:
+            try:
+                self._trigger_emergency_reset(seq_id, reason)
+            except Exception as e:
+                self.node.get_logger().error(f"[SEQ {seq_id}] Emergency reset invocation error: {e}")
+        
         self.flash_context = None
         self.flash_active = False
 
@@ -466,7 +561,7 @@ class LiftRobotController(ModbusDevice):
         # If more than 0.6s elapsed without completion, fail
         if elapsed > 0.6:
             relay = ctx['relay']
-            relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
+            relay_name = self._get_relay_name(relay)
             self._flash_fail(f"watchdog timeout {relay_name} phase={ctx.get('phase')} elapsed={elapsed:.3f}s")
 
     # Legacy sync method retained for compatibility (not used now)

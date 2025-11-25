@@ -1,9 +1,10 @@
-# GotoHeight.action - Platform height control using ROS2 Action pattern
-# This action moves the platform to a target height using closed-loop control
+# GotoHeight.action - Platform/Pushrod height control using ROS2 Action pattern
+# This action moves the platform or pushrod to a target height using closed-loop control
 
 # ─────────────────────────────────────────────────────────────────────
 # GOAL: Command sent by client to start action
 # ─────────────────────────────────────────────────────────────────────
+string target          # "platform" or "pushrod" - which device to control
 float64 target_height  # Target height in mm (must be within platform range limits)
 
 ---

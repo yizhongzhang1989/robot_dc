@@ -25,8 +25,8 @@ Move the platform to a specific height with overshoot compensation.
 ### Basic Usage
 
 ```bash
-# Move to 1000mm
-ros2 action send_goal /lift_robot/goto_height lift_robot_interfaces/action/GotoHeight "{target_height: 1000.0}" --feedback
+# Move platform to 1000mm
+ros2 action send_goal /lift_robot/goto_height lift_robot_interfaces/action/GotoHeight "{target: 'platform', target_height: 1000.0}" --feedback
 
 ```
 
@@ -117,11 +117,11 @@ Continuous movement in a specified direction until cancelled or limit reached.
 ### Basic Usage
 
 ```bash
-# Move up continuously
-ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{direction: 'up'}" --feedback
+# Move platform up continuously
+ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{target: 'platform', direction: 'up'}" --feedback
 
-# Move down continuously
-ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{direction: 'down'}" --feedback
+# Move platform down continuously
+ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{target: 'platform', direction: 'down'}" --feedback
 ```
 
 **Valid directions:** Only `'up'` or `'down'` - **`'stop'` is NOT supported**
@@ -136,11 +136,11 @@ ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/Manua
 
 **Method 2: Send Opposite Direction (Two terminals needed)**
 ```bash
-# Terminal 1: Moving up
-ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{direction: 'up'}" --feedback
+# Terminal 1: Moving platform up
+ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{target: 'platform', direction: 'up'}" --feedback
 
 # Terminal 2: Stop by sending opposite direction
-ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{direction: 'down'}" --feedback
+ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{target: 'platform', direction: 'down'}" --feedback
 ```
 
 **Method 3: Emergency Reset (For emergencies)**
@@ -250,10 +250,12 @@ ros2 topic pub --once /lift_robot_platform/command std_msgs/msg/String "{data: '
 # Via Web API
 curl -X POST http://localhost:8090/api/cmd \
   -H "Content-Type: application/json" \
-  -d '{"command": "reset", "target": "platform"}'
+  -d '{"command": "reset"}'
 
 # Web interface: Click 🚨 RESET button
 ```
+
+**Note:** Emergency reset stops **both platform and pushrod** simultaneously - no need to specify target.
 
 ### What Happens
 
@@ -309,5 +311,32 @@ cat /home/robot/Documents/robot_dc/colcon_ws/config/platform_range.json
 
 ---
 
+## Pushrod Control (Integrated into Platform Node)
 
-*Last Updated: 2025-11-24*
+
+### 1. Pushrod Manual Control
+
+```bash
+# Move pushrod up continuously
+ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{target: 'pushrod', direction: 'up'}" --feedback
+
+# Move pushrod down continuously
+ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/ManualMove "{target: 'pushrod', direction: 'down'}" --feedback
+
+# Stop pushrod (Ctrl+C or send opposite direction)
+```
+
+### 2. Pushrod Height Control
+
+```bash
+# Move pushrod to 950mm
+ros2 action send_goal /lift_robot/goto_height lift_robot_interfaces/action/GotoHeight "{target: 'pushrod', target_height: 950.0}" --feedback
+
+
+**Note:** Pushrod height control does **NOT use overshoot compensation** (unlike platform). It stops immediately when target height is detected, as pushrod has higher precision and minimal inertia.
+
+
+---
+
+
+*Last Updated: 2025-11-25*

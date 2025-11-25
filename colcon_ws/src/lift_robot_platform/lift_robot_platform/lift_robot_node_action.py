@@ -32,6 +32,10 @@ POSITION_TOLERANCE = 0.05       # ±0.05 mm target tolerance
 FEEDBACK_INTERVAL = 0.1         # 10 Hz Action feedback rate
 SENSOR_SPIN_TIMEOUT = 0.001     # 1ms spin for sensor data acquisition
 
+# Pushrod Stall Detection Parameters
+PUSHROD_STALL_TOLERANCE = 0.1   # mm - height change threshold to detect stall
+PUSHROD_STALL_DURATION = 1.0    # seconds - duration required to confirm stall
+
 # Overshoot calibration defaults
 OVERSHOOT_INIT_UP = 2.8
 OVERSHOOT_INIT_DOWN = 3.0
@@ -99,6 +103,11 @@ class LiftRobotNodeAction(Node):
         self.last_goto_stop_height = None # Height when stop command was issued
         self.last_goto_direction = None   # 'up' or 'down'
         self.last_goto_timestamp = None   # Unix timestamp
+        
+        # Pushrod Stall Detection state
+        self.pushrod_stall_reference_height = None  # Reference height for stall detection
+        self.pushrod_stall_start_time = None        # Time when stall was first detected
+        self.pushrod_stall_active = False           # Flag to track if stall detection is active
         
         # Range Scan state
         self.range_scan_active = False
@@ -420,12 +429,89 @@ class LiftRobotNodeAction(Node):
                 except Exception as e:
                     self.get_logger().error(f"[RESET] Relay reset failed: {e}")
                 
-                # Step 5: Send STOP pulse (physical hardware stop)
+                # Step 4.5: Force abort any active flash (critical for emergency reset)
+                # This prevents "Flash already active" errors when sending stop pulses
                 try:
-                    self.controller.stop(seq_id=seq_id)
-                    self.get_logger().info("[RESET] Step 5: STOP pulse sent")
+                    aborted = self.controller.abort_active_flash()
+                    if aborted:
+                        self.get_logger().warn("[RESET] Step 4.5: Aborted active flash operation")
+                    else:
+                        self.get_logger().info("[RESET] Step 4.5: No active flash to abort")
                 except Exception as e:
-                    self.get_logger().error(f"[RESET] Stop pulse failed: {e}")
+                    self.get_logger().error(f"[RESET] Flash abort failed: {e}")
+                
+                # Step 5: Send STOP pulses sequentially (platform first, then pushrod)
+                # Note: reset_all_relays (Step 4) already cleared all relays to 0.
+                # The STOP pulses are safety measures to trigger hardware emergency stop circuits.
+                # Must wait for platform stop flash to complete before sending pushrod stop.
+                try:
+                    # Setup flags to track stop completion and timeout
+                    self._reset_platform_stop_done = False
+                    self._reset_pushrod_stop_done = False
+                    self._reset_seq_id = seq_id
+                    self._reset_timeout_reached = False
+                    
+                    # Temporarily override flash callback to detect stop completion
+                    original_callback = self.controller.on_flash_complete_callback
+                    
+                    def reset_flash_callback(relay_address, seq_id):
+                        """Callback when flash completes during reset - chains platform→pushrod stops"""
+                        try:
+                            if relay_address == 0:  # Platform STOP completed
+                                self.get_logger().info("[RESET] Platform STOP flash completed, sending pushrod STOP...")
+                                self._reset_platform_stop_done = True
+                                # Now send pushrod stop (20ms delay for safety)
+                                threading.Timer(0.02, lambda: self.controller.pushrod_stop(seq_id=self._reset_seq_id)).start()
+                            elif relay_address == 3:  # Pushrod STOP completed
+                                self.get_logger().info("[RESET] Pushrod STOP flash completed - all stops done")
+                                self._reset_pushrod_stop_done = True
+                                # Restore original callback after sequence completes
+                                self.controller.on_flash_complete_callback = original_callback
+                            
+                            # Call original callback if exists
+                            if original_callback and relay_address in [0, 3]:
+                                try:
+                                    original_callback(relay_address, seq_id)
+                                except Exception as e:
+                                    self.get_logger().error(f"[RESET] Original callback error: {e}")
+                        except Exception as e:
+                            self.get_logger().error(f"[RESET] Flash callback error: {e}")
+                    
+                    def reset_timeout_handler():
+                        """Timeout handler if stop sequence takes too long"""
+                        if not (self._reset_platform_stop_done and self._reset_pushrod_stop_done):
+                            self._reset_timeout_reached = True
+                            self.get_logger().error(
+                                f"[RESET] ⚠️ STOP sequence timeout! "
+                                f"platform_done={self._reset_platform_stop_done}, "
+                                f"pushrod_done={self._reset_pushrod_stop_done} - "
+                                f"Continuing reset despite incomplete stops (Step 4 already cleared relays)"
+                            )
+                            # Restore original callback
+                            self.controller.on_flash_complete_callback = original_callback
+                            # Force abort any stuck flash
+                            try:
+                                self.controller.abort_active_flash()
+                            except:
+                                pass
+                    
+                    # Set temporary callback
+                    self.controller.on_flash_complete_callback = reset_flash_callback
+                    
+                    # Start timeout watchdog (500ms should be enough for 2 stops)
+                    timeout_timer = threading.Timer(0.5, reset_timeout_handler)
+                    timeout_timer.start()
+                    
+                    # Send platform stop first (will trigger pushrod stop in callback)
+                    self.controller.stop(seq_id=seq_id)
+                    self.get_logger().info("[RESET] Step 5: Sent platform STOP, will chain to pushrod STOP after completion...")
+                except Exception as e:
+                    self.get_logger().error(f"[RESET] Stop pulse sequence failed: {e}")
+                    # Restore callback on error
+                    if 'original_callback' in locals():
+                        self.controller.on_flash_complete_callback = original_callback
+                    if 'timeout_timer' in locals() and timeout_timer.is_alive():
+                        timeout_timer.cancel()
                 
                 # Step 6: Immediately recover to idle (frontend handles 5s display)
                 with self.state_lock:
@@ -874,18 +960,77 @@ class LiftRobotNodeAction(Node):
         
         return False
     
+    def _check_pushrod_stall(self, current_height, direction):
+        """Check if pushrod has stalled (reached mechanical limit).
+        
+        Detects when pushrod stops moving in the commanded direction,
+        indicating it has reached the top or bottom mechanical limit.
+        
+        Args:
+            current_height: Current height reading (mm)
+            direction: Movement direction ('up' or 'down')
+        
+        Returns:
+            True if stall detected and confirmed for required duration
+        """
+        # Initialize reference height on first check
+        if self.pushrod_stall_reference_height is None:
+            self.pushrod_stall_reference_height = current_height
+            self.pushrod_stall_start_time = time.time()
+            return False
+        
+        # Calculate height change from reference
+        height_change = abs(current_height - self.pushrod_stall_reference_height)
+        
+        # Check if height is stable (not moving)
+        if height_change <= PUSHROD_STALL_TOLERANCE:
+            # Height stable - check duration
+            if self.pushrod_stall_start_time is None:
+                self.pushrod_stall_start_time = time.time()
+            
+            stall_duration = time.time() - self.pushrod_stall_start_time
+            
+            # Stall confirmed if stable for required duration
+            if stall_duration >= PUSHROD_STALL_DURATION:
+                return True
+        else:
+            # Height changed - reset stall detection
+            self.pushrod_stall_reference_height = current_height
+            self.pushrod_stall_start_time = time.time()
+        
+        return False
+    
+    def _reset_pushrod_stall_detection(self):
+        """Reset pushrod stall detection state."""
+        self.pushrod_stall_reference_height = None
+        self.pushrod_stall_start_time = None
+        self.pushrod_stall_active = False
+    
     # ═══════════════════════════════════════════════════════════════
     # GotoHeight Action
     # ═══════════════════════════════════════════════════════════════
     async def _execute_goto_height(self, goal_handle):
         """Execute GotoHeight action with internal 50Hz control loop"""
-        self.get_logger().info(f"GotoHeight started: target={goal_handle.request.target_height:.2f}mm")
+        target = goal_handle.request.target  # "platform" or "pushrod"
+        target_height = goal_handle.request.target_height
+        
+        self.get_logger().info(f"GotoHeight started: target={target}, target_height={target_height:.2f}mm")
+        
+        # Validate target
+        if target not in ['platform', 'pushrod']:
+            self.get_logger().error(f"Invalid target: {target}")
+            result = GotoHeight.Result()
+            result.success = False
+            result.final_height = 0.0
+            result.execution_time = 0.0
+            result.completion_reason = 'invalid_target'
+            goal_handle.abort()
+            return result
         
         # Register as active Action
         self._register_active_action(goal_handle, 'goto_height')
         
         try:
-            target_height = goal_handle.request.target_height
             start_time = time.time()
             
             # Update task state (single lock for all state updates)
@@ -903,9 +1048,19 @@ class LiftRobotNodeAction(Node):
                 self.last_goto_stop_height = None
                 self.last_goto_direction = None
                 self.last_goto_timestamp = None
+                # CRITICAL: Clear movement command flag for new Action
+                self.movement_command_sent = False
             
-            # Get overshoot calibration for this target
-            overshoot_up, overshoot_down = self._get_overshoot(target_height)
+            # Reset pushrod stall detection for new Action (only for pushrod)
+            if target == 'pushrod':
+                self._reset_pushrod_stall_detection()
+                self.pushrod_stall_active = True  # Enable stall detection for this Action
+            
+            # Get overshoot calibration (only for platform)
+            if target == 'platform':
+                overshoot_up, overshoot_down = self._get_overshoot(target_height)
+            else:  # pushrod - uses simple real-time control (no overshoot)
+                overshoot_up, overshoot_down = None, None  # Flag to skip early stop logic
             
             # Feedback preparation
             feedback_msg = GotoHeight.Feedback()
@@ -931,7 +1086,11 @@ class LiftRobotNodeAction(Node):
                 # Check for cancellation
                 if goal_handle.is_cancel_requested:
                     goal_handle.canceled()
-                    self.controller.stop()
+                    # Send stop command based on target
+                    if target == 'platform':
+                        self.controller.stop()
+                    else:  # pushrod
+                        self.controller.pushrod_stop()
                     
                     result = GotoHeight.Result()
                     result.success = False
@@ -963,7 +1122,11 @@ class LiftRobotNodeAction(Node):
                 if abs_error <= POSITION_TOLERANCE:
                     stop_height = current_height
                     direction_before_stop = movement_state
-                    self.controller.stop()
+                    # Send stop command based on target
+                    if target == 'platform':
+                        self.controller.stop()
+                    else:  # pushrod
+                        self.controller.pushrod_stop()
                     # Wait for stop verification and platform to settle
                     time.sleep(0.5)
                     
@@ -1002,36 +1165,69 @@ class LiftRobotNodeAction(Node):
                     self.get_logger().info(f"GotoHeight succeeded: final={current_height:.2f}mm, time={result.execution_time:.2f}s")
                     return result
                 
-                # Check range limits
-                direction = 'up' if error > 0 else 'down'
-                if self._check_range_limits(current_height, direction):
-                    self.controller.stop()
-                    time.sleep(0.1)
-                    
-                    result = GotoHeight.Result()
-                    result.success = True
-                    result.final_height = current_height
-                    result.execution_time = time.time() - start_time
-                    result.completion_reason = 'limit_reached'
-                    
-                    # Update task state
-                    with self.state_lock:
-                        self.task_state = 'completed'
-                        self.task_end_time = time.time()
-                        self.completion_reason = 'limit_reached'
-                    
-                    goal_handle.succeed()
-                    self.get_logger().info(f"GotoHeight completed: limit reached at {current_height:.2f}mm")
-                    return result
+                # Check pushrod stall (mechanical limit reached) - only for pushrod
+                if target == 'pushrod' and self.pushrod_stall_active:
+                    direction = 'up' if error > 0 else 'down'
+                    if self._check_pushrod_stall(current_height, direction):
+                        # Stall detected - pushrod reached mechanical limit
+                        self.controller.pushrod_stop()
+                        time.sleep(0.1)
+                        
+                        result = GotoHeight.Result()
+                        result.success = True
+                        result.final_height = current_height
+                        result.execution_time = time.time() - start_time
+                        result.completion_reason = 'stall_detected'
+                        
+                        # Update task state
+                        with self.state_lock:
+                            self.task_state = 'completed'
+                            self.task_end_time = time.time()
+                            self.completion_reason = 'stall_detected'
+                        
+                        goal_handle.succeed()
+                        self.get_logger().info(
+                            f"GotoHeight succeeded (pushrod stall): {direction.upper()} stalled at {current_height:.2f}mm, "
+                            f"time={result.execution_time:.2f}s"
+                        )
+                        return result
                 
-                # Early stop with overshoot compensation
-                # Topic版本逻辑: 提前停后disable_control并complete_task,控制循环退出
-                # Action版本逻辑: 提前停后发送STOP,等待静止,测量overshoot,然后succeed返回
-                if error > 0:  # Moving up
+                # Check range limits (only for platform)
+                if target == 'platform':
+                    direction = 'up' if error > 0 else 'down'
+                    if self._check_range_limits(current_height, direction):
+                        self.controller.stop()
+                        time.sleep(0.1)
+                        
+                        result = GotoHeight.Result()
+                        result.success = True
+                        result.final_height = current_height
+                        result.execution_time = time.time() - start_time
+                        result.completion_reason = 'limit_reached'
+                        
+                        # Update task state
+                        with self.state_lock:
+                            self.task_state = 'completed'
+                            self.task_end_time = time.time()
+                            self.completion_reason = 'limit_reached'
+                        
+                        goal_handle.succeed()
+                        self.get_logger().info(f"GotoHeight completed: limit reached at {current_height:.2f}mm")
+                        return result
+                
+                # Early stop with overshoot compensation (ONLY for platform, pushrod uses simple control)
+                # Platform: Topic版本逻辑: 提前停后disable_control并complete_task,控制循环退出
+                #           Action版本逻辑: 提前停后发送STOP,等待静止,测量overshoot,然后succeed返回
+                # Pushrod: Skip early stop logic - uses simple real-time control below
+                if target == 'platform' and error > 0:  # Moving up
                     early_stop_height = target_height - max(overshoot_up - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
                     if current_height >= early_stop_height and movement_state == 'up':
                         stop_height = current_height  # Record height when stop command issued
-                        self.controller.stop()
+                        # Send stop command based on target
+                        if target == 'platform':
+                            self.controller.stop()
+                        else:  # pushrod
+                            self.controller.pushrod_stop()
                         self.get_logger().info(f"Early stop UP: height={current_height:.2f}, target={target_height:.2f}, overshoot={overshoot_up:.2f}")
                         
                         # Wait for platform to settle (like Topic version's OVERSHOOT_SETTLE_DELAY)
@@ -1071,11 +1267,15 @@ class LiftRobotNodeAction(Node):
                         self.get_logger().info(f"GotoHeight succeeded (early stop): final={final_height:.2f}mm, time={result.execution_time:.2f}s")
                         return result
                         
-                else:  # Moving down
+                elif target == 'platform' and error < 0:  # Moving down
                     early_stop_height = target_height + max(overshoot_down - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
                     if current_height <= early_stop_height and movement_state == 'down':
                         stop_height = current_height  # Record height when stop command issued
-                        self.controller.stop()
+                        # Send stop command based on target
+                        if target == 'platform':
+                            self.controller.stop()
+                        else:  # pushrod
+                            self.controller.pushrod_stop()
                         self.get_logger().info(f"Early stop DOWN: height={current_height:.2f}, target={target_height:.2f}, overshoot={overshoot_down:.2f}")
                         
                         # Wait for platform to settle
@@ -1115,11 +1315,27 @@ class LiftRobotNodeAction(Node):
                         self.get_logger().info(f"GotoHeight succeeded (early stop): final={final_height:.2f}mm, time={result.execution_time:.2f}s")
                         return result
                 
-                # Send movement command if direction needs to change
+                # Send movement command - simple real-time control (same for platform and pushrod)
+                # Platform uses early stop above, pushrod uses this simple control directly
+                # CRITICAL: Use movement_command_sent flag to prevent duplicate commands during flash verification
                 if error > 0 and movement_state != 'up':
-                    self.controller.up()
+                    with self.state_lock:
+                        if not self.movement_command_sent:
+                            if target == 'platform':
+                                self.controller.up()
+                            else:  # pushrod
+                                self.controller.pushrod_up()
+                            self.movement_command_sent = True  # Prevent duplicates during verification
+                            self.get_logger().debug(f"[{target.upper()}] ⬆️ UP error={error:.2f}mm (cmd sent)")
                 elif error < 0 and movement_state != 'down':
-                    self.controller.down()
+                    with self.state_lock:
+                        if not self.movement_command_sent:
+                            if target == 'platform':
+                                self.controller.down()
+                            else:  # pushrod
+                                self.controller.pushrod_down()
+                            self.movement_command_sent = True  # Prevent duplicates during verification
+                            self.get_logger().debug(f"[{target.upper()}] ⬇️ DOWN error={error:.2f}mm (cmd sent)")
                 
                 # Publish feedback at 10Hz
                 now = time.time()
@@ -1145,6 +1361,12 @@ class LiftRobotNodeAction(Node):
         finally:
             # Always clear active Action on exit
             self._clear_active_action(goal_handle, 'goto_height')
+            # Clear movement command flag to allow next Action to send commands
+            with self.state_lock:
+                self.movement_command_sent = False
+            # Reset pushrod stall detection
+            if target == 'pushrod':
+                self._reset_pushrod_stall_detection()
     
     # ═══════════════════════════════════════════════════════════════
     # ForceControl Action
@@ -1589,9 +1811,21 @@ class LiftRobotNodeAction(Node):
     # ═══════════════════════════════════════════════════════════════
     async def _execute_manual_move(self, goal_handle):
         """Execute ManualMove action - continues until limit or cancel"""
-        self.get_logger().info(f"ManualMove started: direction={goal_handle.request.direction}")
-        
+        target = goal_handle.request.target  # "platform" or "pushrod"
         direction = goal_handle.request.direction
+        
+        self.get_logger().info(f"ManualMove started: target={target}, direction={direction}")
+        
+        # Validate target
+        if target not in ['platform', 'pushrod']:
+            self.get_logger().error(f"Invalid target: {target}")
+            result = ManualMove.Result()
+            result.success = False
+            result.final_height = 0.0
+            result.execution_time = 0.0
+            result.completion_reason = 'invalid_target'
+            goal_handle.abort()
+            return result
         
         # Register as active Action
         self._register_active_action(goal_handle, 'manual_move')
@@ -1611,6 +1845,11 @@ class LiftRobotNodeAction(Node):
                 # Update movement_state immediately (will be updated again by flash callback)
                 self.movement_state = direction
             
+            # Reset pushrod stall detection for manual move (only for pushrod)
+            if target == 'pushrod':
+                self._reset_pushrod_stall_detection()
+                self.pushrod_stall_active = True  # Enable stall detection for manual move
+            
             if direction not in ['up', 'down']:
                 result = ManualMove.Result()
                 result.success = False
@@ -1620,12 +1859,19 @@ class LiftRobotNodeAction(Node):
                 goal_handle.abort()
                 return result
             
-            # Send movement command - controller handles flash conflicts internally
+            # Send movement command based on target device
+            # Controller handles flash conflicts internally
             # If flash is active, controller will reject and we need to keep retrying
-            if direction == 'up':
-                self.controller.up()
-            else:
-                self.controller.down()
+            if target == 'platform':
+                if direction == 'up':
+                    self.controller.up()
+                else:
+                    self.controller.down()
+            else:  # pushrod
+                if direction == 'up':
+                    self.controller.pushrod_up()
+                else:
+                    self.controller.pushrod_down()
             
             feedback_msg = ManualMove.Feedback()
             last_feedback_time = start_time
@@ -1674,18 +1920,24 @@ class LiftRobotNodeAction(Node):
                 if not command_accepted:
                     if current_movement == direction:
                         command_accepted = True
-                        self.get_logger().info(f"ManualMove({direction}) command accepted, movement started")
+                        self.get_logger().info(f"ManualMove({target}/{direction}) command accepted, movement started")
                     else:
                         # Command not yet accepted, retry
                         if loop_count % 10 == 0:  # Log every 10 retries
                             self.get_logger().warn(
-                                f"ManualMove({direction}) command not accepted yet "
+                                f"ManualMove({target}/{direction}) command not accepted yet "
                                 f"(current_movement={current_movement}), retrying..."
                             )
-                        if direction == 'up':
-                            self.controller.up()
-                        else:
-                            self.controller.down()
+                        if target == 'platform':
+                            if direction == 'up':
+                                self.controller.up()
+                            else:
+                                self.controller.down()
+                        else:  # pushrod
+                            if direction == 'up':
+                                self.controller.pushrod_up()
+                            else:
+                                self.controller.pushrod_down()
                 
                 # Check if direction changed (new opposing ManualMove started)
                 if self.current_manual_move_direction != direction:
@@ -1706,9 +1958,13 @@ class LiftRobotNodeAction(Node):
                 
                 # Check for cancellation
                 if goal_handle.is_cancel_requested:
-                    self.get_logger().info(f"ManualMove({direction}) received cancel request")
+                    self.get_logger().info(f"ManualMove({target}/{direction}) received cancel request")
                     goal_handle.canceled()
-                    self.controller.stop()
+                    # Send stop command based on target
+                    if target == 'platform':
+                        self.controller.stop()
+                    else:  # pushrod
+                        self.controller.pushrod_stop()
                     
                     # Update task state and movement_state
                     with self.state_lock:
@@ -1732,12 +1988,45 @@ class LiftRobotNodeAction(Node):
                     self.get_logger().info("ManualMove stopped by user")
                     return result
                 
-                # Check range limits
+                # Check pushrod stall (mechanical limit reached) - only for pushrod
                 with self.state_lock:
                     current_height = self.current_height
                 
-                if self._check_range_limits(current_height, direction):
-                    self.controller.stop()
+                if target == 'pushrod' and self.pushrod_stall_active:
+                    if self._check_pushrod_stall(current_height, direction):
+                        # Stall detected - pushrod reached mechanical limit
+                        self.controller.pushrod_stop()
+                        time.sleep(0.1)
+                        
+                        result = ManualMove.Result()
+                        result.success = True
+                        result.final_height = current_height
+                        result.execution_time = time.time() - start_time
+                        result.completion_reason = 'stall_detected'
+                        
+                        with self.state_lock:
+                            self.task_state = 'completed'
+                            self.task_end_time = time.time()
+                            self.completion_reason = 'stall_detected'
+                            self.movement_state = 'stop'
+                            # Clear direction only if it's still our direction
+                            if self.current_manual_move_direction == direction:
+                                self.current_manual_move_direction = None
+                        
+                        goal_handle.succeed()
+                        self.get_logger().info(
+                            f"ManualMove({direction}) succeeded (pushrod stall): {direction.upper()} stalled at {current_height:.2f}mm, "
+                            f"time={result.execution_time:.2f}s"
+                        )
+                        return result
+                
+                # Check range limits (only for platform)
+                if target == 'platform' and self._check_range_limits(current_height, direction):
+                    # Send stop command based on target
+                    if target == 'platform':
+                        self.controller.stop()
+                    else:  # pushrod
+                        self.controller.pushrod_stop()
                     time.sleep(0.1)
                     
                     result = ManualMove.Result()
@@ -1782,6 +2071,9 @@ class LiftRobotNodeAction(Node):
         finally:
             # Always clear active action on exit
             self._clear_active_action(goal_handle, 'manual_move')
+            # Reset pushrod stall detection
+            if target == 'pushrod':
+                self._reset_pushrod_stall_detection()
 
 
 def main(args=None):

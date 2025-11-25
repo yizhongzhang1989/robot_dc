@@ -213,34 +213,6 @@
             <div>Reason: <span id="taskCompletionReason" class="font-mono text-green-700">-</span></div>
           </div>
         </div>
-          
-        <!-- Platform Status -->
-        <div class="mb-3 pb-3 border-b border-gray-200">
-          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-purple-100 px-2 py-1 rounded">
-            🏗️ Platform
-          </h3>
-          <div class="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2 rounded">
-            <div>Movement: <span id="platformMovement" class="font-mono font-semibold">-</span></div>
-            <div>Mode: <span id="platformMode" class="font-mono font-semibold">-</span></div>
-            <div>Current: <span id="platformCurrentHeight" class="font-mono text-blue-600">-</span> mm</div>
-            <div>Target: <span id="platformTargetHeight" class="font-mono text-green-600">-</span> mm</div>
-          </div>
-        </div>
-        
-        <!-- Pushrod Status -->
-        <div class="mb-3 pb-3 border-b border-gray-200">
-          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-indigo-100 px-2 py-1 rounded">
-            🔧 Pushrod
-          </h3>
-          <div class="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2 rounded">
-            <div>Movement: <span id="pushrodMovement" class="font-mono font-semibold">-</span></div>
-            <div>Mode: <span id="pushrodMode" class="font-mono font-semibold">-</span></div>
-            <div>Current: <span id="pushrodCurrentHeight" class="font-mono text-blue-600">-</span> mm</div>
-            <div>Target: <span id="pushrodTargetHeight" class="font-mono text-green-600">-</span> mm</div>
-            <div>Offset: <span id="pushrodOffsetVal" class="font-mono font-semibold text-purple-600">-</span> mm</div>
-            <div>Point: <span id="pushrodPoint" class="font-mono">-</span></div>
-          </div>
-        </div>
         
         <!-- System Info -->
         <div>
@@ -673,26 +645,6 @@ function update(d){
   if(d.combined_force_sensor!==undefined) {
     const val = (d.combined_force_sensor===null?'-':(d.combined_force_sensor.toFixed?d.combined_force_sensor.toFixed(2):d.combined_force_sensor));
     $('combinedForceVal').textContent = val;
-  }
-  
-  // Platform status
-  if(d.platform_status){
-    const ps = d.platform_status;
-    if(ps.movement_state!==undefined) $('platformMovement').textContent=ps.movement_state;
-    if(ps.control_mode!==undefined) $('platformMode').textContent=ps.control_mode;
-    if(ps.current_height!==undefined) $('platformCurrentHeight').textContent=(ps.current_height.toFixed?ps.current_height.toFixed(2):ps.current_height);
-    if(ps.target_height!==undefined) $('platformTargetHeight').textContent=(ps.target_height.toFixed?ps.target_height.toFixed(2):ps.target_height);
-  }
-  
-  // Pushrod status
-  if(d.pushrod_status){
-    const prs = d.pushrod_status;
-    if(prs.movement_state!==undefined) $('pushrodMovement').textContent=prs.movement_state;
-    if(prs.control_mode!==undefined) $('pushrodMode').textContent=prs.control_mode;
-    if(prs.current_height!==undefined) $('pushrodCurrentHeight').textContent=(prs.current_height.toFixed?prs.current_height.toFixed(2):prs.current_height);
-    if(prs.target_height!==undefined) $('pushrodTargetHeight').textContent=(prs.target_height.toFixed?prs.target_height.toFixed(2):prs.target_height);
-    if(prs.pushrod_offset!==undefined) $('pushrodOffsetVal').textContent=(prs.pushrod_offset.toFixed?prs.pushrod_offset.toFixed(2):prs.pushrod_offset);
-    if(prs.current_point!==undefined) $('pushrodPoint').textContent=prs.current_point;
   }
   
   // Update unified task status

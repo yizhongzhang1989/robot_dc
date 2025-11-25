@@ -1,9 +1,10 @@
 # Manual movement control action
-# Controls platform movement in a specific direction until stopped
+# Controls platform or pushrod movement in a specific direction until stopped
 # Stop conditions: limit reached, user cancellation, or emergency
 
 # Goal: direction to move
-string direction  # "up" or "down"
+string target      # "platform" or "pushrod" - which device to control
+string direction   # "up" or "down"
 ---
 # Result: outcome of manual movement
 bool success
