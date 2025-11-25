@@ -30,7 +30,7 @@ class ModbusManagerNode(Node):
     def handle_modbus_request(self, request, response):
         seq_id = getattr(request, 'seq_id', None)
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-        self.get_logger().info(f"[SEQ {seq_id}] [{now}] Received ModbusRequest: {request}")
+        self.get_logger().debug(f"[SEQ {seq_id}] [{now}] Received ModbusRequest: {request}")
         response.ack = 1  # Added: immediately return ack=1 upon receiving request
         with self.lock:
             try:
@@ -41,58 +41,58 @@ class ModbusManagerNode(Node):
 
                 if fc == 1:
                     # Read coils
-                    result = self.client.read_coils(address=addr, count=request.count, slave=slave)
+                    result = self.client.read_coils(address=addr, count=request.count, device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
                     response.response = [int(b) for b in result.bits]
-                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Read coils: address={addr}, count={request.count}, slave={slave}, success={response.success}, response={response.response}")
+                    self.get_logger().debug(f"[SEQ {seq_id}] [{now}] Read coils: address={addr}, count={request.count}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 3:
                     # Read holding registers
-                    result = self.client.read_holding_registers(address=addr, count=request.count, slave=slave)
+                    result = self.client.read_holding_registers(address=addr, count=request.count, device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
                     response.response = list(result.registers)
-                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Read holding registers: address={addr}, count={request.count}, slave={slave}, success={response.success}, response={response.response}")
+                    self.get_logger().debug(f"[SEQ {seq_id}] [{now}] Read holding registers: address={addr}, count={request.count}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 5:
                     # Write single coil (ON=0xFF00, OFF=0x0000)
-                    result = self.client.write_coil(address=addr, value=bool(values[0]), slave=slave)
+                    result = self.client.write_coil(address=addr, value=bool(values[0]), device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
                     response.response = [int(values[0])]
-                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Write single coil: address={addr}, value={values[0]}, slave={slave}, success={response.success}, response={response.response}")
+                    self.get_logger().debug(f"[SEQ {seq_id}] [{now}] Write single coil: address={addr}, value={values[0]}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 6:
                     # Write single register
-                    result = self.client.write_register(address=addr, value=values[0], slave=slave)
+                    result = self.client.write_register(address=addr, value=values[0], device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
                     response.response = [values[0]]
-                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Write single register: address={addr}, value={values[0]}, slave={slave}, success={response.success}, response={response.response}")
+                    self.get_logger().debug(f"[SEQ {seq_id}] [{now}] Write single register: address={addr}, value={values[0]}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 15:
                     # Write multiple coils
                     coil_values = [bool(v) for v in values]
-                    result = self.client.write_coils(address=addr, values=coil_values, slave=slave)
+                    result = self.client.write_coils(address=addr, values=coil_values, device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
                     response.response = [int(v) for v in coil_values]
-                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Write multiple coils: address={addr}, values={coil_values}, slave={slave}, success={response.success}, response={response.response}")
+                    self.get_logger().debug(f"[SEQ {seq_id}] [{now}] Write multiple coils: address={addr}, values={coil_values}, slave={slave}, success={response.success}, response={response.response}")
 
                 elif fc == 16:
                     # Write multiple registers
-                    result = self.client.write_registers(address=addr, values=values, slave=slave)
+                    result = self.client.write_registers(address=addr, values=values, device_id=slave)
                     if result.isError():
                         raise Exception(str(result))
                     response.success = True
                     response.response = values
-                    self.get_logger().info(f"[SEQ {seq_id}] [{now}] Write multiple registers: address={addr}, values={values}, slave={slave}, success={response.success}, response={response.response}")
+                    self.get_logger().debug(f"[SEQ {seq_id}] [{now}] Write multiple registers: address={addr}, values={values}, slave={slave}, success={response.success}, response={response.response}")
 
                 else:
                     raise ValueError(f"Unsupported function code: {fc}")

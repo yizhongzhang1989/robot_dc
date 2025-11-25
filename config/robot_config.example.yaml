@@ -141,6 +141,11 @@ services:
     ffpp_url: "http://msraig-ubuntu-4.guest.corp.microsoft.com:8001"  # UPDATE: FlowFormer++ server URL
     dataset_path: "dataset"
   
+  # Camera Calibration Web Service
+  camcalib_web:
+    host: "0.0.0.0"
+    port: 8006
+  
   # Robot Status Service (Redis-based status management and web dashboard)
   robot_status_redis:
     redis:

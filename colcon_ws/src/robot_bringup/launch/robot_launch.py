@@ -10,7 +10,7 @@ def generate_launch_description():
     modbus_path = os.path.join(
         get_package_share_directory('modbus_driver'),
         'launch',
-        'modbus_manager_launch.py'
+        'modbus_manager_basic_launch.py'
     )
     motor_path = os.path.join(
         get_package_share_directory('leadshine_motor'),

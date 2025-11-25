@@ -19,6 +19,7 @@ import pickle
 import base64
 import threading
 import sys
+import time
 import os
 from pathlib import Path
 
@@ -183,16 +184,20 @@ class RobotStatusNode(Node):
             for namespace, keys in data.items():
                 for key, value in keys.items():
                     try:
-                        # Handle format: {"pickle": "...", "json": {...}}
+                        # Handle format: {"pickle": "...", "json": {...}, "timestamp": ...}
                         if isinstance(value, dict) and "pickle" in value:
                             pickle_str = value["pickle"]
+                            # Get timestamp if exists, otherwise use current time
+                            timestamp = value.get("timestamp", time.time())
                         else:
                             # Backward compatibility: direct pickle string
                             pickle_str = value
+                            timestamp = time.time()
                         
-                        # Store pickle string directly in Redis
+                        # Store dict with pickle and timestamp as JSON
                         redis_key = f"robot_status:{namespace}:{key}"
-                        self._redis_backend._client.set(redis_key, pickle_str)
+                        data_dict = {'pickle': pickle_str, 'timestamp': timestamp}
+                        self._redis_backend._client.set(redis_key, json.dumps(data_dict))
                         count += 1
                     except Exception as e:
                         self.get_logger().warn(f"Failed to load {namespace}.{key}: {e}")
@@ -265,9 +270,13 @@ class RobotStatusNode(Node):
             status_tree = {}
             for namespace, keys in raw_status.items():
                 status_tree[namespace] = {}
-                for key, pickle_str in keys.items():
-                    # Create dict with pickle string
-                    value_dict = {"pickle": pickle_str}
+                for key, data in keys.items():
+                    # data is dict with 'pickle' and 'timestamp'
+                    pickle_str = data.get('pickle')
+                    timestamp = data.get('timestamp')
+                    
+                    # Create dict with pickle string and timestamp
+                    value_dict = {"pickle": pickle_str, "timestamp": timestamp}
                     
                     # Try to add JSON representation if possible
                     try:
@@ -315,13 +324,27 @@ class RobotStatusNode(Node):
         Args:
             request.ns: Robot or namespace identifier
             request.key: Status key
-            request.value: Pickled base64-encoded value
+            request.value: Either a pickled base64-encoded string OR plain value to be pickled
         """
         try:
-            # Store pickle string directly (same as original robot_status stores in ROS parameters)
+            # Check if value is already pickle-encoded (base64 string)
+            # If it looks like base64 pickle, use it directly; otherwise pickle it
+            pickle_str = request.value
+            try:
+                # Try to decode as base64 and unpickle to verify it's valid
+                pickled = base64.b64decode(pickle_str.encode('ascii'))
+                pickle.loads(pickled)
+                # It's valid pickle - use as is
+            except Exception:
+                # Not valid pickle - treat as plain value and pickle it
+                pickled = pickle.dumps(request.value)
+                pickle_str = base64.b64encode(pickled).decode('ascii')
+            
+            # Store dict with pickle and timestamp as JSON
             redis_key = f"robot_status:{request.ns}:{request.key}"
+            data_dict = {'pickle': pickle_str, 'timestamp': time.time()}
             with self.lock:
-                success = self._redis_backend._client.set(redis_key, request.value)
+                success = self._redis_backend._client.set(redis_key, json.dumps(data_dict))
             
             if success:
                 response.success = True

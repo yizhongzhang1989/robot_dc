@@ -87,9 +87,9 @@ Open your browser and navigate to:
 
 The dashboard auto-refreshes every 2 seconds and displays all status organized by namespace.
 
-## Service Interface (Not Recommended)
+## Service Interface (Deprecated)
 
-**⚠️ Note:** The ROS2 service interface is **not recommended** for use with this package. It is provided only for backward compatibility with the original `robot_status` package. 
+**⚠️ Note:** The ROS2 service interface is **currently deprecated** for use with this package. It is provided only for backward compatibility with the original `robot_status` package. 
 
 **Recommended:** Use the [Python Client API](#python-client-api-recommended) instead for direct Redis access with better performance and no executor conflicts.
 

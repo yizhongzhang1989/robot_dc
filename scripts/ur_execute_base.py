@@ -695,139 +695,182 @@ class URExecuteBase:
             print(f"✗ Failed to unlock quick changer: {e}")
             return False
 
-# =========================== Lift Platform Control Methods =============================
-    def lift_platform_to_base(self):
-        """
-        Move the lift platform downward (pulse relay).
-        
-        Sends a POST request to the lift web service to trigger downward motion.
-        """
-        print("\n⬇️  Lift Platform Down")
-        print("   Sending DOWN command to lift platform...")
-        
-        url = f"{self.lift_platform_web_url}/api/cmd"
-        payload = {"command": "down", "target": "platform"}
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=5)
-            if response.ok:
-                print("✅ Lift platform DOWN command sent successfully")
-                return response.json()
-            else:
-                print(f"❌ Lift platform DOWN command failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to lift platform web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending lift platform DOWN command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending lift platform DOWN command: {e}")
-            return {"success": False, "error": str(e)}
 
-    def pushrod_to_base(self):
-        """
-        Move pushrod to 'base' position (home/retracted position).
-        
-        Sends goto_point command with point='base'.
-        """
-        print("\n🏠 Pushrod Go to Base")
-        print("   Moving pushrod to base position...")
-        
-        url = f"{self.lift_platform_web_url}/api/cmd"
-        payload = {"command": "goto_point", "target": "pushrod", "point": "base"}
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-            if response.ok:
-                print("✅ Pushrod 'base' command sent successfully")
-                return response.json()
-            else:
-                print(f"❌ Pushrod goto 'base' failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to pushrod web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Timeout sending pushrod goto command")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Error sending pushrod goto command: {e}")
-            return {"success": False, "error": str(e)}
 
-    def lift_platform_coarse_adjust(self, target_height=900.0):
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CourierRobot - Lift Platform and Pushrod Control via HTTP API
+# ═══════════════════════════════════════════════════════════════════════
+class CourierRobot:
+    """
+    Courier robot controller for lift platform and pushrod via HTTP API
+    Provides all control functions available in the web interface
+    """
+    
+    def __init__(self, base_url="http://192.168.1.3:8090"):
         """
-        Platform coarse adjustment - Move lift platform to a specific height.
+        Initialize courier robot controller
         
         Args:
-            target_height: Target height in millimeters (default: 900.0mm)
+            base_url: HTTP server base URL (default: http://192.168.1.3:8090)
         """
-        print(f"\n🎯 Platform Coarse Adjustment: {target_height}mm")
-        
-        url = f"{self.lift_platform_web_url}/api/cmd"
-        payload = {
-            "command": "goto_height",
-            "target": "platform",
-            "target_height": target_height
-        }
-        headers = {"Content-Type": "application/json"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=5)
-            if response.ok:
-                print(f"✅ Platform coarse adjustment command sent successfully: {target_height}mm")
-                return response.json()
-            else:
-                print(f"❌ Platform coarse adjustment command failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to lift platform web service")
-            return {"success": False, "error": "Connection failed"}
-        except requests.exceptions.Timeout:
-            print("❌ Platform coarse adjustment command timeout")
-            return {"success": False, "error": "Timeout"}
-        except Exception as e:
-            print(f"❌ Platform coarse adjustment command error: {e}")
-            return {"success": False, "error": str(e)}
-
-
-    def pushrod_fine_adjust(self, target_height=900.0):
+        self.base_url = base_url
+        print(f"📡 CourierRobot initialized with base URL: {base_url}")
+    
+    def _send_command(self, target, command, **kwargs):
         """
-        Pushrod fine adjustment - Precise height control using pushrod.
+        Internal method to send HTTP command to lift platform/pushrod
         
         Args:
-            target_height: Target height in millimeters (default: 900.0mm)
+            target: 'platform' or 'pushrod'
+            command: command name
+            **kwargs: additional parameters
+        
+        Returns:
+            dict with 'success' boolean and optional data
         """
-        print(f"\n🔧 Pushrod Fine Adjustment: {target_height}mm")
-        
-        url = f"{self.lift_platform_web_url}/api/cmd"
-        payload = {
-            "command": "goto_height",
-            "target": "pushrod",
-            "target_height": target_height
-        }
-        headers = {"Content-Type": "application/json"}
-        
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=5)
-            if response.ok:
-                print(f"✅ Pushrod fine adjustment command sent successfully: {target_height}mm")
-                return response.json()
+            url = f"{self.base_url}/api/cmd"
+            payload = {'command': command, 'target': target, **kwargs}
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                return {"success": True, "data": response.json()}
             else:
-                print(f"❌ Pushrod fine adjustment command failed: HTTP {response.status_code}")
-                return {"success": False, "status_code": response.status_code}
-        except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to lift platform web service")
-            return {"success": False, "error": "Connection failed"}
+                return {
+                    "success": False,
+                    "error": f"HTTP {response.status_code}: {response.text}"
+                }
         except requests.exceptions.Timeout:
-            print("❌ Pushrod fine adjustment command timeout")
-            return {"success": False, "error": "Timeout"}
+            return {"success": False, "error": "Request timeout"}
+        except requests.exceptions.ConnectionError:
+            return {"success": False, "error": "Connection failed"}
         except Exception as e:
-            print(f"❌ Pushrod fine adjustment command error: {e}")
             return {"success": False, "error": str(e)}
+    
+    def get_status(self):
+        """Get current status of platform and pushrod"""
+        try:
+            url = f"{self.base_url}/api/status"
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                return {"success": True, "data": response.json()}
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_sensor_data(self):
+        """Get latest sensor data (height and force)"""
+        try:
+            url = f"{self.base_url}/api/latest"
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                return {"success": True, "data": response.json()}
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    # ==================== Platform Manual Control ====================
+    def platform_up(self):
+        """Platform manual up movement"""
+        print("⬆️  [Platform] Manual UP")
+        return self._send_command('platform', 'up')
+    
+    def platform_down(self):
+        """Platform manual down movement"""
+        print("⬇️  [Platform] Manual DOWN")
+        return self._send_command('platform', 'down')
+    
+    def platform_stop(self):
+        """Platform stop"""
+        print("⏹️  [Platform] STOP")
+        return self._send_command('platform', 'stop')
+    
+    # ==================== Platform Height Control ====================
+    def platform_goto_height(self, target_height):
+        """
+        Platform goto specific height
+        
+        Args:
+            target_height: Target height in mm
+        """
+        print(f"🎯 [Platform] Goto height: {target_height}mm")
+        return self._send_command('platform', 'goto_height', target_height=target_height)
+    
+    # ==================== Platform Force Control ====================
+    def platform_force_up(self, target_force):
+        """
+        Platform force-controlled up movement
+        
+        Args:
+            target_force: Target force in Newtons
+        """
+        print(f"⚡⬆️  [Platform] Force UP to {target_force}N")
+        return self._send_command('platform', 'force_up', target_force=target_force)
+    
+    def platform_force_down(self, target_force):
+        """
+        Platform force-controlled down movement
+        
+        Args:
+            target_force: Target force in Newtons
+        """
+        print(f"⚡⬇️  [Platform] Force DOWN to {target_force}N")
+        return self._send_command('platform', 'force_down', target_force=target_force)
+    
+    # ==================== Platform Hybrid Control ====================
+    def platform_hybrid_control(self, target_height, target_force):
+        """
+        Platform hybrid control (height OR force, whichever reached first)
+        
+        Args:
+            target_height: Target height in mm
+            target_force: Target force in Newtons
+        """
+        print(f"🎯⚡ [Platform] Hybrid: {target_height}mm OR {target_force}N")
+        return self._send_command('platform', 'hybrid_control', 
+                                 target_height=target_height, 
+                                 target_force=target_force)
+    
+    # ==================== Pushrod Manual Control ====================
+    def pushrod_up(self):
+        """Pushrod manual up movement"""
+        print("⬆️  [Pushrod] Manual UP")
+        return self._send_command('pushrod', 'up')
+    
+    def pushrod_down(self):
+        """Pushrod manual down movement"""
+        print("⬇️  [Pushrod] Manual DOWN")
+        return self._send_command('pushrod', 'down')
+    
+    def pushrod_stop(self):
+        """Pushrod stop"""
+        print("⏹️  [Pushrod] STOP")
+        return self._send_command('pushrod', 'stop')
+    
+    # ==================== Pushrod Height Control ====================
+    def pushrod_goto_height(self, target_height, mode='absolute'):
+        """
+        Pushrod goto specific height
+        
+        Args:
+            target_height: Target height in mm (absolute) or offset in mm (relative)
+            mode: 'absolute' or 'relative'
+        """
+        print(f"🎯 [Pushrod] Goto height: {target_height}mm (mode: {mode})")
+        return self._send_command('pushrod', 'goto_height', 
+                                 target_height=target_height, 
+                                 mode=mode)
+    
+    # ==================== Emergency Reset ====================
+    def emergency_reset(self):
+        """
+        Emergency reset - stops all movements and clears all states
+        """
+        print("🚨 EMERGENCY RESET")
+        return self._send_command('platform', 'reset')
 
 
 if __name__ == "__main__":
