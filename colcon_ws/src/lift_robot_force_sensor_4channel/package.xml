@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>lift_robot_force_sensor_test</name>
+  <name>lift_robot_force_sensor_4channel</name>
   <version>0.1.0</version>
-  <description>Lift robot single-channel force sensor reader (TEST clone, Modbus FC03)</description>
+  <description>Lift robot 4-channel force sensor reader (Modbus FC03)</description>
   <maintainer email="maintainer@example.com">Maintainer</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_python</buildtool_depend>

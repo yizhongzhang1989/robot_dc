@@ -53,8 +53,10 @@ class LiftRobotWeb(Node):
         self.connections = []
         self.loop = None
         # Dual-channel force values: right force sensor (device_id=52) and left force sensor (device_id=53)
-        self.right_force_sensor = None  # /force_sensor (device_id=52)
-        self.left_force_sensor = None   # /force_sensor_2 (device_id=53)
+        self.right_force_sensor = None  # /force_sensor (device_id=52) - calibrated
+        self.left_force_sensor = None   # /force_sensor_2 (device_id=53) - calibrated
+        self.right_force_raw = None     # /force_sensor/raw (device_id=52) - raw for calibration
+        self.left_force_raw = None      # /force_sensor_2/raw (device_id=53) - raw for calibration
         self.combined_force_sensor = None  # Combined force (sum of two sensors, falls back to single sensor if one missing)
         self.last_force_update = None  # Latest force sensor update timestamp (either sensor)
         self.platform_status = None
@@ -92,10 +94,14 @@ class LiftRobotWeb(Node):
         # Force sensor subscriptions (Float32)
         try:
             from std_msgs.msg import Float32
-            # Subscribe to two force sensor topics
+            # Subscribe to calibrated force sensor topics (for control)
             self.force_sub_right = self.create_subscription(Float32, '/force_sensor', self.force_cb_right, 10)
             self.force_sub_left = self.create_subscription(Float32, '/force_sensor_2', self.force_cb_left, 10)
+            # Subscribe to raw force sensor topics (for calibration display)
+            self.force_raw_sub_right = self.create_subscription(Float32, '/force_sensor/raw', self.force_raw_cb_right, 10)
+            self.force_raw_sub_left = self.create_subscription(Float32, '/force_sensor_2/raw', self.force_raw_cb_left, 10)
             self.get_logger().info("Subscribed to /force_sensor (right) and /force_sensor_2 (left)")
+            self.get_logger().info("Subscribed to /force_sensor/raw and /force_sensor_2/raw (for calibration)")
         except Exception as e:
             self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
         # Status subscriptions
@@ -186,7 +192,7 @@ class LiftRobotWeb(Node):
             # Continue operation
 
     def force_cb_right(self, msg):
-        """Right force sensor callback (device_id=52, /force_sensor)"""
+        """Right force sensor callback (device_id=52, /force_sensor) - calibrated value"""
         try:
             if 0 <= msg.data <= 2000:
                 self.right_force_sensor = msg.data
@@ -198,7 +204,7 @@ class LiftRobotWeb(Node):
             self.get_logger().warn(f"Right force callback error: {e}")
     
     def force_cb_left(self, msg):
-        """Left force sensor callback (device_id=53, /force_sensor_2)"""
+        """Left force sensor callback (device_id=53, /force_sensor_2) - calibrated value"""
         try:
             if 0 <= msg.data <= 2000:
                 self.left_force_sensor = msg.data
@@ -208,6 +214,22 @@ class LiftRobotWeb(Node):
                 self.get_logger().warn(f"Left force out of range: {msg.data}")
         except Exception as e:
             self.get_logger().warn(f"Left force callback error: {e}")
+    
+    def force_raw_cb_right(self, msg):
+        """Right force sensor raw callback (device_id=52, /force_sensor/raw) - raw value for calibration"""
+        try:
+            if 0 <= msg.data <= 100000:  # Raw values can be larger
+                self.right_force_raw = msg.data
+        except Exception as e:
+            self.get_logger().warn(f"Right force raw callback error: {e}")
+    
+    def force_raw_cb_left(self, msg):
+        """Left force sensor raw callback (device_id=53, /force_sensor_2/raw) - raw value for calibration"""
+        try:
+            if 0 <= msg.data <= 100000:  # Raw values can be larger
+                self.left_force_raw = msg.data
+        except Exception as e:
+            self.get_logger().warn(f"Left force raw callback error: {e}")
 
     def _update_combined_force(self):
         """Update combined force: sum if both exist; single value if only one exists; None if neither; prevent inf overflow"""
@@ -1601,10 +1623,10 @@ class LiftRobotWeb(Node):
                     if actual_force is None:
                         return JSONResponse({'success': False, 'error': 'Missing force value'})
                     
-                    # Get current sensor reading
-                    sensor_reading = self.right_force_sensor if channel == 'right' else self.left_force_sensor
+                    # Get current RAW sensor reading (not calibrated)
+                    sensor_reading = self.right_force_raw if channel == 'right' else self.left_force_raw
                     if sensor_reading is None:
-                        return JSONResponse({'success': False, 'error': f'No sensor data for {channel} channel'})
+                        return JSONResponse({'success': False, 'error': f'No raw sensor data for {channel} channel'})
                     
                     sample = {
                         'sensor': float(sensor_reading),
@@ -1764,8 +1786,9 @@ class LiftRobotWeb(Node):
                             'count_left': len(self.force_calib_samples_left),
                             'calibrated_right': self.force_calib_scale_right is not None,
                             'calibrated_left': self.force_calib_scale_left is not None,
-                            'current_sensor_right': self.right_force_sensor,
-                            'current_sensor_left': self.left_force_sensor
+                            # Use raw values for calibration display
+                            'current_sensor_right': self.right_force_raw,
+                            'current_sensor_left': self.left_force_raw
                         }
                         
                         # Load timestamp from config files if exist

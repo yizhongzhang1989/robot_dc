@@ -38,12 +38,6 @@ def generate_launch_description():
         'lift_robot_force_sensor_launch.py'
     )
 
-    force_sensor_2_path = os.path.join(
-        get_package_share_directory('lift_robot_force_sensor_2'),
-        'launch',
-        'lift_robot_force_sensor_launch.py'
-    )
-
     web_path = os.path.join(
         get_package_share_directory('lift_robot_web'),
         'launch',
@@ -67,16 +61,30 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cable_sensor_path), launch_arguments={'device_id': '51', 'read_interval': '0.02'}.items())]
     )
 
-    # Start force sensor after cable sensor (stagger to avoid simultaneous Modbus reads)
+    # Start force sensor (device_id=52, topic=/force_sensor) after cable sensor
     force_sensor_launch = TimerAction(
         period=4.5,
-        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(force_sensor_path))]
+        actions=[IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(force_sensor_path),
+            launch_arguments={
+                'device_id': '52',
+                'topic_name': '/force_sensor',
+                'node_name_suffix': 'right'
+            }.items()
+        )]
     )
 
-    # Start second force sensor after first sensor (stagger to reduce bus load)
+    # Start second force sensor (device_id=53, topic=/force_sensor_2) after first sensor
     force_sensor_2_launch = TimerAction(
         period=5.0,
-        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(force_sensor_2_path))]
+        actions=[IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(force_sensor_path),
+            launch_arguments={
+                'device_id': '53',
+                'topic_name': '/force_sensor_2',
+                'node_name_suffix': 'left'
+            }.items()
+        )]
     )
 
     # Start web after sensors (optional)

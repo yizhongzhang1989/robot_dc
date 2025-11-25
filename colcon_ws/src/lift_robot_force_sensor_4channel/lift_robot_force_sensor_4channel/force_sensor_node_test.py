@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 
 class LiftRobotForceSensorTestNode(Node):
     def __init__(self):
-        super().__init__('lift_robot_force_sensor_test')
+        super().__init__('lift_robot_force_sensor_4channel')
         # Parameters (device_id default changed to 60, single channel CH2)
         self.declare_parameter('device_id', 60)  # Modbus slave ID (0x3C)
         self.declare_parameter('use_ack_patch', True)

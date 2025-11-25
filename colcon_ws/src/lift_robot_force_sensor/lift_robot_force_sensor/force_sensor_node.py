@@ -16,7 +16,17 @@ logging.basicConfig(level=logging.INFO)
 
 class LiftRobotForceSensorNode(Node):
     def __init__(self):
+        # Pre-fetch node_name_suffix parameter to construct node name
+        # We need to do this before super().__init__() to set the correct node name
+        import rclpy
+        temp_args = rclpy.utilities.remove_ros_args()
+        node_name_suffix = ''
+        # Try to get suffix from ROS parameters if available
+        # This is a workaround since we can't declare parameters before super().__init__()
+        
+        # Create node with base name first, we'll use get_name() for logging
         super().__init__('lift_robot_force_sensor')
+        
         # Parameters
         self.declare_parameter('device_id', 52)  # Modbus slave ID
         self.declare_parameter('use_ack_patch', True)
@@ -26,6 +36,10 @@ class LiftRobotForceSensorNode(Node):
         self.declare_parameter('read_interval', 0.02)  # seconds (50 Hz default)
         # Visualization enable flag (can also be overridden via CLI args)
         self.declare_parameter('enable_visualization', False)
+        # Topic name parameter (allows running multiple instances with different topics)
+        self.declare_parameter('topic_name', '/force_sensor')
+        # Node name suffix (for distinguishing multiple instances in logs)
+        self.declare_parameter('node_name_suffix', '')
         # Calibration parameters (from calibration: actual_force = sensor_reading × scale)
         # Default values used when launch file doesn't load from JSON config
         # Device-specific defaults:
@@ -40,14 +54,18 @@ class LiftRobotForceSensorNode(Node):
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
         self.read_interval = float(self.get_parameter('read_interval').value)
         self.enable_visualization = bool(self.get_parameter('enable_visualization').value)
+        self.topic_name = self.get_parameter('topic_name').value
+        self.node_name_suffix = self.get_parameter('node_name_suffix').value
         self.calibration_scale = float(self.get_parameter('calibration_scale').value)
         self.calibration_offset = float(self.get_parameter('calibration_offset').value)
 
+        # Log node info with suffix in message (node name itself stays as base name)
+        node_identifier = f"{self.get_name()}_{self.node_name_suffix}" if self.node_name_suffix else self.get_name()
         self.get_logger().info(
-            f"Start single force sensor node: device_id={self.device_id}, interval={self.read_interval}s (~{(1.0/self.read_interval) if self.read_interval>0 else '∞'} Hz)"
+            f"[{node_identifier}] Start force sensor: device_id={self.device_id}, topic={self.topic_name}, interval={self.read_interval}s (~{(1.0/self.read_interval) if self.read_interval>0 else '∞'} Hz)"
         )
         self.get_logger().info(
-            f"Calibration: actual_force = sensor_reading × {self.calibration_scale:.6f} + {self.calibration_offset:.6f}"
+            f"[{node_identifier}] Calibration: actual_force = sensor_reading × {self.calibration_scale:.6f} + {self.calibration_offset:.6f}"
         )
 
         self.controller = ForceSensorController(self.device_id, self, self.use_ack_patch)
@@ -56,9 +74,12 @@ class LiftRobotForceSensorNode(Node):
         # Sequence id generator
         self.seq_id = 0
 
-        # 单通道力值发布 (Float32) 统一话题 /force_sensor
+        # Single channel force value publishing (Float32)
         from std_msgs.msg import Float32
-        self.force_pub = self.create_publisher(Float32, '/force_sensor', 10)
+        # Calibrated force (for control)
+        self.force_pub = self.create_publisher(Float32, self.topic_name, 10)
+        # Raw force (for calibration and debugging)
+        self.force_raw_pub = self.create_publisher(Float32, f"{self.topic_name}/raw", 10)
 
         # Periodic read timer
         self.timer = self.create_timer(self.read_interval, self.periodic_read)
@@ -67,16 +88,16 @@ class LiftRobotForceSensorNode(Node):
         # Visualization state
         self.vis_initialized = False
         self.vis_last_draw = 0.0
-        # 修改为 50FPS 以与采样频率 50Hz 保持一致，减少感知延迟
+        # Set to 50FPS to match sampling frequency 50Hz, reducing perception latency
         self.vis_interval = 1.0 / 50.0  # target ~50 FPS
         self.force_history = []  # store tuples (t, right, left)
         self.max_history_seconds = 20.0
         if self.enable_visualization:
             if cv2 is None:
-                self.get_logger().warning("OpenCV 不可用，已忽略 enable_visualization")
+                self.get_logger().warning("OpenCV not available, enable_visualization ignored")
                 self.enable_visualization = False
             else:
-                self.get_logger().info("Force visualization 已启用 (窗口: ForceSensorLive)")
+                self.get_logger().info("Force visualization enabled (window: ForceSensorLive)")
                 # Separate timer for drawing to avoid blocking read loop
                 self.vis_timer = self.create_timer(self.vis_interval, self._draw_visualization)
 
@@ -87,15 +108,22 @@ class LiftRobotForceSensorNode(Node):
     def periodic_read(self):
         try:
             seq = self.next_seq()
-            # 单通道读取
+            # Single channel read
             self.controller.read_force(seq_id=seq)
             # After asynchronous callbacks complete, publish last known values (race acceptable for simple UI display)
             last = self.controller.get_last()
             from std_msgs.msg import Float32
-            if last['right_value'] is not None:  # 兼容 controller 返回结构
+            if last['right_value'] is not None:  # Compatible with controller return structure
                 # Apply calibration: actual_force = sensor_reading × scale + offset
                 raw_value = float(last['right_value'])
                 calibrated_force = raw_value * self.calibration_scale + self.calibration_offset
+                
+                # Publish raw value (for calibration)
+                msg_raw = Float32()
+                msg_raw.data = raw_value
+                self.force_raw_pub.publish(msg_raw)
+                
+                # Publish calibrated value (for control)
                 msg_force = Float32()
                 msg_force.data = calibrated_force
                 self.force_pub.publish(msg_force)
@@ -161,10 +189,10 @@ class LiftRobotForceSensorNode(Node):
         cv2.putText(img, f"Window: {duration:.1f}s  MaxForceScale: {max_force:.1f} N", (10, h-15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,200,200), 1, cv2.LINE_AA)
         cv2.rectangle(img, (0,0), (w-1,h-1), (80,80,80), 1)
         cv2.imshow('ForceSensorLive', img)
-        # waitKey 必须调用以刷新窗口; 使用 1ms 非阻塞
+        # waitKey must be called to refresh window; use 1ms non-blocking
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
-            self.get_logger().info("收到 q 键，关闭可视化窗口")
+            self.get_logger().info("Received 'q' key, closing visualization window")
             cv2.destroyWindow('ForceSensorLive')
             self.enable_visualization = False
 

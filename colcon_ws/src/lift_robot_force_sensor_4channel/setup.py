@@ -1,15 +1,15 @@
 from setuptools import setup
 
-package_name = 'lift_robot_force_sensor_2'
+package_name = 'lift_robot_force_sensor_4channel'
 
 setup(
     name=package_name,
     version='0.1.0',
     packages=[package_name],
     data_files=[
-    ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
-    ('share/' + package_name, ['package.xml']),
-    ('share/' + package_name + '/launch', ['launch/lift_robot_force_sensor_launch.py']),
+        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+    ('share/' + package_name + '/launch', ['launch/lift_robot_force_sensor_4channel_launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -19,7 +19,7 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
-            'force_sensor_node_2 = lift_robot_force_sensor_2.force_sensor_node:main',
+            'force_sensor_node_4channel = lift_robot_force_sensor_4channel.force_sensor_node_test:main',
         ],
     },
 )
