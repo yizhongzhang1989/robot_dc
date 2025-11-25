@@ -72,7 +72,11 @@ def generate_launch_description():
         name='robot_status_node',
         output='screen',
         parameters=[{
-            'auto_save_file_path': auto_save_file_path
+            'auto_save_file_path': auto_save_file_path,
+            'redis_host': service_config['redis']['host'],
+            'redis_port': service_config['redis']['port'],
+            'redis_db': service_config['redis']['db'],
+            'redis_password': service_config['redis']['password'] if service_config['redis']['password'] else ''
         }],
         emulate_tty=True
     )
