@@ -47,25 +47,25 @@ ur15:
     - package: "image_labeling_service"
       launch_file: "image_labeling_launch.py"
       delay: 0.0
-      enabled: false
+      enabled: true
     - package: "ur15_robot_arm"
       launch_file: "ur15_control_launch.py"
       delay: 0.0
       enabled: true
     - package: "camera_node"
       launch_file: "ur15_cam_launch.py"
-      delay: 1.0
+      delay: 0.0
       enabled: true
     - package: "ur15_web"
       launch_file: "ur15_web_launch.py"
-      delay: 2.0
+      delay: 5.0
       enabled: true
   
   # Camera configuration
   camera:
     name: "UR15Camera"
     ip: "192.168.1.101"    # UPDATE: Camera IP address
-    rtsp_url: "rtsp://admin:${CAMERA_PASSWORD}@192.168.1.101/stream0"  # UPDATE: Set CAMERA_PASSWORD env var
+    rtsp_url: "rtsp://admin:123456@192.168.1.101/stream0"  # UPDATE: Change password
     server_port: 8019
     topic: "/ur15_camera/image_raw"
     stream_fps: 25
@@ -108,7 +108,7 @@ duco:
   camera:
     name: "DucoCamera"
     ip: "192.168.1.102"      # UPDATE: Duco camera IP (if different)
-    rtsp_url: "rtsp://admin:${DUCO_CAMERA_PASSWORD}@192.168.1.102/stream0"  # UPDATE: Set env var
+    rtsp_url: "rtsp://admin:123456@192.168.1.102/stream0"  # UPDATE: Change password
     server_port: 8020
     topic: "/duco_camera/image_raw"
     stream_fps: 25
@@ -141,7 +141,7 @@ services:
     host: "0.0.0.0"
     port: 8004
     ffpp_url: "http://msraig-ubuntu-4.guest.corp.microsoft.com:8001"  # UPDATE: FlowFormer++ server URL
-    dataset_path: "dataset"  # Path relative to workspace root
+    dataset_path: "dataset"
   
   # Robot Status Service (Redis-based status management and web dashboard)
   robot_status_redis:
@@ -154,7 +154,7 @@ services:
       enabled: true
       host: "0.0.0.0"
       port: 8005
-    auto_save_file_path: "temp/robot_status_auto_save.json"  # Path relative to workspace root
+    auto_save_file_path: "temp/robot_status_auto_save.json"
 
 # ============================================================================
 # Shared/Common Configuration
@@ -185,7 +185,4 @@ shared:
 # ============================================================================
 # Set these environment variables before running services:
 #
-# export CAMERA_PASSWORD="your_camera_password"
-# export DUCO_CAMERA_PASSWORD="your_duco_camera_password"
-# export REDIS_PASSWORD="your_redis_password"  # If Redis requires auth
 # export ROBOT_DC_ROOT="/path/to/robot_dc"     # Optional, auto-detected
