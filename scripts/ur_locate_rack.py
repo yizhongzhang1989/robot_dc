@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
 URLocateRack - Automated rack location capture system
-Sequentially executes location operations for rack1, rack2, and rack3
 """
 
 import os
 import sys
 import time
 import json
-import subprocess
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
@@ -20,7 +18,7 @@ from rclpy.node import Node
 
 # Add ThirdParty robot_vision to path for Web API client
 sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vision'))
-from core.positioning_3d_webapi import load_camera_params_from_json
+from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_params_from_json
 from robot_status.client_utils import RobotStatusClient
 
 # Import URCapture base class
@@ -32,7 +30,7 @@ class URLocateRack(URCapture):
                  camera_topic="/ur15_camera/image_raw",
                  camera_params_path="../temp/ur15_cam_calibration_result/ur15_camera_parameters",
                  verbose=True,
-                 operation_name="rack_locate"):
+                 operation_name="rack_bottom_left"):
         """
         Initialize URLocateRack class for automated rack location operations
         
@@ -55,29 +53,47 @@ class URLocateRack(URCapture):
         
         self.verbose = verbose
         
-        # ur_3d_positioning.py path (script_dir already set by parent class)
-        self.ur_3d_positioning_path = os.path.join(self.script_dir, "ur_3d_positioning.py")
-        
-        # Verify ur_3d_positioning.py exists
-        if not os.path.exists(self.ur_3d_positioning_path):
-            raise FileNotFoundError(f"ur_3d_positioning.py not found at: {self.ur_3d_positioning_path}")
-        
-        # Define rack operations in order
-        self.rack_operations = ["rack1", "rack2", "rack3", "rack4"]
-        
-        # Initialize RobotStatusClient
-        self.robot_status_client = None
-        try:
-            self.robot_status_client = RobotStatusClient(self, timeout_sec=5.0)
-            print("✓ RobotStatusClient initialized successfully")
-        except Exception as e:
-            print(f"⚠ Failed to initialize RobotStatusClient: {e}")
-            self.robot_status_client = None
-        
-        # Initialize recorded positions storage
-        self.recorded_positions = {}
+        # ================================= Configuration Parameters =================================
+        self.operation_names = []   # Initialize operation names list (will be populated from JSON file)
     
-    def load_recorded_positions(self):
+        self.recorded_positions = {}
+        
+        # Define all rack corner points in wobj coordinate system (for positioning based on fitting method)
+        self.template_points = [
+            {
+                "name": "GB200_Rack_Bottom_Left_Corner",
+                "x": 0,
+                "y": 0,
+                "z": 0.0
+            },
+            {
+                "name": "GB200_Rack_Bottom_Right_Corner",
+                "x": 0.55,
+                "y": 0,
+                "z": 0.0
+            },
+            {
+                "name": "GB200_Rack_Top_Left_Corner",
+                "x": 0,
+                "y": 0,
+                "z": 2.145
+            },
+            {
+                "name": "GB200_Rack_Top_Right_Corner",
+                "x": 0.55,
+                "y": 0,
+                "z": 2.145
+            }
+        ]
+        # ============================ Instance Paramters ==================================
+        self.positioning_client = None
+        self.robot_status_client = None
+        
+        # ============================ Initialization ================================
+        self._init_positioning_client()
+        self._init_robot_status_client()
+    
+    def _load_recorded_positions(self):
         """
         Load recorded positions from robot_dc/temp/recorded_GB200_locate_positions.json
         and convert from degrees to radians.
@@ -85,6 +101,8 @@ class URLocateRack(URCapture):
         Stores the positions in self.recorded_positions as a dictionary where:
         - Keys are the position names (e.g., "rack1", "rack2", etc.)
         - Values are lists of 6 joint angles in radians
+        
+        Also populates self.operation_names with the keys from the JSON file.
         
         Returns:
             bool: True if successfully loaded, False otherwise
@@ -100,20 +118,21 @@ class URLocateRack(URCapture):
             
             # Load JSON file
             with open(positions_file, 'r') as f:
-                positions_data = json.load(f)
+                recorded_positions_data = json.load(f)
             
             # Convert degrees to radians and store
-            self.recorded_positions = {}
-            for key, position_deg in positions_data.items():
+            for key, position_deg in recorded_positions_data.items():
                 if isinstance(position_deg, list) and len(position_deg) == 6:
                     # Convert from degrees to radians
                     position_rad = [np.deg2rad(angle) for angle in position_deg]
                     self.recorded_positions[key] = position_rad
+                    self.operation_names.append(key)
                     print(f"✓ Loaded position '{key}': {position_deg} deg -> {position_rad} rad")
                 else:
                     print(f"⚠ Invalid position format for '{key}': {position_deg}")
             
             print(f"\n✓ Successfully loaded {len(self.recorded_positions)} recorded positions")
+            print(f"✓ Operation names: {self.operation_names}")
             return True
             
         except json.JSONDecodeError as e:
@@ -125,106 +144,780 @@ class URLocateRack(URCapture):
             traceback.print_exc()
             return False
     
-    def auto_capture(self):
+    def _init_positioning_client(self, service_url="http://localhost:8004", max_retries=3, retry_delay=2):
         """
-        Automatically execute location operations for rack1, rack2, and rack3 in sequence
+        Initialize the 3D Positioning Web API Client with retry logic
+        
+        Args:
+            service_url (str): URL of the positioning service
+            max_retries (int): Maximum number of connection attempts
+            retry_delay (int): Seconds to wait between retries
+        """
+        # Check if the Web API client is available
+        if Positioning3DWebAPIClient is None:
+            print("✗ Positioning Web API client not available (import failed)")
+            self.positioning_client = None
+            return
+        
+        for attempt in range(max_retries):
+            try:
+                self.positioning_client = Positioning3DWebAPIClient(service_url=service_url)
+                
+                # Check service health
+                health = self.positioning_client.check_health()
+                if health.get('success'):
+                    print(f"✓ Positioning service connected to: {service_url}")
+                    ffpp_connected = health.get('status', {}).get('ffpp_server', {}).get('connected', False)
+                    refs_loaded = health.get('status', {}).get('references', {}).get('loaded', 0)
+                    print(f"  FFPP server connected: {ffpp_connected}")
+                    print(f"  {refs_loaded} reference(s) loaded")
+                    return  # Successfully connected
+                else:
+                    raise Exception(health.get('error', 'Service health check failed'))
+                    
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠ Positioning service not ready (attempt {attempt + 1}/{max_retries}): {e}")
+                    print(f"  Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"✗ Failed to connect to positioning service after {max_retries} attempts: {e}")
+                    self.positioning_client = None
+    
+    def _init_robot_status_client(self, timeout_sec=5.0):
+        """
+        Initialize the RobotStatusClient
+        
+        Args:
+            timeout_sec (float): Timeout in seconds for the client
+        """
+        try:
+            self.robot_status_client = RobotStatusClient(self, timeout_sec=timeout_sec)
+            print("✓ RobotStatusClient initialized successfully")
+        except Exception as e:
+            print(f"⚠ Failed to initialize RobotStatusClient: {e}")
+            self.robot_status_client = None
+    
+    def auto_capture_and_positioning(self):
+        """
+        Automatically execute location operations for all configured rack positions in sequence.
+        For each operation:
+        1. Load the corresponding position from recorded_GB200_locate_positions.json
+        2. Move robot to that position
+        3. Capture images using self.movements offsets
+        4. Execute 3D positioning on the captured images
         
         Returns:
-            dict: Summary of execution results for each rack operation
+            dict: Summary of execution results for each operation
         """
         results = {}
+        
+        # Load recorded positions
+        print("\n" + "="*70)
+        print(" Loading Recorded Positions")
+        print("="*70)
+        if not self._load_recorded_positions():
+            print("✗ Failed to load recorded positions. Cannot proceed.")
+            return results
+        
+        # Upload references to positioning service (if available)
+        if self.positioning_client is not None:
+            print("\n" + "="*70)
+            print(" Uploading Reference Data")
+            print("="*70)
+            
+            # Check service health first
+            print("\n1. Checking positioning service health...")
+            health = self.positioning_client.check_health()
+            if not health.get('success'):
+                print(f"✗ Positioning service not available: {health.get('error')}")
+                print("⚠ Will skip 3D positioning for all operations")
+            else:
+                print(f"✓ Positioning service is running")
+                ffpp_status = health.get('status', {}).get('ffpp_server', {})
+                print(f"  FFPP connected: {ffpp_status.get('connected', False)}")
+                refs_status = health.get('status', {}).get('references', {})
+                print(f"  References loaded: {refs_status.get('loaded', 0)}")
                 
-        # Execute each rack operation sequentially
-        for idx, operation_name in enumerate(self.rack_operations, 1):
+                # List current references
+                print("\n2. Listing current references...")
+                refs = self.positioning_client.list_references()
+                if refs.get('success'):
+                    ref_count = refs.get('count', 0)
+                    print(f"✓ Currently loaded: {ref_count} references")
+                    if ref_count > 0:
+                        for name in refs.get('references', {}).keys():
+                            print(f"  - {name}")
+                
+                # Upload references
+                print("\n3. Uploading references to FFPP server...")
+                upload_result = self.positioning_client.upload_references()
+                
+                if upload_result.get('success'):
+                    refs_loaded = upload_result.get('references_loaded', 0)
+                    refs_found = upload_result.get('references_found', 0)
+                    print(f"✓ Reference upload successful!")
+                    print(f"  References loaded: {refs_loaded}/{refs_found}")
+                    
+                    # Verify uploaded references
+                    print("\n4. Verifying uploaded references...")
+                    refs = self.positioning_client.list_references()
+                    if refs.get('success'):
+                        ref_count = refs.get('count', 0)
+                        print(f"✓ Total references: {ref_count}")
+                        for name, details in refs.get('references', {}).items():
+                            num_kp = details.get('metadata', {}).get('num_keypoints', 0)
+                            print(f"  - {name}: {num_kp} keypoints")
+                    
+                    if refs_loaded == 0:
+                        print("\n⚠ Warning: No references were loaded!")
+                        print("  Please check that dataset/ contains subdirectories with ref_img_1.jpg and ref_img_1.json")
+                        print("  Will skip 3D positioning for all operations")
+                else:
+                    print(f"✗ Failed to upload references: {upload_result.get('error')}")
+                    print("⚠ Will skip 3D positioning for all operations")
+        else:
+            print("\n⚠ Positioning client not available, will skip 3D positioning")
+        
+        # Initialize a shared session for all rack operations
+        shared_session_id = None
+        all_session_dirs = {}  # Store session directories for each rack
+        
+        if self.positioning_client is not None:
+            print("\n" + "="*70)
+            print(" Initializing Shared 3D Positioning Session")
+            print("="*70)
+            
+            session_result = self.positioning_client.init_session()
+            if session_result.get('success'):
+                shared_session_id = session_result['session_id']
+                print(f"✓ Shared session created: {shared_session_id}")
+            else:
+                print(f"✗ Failed to create shared session: {session_result.get('error')}")
+                print("⚠ Will skip 3D positioning for all operations")
+        
+        # Execute each rack operation sequentially (capture and upload only)
+        for idx, operation_name in enumerate(self.operation_names, 1):
             print(f"\n{'='*70}")
-            print(f" [{idx}/{len(self.rack_operations)}] Executing operation: {operation_name}")
+            print(f" [{idx}/{len(self.operation_names)}] Capturing: {operation_name}")
             print(f"{'='*70}\n")
             
             try:
-                # Build command to execute ur_3d_positioning.py
-                cmd = [
-                    "python3",
-                    self.ur_3d_positioning_path,
-                    "--robot-ip", self.robot_ip,
-                    "--robot-port", str(self.robot_port),
-                    "--camera-topic", self.camera_topic,
-                    "--operation-name", operation_name,
-                    "--camera-params-path", self.camera_params_path
-                ]
+                # Update operation_name and data paths for this operation
+                self.operation_name = operation_name
+                self._setup_paths(operation_name, self.camera_params_path)
+                print(f"📁 Data directory updated to: {self.data_parent_dir}")
                 
-                # Add verbose flag if disabled
-                if not self.verbose:
-                    cmd.append("--no-verbose")
+                # Check if position exists for this operation
+                if operation_name not in self.recorded_positions:
+                    print(f"✗ No recorded position found for {operation_name}")
+                    results[operation_name] = {
+                        "success": False,
+                        "capture_success": False,
+                        "error": f"No recorded position for {operation_name}"
+                    }
+                    continue
                 
-                # Execute the command
-                print(f"Running command: {' '.join(cmd)}\n")
-                start_time = time.time()
+                # Get the position for this rack
+                target_position = self.recorded_positions[operation_name]
+                print(f"📍 Target position for {operation_name}: {[f'{j:.4f}' for j in target_position]}")
                 
-                result = subprocess.run(
-                    cmd,
-                    cwd=self.script_dir,
-                    capture_output=False,  # Show output in real-time
-                    text=True
-                )
+                # Move robot to the target position
+                print(f"🤖 Moving robot to {operation_name} position...")
+                if self.robot is None:
+                    print("✗ Robot not initialized")
+                    results[operation_name] = {
+                        "success": False,
+                        "capture_success": False,
+                        "error": "Robot not initialized"
+                    }
+                    continue
                 
-                elapsed_time = time.time() - start_time
+                move_result = self.robot.movej(target_position, a=0.5, v=0.5, t=0, r=0)
+                if move_result != 0:
+                    print(f"✗ Failed to move robot to {operation_name} position (error code: {move_result})")
+                    results[operation_name] = {
+                        "success": False,
+                        "capture_success": False,
+                        "error": f"Robot movement failed with code {move_result}"
+                    }
+                    continue
                 
-                # Record result
+                print(f"✓ Robot moved to {operation_name} position successfully")
+                time.sleep(1.0)  # Wait for robot to stabilize
+                
+                # Create session directory for this operation
+                session_dir = self._create_session_directory()
+                all_session_dirs[operation_name] = session_dir
+                
+                # Check if reference exists
+                if shared_session_id is not None:
+                    print(f"\n🔍 Checking reference for {operation_name}...")
+                    refs = self.positioning_client.list_references()
+                    reference_exists = refs.get('success') and operation_name in refs.get('references', {})
+                    
+                    if not reference_exists:
+                        print(f"  ✗ Reference '{operation_name}' not found on server")
+                        print(f"  ⚠ Please ensure reference data exists in dataset/{operation_name}/ref_img_1.jpg and ref_img_1.json")
+                        results[operation_name] = {
+                            "success": False,
+                            "capture_success": False,
+                            "error": f"Reference '{operation_name}' not found"
+                        }
+                        continue
+                    
+                    print(f"  ✓ Reference '{operation_name}' is available")
+                
+                # Capture images and upload views to shared session
+                print(f"\n📸 Capturing images and uploading views for {operation_name}...")
+                capture_success = True
+                upload_count = 0
+                
+                for move_idx, (movement_name, movement_offset) in enumerate(self.movements.items()):
+                    try:
+                        print(f"\n  → Capturing {movement_name} (index: {move_idx}, offset: {movement_offset})...")
+                        
+                        # Apply movement offset using move_tcp (relative movement in tool coordinate)
+                        if any(movement_offset):  # If there's any non-zero offset
+                            move_result = self.robot.move_tcp(movement_offset, a=0.1, v=0.1)
+                            if move_result != 0:
+                                print(f"    ✗ Failed to apply movement offset (error code: {move_result})")
+                                capture_success = False
+                                continue
+                            time.sleep(1.0)  # Wait for stabilization
+                        
+                        # Use parent class method to capture image and pose
+                        if not self.capture_image_and_pose(
+                            save_dir=session_dir, 
+                            img_filename=f"{move_idx}.jpg",
+                            pose_filename=f"{move_idx}.json"
+                        ):
+                            print(f"    ✗ Failed to capture {movement_name}")
+                            capture_success = False
+                            continue
+                        
+                        print(f"    ✓ Saved {move_idx}.jpg and {move_idx}.json")
+                        
+                        # Upload this view to shared session
+                        if shared_session_id is not None:
+                            img_path = os.path.join(session_dir, f"{move_idx}.jpg")
+                            pose_path = os.path.join(session_dir, f"{move_idx}.json")
+                            
+                            try:
+                                # Load image
+                                image = cv2.imread(img_path)
+                                if image is None:
+                                    print(f"    ⚠ Failed to load {move_idx}.jpg for upload")
+                                    capture_success = False
+                                    continue
+                                
+                                # Load camera parameters
+                                intrinsic, distortion, extrinsic = load_camera_params_from_json(pose_path)
+                                
+                                # Upload view to shared session
+                                upload_result = self.positioning_client.upload_view(
+                                    session_id=shared_session_id,
+                                    reference_name=operation_name,
+                                    image=image,
+                                    intrinsic=intrinsic,
+                                    distortion=distortion,
+                                    extrinsic=extrinsic
+                                )
+                                
+                                if upload_result.get('success'):
+                                    print(f"    ✓ Uploaded view {move_idx} to shared session")
+                                    upload_count += 1
+                                else:
+                                    print(f"    ✗ Failed to upload view {move_idx}: {upload_result.get('error')}")
+                                    capture_success = False
+                                    
+                            except Exception as e:
+                                print(f"    ✗ Error uploading view {move_idx}: {e}")
+                                capture_success = False
+                        
+                        # Move back to original position (reverse the offset)
+                        if any(movement_offset):
+                            reverse_offset = [-x for x in movement_offset]
+                            move_result = self.robot.move_tcp(reverse_offset, a=0.1, v=0.05)
+                            if move_result != 0:
+                                print(f"    ⚠ Warning: Failed to return to original position (error code: {move_result})")
+                            time.sleep(0.5)
+                        
+                    except Exception as e:
+                        print(f"    ✗ Error capturing {movement_name}: {e}")
+                        capture_success = False
+                        continue
+                
+                # Record capture result for this rack
                 results[operation_name] = {
-                    "success": result.returncode == 0,
-                    "return_code": result.returncode,
-                    "elapsed_time": elapsed_time
+                    "capture_success": capture_success,
+                    "upload_count": upload_count,
+                    "session_dir": session_dir
                 }
                 
-                if result.returncode == 0:
-                    print(f"\n✓ {operation_name} completed successfully in {elapsed_time:.2f} seconds")
+                if capture_success and upload_count > 0:
+                    print(f"\n✓ Captured and uploaded {upload_count} views successfully for {operation_name}")
                 else:
-                    print(f"\n✗ {operation_name} failed with return code {result.returncode}")
-                    print(f"  Elapsed time: {elapsed_time:.2f} seconds")
+                    print(f"\n⚠ Warning: Only captured {upload_count} views for {operation_name}")
+                    results[operation_name]["success"] = False
                 
             except KeyboardInterrupt:
                 print(f"\n\n🛑 Operation interrupted by user during {operation_name}")
                 results[operation_name] = {
                     "success": False,
-                    "return_code": -1,
+                    "capture_success": False,
                     "error": "Interrupted by user"
                 }
                 break
                 
             except Exception as e:
-                print(f"\n✗ Error executing {operation_name}: {e}")
+                print(f"\n✗ Error capturing {operation_name}: {e}")
+                import traceback
+                traceback.print_exc()
                 results[operation_name] = {
                     "success": False,
-                    "return_code": -1,
+                    "capture_success": False,
                     "error": str(e)
                 }
                 
             # Add a short delay between operations
-            if idx < len(self.rack_operations):
+            if idx < len(self.operation_names):
                 print(f"\nWaiting 2 seconds before next operation...\n")
                 time.sleep(2)
+        
+        # ============ Now get positioning result for all racks together ============
+        if shared_session_id is not None:
+            print("\n" + "="*70)
+            print(" Getting 3D Positioning Result (All Racks)")
+            print("="*70)
+            
+            try:
+                # Use all 4 template points - now we have views from all racks
+                print(f"\n🔍 Computing 3D positions using all captured views...")
+                print(f"   Template points: {len(self.template_points)} corners")
+                
+                result = self.positioning_client.get_result(
+                    shared_session_id,
+                    template_points=self.template_points,
+                    timeout=10000
+                )
+                
+                if not result.get('success'):
+                    print(f"✗ Failed to get result: {result.get('error')}")
+                else:
+                    if 'result' not in result:
+                        print(f"✗ No result returned (timeout or failed)")
+                    else:
+                        # Extract results
+                        positioning_result = result['result']
+                        points_3d = np.array(positioning_result['points_3d'])
+                        mean_error = positioning_result['mean_error']
+                        processing_time = positioning_result.get('processing_time', 0)
+                        
+                        print(f"✓ Positioning completed!")
+                        print(f"  Number of 3D points: {len(points_3d)}")
+                        print(f"  Mean reprojection error: {mean_error:.3f} pixels")
+                        print(f"  Processing time: {processing_time:.2f} seconds")
+                        
+                        # Save results for each rack
+                        for operation_name in self.operation_names:
+                            if operation_name not in results or not results[operation_name].get('capture_success', False):
+                                continue
+                            
+                            session_dir = results[operation_name].get('session_dir')
+                            if not session_dir:
+                                continue
+                            
+                            print(f"\n💾 Saving results for {operation_name}...")
+                            session_name = os.path.basename(session_dir)
+                            
+                            # Update operation paths
+                            self.operation_name = operation_name
+                            self._setup_paths(operation_name, self.camera_params_path)
+                            
+                            result_dir = os.path.join(self.data_parent_dir, "result")
+                            os.makedirs(result_dir, exist_ok=True)
+                            session_result_dir = os.path.join(result_dir, session_name)
+                            os.makedirs(session_result_dir, exist_ok=True)
+                            
+                            result_data = {
+                                'timestamp': datetime.now().isoformat(),
+                                'points_3d': positioning_result['points_3d'],
+                                'mean_error': positioning_result['mean_error'],
+                                'processing_time': positioning_result.get('processing_time', 0),
+                                'views': result.get('views', []),
+                                'fitting_mode': True,
+                                'shared_session': True  # Mark this as from shared session
+                            }
+                            
+                            if 'local2world' in positioning_result:
+                                result_data['local2world'] = positioning_result['local2world']
+                            
+                            result_file = os.path.join(session_result_dir, '3d_positioning_result.json')
+                            with open(result_file, 'w') as f:
+                                json.dump(result_data, f, indent=2)
+                            
+                            print(f"  ✓ Results saved to: {result_file}")
+                            
+                            # Validate positioning results
+                            print(f"  📊 Validating positioning results...")
+                            validation_success = self.validate_positioning_results(
+                                session_dir=session_dir,
+                                result_data=result_data,
+                                operation_name=operation_name,
+                                verbose=self.verbose
+                            )
+                            
+                            if validation_success:
+                                print(f"  ✓ Validation completed successfully")
+                            else:
+                                print(f"  ⚠ Validation completed with warnings")
+                            
+                            # Save to robot_status
+                            if self.robot_status_client:
+                                try:
+                                    if self.robot_status_client.set_status(operation_name, 'points_3d', positioning_result['points_3d']):
+                                        print(f"  ✓ points_3d saved to robot_status (namespace: {operation_name})")
+                                except Exception as e:
+                                    print(f"  ⚠ Error saving to robot_status: {e}")
+                            
+                            # Update results
+                            results[operation_name]['success'] = True
+                            results[operation_name]['positioning_success'] = True
+                            results[operation_name]['positioning_result'] = result_data
+                
+            except Exception as e:
+                print(f"✗ Error getting positioning result: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                # Terminate shared session
+                print(f"\n🔚 Terminating shared session...")
+                self.positioning_client.terminate_session(shared_session_id)
+                print(f"✓ Shared session terminated")
         
         # Print summary
         self._print_summary(results)
         
         return results
     
-    def perform_wobj_frame_building(self, rack1_result_path=None, rack2_result_path=None, rack3_result_path=None, rack4_result_path=None):
+    def validate_positioning_results(self, session_dir, result_data, operation_name, verbose=True):
         """
-        Build a wobj coordinate system based on 3D positioning keypoints from rack1, rack2, and rack3.
+        Validate 3D positioning results by visualizing tracked and reprojected keypoints.
         
-        The coordinate system is defined as follows:
-        - Origin: at rack1 feature point (keypoint[0])
-        - X-axis: rack1_point → rack2_point direction (rack1_KP0 → rack2_KP0)
-        - Z-axis: rack1_point → rack3_point direction (rack1_KP0 → rack3_KP0)
-        - Y-axis: follows right-hand rule (Y = Z × X)
+        Only validates keypoints defined in the reference (ref_img_1.json) for this operation.
+        
+        Creates a visualization showing:
+        - Red X markers: Reprojected 3D points back to each view
+        - Green circles: Original tracked 2D keypoints from views
         
         Args:
-            rack1_result_path (str): Path to rack1 3d_positioning_result.json file
-            rack2_result_path (str): Path to rack2 3d_positioning_result.json file
-            rack3_result_path (str): Path to rack3 3d_positioning_result.json file
-            rack4_result_path (str): Path to rack4 3d_positioning_result.json file
+            session_dir (str): Path to session directory containing test images
+            result_data (dict): Result data containing 3D points and views information
+            operation_name (str): Name of the operation (e.g., "rack1", "rack2")
+            verbose (bool): If True, saves validation images and error logs to disk
             
+        Returns:
+            bool: True if validation successful, False otherwise
+        """
+        try:
+            print("  📊 Validating 3D Positioning Results...")
+            
+            # Load reference keypoints for this operation
+            ref_json_path = os.path.join(self.data_parent_dir, "ref_img_1.json")
+            if not os.path.exists(ref_json_path):
+                print(f"  ⚠ Reference file not found: {ref_json_path}")
+                return False
+            
+            with open(ref_json_path, 'r') as f:
+                ref_data = json.load(f)
+            
+            ref_keypoints = ref_data.get('keypoints', [])
+            if not ref_keypoints:
+                print(f"  ⚠ No keypoints found in reference file")
+                return False
+            
+            # Create mapping from template point names to indices
+            template_name_to_index = {
+                "GB200_Rack_Bottom_Left_Corner": 0,
+                "GB200_Rack_Bottom_Right_Corner": 1,
+                "GB200_Rack_Top_Left_Corner": 2,
+                "GB200_Rack_Top_Right_Corner": 3
+            }
+            
+            # Extract data from result
+            points_3d = np.array(result_data['points_3d'])
+            all_views_data = result_data.get('views', [])
+            
+            if len(all_views_data) == 0:
+                print("  ✗ No view data found in results")
+                return False
+            
+            # Filter views to only include those from this operation (matching reference_name)
+            # In shared session mode, views from all racks are included
+            views_data = [v for v in all_views_data if v.get('reference_name') == operation_name]
+            
+            if len(views_data) == 0:
+                print(f"  ⚠ No views found for {operation_name} in results")
+                print(f"  Total views in result: {len(all_views_data)}")
+                return False
+            
+            print(f"  ✓ Filtered to {len(views_data)} views for {operation_name} (from {len(all_views_data)} total)")
+            
+            # Map reference keypoints to their corresponding 3D points by name
+            points_3d_to_validate = []
+            keypoint_names = []
+            template_indices = []
+            
+            print(f"  ✓ Loaded {len(ref_keypoints)} reference keypoints:")
+            for idx, kp in enumerate(ref_keypoints):
+                kp_name = kp['name']
+                keypoint_names.append(kp_name)
+                
+                # Find the template index for this keypoint
+                if kp_name in template_name_to_index:
+                    template_idx = template_name_to_index[kp_name]
+                    template_indices.append(template_idx)
+                    
+                    # Check if we have this point in the results
+                    if template_idx < len(points_3d):
+                        points_3d_to_validate.append(points_3d[template_idx])
+                        print(f"    [{idx}] {kp_name} -> template[{template_idx}]")
+                    else:
+                        print(f"    [{idx}] {kp_name} -> template[{template_idx}] ⚠ NOT FOUND in points_3d")
+                else:
+                    print(f"    [{idx}] {kp_name} ✗ Unknown template point name")
+            
+            if len(points_3d_to_validate) == 0:
+                print("  ✗ No valid 3D points found for validation")
+                return False
+            
+            points_3d_to_validate = np.array(points_3d_to_validate)
+            
+            print(f"  ✓ Validating {len(points_3d_to_validate)} 3D points")
+            print(f"  ✓ Processing {len(views_data)} views")
+            
+            # Find all test images
+            test_img_dir = Path(session_dir)
+            image_files = sorted(test_img_dir.glob("*.jpg"))
+            
+            if len(image_files) == 0:
+                print(f"  ✗ No images found in {session_dir}")
+                return False
+            
+            # Create figure with subplots for each view
+            num_views = min(len(views_data), len(image_files))
+            cols = min(3, num_views)
+            rows = (num_views + cols - 1) // cols
+            
+            fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
+            if num_views == 1:
+                axes = np.array([axes])
+            axes = axes.flatten() if num_views > 1 else axes
+            
+            reprojection_errors = []
+            
+            # Process each view
+            for view_idx, (view_data, img_file) in enumerate(zip(views_data, image_files)):
+                if view_idx >= len(axes):
+                    break
+                
+                ax = axes[view_idx]
+                
+                # Load image
+                img = cv2.imread(str(img_file))
+                if img is None:
+                    print(f"  ⚠ Failed to load image: {img_file}")
+                    ax.axis('off')
+                    continue
+                
+                # Convert BGR to RGB for matplotlib
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                ax.imshow(img_rgb)
+                
+                # Get tracked 2D keypoints (green circles)
+                keypoints_2d = view_data.get('keypoints_2d', [])
+                
+                # Load camera parameters for this view
+                pose_file = img_file.parent / f"{img_file.stem}.json"
+                if not pose_file.exists():
+                    print(f"  ⚠ Pose file not found: {pose_file}")
+                    ax.axis('off')
+                    continue
+                
+                try:
+                    intrinsic, distortion, extrinsic = load_camera_params_from_json(str(pose_file))
+                except Exception as e:
+                    print(f"  ⚠ Failed to load pose: {e}")
+                    ax.axis('off')
+                    continue
+                
+                # extrinsic is already base2cam (world to camera transformation)
+                # Convert to rvec and tvec for cv2.projectPoints
+                base2cam = extrinsic
+                rotation_matrix = base2cam[:3, :3]
+                translation_vector = base2cam[:3, 3]
+                rvec, _ = cv2.Rodrigues(rotation_matrix)
+                tvec = translation_vector.reshape(3, 1)
+                
+                # Reproject only the 3D points corresponding to reference keypoints
+                dist_coeffs = distortion if distortion is not None else np.zeros(5, dtype=np.float32)
+                projected_points, _ = cv2.projectPoints(
+                    points_3d_to_validate.astype(np.float32),
+                    rvec,
+                    tvec,
+                    intrinsic,
+                    dist_coeffs
+                )
+                projected_points = projected_points.reshape(-1, 2)
+                
+                # Plot reprojected points and calculate errors (only for reference keypoints)
+                for pt_idx, (u_reproj, v_reproj) in enumerate(projected_points):
+                    if pt_idx >= len(ref_keypoints):
+                        break
+                    
+                    # Get keypoint name
+                    kp_name = ref_keypoints[pt_idx]['name']
+                    
+                    # Plot reprojected point (red x marker)
+                    ax.plot(u_reproj, v_reproj, 'rx', markersize=8,
+                           markeredgewidth=2,
+                           label='Reprojected' if pt_idx == 0 else '')
+                    
+                    # Calculate reprojection error
+                    if pt_idx < len(keypoints_2d):
+                        tracked_kp = keypoints_2d[pt_idx]
+                        u_track = tracked_kp.get('x')
+                        v_track = tracked_kp.get('y')
+                        
+                        if u_track is not None and v_track is not None:
+                            error = np.sqrt((u_reproj - u_track)**2 + (v_reproj - v_track)**2)
+                            reprojection_errors.append({
+                                'view': view_idx,
+                                'image': img_file.name,
+                                'point_index': pt_idx,
+                                'point_name': kp_name,
+                                'error_pixels': float(error)
+                            })
+                
+                # Plot tracked keypoints (green filled circles, only for reference keypoints)
+                for pt_idx, kp in enumerate(keypoints_2d):
+                    if pt_idx >= len(ref_keypoints):
+                        break
+                    
+                    u_track = kp.get('x')
+                    v_track = kp.get('y')
+                    
+                    if u_track is not None and v_track is not None:
+                        ax.plot(u_track, v_track, 'go', markersize=4,
+                               markerfacecolor='green', markeredgewidth=2,
+                               label='Tracked' if pt_idx == 0 else '')
+                
+                # Set title
+                ax.set_title(f'View {view_idx}\n{img_file.name}', fontsize=10)
+                ax.axis('off')
+                
+                # Add legend only to first subplot
+                if view_idx == 0:
+                    ax.legend(loc='upper right', fontsize=8)
+            
+            # Hide unused subplots
+            for idx in range(num_views, len(axes)):
+                axes[idx].axis('off')
+            
+            # Add overall title
+            fig.suptitle(f'3D Positioning Validation - {operation_name.upper()}\n'
+                        f'Green: Tracked 2D | Red X: Reprojected from 3D | {len(ref_keypoints)} keypoints',
+                        fontsize=14, fontweight='bold', y=0.98)
+            
+            # Calculate and display statistics
+            if reprojection_errors:
+                errors = [e['error_pixels'] for e in reprojection_errors]
+                mean_error = np.mean(errors)
+                max_error = np.max(errors)
+                min_error = np.min(errors)
+                std_error = np.std(errors)
+                
+                stats_text = (
+                    f"Reprojection Error Statistics:\n"
+                    f"Operation: {operation_name}\n"
+                    f"Keypoints: {len(ref_keypoints)} ({', '.join([kp['name'].split('_')[-1] for kp in ref_keypoints])})\n"
+                    f"Mean: {mean_error:.2f} pixels\n"
+                    f"Std: {std_error:.2f} pixels\n"
+                    f"Min: {min_error:.2f} pixels\n"
+                    f"Max: {max_error:.2f} pixels\n"
+                    f"Total samples: {len(errors)}"
+                )
+                
+                fig.text(0.02, 0.02, stats_text, fontsize=10,
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+                        verticalalignment='bottom')
+                
+                print(f"  📊 Reprojection Error Statistics:")
+                print(f"    Mean error: {mean_error:.2f} pixels")
+                print(f"    Std error: {std_error:.2f} pixels")
+                print(f"    Min error: {min_error:.2f} pixels")
+                print(f"    Max error: {max_error:.2f} pixels")
+                print(f"    Total samples: {len(errors)}")
+            
+            # Save figure to session result directory (if verbose)
+            if verbose:
+                session_name = os.path.basename(session_dir)
+                result_dir = os.path.join(self.data_parent_dir, "result", session_name)
+                
+                output_path = os.path.join(result_dir, 'positioning_result_reprojection.jpg')
+                plt.tight_layout()
+                plt.savefig(output_path, dpi=150, bbox_inches='tight')
+                print(f"  💾 Validation visualization saved to: {output_path}")
+            
+            # Close plot to free memory
+            plt.close(fig)
+            
+            # Save detailed reprojection errors to JSON (if verbose)
+            if verbose and reprojection_errors:
+                error_log_path = os.path.join(result_dir, 'positioning_result_reprojection_report.json')
+                error_data = {
+                    'timestamp': datetime.now().isoformat(),
+                    'operation_name': operation_name,
+                    'reference_keypoints': [{'name': kp['name'], 'id': kp.get('id', idx)} 
+                                           for idx, kp in enumerate(ref_keypoints)],
+                    'num_views': len(views_data),
+                    'num_points_validated': len(points_3d_to_validate),
+                    'total_samples': len(reprojection_errors),
+                    'statistics': {
+                        'mean_error_pixels': float(mean_error),
+                        'std_error_pixels': float(std_error),
+                        'min_error_pixels': float(min_error),
+                        'max_error_pixels': float(max_error)
+                    },
+                    'reprojection_errors': reprojection_errors
+                }
+                
+                with open(error_log_path, 'w') as f:
+                    json.dump(error_data, f, indent=2)
+                
+                print(f"  💾 Reprojection report saved to: {error_log_path}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"  ✗ Error during validation: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def perform_wobj_frame_building(self):
+        """
+        Build a wobj coordinate system based on 3D positioning keypoints from rack corners.
+        
+        The coordinate system is defined as follows:
+        - Origin: GB200_Rack_Bottom_Left_Corner
+        - X-axis: GB200_Rack_Bottom_Left_Corner → GB200_Rack_Bottom_Right_Corner
+        - Z-axis: GB200_Rack_Bottom_Left_Corner → GB200_Rack_Top_Left_Corner
+        - Y-axis: follows right-hand rule (Y = Z × X)
+        
+        Automatically finds latest results for all operations in self.operation_names.
+        
         Returns:
             dict: Coordinate system information or None if failed
         """
@@ -237,11 +930,7 @@ class URLocateRack(URCapture):
             dataset_dir = os.path.join(self.script_dir, "..", "dataset")
             
             # Helper function to find most recent session result
-            def find_latest_result(operation_name, provided_path=None):
-                if provided_path and os.path.exists(provided_path):
-                    print(f"✓ Using provided {operation_name} result: {provided_path}")
-                    return provided_path
-                
+            def find_latest_result(operation_name):
                 # Look for most recent session in dataset/{operation_name}/result/
                 result_dir = os.path.join(dataset_dir, operation_name, "result")
                 
@@ -269,81 +958,77 @@ class URLocateRack(URCapture):
                     print(f"✗ 3d_positioning_result.json not found in {os.path.join(result_dir, latest_session)}")
                     return None
             
-            # Find all four result files
-            rack1_file = find_latest_result("rack1", rack1_result_path)
-            rack2_file = find_latest_result("rack2", rack2_result_path)
-            rack3_file = find_latest_result("rack3", rack3_result_path)
-            rack4_file = find_latest_result("rack4", rack4_result_path)
+            # Find result files for all operations
+            rack_files = {}
+            for operation_name in self.operation_names:
+                result_file = find_latest_result(operation_name)
+                if result_file:
+                    rack_files[operation_name] = result_file
+                else:
+                    print(f"\n✗ Failed to locate result file for {operation_name}")
+                    return None
             
-            if not all([rack1_file, rack2_file, rack3_file, rack4_file]):
+            if len(rack_files) != len(self.operation_names):
                 print("\n✗ Failed to locate all required result files")
                 return None
             
             # ===================== Load data =====================
             print("\n📖 Loading 3D positioning results...")
             
-            with open(rack1_file, 'r') as f:
-                rack1_data = json.load(f)
-            rack1_points_3d = rack1_data.get('points_3d', [])
-            
-            with open(rack2_file, 'r') as f:
-                rack2_data = json.load(f)
-            rack2_points_3d = rack2_data.get('points_3d', [])
-            
-            with open(rack3_file, 'r') as f:
-                rack3_data = json.load(f)
-            rack3_points_3d = rack3_data.get('points_3d', [])
-            
-            with open(rack4_file, 'r') as f:
-                rack4_data = json.load(f)
-            rack4_points_3d = rack4_data.get('points_3d', [])
-            
-            # Validate we have enough points
-            if not rack1_points_3d:
-                print("✗ No keypoints found in rack1")
-                return None
-            if not rack2_points_3d:
-                print("✗ No keypoints found in rack2")
-                return None
-            if not rack3_points_3d:
-                print("✗ No keypoints found in rack3")
-                return None
-            if not rack4_points_3d:
-                print("✗ No keypoints found in rack4")
-                return None
-            
-            print(f"✓ Loaded {len(rack1_points_3d)} rack1 points")
-            print(f"✓ Loaded {len(rack2_points_3d)} rack2 points")
-            print(f"✓ Loaded {len(rack3_points_3d)} rack3 points")
-            print(f"✓ Loaded {len(rack4_points_3d)} rack4 points")
+            rack_points_data = {}
+            for operation_name, result_file in rack_files.items():
+                with open(result_file, 'r') as f:
+                    rack_data = json.load(f)
+                points_3d = rack_data.get('points_3d', [])
+                
+                if not points_3d:
+                    print(f"✗ No keypoints found in {operation_name}")
+                    return None
+                
+                rack_points_data[operation_name] = points_3d
+                print(f"✓ Loaded {len(points_3d)} {operation_name} points")
             
             # ===================== Build wobj coordinate system =====================
             print("\n🔧 Building coordinate system...")
             
-            # Origin: rack1 keypoint[0]
-            origin = np.array(rack1_points_3d[0])
-            print(f"✓ Origin at rack1_point (KP0): ({origin[0]:.6f}, {origin[1]:.6f}, {origin[2]:.6f})")
+            # Based on template points definition:
+            # Index 0: GB200_Rack_Bottom_Left_Corner
+            # Index 1: GB200_Rack_Bottom_Right_Corner
+            # Index 2: GB200_Rack_Top_Left_Corner
+            # Index 3: GB200_Rack_Top_Right_Corner
             
-            # X-axis: rack1_keypoint[0] → rack2_keypoint[0]
-            rack1_kp = np.array(rack1_points_3d[0])
-            rack2_kp = np.array(rack2_points_3d[0])
-            x_vec_raw = rack2_kp - rack1_kp
+            # Get first operation for bottom corners (typically rack1)
+            first_operation = self.operation_names[0]
+            first_operation_points = rack_points_data[first_operation]
+            
+            # Origin: GB200_Rack_Bottom_Left_Corner
+            lower_left = np.array(first_operation_points[0])  # KP0 = Lower_Left
+            origin = lower_left
+            print(f"✓ Origin at GB200_Rack_Bottom_Left_Corner: ({origin[0]:.6f}, {origin[1]:.6f}, {origin[2]:.6f})")
+            
+            # X-axis: Lower_Left → Lower_Right
+            lower_right = np.array(first_operation_points[1])  # KP1 = Lower_Right
+            x_vec_raw = lower_right - lower_left
             x_axis_length = np.linalg.norm(x_vec_raw)
             x_vec = x_vec_raw / x_axis_length
             
-            print(f"✓ X-axis: rack1_point → rack2_point (rack1_KP0 → rack2_KP0)")
-            print(f"  rack1_point: ({rack1_kp[0]:.6f}, {rack1_kp[1]:.6f}, {rack1_kp[2]:.6f})")
-            print(f"  rack2_point: ({rack2_kp[0]:.6f}, {rack2_kp[1]:.6f}, {rack2_kp[2]:.6f})")
+            print(f"✓ X-axis: GB200_Rack_Bottom_Left_Corner → GB200_Rack_Bottom_Right_Corner")
+            print(f"  Lower_Left: ({lower_left[0]:.6f}, {lower_left[1]:.6f}, {lower_left[2]:.6f})")
+            print(f"  Lower_Right: ({lower_right[0]:.6f}, {lower_right[1]:.6f}, {lower_right[2]:.6f})")
             print(f"  X = [{x_vec[0]:.6f}, {x_vec[1]:.6f}, {x_vec[2]:.6f}], length = {x_axis_length:.6f} m")
             
-            # Z-axis: rack1_keypoint[0] → rack3_keypoint[0]
-            rack3_kp = np.array(rack3_points_3d[0])
-            z_vec_raw = rack3_kp - rack1_kp
+            # Z-axis: Lower_Left → Top_Left
+            # Find operation that has top corners (typically rack3, index 2)
+            # Assuming operation order matches: rack1=bottom_left, rack2=bottom_right, rack3=top_left, rack4=top_right
+            top_operation = self.operation_names[2] if len(self.operation_names) > 2 else self.operation_names[0]
+            top_operation_points = rack_points_data[top_operation]
+            top_left = np.array(top_operation_points[2])  # Template index 2 = Top_Left
+            z_vec_raw = top_left - lower_left
             z_axis_length = np.linalg.norm(z_vec_raw)
             z_vec = z_vec_raw / z_axis_length
             
-            print(f"✓ Z-axis: rack1_point → rack3_point (rack1_KP0 → rack3_KP0)")
-            print(f"  rack3_point: ({rack3_kp[0]:.6f}, {rack3_kp[1]:.6f}, {rack3_kp[2]:.6f})")
+            print(f"✓ Z-axis: GB200_Rack_Bottom_Left_Corner → GB200_Rack_Top_Left_Corner")
+            print(f"  Top_Left: ({top_left[0]:.6f}, {top_left[1]:.6f}, {top_left[2]:.6f})")
             print(f"  Z = [{z_vec[0]:.6f}, {z_vec[1]:.6f}, {z_vec[2]:.6f}], length = {z_axis_length:.6f} m")
             
             # Check if X and Z are nearly parallel
@@ -407,21 +1092,21 @@ class URLocateRack(URCapture):
                     "x": float(origin[0]),
                     "y": float(origin[1]), 
                     "z": float(origin[2]),
-                    "source": "rack1_point (KP0)"
+                    "source": "GB200_Rack_Bottom_Left_Corner"
                 },
                 "axes": {
                     "x_axis": {
                         "vector": [float(x_vec[0]), float(x_vec[1]), float(x_vec[2])],
-                        "source": "rack1_point→rack2_point (rack1_KP0→rack2_KP0)",
+                        "source": "GB200_Rack_Bottom_Left_Corner → GB200_Rack_Bottom_Right_Corner",
                         "length": float(x_axis_length)
                     },
                     "y_axis": {
                         "vector": [float(y_vec[0]), float(y_vec[1]), float(y_vec[2])],
-                        "source": "right_hand_rule_Z_cross_X"
+                        "source": "right_hand_rule (Y = Z × X)"
                     },
                     "z_axis": {
                         "vector": [float(z_vec[0]), float(z_vec[1]), float(z_vec[2])],
-                        "source": "rack1_point→rack3_point (rack1_KP0→rack3_KP0)",
+                        "source": "GB200_Rack_Bottom_Left_Corner → GB200_Rack_Top_Left_Corner",
                         "length": float(z_axis_length)
                     }
                 },
@@ -440,28 +1125,15 @@ class URLocateRack(URCapture):
                     "y_dot_z": float(dot_yz),
                     "determinant": float(det_R)
                 },
-                "keypoints_used": {
-                    "rack1": [
-                        {"index": 0, "name": "point", "coordinates": [float(rack1_kp[0]), float(rack1_kp[1]), float(rack1_kp[2])]}
-                    ],
-                    "rack2": [
-                        {"index": 0, "name": "point", "coordinates": [float(rack2_kp[0]), float(rack2_kp[1]), float(rack2_kp[2])]}
-                    ],
-                    "rack3": [
-                        {"index": 0, "name": "point", "coordinates": [float(rack3_kp[0]), float(rack3_kp[1]), float(rack3_kp[2])]}
-                    ],
-                    "rack4": [
-                        {"index": 0, "name": "point", "coordinates": [float(rack4_points_3d[0][0]), float(rack4_points_3d[0][1]), float(rack4_points_3d[0][2])]}
-                    ]
-                },
+                "keypoints_used": {op_name: [
+                    {"index": idx, "name": self.template_points[idx]['name'], 
+                     "coordinates": [float(pt[0]), float(pt[1]), float(pt[2])]}
+                    for idx, pt in enumerate(points)
+                ] for op_name, points in rack_points_data.items()},
                 "timestamp": datetime.now().isoformat(),
-                "method": "rack1_rack2_rack3_based_coordinate_system",
-                "source_files": {
-                    "rack1": rack1_file,
-                    "rack2": rack2_file,
-                    "rack3": rack3_file,
-                    "rack4": rack4_file
-                }
+                "method": "GB200_rack_corner_based_coordinate_system",
+                "description": "X: Lower_Left→Lower_Right, Z: Lower_Left→Top_Left, Y: right-hand rule",
+                "source_files": rack_files
             }
             
             # Save coordinate system to temp/wobj_coordinate_system/wobj_result.json
@@ -512,24 +1184,15 @@ class URLocateRack(URCapture):
             traceback.print_exc()
             return None
     
-    def validate_wobj_frame_building(self, coord_system, rack1_result_path=None, 
-                                      rack2_result_path=None, rack3_result_path=None,
-                                      rack4_result_path=None, verbose=True):
+    def validate_wobj_frame_building(self, coord_system, verbose=True):
         """
-        Validate workpiece coordinate system by drawing it on rack1, rack2, rack3, and rack4 images.
+        Validate workpiece coordinate system by drawing it on all operation images.
         
         Draws the coordinate system axes on captured images:
-        - For rack1 images: Origin at rack1_point (wobj origin)
-        - For rack2 images: Origin at rack2_point, but axes follow wobj orientation
-        - For rack3 images: Origin at rack3_point, but axes follow wobj orientation
-        - For rack4 images: Origin at rack4_point, but axes follow wobj orientation
+        - For each operation: Origin at the operation's first keypoint, axes follow wobj orientation
         
         Args:
             coord_system (dict): Dictionary containing coordinate system information
-            rack1_result_path (str): Path to rack1 3d_positioning_result.json file
-            rack2_result_path (str): Path to rack2 3d_positioning_result.json file
-            rack3_result_path (str): Path to rack3 3d_positioning_result.json file
-            rack4_result_path (str): Path to rack4 3d_positioning_result.json file
             verbose (bool): If True, saves validation images to disk
             
         Returns:
@@ -561,17 +1224,8 @@ class URLocateRack(URCapture):
             # Find session directories for each rack
             dataset_dir = os.path.join(self.script_dir, "..", "dataset")
             
-            def find_latest_session_dir(operation_name, result_file_path):
-                """Find the session directory based on result file path"""
-                if result_file_path:
-                    # Extract session from result file path
-                    # result_file_path: dataset/{operation}/result/{session}/3d_positioning_result.json
-                    result_dir = os.path.dirname(result_file_path)
-                    session_name = os.path.basename(result_dir)
-                    operation_dir = os.path.dirname(os.path.dirname(result_dir))
-                    session_dir = os.path.join(operation_dir, 'test', session_name)
-                    return session_dir, result_dir
-                
+            def find_latest_session_dir(operation_name):
+                """Find the session directory for an operation"""
                 # Find most recent session
                 result_base_dir = os.path.join(dataset_dir, operation_name, "result")
                 if not os.path.exists(result_base_dir):
@@ -591,31 +1245,28 @@ class URLocateRack(URCapture):
                 
                 return session_dir, result_dir
             
-            # Process each rack
+            # Process each operation
             validation_results = {}
             
-            for rack_name, result_path in [('rack1', rack1_result_path), 
-                                           ('rack2', rack2_result_path),
-                                           ('rack3', rack3_result_path),
-                                           ('rack4', rack4_result_path)]:
+            for operation_name in self.operation_names:
                 
-                print(f"\n>>> Processing {rack_name} images...")
+                print(f"\n>>> Processing {operation_name} images...")
                 
-                session_dir, result_dir = find_latest_session_dir(rack_name, result_path)
+                session_dir, result_dir = find_latest_session_dir(operation_name)
                 
                 if not session_dir or not os.path.exists(session_dir):
-                    print(f"✗ {rack_name} session directory not found")
-                    validation_results[rack_name] = False
+                    print(f"✗ {operation_name} session directory not found")
+                    validation_results[operation_name] = False
                     continue
                 
                 print(f"  Session directory: {session_dir}")
                 
-                # Get the appropriate origin for this rack
-                keypoints_for_rack = coord_system['keypoints_used'].get(rack_name, [])
+                # Get the appropriate origin for this operation
+                keypoints_for_rack = coord_system['keypoints_used'].get(operation_name, [])
                 if keypoints_for_rack:
                     origin_coords = keypoints_for_rack[0]['coordinates']
                     origin_3d = np.array(origin_coords)
-                    print(f"  Using {rack_name}_point as origin: ({origin_3d[0]:.6f}, {origin_3d[1]:.6f}, {origin_3d[2]:.6f})")
+                    print(f"  Using {operation_name}_point as origin: ({origin_3d[0]:.6f}, {origin_3d[1]:.6f}, {origin_3d[2]:.6f})")
                 else:
                     # Fallback to wobj origin
                     origin_3d = wobj_origin_3d.copy()
@@ -632,7 +1283,7 @@ class URLocateRack(URCapture):
                 
                 if len(image_files) == 0:
                     print(f"✗ No images found in {session_dir}")
-                    validation_results[rack_name] = False
+                    validation_results[operation_name] = False
                     continue
                 
                 print(f"  📖 Found {len(image_files)} images")
@@ -664,9 +1315,9 @@ class URLocateRack(URCapture):
                     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     
                     # Load camera parameters for this view
-                    pose_file = img_file.parent / f"{img_file.stem}_pose.json"
+                    pose_file = img_file.parent / f"{img_file.stem}.json"
                     if not pose_file.exists():
-                        print(f"  ⚠ Pose file not found: {pose_file}")
+                        print(f"  ⚠ Pose file not found for {img_file.name}, skipping")
                         ax.axis('off')
                         continue
                     
@@ -761,8 +1412,8 @@ class URLocateRack(URCapture):
                     axes[idx].axis('off')
                 
                 # Add overall title
-                origin_label = f"{rack_name}_point"
-                fig.suptitle(f'Wobj Coordinate System Validation - {rack_name.upper()}\n'
+                origin_label = f"{operation_name}_point"
+                fig.suptitle(f'Wobj Coordinate System Validation - {operation_name.upper()}\n'
                             f'Origin: {origin_label} | Red: X-axis | Green: Y-axis | Blue: Z-axis',
                             fontsize=14, fontweight='bold', y=0.98)
                 
@@ -772,8 +1423,8 @@ class URLocateRack(URCapture):
                 info_text = (
                     f"Wobj Coordinate System Properties:\n"
                     f"Origin (display): ({origin_3d[0]:.4f}, {origin_3d[1]:.4f}, {origin_3d[2]:.4f}) m\n"
-                    f"X-axis: rack1_point→rack2_point, length: {x_axis_length:.4f}m\n"
-                    f"Z-axis: rack1_point→rack3_point, length: {z_axis_length:.4f}m\n"
+                    f"X-axis: Bottom_Left→Bottom_Right, length: {x_axis_length:.4f}m\n"
+                    f"Z-axis: Bottom_Left→Top_Left, length: {z_axis_length:.4f}m\n"
                     f"Arrow length: {arrow_length:.3f}m"
                 )
                 
@@ -788,29 +1439,29 @@ class URLocateRack(URCapture):
                     wobj_dir = os.path.join(temp_dir, "wobj_coordinate_system")
                     os.makedirs(wobj_dir, exist_ok=True)
                     
-                    output_path = os.path.join(wobj_dir, f'wobj_validation_{rack_name}.jpg')
+                    output_path = os.path.join(wobj_dir, f'wobj_validation_{operation_name}.jpg')
                     plt.tight_layout()
                     plt.savefig(output_path, dpi=150, bbox_inches='tight')
                     print(f"  💾 Saved validation image to: {output_path}")
                     
                     # Also save to session result directory
                     if result_dir and os.path.exists(result_dir):
-                        session_output_path = os.path.join(result_dir, f'wobj_validation_{rack_name}.jpg')
+                        session_output_path = os.path.join(result_dir, f'wobj_validation_{operation_name}.jpg')
                         plt.savefig(session_output_path, dpi=150, bbox_inches='tight')
                         print(f"  💾 Copy saved to session: {session_output_path}")
                 
                 # Close plot to free memory
                 plt.close(fig)
                 
-                validation_results[rack_name] = True
+                validation_results[operation_name] = True
             
             # Summary
             print("\n" + "="*70)
             print(" Validation Summary")
             print("="*70)
-            for rack_name, success in validation_results.items():
+            for operation_name, success in validation_results.items():
                 status = "✓ SUCCESS" if success else "✗ FAILED"
-                print(f"  {rack_name}: {status}")
+                print(f"  {operation_name}: {status}")
             print("="*70)
             
             all_success = all(validation_results.values())
@@ -838,7 +1489,7 @@ class URLocateRack(URCapture):
         print(" Execution Summary")
         print("="*70)
         
-        total_operations = len(self.rack_operations)
+        total_operations = len(self.operation_names)
         completed_operations = sum(1 for r in results.values() if r.get("success", False))
         failed_operations = total_operations - completed_operations
         
@@ -847,7 +1498,7 @@ class URLocateRack(URCapture):
         print(f"Failed: {failed_operations}")
         print()
         
-        for operation_name in self.rack_operations:
+        for operation_name in self.operation_names:
             if operation_name in results:
                 result = results[operation_name]
                 status = "✓ SUCCESS" if result.get("success", False) else "✗ FAILED"
@@ -895,21 +1546,29 @@ def main():
             camera_topic=args.camera_topic,
             camera_params_path=args.camera_params_path,
             verbose=args.verbose,
-            operation_name='rack_locate'
+            operation_name='rack_bottom_left'
         )
         
-        # Execute auto capture
-        results = ur_locate_rack.auto_capture()
+        # Execute auto capture and positioning
+        results = ur_locate_rack.auto_capture_and_positioning()
         
-        # Check if all operations completed successfully
-        if not all(r.get("success", False) for r in results.values()):
-            print("\n✗ Some operations failed. Skipping wobj coordinate system building.")
+        # Check if all positioning operations completed successfully
+        all_positioning_success = all(
+            r.get('positioning_success', False) for r in results.values()
+        )
+        
+        if not all_positioning_success:
+            print("\n✗ Some positioning operations failed.")
+            print("⚠ Skipping wobj coordinate system building")
             sys.exit(1)
+        
+        print("\n✓ All positioning operations completed successfully!")
         
         # Build wobj coordinate system
         print("\n" + "="*70)
         print(" Building Wobj Coordinate System")
         print("="*70)
+        print("Building wobj coordinate system from rack corner points...")
         
         coord_system = ur_locate_rack.perform_wobj_frame_building()
         
@@ -917,13 +1576,10 @@ def main():
             print("\n✓ Wobj coordinate system built successfully!")
             
             # Validate wobj coordinate system
-            print("\n" + "="*70)
-            print(" Validating Wobj Coordinate System")
-            print("="*70)
-            
+            print("\nValidating wobj coordinate system...")
             validation_success = ur_locate_rack.validate_wobj_frame_building(
                 coord_system=coord_system,
-                verbose=args.verbose
+                verbose=ur_locate_rack.verbose
             )
             
             if validation_success:

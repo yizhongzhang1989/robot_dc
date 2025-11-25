@@ -164,6 +164,78 @@ HTML_TEMPLATE = '''
             justify-content: space-between;
             align-items: center;
         }
+        .status-key-name {
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            margin: -4px -8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .status-key-name:hover {
+            background: #e8f4f8;
+            color: #1a73e8;
+        }
+        .copy-icon {
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.9em;
+        }
+        .status-key-name:hover .copy-icon {
+            opacity: 1;
+        }
+        .copy-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: normal;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            margin-bottom: 8px;
+            z-index: 1000;
+        }
+        .copy-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.85);
+        }
+        .status-key-name:hover .copy-tooltip {
+            opacity: 1;
+        }
+        .copy-feedback {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(26, 115, 232, 0.95);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            font-weight: normal;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1001;
+        }
+        .copy-feedback.show {
+            opacity: 1;
+        }
         .status-type {
             font-size: 0.85em;
             color: #666;
@@ -173,6 +245,35 @@ HTML_TEMPLATE = '''
             border-radius: 3px;
             margin-left: 10px;
             font-family: monospace;
+        }
+        .status-timestamp {
+            font-size: 0.75em;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 4px;
+            margin-left: 8px;
+            display: inline-block;
+        }
+        .status-timestamp.very-fresh {
+            color: #b93c00;
+            background: #fdd7c5;
+            border: 1px solid #f28b5d;
+            font-weight: 700;
+        }
+        .status-timestamp.fresh {
+            color: #0d652d;
+            background: #a8dab5;
+            border: 1px solid #5cb85c;
+        }
+        .status-timestamp.stale {
+            color: #1a73e8;
+            background: #d2e3fc;
+            border: 1px solid #8ab4f8;
+        }
+        .status-timestamp.very-stale {
+            color: #9aa0a6;
+            background: #f1f3f4;
+            border: 1px solid #dadce0;
         }
         .status-value {
             background: #fff;
@@ -186,17 +287,19 @@ HTML_TEMPLATE = '''
             word-break: break-word;
         }
         .delete-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
+            background: #f1f3f4;
+            color: #5f6368;
+            border: 1px solid #dadce0;
             padding: 4px 12px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 0.85em;
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
         .delete-btn:hover {
-            background: #c82333;
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
         }
         .namespace-header {
             display: flex;
@@ -205,17 +308,19 @@ HTML_TEMPLATE = '''
             margin-bottom: 15px;
         }
         .delete-namespace-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
+            background: #f1f3f4;
+            color: #5f6368;
+            border: 1px solid #dadce0;
             padding: 8px 16px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 0.9em;
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
         .delete-namespace-btn:hover {
-            background: #c82333;
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
         }
         .empty-state {
             text-align: center;
@@ -253,6 +358,58 @@ HTML_TEMPLATE = '''
     <script>
         let currentNamespace = null;
         let statusData = {};
+
+        function formatAge(timestamp) {
+            if (!timestamp) return '';
+            
+            const now = Date.now() / 1000;  // Convert to seconds
+            const ageSeconds = Math.floor(now - timestamp);
+            
+            let ageClass = 'very-fresh';
+            let ageText = '';
+            
+            if (ageSeconds < 1) {
+                ageText = '0s ago';
+                ageClass = 'very-fresh';
+            } else if (ageSeconds < 60) {  // < 1 minute - very clear
+                ageText = ageSeconds + 's ago';
+                ageClass = 'very-fresh';
+            } else if (ageSeconds < 1800) {  // < 30 minutes - less clear
+                const minutes = Math.floor(ageSeconds / 60);
+                const seconds = ageSeconds % 60;
+                ageText = `${minutes}m ${seconds}s ago`;
+                ageClass = 'fresh';
+            } else if (ageSeconds < 86400) {  // < 1 day - noticeable color
+                const hours = Math.floor(ageSeconds / 3600);
+                const remainingMinutes = Math.floor((ageSeconds % 3600) / 60);
+                const seconds = ageSeconds % 60;
+                if (hours > 0) {
+                    if (remainingMinutes > 0) {
+                        ageText = `${hours}h ${remainingMinutes}m ${seconds}s ago`;
+                    } else {
+                        ageText = `${hours}h ${seconds}s ago`;
+                    }
+                } else {
+                    ageText = `${remainingMinutes}m ${seconds}s ago`;
+                }
+                ageClass = 'stale';
+            } else {  // > 1 day - dim color
+                const days = Math.floor(ageSeconds / 86400);
+                const remainingHours = Math.floor((ageSeconds % 86400) / 3600);
+                const remainingMinutes = Math.floor((ageSeconds % 3600) / 60);
+                const seconds = ageSeconds % 60;
+                if (remainingHours > 0) {
+                    ageText = `${days}d ${remainingHours}h ${remainingMinutes}m ${seconds}s ago`;
+                } else if (remainingMinutes > 0) {
+                    ageText = `${days}d ${remainingMinutes}m ${seconds}s ago`;
+                } else {
+                    ageText = `${days}d ${seconds}s ago`;
+                }
+                ageClass = 'very-stale';
+            }
+            
+            return `<span class="status-timestamp ${ageClass}">${ageText}</span>`;
+        }
 
         function updateConnectionStatus(isConnected) {
             const statusElem = document.getElementById('connection-status');
@@ -354,10 +511,16 @@ HTML_TEMPLATE = '''
                     const item = items[key];
                     let displayValue = '';
                     let typeInfo = '';
+                    let timestampInfo = '';
                     
                     // Handle new format with type and value
                     if (typeof item === 'object' && item.type && item.value !== undefined) {
                         typeInfo = `<span class="status-type">${item.type}</span>`;
+                        
+                        // Format timestamp if available
+                        if (item.timestamp) {
+                            timestampInfo = formatAge(item.timestamp);
+                        }
                         
                         // Format the display value
                         if (typeof item.value === 'object') {
@@ -375,16 +538,25 @@ HTML_TEMPLATE = '''
                         }
                     }
                     
+                    // Escape for HTML attribute (base64 encode to avoid escaping issues)
+                    const encodedValue = btoa(unescape(encodeURIComponent(displayValue)));
+                    
                     return `
                         <div class="status-item">
                             <div class="status-key">
                                 <div>
-                                    <span>${key}</span>
+                                    <span class="status-key-name" data-copy-value="${encodedValue}" onclick="copyToClipboard(event)">
+                                        <span>${key}</span>
+                                        <span class="copy-icon">📋</span>
+                                        <span class="copy-tooltip">Click to copy value</span>
+                                    </span>
                                     ${typeInfo}
+                                    ${timestampInfo}
                                 </div>
                                 <button class="delete-btn" onclick="deleteStatus('${ns}', '${key}')">🗑️ Delete</button>
                             </div>
                             <div class="status-value">${displayValue}</div>
+                            <div class="copy-feedback">✓ Copied!</div>
                         </div>
                     `;
                 }).join('');
@@ -406,6 +578,53 @@ HTML_TEMPLATE = '''
         function switchNamespace(namespace) {
             currentNamespace = namespace;
             renderDashboard();
+        }
+
+        async function copyToClipboard(event) {
+            event.stopPropagation();
+            
+            try {
+                // Decode the base64 encoded value
+                const encodedValue = event.currentTarget.getAttribute('data-copy-value');
+                const actualValue = decodeURIComponent(escape(atob(encodedValue)));
+                
+                await navigator.clipboard.writeText(actualValue);
+                
+                // Show feedback
+                const feedbackElem = event.currentTarget.closest('.status-item').querySelector('.copy-feedback');
+                feedbackElem.classList.add('show');
+                
+                setTimeout(() => {
+                    feedbackElem.classList.remove('show');
+                }, 1500);
+            } catch (err) {
+                // Fallback for older browsers
+                try {
+                    const encodedValue = event.currentTarget.getAttribute('data-copy-value');
+                    const actualValue = decodeURIComponent(escape(atob(encodedValue)));
+                    
+                    const textArea = document.createElement('textarea');
+                    textArea.value = actualValue;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    
+                    // Show feedback
+                    const feedbackElem = event.currentTarget.closest('.status-item').querySelector('.copy-feedback');
+                    feedbackElem.classList.add('show');
+                    
+                    setTimeout(() => {
+                        feedbackElem.classList.remove('show');
+                    }, 1500);
+                } catch (err2) {
+                    console.error('Failed to copy:', err, err2);
+                    alert('Failed to copy to clipboard');
+                }
+            }
         }
 
         // Auto-refresh every 2 seconds
@@ -474,7 +693,16 @@ class WebDashboardNode(Node):
         
         for namespace, keys in status_dict.items():
             processed_status[namespace] = {}
-            for key, pickle_str in keys.items():
+            for key, data in keys.items():
+                # Extract pickle_str and timestamp from data dict
+                if isinstance(data, dict):
+                    pickle_str = data.get('pickle')
+                    timestamp = data.get('timestamp')
+                else:
+                    # Fallback for old format (should not happen with new implementation)
+                    pickle_str = data
+                    timestamp = None
+                
                 # Unpickle to get the actual object and its type
                 try:
                     # Decode the base64 pickle string
@@ -509,7 +737,8 @@ class WebDashboardNode(Node):
                     processed_status[namespace][key] = {
                         'type': type_str,
                         'value': display_value,
-                        'pickle': pickle_str  # Keep pickle for reference
+                        'pickle': pickle_str,  # Keep pickle for reference
+                        'timestamp': timestamp  # Include timestamp for age display
                     }
                 except Exception as e:
                     # If unpickling fails, try to extract type from error message
@@ -537,7 +766,8 @@ class WebDashboardNode(Node):
                     processed_status[namespace][key] = {
                         'type': type_str,
                         'value': display_value,
-                        'pickle': pickle_str
+                        'pickle': pickle_str,
+                        'timestamp': timestamp  # Include timestamp for age display
                     }
         
         return processed_status
