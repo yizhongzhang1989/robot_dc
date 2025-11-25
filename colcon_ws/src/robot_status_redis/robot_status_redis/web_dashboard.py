@@ -384,7 +384,11 @@ HTML_TEMPLATE = '''
                 const remainingMinutes = Math.floor((ageSeconds % 3600) / 60);
                 const seconds = ageSeconds % 60;
                 if (hours > 0) {
-                    ageText = `${hours}h ${remainingMinutes}m ${seconds}s ago`;
+                    if (remainingMinutes > 0) {
+                        ageText = `${hours}h ${remainingMinutes}m ${seconds}s ago`;
+                    } else {
+                        ageText = `${hours}h ${seconds}s ago`;
+                    }
                 } else {
                     ageText = `${remainingMinutes}m ${seconds}s ago`;
                 }
