@@ -61,18 +61,6 @@ except Exception as e:
     UR15Robot = None
 
 
-def find_available_port(start_port=8030, max_attempts=10):
-    """Find an available port starting from start_port."""
-    for port in range(start_port, start_port + max_attempts):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
-                return port
-        except OSError:
-            continue
-    return None
-
-
 class UR15WebNode(Node):
     """ROS2 node for UR15 web interface with camera calibration validation."""
     
@@ -93,7 +81,7 @@ class UR15WebNode(Node):
         web_port = self.get_parameter('web_port').value
         self.ur15_ip = self.get_parameter('ur15_ip').value
         self.ur15_port = self.get_parameter('ur15_port').value
-        self.data_dir = self.get_parameter('dataset_dir').value
+        self.dataset_dir = self.get_parameter('dataset_dir').value
         self.calibration_data_dir = self.get_parameter('calib_data_dir').value
         self.chessboard_config = self.get_parameter('chessboard_config').value
         
@@ -460,11 +448,11 @@ class UR15WebNode(Node):
     
     def _get_next_file_number(self):
         """Find the next available file number by checking existing files in data_dir."""
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir, exist_ok=True)
+        if not os.path.exists(self.dataset_dir):
+            os.makedirs(self.dataset_dir, exist_ok=True)
             return 0
         
-        existing_files = [f for f in os.listdir(self.data_dir) if f.endswith('.json')]
+        existing_files = [f for f in os.listdir(self.dataset_dir) if f.endswith('.json')]
         if not existing_files:
             return 0
         
@@ -672,7 +660,7 @@ class UR15WebNode(Node):
                 
                 # Replace template variables
                 html_content = html_content.replace('{{ camera_topic }}', self.camera_topic)
-                html_content = html_content.replace('{{ data_dir }}', self._simplify_path(self.data_dir))
+                html_content = html_content.replace('{{ data_dir }}', self._simplify_path(self.dataset_dir))
                 html_content = html_content.replace('{{ calibration_data_dir }}', self._simplify_path(self.calibration_data_dir))
                 html_content = html_content.replace('{{ chessboard_config }}', self._simplify_path(self.chessboard_config))
                 
@@ -759,7 +747,7 @@ class UR15WebNode(Node):
             return jsonify({
                 'has_image': has_image,
                 'camera_topic': self.camera_topic,
-                'data_dir': self._simplify_path(self.data_dir),
+                'data_dir': self._simplify_path(self.dataset_dir),
                 'calibration_data_dir': self._simplify_path(self.calibration_data_dir),
                 'has_intrinsic': has_intrinsic,
                 'has_extrinsic': has_extrinsic,
@@ -1102,7 +1090,7 @@ class UR15WebNode(Node):
                 # Create directory if it doesn't exist
                 try:
                     os.makedirs(new_dir, exist_ok=True)
-                    self.data_dir = new_dir
+                    self.dataset_dir = new_dir
                     self.get_logger().info(f"Dataset directory changed to: {new_dir}")
                     return jsonify({
                         'success': True, 

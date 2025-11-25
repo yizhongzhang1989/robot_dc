@@ -77,12 +77,9 @@ ur15:
   web:
     port: 8030
     camera_topic: "/ur15_camera/image_raw"
-  
-  # Paths (relative to workspace root)
-  paths:
-    dataset: "dataset"
-    calibration_data: "temp/ur15_cam_calibration_result"
-    calibration_data_raw: "temp/ur15_cam_calibration_data"
+    dataset_path: "dataset"
+    calibration_data_path: "temp/ur15_cam_calibration_data"
+    chessboard_config_path: "temp/ur15_cam_calibration_data/chessboard_config.json"
     rack_positions: "temp/ur15_rack_positions.json"
   
   # Camera calibration settings

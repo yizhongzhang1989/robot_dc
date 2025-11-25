@@ -11,6 +11,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from common.config_manager import ConfigManager
+from common.workspace_utils import get_workspace_root
 from pathlib import Path
 
 
@@ -18,6 +19,25 @@ def generate_launch_description():
     # Load configuration
     config = ConfigManager()
     ur15_config = config.get_robot('ur15')
+    
+    # Get workspace root for resolving relative paths
+    workspace_root = Path(get_workspace_root())
+    
+    # Resolve paths (convert relative to absolute)
+    dataset_path = ur15_config.get('web.dataset_path')
+    dataset_path_obj = Path(dataset_path)
+    if not dataset_path_obj.is_absolute():
+        dataset_path = str(workspace_root / dataset_path)
+    
+    calib_data_path = ur15_config.get('web.calibration_data_path')
+    calib_data_path_obj = Path(calib_data_path)
+    if not calib_data_path_obj.is_absolute():
+        calib_data_path = str(workspace_root / calib_data_path)
+    
+    chessboard_config_path = ur15_config.get('web.chessboard_config_path')
+    chessboard_config_path_obj = Path(chessboard_config_path)
+    if not chessboard_config_path_obj.is_absolute():
+        chessboard_config_path = str(workspace_root / chessboard_config_path)
     
     # Declare arguments with defaults from config
     ur15_ip_arg = DeclareLaunchArgument(
@@ -46,20 +66,19 @@ def generate_launch_description():
     
     dataset_dir_arg = DeclareLaunchArgument(
         'dataset_dir',
-        default_value=ur15_config.get('paths.dataset'),
+        default_value=dataset_path,
         description='Directory for storing dataset files'
     )
     
     calib_data_dir_arg = DeclareLaunchArgument(
         'calib_data_dir',
-        default_value=ur15_config.get('paths.calibration_data'),
+        default_value=calib_data_path,
         description='Directory for camera calibration data'
     )
     
-    chessboard_config_path = Path(ur15_config.get('paths.calibration_data_raw')) / 'chessboard_config.json'
     chessboard_config_arg = DeclareLaunchArgument(
         'chessboard_config',
-        default_value=str(chessboard_config_path),
+        default_value=chessboard_config_path,
         description='JSON file containing chessboard pattern configuration'
     )
     

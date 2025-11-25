@@ -344,7 +344,7 @@ class TestPathResolution:
             with patch.object(ConfigManager, '_find_config_file', return_value=config_path):
                 config = ConfigManager()
                 
-                dataset_path = config.get('ur15.paths.dataset')
+                dataset_path = config.get('ur15.web.dataset_path')
                 calib_path = config.get('ur15.paths.calibration')
                 
                 # Paths should be absolute
