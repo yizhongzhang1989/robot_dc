@@ -164,6 +164,78 @@ HTML_TEMPLATE = '''
             justify-content: space-between;
             align-items: center;
         }
+        .status-key-name {
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            margin: -4px -8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .status-key-name:hover {
+            background: #e8f4f8;
+            color: #1a73e8;
+        }
+        .copy-icon {
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.9em;
+        }
+        .status-key-name:hover .copy-icon {
+            opacity: 1;
+        }
+        .copy-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: normal;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            margin-bottom: 8px;
+            z-index: 1000;
+        }
+        .copy-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.85);
+        }
+        .status-key-name:hover .copy-tooltip {
+            opacity: 1;
+        }
+        .copy-feedback {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(26, 115, 232, 0.95);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            font-weight: normal;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1001;
+        }
+        .copy-feedback.show {
+            opacity: 1;
+        }
         .status-type {
             font-size: 0.85em;
             color: #666;
@@ -375,16 +447,24 @@ HTML_TEMPLATE = '''
                         }
                     }
                     
+                    // Escape for HTML attribute (base64 encode to avoid escaping issues)
+                    const encodedValue = btoa(unescape(encodeURIComponent(displayValue)));
+                    
                     return `
                         <div class="status-item">
                             <div class="status-key">
                                 <div>
-                                    <span>${key}</span>
+                                    <span class="status-key-name" data-copy-value="${encodedValue}" onclick="copyToClipboard(event)">
+                                        <span>${key}</span>
+                                        <span class="copy-icon">📋</span>
+                                        <span class="copy-tooltip">Click to copy value</span>
+                                    </span>
                                     ${typeInfo}
                                 </div>
                                 <button class="delete-btn" onclick="deleteStatus('${ns}', '${key}')">🗑️ Delete</button>
                             </div>
                             <div class="status-value">${displayValue}</div>
+                            <div class="copy-feedback">✓ Copied!</div>
                         </div>
                     `;
                 }).join('');
@@ -406,6 +486,53 @@ HTML_TEMPLATE = '''
         function switchNamespace(namespace) {
             currentNamespace = namespace;
             renderDashboard();
+        }
+
+        async function copyToClipboard(event) {
+            event.stopPropagation();
+            
+            try {
+                // Decode the base64 encoded value
+                const encodedValue = event.currentTarget.getAttribute('data-copy-value');
+                const actualValue = decodeURIComponent(escape(atob(encodedValue)));
+                
+                await navigator.clipboard.writeText(actualValue);
+                
+                // Show feedback
+                const feedbackElem = event.currentTarget.closest('.status-item').querySelector('.copy-feedback');
+                feedbackElem.classList.add('show');
+                
+                setTimeout(() => {
+                    feedbackElem.classList.remove('show');
+                }, 1500);
+            } catch (err) {
+                // Fallback for older browsers
+                try {
+                    const encodedValue = event.currentTarget.getAttribute('data-copy-value');
+                    const actualValue = decodeURIComponent(escape(atob(encodedValue)));
+                    
+                    const textArea = document.createElement('textarea');
+                    textArea.value = actualValue;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    
+                    // Show feedback
+                    const feedbackElem = event.currentTarget.closest('.status-item').querySelector('.copy-feedback');
+                    feedbackElem.classList.add('show');
+                    
+                    setTimeout(() => {
+                        feedbackElem.classList.remove('show');
+                    }, 1500);
+                } catch (err2) {
+                    console.error('Failed to copy:', err, err2);
+                    alert('Failed to copy to clipboard');
+                }
+            }
         }
 
         // Auto-refresh every 2 seconds
