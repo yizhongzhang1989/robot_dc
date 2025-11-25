@@ -53,11 +53,11 @@ def get_workspace_root() -> Optional[str]:
                 current = package_dir
                 while current != '/' and current:
                     parent = os.path.dirname(current)
-                    # If we find 'install' directory, go one level up to get colcon_ws
+                    # If we find 'install' directory, parent is colcon_ws, grandparent is robot_dc
                     if os.path.basename(current) == 'install':
-                        colcon_ws = current
+                        colcon_ws = os.path.dirname(current)  # install -> colcon_ws
                         # Then go one more level up to get robot_dc (project root)
-                        project_root = os.path.dirname(colcon_ws)
+                        project_root = os.path.dirname(colcon_ws)  # colcon_ws -> robot_dc
                         # Verify this is robot_dc by checking for expected directories
                         if (os.path.exists(os.path.join(project_root, 'colcon_ws')) and
                             os.path.exists(os.path.join(project_root, 'scripts'))):
