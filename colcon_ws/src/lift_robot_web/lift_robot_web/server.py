@@ -556,17 +556,26 @@ class LiftRobotWeb(Node):
                         return {'status':'ok','command':cmd,'target':'pushrod','action':'manual_move','action_status':'sending'}
                     
                     elif cmd == 'stop':
-                        # Cancel running ManualMove action (unified action)
+                        # Cancel any running pushrod Action (manual_move or goto_height)
                         self.get_logger().info('[CMD] Pushrod STOP requested')
-                        cancelled_any = False
+                        cancelled_actions = []
                         with self.action_lock:
-                            goal_handle = self.action_goal_handles.get('manual_move')
-                            if goal_handle and self.action_status.get('manual_move') == 'executing':
+                            # Check and cancel manual_move
+                            manual_move_handle = self.action_goal_handles.get('manual_move')
+                            if manual_move_handle and self.action_status.get('manual_move') == 'executing':
                                 self.get_logger().info(f'[CMD] Cancelling manual_move action (pushrod)...')
-                                goal_handle.cancel_goal_async()
-                                cancelled_any = True
-                        self.get_logger().info(f'[CMD] Pushrod STOP complete: cancelled_any={cancelled_any}')
-                        return {'status':'ok','command':'stop','target':'pushrod','cancelled':cancelled_any}
+                                manual_move_handle.cancel_goal_async()
+                                cancelled_actions.append('manual_move')
+                            
+                            # Check and cancel goto_height
+                            goto_height_handle = self.action_goal_handles.get('goto_height')
+                            if goto_height_handle and self.action_status.get('goto_height') == 'executing':
+                                self.get_logger().info(f'[CMD] Cancelling goto_height action (pushrod)...')
+                                goto_height_handle.cancel_goal_async()
+                                cancelled_actions.append('goto_height')
+                        
+                        self.get_logger().info(f'[CMD] Pushrod STOP complete: cancelled={cancelled_actions}')
+                        return {'status':'ok','command':'stop','target':'pushrod','cancelled':cancelled_actions,'cancelled_count':len(cancelled_actions)}
                     
                     elif cmd == 'goto_height':
                         # Extract target_height and mode from payload

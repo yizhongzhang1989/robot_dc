@@ -104,67 +104,45 @@
   <!-- ═══════════════════════════════════════════════════════════════ -->
   <div class="max-w-7xl mx-auto px-4 space-y-4">
     
-    <!-- Row 1: Control Panel (Left) + Detailed Status (Right) -->
+    <!-- Row 1: Platform Control (Left) + System Status (Right) -->
     <div class="grid grid-cols-2 gap-4">
       
-      <!-- LEFT: Control Panel - Vertical sections for Manual, Height Loop, Force Loop -->
-      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
-        <h2 class="font-bold text-lg mb-4 text-green-700 flex items-center gap-2">
-          🎮 Control Panel
+      <!-- LEFT: Platform Control Panel -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+        <h2 class="font-bold text-lg mb-3 text-blue-700 flex items-center gap-2">
+          🏗️ Platform Control
         </h2>
         
-        <!-- Manual Control Section -->
-        <div class="mb-4 pb-4 border-b border-gray-200">
+        <!-- Platform Manual Control -->
+        <div class="mb-3 pb-3 border-b border-gray-200">
           <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-gray-100 px-2 py-1 rounded">
             🕹️ Manual Control
           </h3>
-          <div class="space-y-2 pl-2">
-            <div class="flex gap-1 items-center">
-              <span class="text-xs font-medium w-20 text-gray-600">Platform:</span>
-              <button data-cmd="up" data-target="platform" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded flex-1 transition">↑ Up</button>
-              <button data-cmd="down" data-target="platform" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">↓ Down</button>
-              <button data-cmd="stop" data-target="platform" class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded flex-1 transition">■ Stop</button>
-            </div>
-            <div class="flex gap-1 items-center">
-              <span class="text-xs font-medium w-20 text-gray-600">Pushrod:</span>
-              <button data-cmd="up" data-target="pushrod" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded flex-1 transition">↑ Up</button>
-              <button data-cmd="down" data-target="pushrod" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">↓ Down</button>
-              <button data-cmd="stop" data-target="pushrod" class="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded flex-1 transition">■ Stop</button>
-            </div>
+          <div class="flex gap-2 pl-2">
+            <button data-cmd="up" data-target="platform" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded flex-1 transition">↑ Up</button>
+            <button data-cmd="down" data-target="platform" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">↓ Down</button>
+            <button data-cmd="stop" data-target="platform" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded flex-1 transition">■ Stop</button>
           </div>
         </div>
         
-        <!-- Height Closed-Loop Control Section -->
-        <div class="mb-4 pb-4 border-b border-gray-200">
+        <!-- Platform Height Control -->
+        <div class="mb-3 pb-3 border-b border-gray-200">
           <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-blue-100 px-2 py-1 rounded">
-            📏 Height Closed-Loop Control
+            📏 Height Control
           </h3>
-          <div class="space-y-2 pl-2">
-            <div class="flex gap-2 items-center">
-              <span class="text-xs font-medium w-20 text-gray-600">Platform:</span>
-              <input id="targetHeightPlatform" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-blue-300 rounded text-xs w-28 focus:ring-2 focus:ring-blue-400" value="750">
-              <button id="gotoHeightPlatformBtn" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">→ Go to Height</button>
-            </div>
-            <div class="flex gap-2 items-center">
-              <span class="text-xs font-medium w-20 text-gray-600">Pushrod:</span>
-              <input id="targetHeightPushrod" type="number" placeholder="Height (mm)" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-24 focus:ring-2 focus:ring-purple-400" value="750">
-              <select id="pushrodMode" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-24 focus:ring-2 focus:ring-purple-400">
-                <option value="absolute">Absolute</option>
-                <option value="relative">Relative</option>
-              </select>
-              <button id="gotoHeightPushrodBtn" class="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded flex-1 transition">→ Go to Height</button>
-            </div>
+          <div class="flex gap-2 pl-2">
+            <input id="targetHeightPlatform" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-blue-300 rounded text-xs w-28 focus:ring-2 focus:ring-blue-400" value="750">
+            <button id="gotoHeightPlatformBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">→ Go to Height</button>
           </div>
         </div>
         
-        <!-- Force Closed-Loop Control Section -->
-        <div class="mb-2">
+        <!-- Platform Force Control -->
+        <div class="mb-3 pb-3 border-b border-gray-200">
           <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-amber-100 px-2 py-1 rounded">
-            ⚡ Force Closed-Loop Control
+            ⚡ Force Control
           </h3>
           <div class="space-y-2 pl-2">
             <div class="flex gap-2 items-center">
-              <span class="text-xs font-medium w-20 text-gray-600">Target:</span>
               <input id="targetForcePlatform" type="number" placeholder="Force (N)" class="px-2 py-1.5 border border-amber-300 rounded text-xs w-28 focus:ring-2 focus:ring-amber-400" value="240">
               <span class="text-xs text-gray-600 font-medium">N</span>
             </div>
@@ -175,34 +153,31 @@
           </div>
         </div>
         
-        <!-- Height-Force Hybrid Control Section (NEW) -->
+        <!-- Platform Hybrid Control -->
         <div class="mb-2">
           <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-teal-100 px-2 py-1 rounded">
-            🎯 Height-Force Hybrid Control
+            🎯 Hybrid Control (Height OR Force)
           </h3>
           <div class="space-y-2 pl-2">
             <div class="flex gap-2 items-center">
-              <span class="text-xs font-medium w-20 text-gray-600">Height:</span>
-              <input id="targetHeightHybrid" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-teal-300 rounded text-xs w-28 focus:ring-2 focus:ring-teal-400" value="750">
-              <span class="text-xs text-gray-600 font-medium">mm</span>
+              <span class="text-xs font-medium w-16 text-gray-600">Height:</span>
+              <input id="targetHeightHybrid" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-teal-300 rounded text-xs w-24 focus:ring-2 focus:ring-teal-400" value="750">
+              <span class="text-xs text-gray-600">mm</span>
             </div>
             <div class="flex gap-2 items-center">
-              <span class="text-xs font-medium w-20 text-gray-600">Force:</span>
-              <input id="targetForceHybrid" type="number" placeholder="Target (N)" class="px-2 py-1.5 border border-teal-300 rounded text-xs w-28 focus:ring-2 focus:ring-teal-400" value="240">
-              <span class="text-xs text-gray-600 font-medium">N</span>
+              <span class="text-xs font-medium w-16 text-gray-600">Force:</span>
+              <input id="targetForceHybrid" type="number" placeholder="Target (N)" class="px-2 py-1.5 border border-teal-300 rounded text-xs w-24 focus:ring-2 focus:ring-teal-400" value="240">
+              <span class="text-xs text-gray-600">N</span>
             </div>
             <button id="hybridControlBtn" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium rounded w-full transition">→ Go to Target</button>
           </div>
         </div>
-        
-        <!-- Command Status -->
-        <div id="cmdStatus" class="text-xs text-slate-500 mt-3 p-2 bg-slate-50 rounded text-center"></div>
       </div>
       
-      <!-- RIGHT: Detailed Status -->
-      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
-        <h2 class="font-bold text-lg mb-3 text-purple-700 flex items-center gap-2">
-          🔍 Detailed Status
+      <!-- RIGHT: System Status -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-slate-500">
+        <h2 class="font-bold text-lg mb-3 text-slate-700 flex items-center gap-2">
+          📊 System Status
         </h2>
         
         <!-- Task Status -->
@@ -218,8 +193,8 @@
           </div>
         </div>
         
-        <!-- System Info -->
-        <div>
+        <!-- Connection Info -->
+        <div class="mb-3">
           <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-slate-100 px-2 py-1 rounded">
             ℹ️ Connection Info
           </h3>
@@ -234,86 +209,46 @@
             <div class="text-slate-500">Last: <span id="ts" class="font-mono">-</span></div>
           </div>
         </div>
+        
+        <!-- Command Status -->
+        <div id="cmdStatus" class="text-xs text-slate-500 p-2 bg-slate-50 rounded text-center"></div>
       </div>
     </div>
     
-    <!-- ═══════════════════════════════════════════════════════════════ -->
-    <!-- ACTION MODE TESTING SECTION (ROS2 Action vs Topic Comparison) -->
-    <!-- ═══════════════════════════════════════════════════════════════ -->
-    
-    <!-- Row 1.5: Action-based Goto Height Control (Testing) -->
+    <!-- Row 2: Pushrod Control (Full Width) -->
     <div class="grid grid-cols-1 gap-4">
-      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
-        <h2 class="font-bold text-lg mb-3 text-orange-700 flex items-center gap-2">
-          🚀 Goto Height - Action Mode (Testing)
-          <span class="text-xs font-normal text-gray-500 ml-2">(ROS2 Action Server)</span>
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+        <h2 class="font-bold text-lg mb-3 text-purple-700 flex items-center gap-2">
+          🔧 Pushrod Control
         </h2>
         
         <div class="grid grid-cols-2 gap-4">
-          <!-- LEFT: Action Control -->
+          <!-- LEFT: Pushrod Manual Control -->
           <div>
-            <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-orange-100 px-2 py-1 rounded">
-              🎯 Action Control
+            <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-gray-100 px-2 py-1 rounded">
+              🕹️ Manual Control
             </h3>
-            <div class="space-y-2">
-              <div class="flex gap-2 items-center">
-                <span class="text-xs font-medium w-24 text-gray-600">Target Height:</span>
-                <input id="targetHeightAction" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-orange-300 rounded text-xs w-28 focus:ring-2 focus:ring-orange-400" value="750">
-                <span class="text-xs text-gray-600 font-medium">mm</span>
-              </div>
-              <div class="flex gap-2">
-                <button id="gotoHeightActionBtn" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium rounded flex-1 transition">
-                  🚀 Send Action Goal
-                </button>
-                <button id="cancelActionBtn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded flex-1 transition" disabled>
-                  ⏹️ Cancel
-                </button>
-              </div>
-              <div id="actionStatus" class="text-xs p-2 bg-slate-50 rounded text-center text-gray-500">Ready</div>
+            <div class="flex gap-2 pl-2">
+              <button data-cmd="up" data-target="pushrod" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded flex-1 transition">↑ Up</button>
+              <button data-cmd="down" data-target="pushrod" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded flex-1 transition">↓ Down</button>
+              <button data-cmd="stop" data-target="pushrod" class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded flex-1 transition">■ Stop</button>
             </div>
           </div>
           
-          <!-- RIGHT: Action Feedback & Progress -->
+          <!-- RIGHT: Pushrod Height Control -->
           <div>
-            <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-orange-100 px-2 py-1 rounded">
-              📊 Action Feedback
+            <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-purple-100 px-2 py-1 rounded">
+              📏 Height Control
             </h3>
-            <div class="space-y-2">
-              <!-- Goal Status -->
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-medium w-24 text-gray-600">Goal Status:</span>
-                <span id="actionGoalStatus" class="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded">IDLE</span>
+            <div class="space-y-2 pl-2">
+              <div class="flex gap-2 items-center">
+                <input id="targetHeightPushrod" type="number" placeholder="Height (mm)" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-24 focus:ring-2 focus:ring-purple-400" value="750">
+                <select id="pushrodMode" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-24 focus:ring-2 focus:ring-purple-400">
+                  <option value="absolute">Absolute</option>
+                  <option value="relative">Relative</option>
+                </select>
               </div>
-              
-              <!-- Progress Bar -->
-              <div>
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-xs font-medium text-gray-600">Progress:</span>
-                  <span id="actionProgressPercent" class="text-xs font-mono text-orange-600">0%</span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div id="actionProgressBar" class="bg-orange-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
-                </div>
-              </div>
-              
-              <!-- Real-time Feedback -->
-              <div class="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2 rounded">
-                <div>Current: <span id="actionCurrentHeight" class="font-mono text-blue-600">-</span> mm</div>
-                <div>Target: <span id="actionTargetHeight" class="font-mono text-green-600">-</span> mm</div>
-                <div>Error: <span id="actionError" class="font-mono text-amber-600">-</span> mm</div>
-                <div>State: <span id="actionMovementState" class="font-mono font-semibold">-</span></div>
-              </div>
-              
-              <!-- Result Info -->
-              <div id="actionResultBox" class="hidden p-2 bg-green-50 rounded border border-green-200">
-                <div class="text-xs font-semibold text-green-800 mb-1">✅ Result:</div>
-                <div class="text-xs space-y-1">
-                  <div>Success: <span id="actionResultSuccess" class="font-mono font-semibold">-</span></div>
-                  <div>Final Height: <span id="actionResultFinalHeight" class="font-mono">-</span> mm</div>
-                  <div>Execution Time: <span id="actionResultExecutionTime" class="font-mono">-</span> s</div>
-                  <div>Reason: <span id="actionResultReason" class="font-mono text-green-700">-</span></div>
-                </div>
-              </div>
+              <button id="gotoHeightPushrodBtn" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded w-full transition">→ Go to Height</button>
             </div>
           </div>
         </div>
@@ -900,173 +835,6 @@ $('hybridControlBtn').addEventListener('click', async ()=>{
     setTimeout(()=>$('cmdStatus').textContent='',3000);
   } catch(e){ $('cmdStatus').textContent='Error'; }
 });
-
-// ═══════════════════════════════════════════════════════════════
-// ACTION MODE: Goto Height Action (ROS2 Action Server)
-// ═══════════════════════════════════════════════════════════════
-let actionPollingInterval = null;
-
-// Send Action Goal
-$('gotoHeightActionBtn').addEventListener('click', async ()=>{
-  const targetHeight = parseFloat($('targetHeightAction').value);
-  if(isNaN(targetHeight)){
-    $('actionStatus').textContent='❌ Invalid height value';
-    $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
-    setTimeout(()=>{
-      $('actionStatus').textContent='Ready';
-      $('actionStatus').className='text-xs p-2 bg-slate-50 rounded text-center text-gray-500';
-    },2000);
-    return;
-  }
-  
-  // Update UI: Goal sending
-  $('actionStatus').textContent='🚀 Sending Action Goal: '+targetHeight+'mm...';
-  $('actionStatus').className='text-xs p-2 bg-blue-50 rounded text-center text-blue-600';
-  $('actionGoalStatus').textContent='SENDING';
-  $('actionGoalStatus').className='px-2 py-1 bg-blue-200 text-blue-700 text-xs font-semibold rounded';
-  $('gotoHeightActionBtn').disabled = true;
-  
-  try {
-    const r=await fetch('/api/action/goto_height',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({target_height:targetHeight})
-    });
-    
-    if(!r.ok){ 
-      $('actionStatus').textContent='❌ Failed to send Action Goal'; 
-      $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
-      $('actionGoalStatus').textContent='FAILED';
-      $('actionGoalStatus').className='px-2 py-1 bg-red-200 text-red-700 text-xs font-semibold rounded';
-      $('gotoHeightActionBtn').disabled = false;
-      return; 
-    }
-    
-    const resp=await r.json();
-    
-    // Update UI: Goal accepted
-    $('actionStatus').textContent='✅ Action Goal Accepted - Executing...';
-    $('actionStatus').className='text-xs p-2 bg-green-50 rounded text-center text-green-600';
-    $('actionGoalStatus').textContent='EXECUTING';
-    $('actionGoalStatus').className='px-2 py-1 bg-yellow-200 text-yellow-700 text-xs font-semibold rounded animate-pulse';
-    $('actionTargetHeight').textContent = targetHeight.toFixed(2);
-    $('cancelActionBtn').disabled = false;
-    
-    // Hide previous result
-    $('actionResultBox').classList.add('hidden');
-    
-    // Start polling for feedback
-    startActionPolling();
-    
-  } catch(e){ 
-    $('actionStatus').textContent='❌ Error: '+e.message; 
-    $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
-    $('gotoHeightActionBtn').disabled = false;
-  }
-});
-
-// Cancel Action
-$('cancelActionBtn').addEventListener('click', async ()=>{
-  $('actionStatus').textContent='⏹️ Cancelling Action...';
-  $('actionStatus').className='text-xs p-2 bg-orange-50 rounded text-center text-orange-600';
-  
-  try {
-    const r=await fetch('/api/action/cancel_goto_height',{method:'POST'});
-    if(!r.ok){ 
-      $('actionStatus').textContent='❌ Failed to cancel'; 
-      $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
-      return; 
-    }
-    
-    $('actionStatus').textContent='⏹️ Action Cancelled';
-    $('actionStatus').className='text-xs p-2 bg-orange-50 rounded text-center text-orange-600';
-    $('actionGoalStatus').textContent='CANCELLED';
-    $('actionGoalStatus').className='px-2 py-1 bg-orange-200 text-orange-700 text-xs font-semibold rounded';
-    
-    stopActionPolling();
-    resetActionUI();
-    
-  } catch(e){ 
-    $('actionStatus').textContent='❌ Cancel error: '+e.message;
-    $('actionStatus').className='text-xs p-2 bg-red-50 rounded text-center text-red-600';
-  }
-});
-
-// Start polling Action status/feedback (10Hz)
-function startActionPolling(){
-  if(actionPollingInterval) clearInterval(actionPollingInterval);
-  
-  actionPollingInterval = setInterval(async ()=>{
-    try {
-      const r=await fetch('/api/action/status');
-      if(!r.ok) return;
-      
-      const data=await r.json();
-      
-      // Update feedback display
-      if(data.feedback){
-        $('actionCurrentHeight').textContent = data.feedback.current_height?.toFixed(2) || '-';
-        $('actionError').textContent = data.feedback.error?.toFixed(2) || '-';
-        $('actionMovementState').textContent = data.feedback.movement_state || '-';
-        $('actionProgressPercent').textContent = (data.feedback.progress*100).toFixed(0)+'%';
-        $('actionProgressBar').style.width = (data.feedback.progress*100)+'%';
-      }
-      
-      // Check if completed
-      if(data.status === 'succeeded'){
-        $('actionStatus').textContent='✅ Action Completed Successfully';
-        $('actionStatus').className='text-xs p-2 bg-green-50 rounded text-center text-green-600';
-        $('actionGoalStatus').textContent='SUCCEEDED';
-        $('actionGoalStatus').className='px-2 py-1 bg-green-200 text-green-700 text-xs font-semibold rounded';
-        
-        // Show result
-        if(data.result){
-          $('actionResultSuccess').textContent = data.result.success ? 'True' : 'False';
-          $('actionResultFinalHeight').textContent = data.result.final_height?.toFixed(2) || '-';
-          $('actionResultExecutionTime').textContent = data.result.execution_time?.toFixed(2) || '-';
-          $('actionResultReason').textContent = data.result.completion_reason || '-';
-          $('actionResultBox').classList.remove('hidden');
-        }
-        
-        stopActionPolling();
-        resetActionUI();
-        
-      } else if(data.status === 'aborted' || data.status === 'cancelled'){
-        $('actionStatus').textContent='⚠️ Action '+data.status.toUpperCase();
-        $('actionStatus').className='text-xs p-2 bg-orange-50 rounded text-center text-orange-600';
-        $('actionGoalStatus').textContent=data.status.toUpperCase();
-        $('actionGoalStatus').className='px-2 py-1 bg-orange-200 text-orange-700 text-xs font-semibold rounded';
-        
-        stopActionPolling();
-        resetActionUI();
-      }
-      
-    } catch(e){
-      console.error('Action polling error:', e);
-    }
-  }, 100); // 10Hz polling
-}
-
-// Stop polling
-function stopActionPolling(){
-  if(actionPollingInterval){
-    clearInterval(actionPollingInterval);
-    actionPollingInterval = null;
-  }
-}
-
-// Reset Action UI state
-function resetActionUI(){
-  $('gotoHeightActionBtn').disabled = false;
-  $('cancelActionBtn').disabled = true;
-  
-  setTimeout(()=>{
-    if($('actionGoalStatus').textContent !== 'EXECUTING'){
-      $('actionStatus').textContent='Ready';
-      $('actionStatus').className='text-xs p-2 bg-slate-50 rounded text-center text-gray-500';
-    }
-  }, 3000);
-}
 
 // Emergency Reset button
 $('resetBtn').addEventListener('click', async ()=>{
