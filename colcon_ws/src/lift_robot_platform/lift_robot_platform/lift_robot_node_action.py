@@ -28,7 +28,7 @@ import uuid
 # Control Parameters
 # ═══════════════════════════════════════════════════════════════
 CONTROL_RATE = 0.02             # 50 Hz control loop (inside Actions)
-POSITION_TOLERANCE = 0.05       # ±0.05 mm target tolerance
+POSITION_TOLERANCE = 0.5        # ±0.5 mm target tolerance (increased for sensor noise and movement speed)
 FEEDBACK_INTERVAL = 0.1         # 10 Hz Action feedback rate
 SENSOR_SPIN_TIMEOUT = 0.001     # 1ms spin for sensor data acquisition
 
@@ -1012,9 +1012,28 @@ class LiftRobotNodeAction(Node):
     async def _execute_goto_height(self, goal_handle):
         """Execute GotoHeight action with internal 50Hz control loop"""
         target = goal_handle.request.target  # "platform" or "pushrod"
-        target_height = goal_handle.request.target_height
+        input_height = goal_handle.request.target_height
+        mode = goal_handle.request.mode if hasattr(goal_handle.request, 'mode') and goal_handle.request.mode else 'absolute'
         
-        self.get_logger().info(f"GotoHeight started: target={target}, target_height={target_height:.2f}mm")
+        # Calculate actual target height based on mode
+        with self.state_lock:
+            current_height = self.current_height
+        
+        if mode == 'relative':
+            # Relative mode: add input to current height
+            target_height = current_height + input_height
+            self.get_logger().info(
+                f"GotoHeight started: target={target}, mode=RELATIVE, "
+                f"input={input_height:+.2f}mm, current={current_height:.2f}mm, "
+                f"target={target_height:.2f}mm"
+            )
+        else:
+            # Absolute mode (default): use input as absolute target
+            target_height = input_height
+            self.get_logger().info(
+                f"GotoHeight started: target={target}, mode=ABSOLUTE, "
+                f"target_height={target_height:.2f}mm"
+            )
         
         # Validate target
         if target not in ['platform', 'pushrod']:
@@ -1118,8 +1137,21 @@ class LiftRobotNodeAction(Node):
                 error = target_height - current_height
                 abs_error = abs(error)
                 
-                # Check if target reached
+                # Check if target reached or overshot
+                # For pushrod: detect both tolerance range AND direction reversal (overshot)
+                target_reached = False
                 if abs_error <= POSITION_TOLERANCE:
+                    target_reached = True
+                elif target == 'pushrod':
+                    # Pushrod-specific: detect overshoot (crossed target)
+                    if movement_state == 'up' and error < -POSITION_TOLERANCE:
+                        # Moving up but current > target (overshot)
+                        target_reached = True
+                    elif movement_state == 'down' and error > POSITION_TOLERANCE:
+                        # Moving down but current < target (overshot)
+                        target_reached = True
+                
+                if target_reached:
                     stop_height = current_height
                     direction_before_stop = movement_state
                     # Send stop command based on target
@@ -1127,6 +1159,9 @@ class LiftRobotNodeAction(Node):
                         self.controller.stop()
                     else:  # pushrod
                         self.controller.pushrod_stop()
+                    # Clear movement_command_sent to allow stop to be processed
+                    with self.state_lock:
+                        self.movement_command_sent = False
                     # Wait for stop verification and platform to settle
                     time.sleep(0.5)
                     
@@ -1318,18 +1353,29 @@ class LiftRobotNodeAction(Node):
                 # Send movement command - simple real-time control (same for platform and pushrod)
                 # Platform uses early stop above, pushrod uses this simple control directly
                 # CRITICAL: Use movement_command_sent flag to prevent duplicate commands during flash verification
-                if error > 0 and movement_state != 'up':
-                    with self.state_lock:
-                        if not self.movement_command_sent:
+                # Reset flag once movement_state confirms the command took effect
+                if error > 0:
+                    if movement_state == 'up':
+                        # Already moving in correct direction - reset flag to allow stop later
+                        with self.state_lock:
+                            self.movement_command_sent = False
+                    elif not self.movement_command_sent:
+                        # Need to send UP command
+                        with self.state_lock:
                             if target == 'platform':
                                 self.controller.up()
                             else:  # pushrod
                                 self.controller.pushrod_up()
                             self.movement_command_sent = True  # Prevent duplicates during verification
                             self.get_logger().debug(f"[{target.upper()}] ⬆️ UP error={error:.2f}mm (cmd sent)")
-                elif error < 0 and movement_state != 'down':
-                    with self.state_lock:
-                        if not self.movement_command_sent:
+                elif error < 0:
+                    if movement_state == 'down':
+                        # Already moving in correct direction - reset flag to allow stop later
+                        with self.state_lock:
+                            self.movement_command_sent = False
+                    elif not self.movement_command_sent:
+                        # Need to send DOWN command
+                        with self.state_lock:
                             if target == 'platform':
                                 self.controller.down()
                             else:  # pushrod

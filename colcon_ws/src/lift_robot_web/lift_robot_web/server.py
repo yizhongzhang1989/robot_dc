@@ -420,6 +420,8 @@ class LiftRobotWeb(Node):
                     # --- GotoHeight Action ---
                     elif cmd == 'goto_height':
                         target_height = payload.get('target_height')
+                        mode = payload.get('mode', 'absolute')  # Default to 'absolute' if not specified
+                        
                         if target_height is None:
                             return JSONResponse({'error':'target_height required for goto_height'}, status_code=400)
                         
@@ -428,10 +430,15 @@ class LiftRobotWeb(Node):
                         except:
                             return JSONResponse({'error':'invalid target_height'}, status_code=400)
                         
+                        # Validate mode
+                        if mode not in ['absolute', 'relative']:
+                            return JSONResponse({'error':'mode must be "absolute" or "relative"'}, status_code=400)
+                        
                         from lift_robot_interfaces.action import GotoHeight
                         goal_msg = GotoHeight.Goal()
                         goal_msg.target = 'platform'
                         goal_msg.target_height = target_height
+                        goal_msg.mode = mode
                         
                         send_goal_future = self.action_clients['goto_height'].send_goal_async(
                             goal_msg,
@@ -444,7 +451,7 @@ class LiftRobotWeb(Node):
                         with self.action_lock:
                             self.action_status['goto_height'] = 'sending'
                         
-                        return {'status':'ok','command':cmd,'action':'goto_height','target_height':target_height,'action_status':'sending'}
+                        return {'status':'ok','command':cmd,'action':'goto_height','target_height':target_height,'mode':mode,'action_status':'sending'}
                     
                     # --- ForceControl Action: force_up/force_down ---
                     elif cmd in ('force_up', 'force_down'):
@@ -562,8 +569,10 @@ class LiftRobotWeb(Node):
                         return {'status':'ok','command':'stop','target':'pushrod','cancelled':cancelled_any}
                     
                     elif cmd == 'goto_height':
-                        # Extract target_height from payload
+                        # Extract target_height and mode from payload
                         target_height = payload.get('target_height')
+                        mode = payload.get('mode', 'absolute')  # Default to 'absolute' if not specified
+                        
                         if target_height is None:
                             return JSONResponse({'error':'target_height field required for goto_height'}, status_code=400)
                         
@@ -572,11 +581,16 @@ class LiftRobotWeb(Node):
                         except:
                             return JSONResponse({'error':'invalid target_height'}, status_code=400)
                         
+                        # Validate mode
+                        if mode not in ['absolute', 'relative']:
+                            return JSONResponse({'error':'mode must be "absolute" or "relative"'}, status_code=400)
+                        
                         # Create GotoHeight goal (unified platform action with target='pushrod')
                         from lift_robot_interfaces.action import GotoHeight
                         goal_msg = GotoHeight.Goal()
                         goal_msg.target = 'pushrod'
                         goal_msg.target_height = target_height
+                        goal_msg.mode = mode
                         
                         # Send action goal (use unified goto_height action)
                         send_goal_future = self.action_clients['goto_height'].send_goal_async(
@@ -590,7 +604,7 @@ class LiftRobotWeb(Node):
                         with self.action_lock:
                             self.action_status['goto_height'] = 'sending'
                         
-                        return {'status':'ok','command':cmd,'target':'pushrod','target_height':target_height,'action':'goto_height','action_status':'sending'}
+                        return {'status':'ok','command':cmd,'target':'pushrod','target_height':target_height,'mode':mode,'action':'goto_height','action_status':'sending'}
                     
                     else:
                         return JSONResponse({'error':f'unknown pushrod command: {cmd}'}, status_code=400)

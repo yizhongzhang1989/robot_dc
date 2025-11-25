@@ -147,7 +147,11 @@
             </div>
             <div class="flex gap-2 items-center">
               <span class="text-xs font-medium w-20 text-gray-600">Pushrod:</span>
-              <input id="targetHeightPushrod" type="number" placeholder="Target (mm)" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-28 focus:ring-2 focus:ring-purple-400" value="750">
+              <input id="targetHeightPushrod" type="number" placeholder="Height (mm)" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-24 focus:ring-2 focus:ring-purple-400" value="750">
+              <select id="pushrodMode" class="px-2 py-1.5 border border-purple-300 rounded text-xs w-24 focus:ring-2 focus:ring-purple-400">
+                <option value="absolute">Absolute</option>
+                <option value="relative">Relative</option>
+              </select>
               <button id="gotoHeightPushrodBtn" class="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded flex-1 transition">→ Go to Height</button>
             </div>
           </div>
@@ -843,18 +847,20 @@ $('gotoHeightPlatformBtn').addEventListener('click', async ()=>{
 // Pushrod fine adjustment button
 $('gotoHeightPushrodBtn').addEventListener('click', async ()=>{
   const targetHeight = parseFloat($('targetHeightPushrod').value);
+  const mode = $('pushrodMode').value; // Get selected mode ('absolute' or 'relative')
   if(isNaN(targetHeight)){
     $('cmdStatus').textContent='Invalid height value';
     setTimeout(()=>$('cmdStatus').textContent='',2000);
     return;
   }
-  $('cmdStatus').textContent='Pushrod fine-tuning to '+targetHeight+'mm ...';
-  const payload={command:'goto_height',target:'pushrod',target_height:targetHeight};
+  const modeText = mode === 'relative' ? ` (${targetHeight >= 0 ? '+' : ''}${targetHeight}mm)` : 'mm';
+  $('cmdStatus').textContent=`Pushrod ${mode} move to ${targetHeight}${modeText} ...`;
+  const payload={command:'goto_height',target:'pushrod',target_height:targetHeight,mode:mode};
   try {
     const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if(!r.ok){ $('cmdStatus').textContent='Failed goto_height (pushrod)'; return; }
     const resp=await r.json();
-    $('cmdStatus').textContent='Pushrod fine-tuning to '+targetHeight+'mm';
+    $('cmdStatus').textContent=`Pushrod ${mode} mode: ${targetHeight}${modeText}`;
     setTimeout(()=>$('cmdStatus').textContent='',3000);
   } catch(e){ $('cmdStatus').textContent='Error'; }
 });

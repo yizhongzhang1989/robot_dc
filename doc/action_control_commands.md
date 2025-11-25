@@ -328,10 +328,37 @@ ros2 action send_goal /lift_robot/manual_move lift_robot_interfaces/action/Manua
 
 ### 2. Pushrod Height Control
 
-```bash
-# Move pushrod to 950mm
-ros2 action send_goal /lift_robot/goto_height lift_robot_interfaces/action/GotoHeight "{target: 'pushrod', target_height: 950.0}" --feedback
+Pushrod supports two height control modes:
 
+#### Absolute Mode (Default)
+```bash
+# Move pushrod to absolute position 950mm
+ros2 action send_goal /lift_robot/goto_height lift_robot_interfaces/action/GotoHeight "{target: 'pushrod', target_height: 950.0, mode: 'absolute'}" --feedback
+
+# Shorter form (mode defaults to 'absolute')
+ros2 action send_goal /lift_robot/goto_height lift_robot_interfaces/action/GotoHeight "{target: 'pushrod', target_height: 950.0}" --feedback
+```
+
+#### Relative Mode
+```bash
+# Move pushrod UP by 10mm from current position
+ros2 action send_goal /lift_robot/goto_height lift_robot_interfaces/action/GotoHeight "{target: 'pushrod', target_height: 10.0, mode: 'relative'}" --feedback
+
+# Move pushrod DOWN by 5mm from current position
+ros2 action send_goal /lift_robot/goto_height lift_robot_interfaces/action/GotoHeight "{target: 'pushrod', target_height: -5.0, mode: 'relative'}" --feedback
+```
+
+**Mode Comparison:**
+
+| Mode | `target_height` Interpretation | Example |
+|------|-------------------------------|---------|
+| **absolute** | Absolute target position | `950.0` → move to 950mm |
+| **relative** | Offset from current position | `+10.0` → move 10mm up<br>`-5.0` → move 5mm down |
+
+**How Relative Mode Works:**
+1. Read current height (e.g., 940mm)
+2. Add input height: `target = current + input` (e.g., 940 + 10 = 950mm)
+3. Move to calculated target (950mm)
 
 **Note:** Pushrod height control does **NOT use overshoot compensation** (unlike platform). It stops immediately when target height is detected, as pushrod has higher precision and minimal inertia.
 

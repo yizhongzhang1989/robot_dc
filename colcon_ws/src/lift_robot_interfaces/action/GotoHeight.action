@@ -5,7 +5,10 @@
 # GOAL: Command sent by client to start action
 # ─────────────────────────────────────────────────────────────────────
 string target          # "platform" or "pushrod" - which device to control
-float64 target_height  # Target height in mm (must be within platform range limits)
+float64 target_height  # Target height in mm (interpretation depends on mode)
+string mode            # "absolute" (default) or "relative" - height control mode
+                       # - "absolute": target_height is the absolute target position
+                       # - "relative": target_height is added to current height to get target
 
 ---
 
