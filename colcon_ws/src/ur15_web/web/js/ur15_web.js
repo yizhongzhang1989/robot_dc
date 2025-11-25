@@ -2089,6 +2089,16 @@ async function toggleDrawKeypoints() {
     }
 }
 
+// Open Eye-in-Hand Calibration Report
+function openEyeInHandReport() {
+    window.open('/calibration_report/eye_in_hand', '_blank');
+}
+
+// Open Intrinsic Calibration Report
+function openIntrinsicReport() {
+    window.open('/calibration_report/intrinsic', '_blank');
+}
+
 // Task Panel Functions
 function locateRack() {
     logToWeb('🗄️ Locate Rack button clicked', 'info');

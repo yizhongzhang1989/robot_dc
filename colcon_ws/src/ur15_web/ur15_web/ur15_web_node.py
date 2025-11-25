@@ -3531,6 +3531,76 @@ class UR15WebNode(Node):
             except Exception as e:
                 self.get_logger().error(f"Error loading rack positions: {e}")
                 return jsonify({'success': False, 'message': str(e)})
+        
+        # Asset route must come BEFORE the main report route to avoid conflicts
+        @self.app.route('/calibration_report/<report_type>/<path:filename>')
+        def serve_calibration_assets(report_type, filename):
+            """Serve images and other assets from calibration report directories."""
+            from flask import send_from_directory, jsonify
+            from common.workspace_utils import get_temp_directory
+            
+            try:
+                temp_dir = get_temp_directory()
+                
+                if report_type == 'eye_in_hand':
+                    report_dir = os.path.join(temp_dir, 'ur15_cam_calibration_result', 
+                                            'ur15_eye_in_hand_calibration_report')
+                elif report_type == 'intrinsic':
+                    report_dir = os.path.join(temp_dir, 'ur15_cam_calibration_result', 
+                                            'ur15_intrinsic_calibration_report')
+                else:
+                    return jsonify({'error': 'Invalid report type'}), 404
+                
+                if not os.path.exists(report_dir):
+                    return jsonify({'error': 'Report directory not found'}), 404
+                
+                self.get_logger().info(f"Serving calibration asset: {filename} from {report_dir}")
+                return send_from_directory(report_dir, filename)
+                
+            except Exception as e:
+                self.get_logger().error(f"Error serving calibration asset: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/calibration_report/<report_type>')
+        def serve_calibration_report(report_type):
+            """Serve calibration report HTML with base tag injection."""
+            from flask import jsonify, Response
+            from common.workspace_utils import get_temp_directory
+            
+            try:
+                temp_dir = get_temp_directory()
+                
+                if report_type == 'eye_in_hand':
+                    report_path = os.path.join(temp_dir, 'ur15_cam_calibration_result', 
+                                             'ur15_eye_in_hand_calibration_report', 
+                                             'calibration_report.html')
+                elif report_type == 'intrinsic':
+                    report_path = os.path.join(temp_dir, 'ur15_cam_calibration_result', 
+                                             'ur15_intrinsic_calibration_report', 
+                                             'calibration_report.html')
+                else:
+                    return jsonify({'error': 'Invalid report type'}), 404
+                
+                if not os.path.exists(report_path):
+                    self.get_logger().warn(f"Calibration report not found: {report_path}")
+                    return jsonify({'error': 'Calibration report not found'}), 404
+                
+                self.get_logger().info(f"Serving calibration report: {report_path}")
+                
+                # Read the HTML and inject a base tag to fix relative paths
+                with open(report_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                
+                # Inject base tag after <head> to make relative URLs work
+                base_tag = f'<base href="/calibration_report/{report_type}/">'
+                if '<head>' in html_content:
+                    html_content = html_content.replace('<head>', f'<head>\n    {base_tag}', 1)
+                
+                return Response(html_content, mimetype='text/html')
+                
+            except Exception as e:
+                self.get_logger().error(f"Error serving calibration report: {e}")
+                return jsonify({'error': str(e)}), 500
     
     def _get_camera_calib_params(self):
         """
