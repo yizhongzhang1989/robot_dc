@@ -76,9 +76,58 @@ class URLocate(URCapture):
         self.ref_keypoints = None 
         self.ref_pose = None
         
+        # Template points for Fitting mode (local coordinates)
+        # Define all rack corner points in local coordinate system
+        self.all_template_points = {
+            "rack1": [
+                {
+                    "name": "GB200_Rack_Lower_Left_Corner",
+                    "x": 0,
+                    "y": 0,
+                    "z": 0.0
+                }
+            ],
+            "rack2": [
+                {
+                    "name": "GB200_Rack_Lower_Right_Corner",
+                    "x": 0.55,
+                    "y": 0,
+                    "z": 0.0
+                }
+            ],
+            "rack3": [
+                {
+                    "name": "GB200_Rack_Top_Left_Corner",
+                    "x": 0,
+                    "y": 0,
+                    "z": 2.145
+                }
+            ],
+            "rack4": [
+                {
+                    "name": "GB200_Rack_Top_Right_Corner",
+                    "x": 0.55,
+                    "y": 0,
+                    "z": 2.145
+                }
+            ]
+        }
+        
+        # Select template points based on operation_name
+        self.template_points = self.all_template_points.get(self.operation_name, None)
+        
         # Store verbose flag
         self.verbose = verbose
-        
+
+        # Collection movement offsets (in tcp coordinate system, unit: meters)
+        self.movements = {
+            "movement1": [0, 0, 0, 0, 0, 0],         # No offset
+            "movement2": [0.05, 0, 0, 0, 0, 0],      # X+1cm
+            "movement3": [-0.05, 0, 0, 0, 0, 0],     # X-1cm
+            "movement4": [0, 0.05, 0, 0, 0, 0],      # Y+1cm
+            "movement5": [0, -0.05, 0, 0, 0, 0]      # Y-1cm
+        }
+
         # ===================== Instances =====================
         self.positioning_client = None
         self.robot_status_client = None
@@ -312,9 +361,10 @@ class URLocate(URCapture):
                                     # Load camera parameters
                                     intrinsic, distortion, extrinsic = load_camera_params_from_json(pose_path)
                                     
-                                    # Upload view
+                                    # Upload view with reference_name
                                     result = self.positioning_client.upload_view(
                                         session_id=session_id,
+                                        reference_name=self.operation_name,
                                         image=image,
                                         intrinsic=intrinsic,
                                         distortion=distortion,
@@ -399,209 +449,53 @@ class URLocate(URCapture):
             self.get_logger().error(f"Error uploading references: {e}")
             return False
 
-    def estimate_3d_position_of_test_image(self, test_image_path, operation_name):
-        """
-        Perform 3D triangulation using multiple camera views from /test/session folder in operation directory.
-        
-        This function follows the standard workflow:
-        1. Find and validate test images
-        2. Check service health
-        3. Verify reference image exists
-        4. Initialize session
-        5. Upload camera views
-        6. Wait for triangulation result
-        7. Terminate session and cleanup
-        
-        Args:
-            test_image_path (str): Path to directory containing test images and pose files
-                                   Expected files: image.jpg and image_pose.json for each view
-            operation_name (str): Name of the reference to use for triangulation
-            
-        Returns:
-            dict: Triangulation result or None if failed
-        """
-        if self.positioning_client is None:
-            self.get_logger().error("Positioning client not initialized")
-            return None
-        
-        try:
-            # Step 1: Find and validate test images
-            self.get_logger().info(">>> I: Finding test images...")
-            
-            test_img_dir = Path(test_image_path)
-            
-            if not test_img_dir.exists():
-                self.get_logger().error(f"✗ Test image directory not found: {test_image_path}")
-                return None
-            
-            image_files = sorted(test_img_dir.glob("*.jpg"))
-            if not image_files:
-                self.get_logger().error(f"✗ No images found in {test_image_path}")
-                return None
-            
-            self.get_logger().info(f"✓ Found {len(image_files)} images in test image directory: {test_image_path}")
-            
-            # Step 2: Check service health
-            self.get_logger().info(">>> II: Checking service health...")
-            
-            health = self.positioning_client.check_health()
-            if not health.get('success'):
-                self.get_logger().error(f"✗ Service not available: {health.get('error')}")
-                return None
-            
-            self.get_logger().info("✓ Positioning service is running normally")
-            
-            # Step 3: Check if reference exists
-            self.get_logger().info(f">>> III: Checking reference data of '{operation_name}'...")
-            
-            refs = self.positioning_client.list_references()
-            if not refs.get('success') or operation_name not in refs.get('references', {}):
-                self.get_logger().error(f"✗ Reference '{operation_name}' not found")
-                available_refs = list(refs.get('references', {}).keys())
-                self.get_logger().error(f" Available references: {available_refs}")
-                return None
-            
-            self.get_logger().info(f"✓ Successfully, reference data to '{operation_name}' is loaded")
-            
-            session_id = None
-            try:
-                # Step 4: Initialize session
-                self.get_logger().info(f">>> IV: Initializing a web session to execute...")
-                
-                session_result = self.positioning_client.init_session(reference_name=operation_name)
-                
-                if not session_result.get('success'):
-                    self.get_logger().error(f"✗ Failed to initialize session: {session_result.get('error')}")
-                    return None
-                
-                session_id = session_result['session_id']
-                self.get_logger().info(f"✓ Web session created: {session_id}")
-                
-                # Step 5: Upload camera views
-                self.get_logger().info(f">>> V: Uploading {len(image_files)} camera views from {test_image_path}...")
-                
-                for idx, img_file in enumerate(image_files):
-                    # Find corresponding pose file
-                    pose_file = img_file.parent / f"{img_file.stem}_pose.json"
-                    
-                    if not pose_file.exists():
-                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: pose file not found")
-                        continue
-                    
-                    # Load image
-                    image = cv2.imread(str(img_file))
-                    if image is None:
-                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: failed to load image")
-                        continue
-                    
-                    # Load camera parameters
-                    try:
-                        intrinsic, distortion, extrinsic = load_camera_params_from_json(str(pose_file))
-                    except Exception as e:
-                        self.get_logger().warn(f"  ⚠️  Skipping {img_file.name}: failed to load pose - {e}")
-                        continue
-                    
-                    # Upload view              
-                    result = self.positioning_client.upload_view(
-                        session_id=session_id,
-                        image=image,
-                        intrinsic=intrinsic,
-                        distortion=distortion,
-                        extrinsic=extrinsic
-                    )
-                    
-                    if result.get('success'):
-                        self.get_logger().info(f"   ✓ View {idx+1}/{len(image_files)} uploaded, queue position: {result.get('queue_position', 'N/A')}")
-                    else:
-                        self.get_logger().error(f"   ✗ {result.get('error')}")
-                
-                # Step 6: Wait for triangulation result
-                self.get_logger().info(">>> VI: Waiting for positioning results (timeout: 30s)...")
-                
-                result = self.positioning_client.get_result(session_id, timeout=30000)  # 30 seconds
-                
-                if not result.get('success'):
-                    self.get_logger().error(f"✗ Failed to get result: {result.get('error')}")
-                    return None
-                
-                # Check if we got the final result or timed out
-                if 'result' not in result:
-                    if result.get('timeout'):
-                        self.get_logger().error("\n✗ Timeout waiting for triangulation")
-                    else:
-                        session_info = result.get('session', {})
-                        session_status = session_info.get('status')
-                        if session_status == 'failed':
-                            self.get_logger().error(f"\n✗ Session failed: {session_info.get('error_message', 'Unknown error')}")
-                        else:
-                            self.get_logger().error(f"\n✗ Triangulation not completed (status: {session_status})")
-                    return None
-                
-                self.get_logger().info("✓ Triangulation completed!")
-                
-                triangulation_result = result['result']
-                points_3d = np.array(triangulation_result['points_3d'])
-                mean_error = triangulation_result['mean_error']
-                processing_time = triangulation_result.get('processing_time', 0)
-                views_data = result.get('views', [])
-                
-                self.get_logger().info(f"   Number of 3D points: {len(points_3d)}")
-                self.get_logger().info(f"   Mean reprojection error: {mean_error:.3f} pixels")
-                self.get_logger().info(f"   Processing time: {processing_time:.2f} seconds")
-                self.get_logger().info(f"   Number of views: {len(views_data)}")
-                
-                return result
-                
-            finally:
-                # Step 7: Terminate session and cleanup
-                if session_id is not None:
-                    self.get_logger().info(">>> VII: Terminating session...")
-                    
-                    term_result = self.positioning_client.terminate_session(session_id)
-                    if term_result.get('success'):
-                        self.get_logger().info(f"✓ Session {session_id} terminated and cleaned up")
-                    else:
-                        self.get_logger().warn(f"⚠️  Failed to terminate session: {term_result.get('error')}")
-                
-        except Exception as e:
-            self.get_logger().error(f"Error during triangulation: {e}")
-            return None
-
     def perform_3d_positioning(self):
         """
         Complete 3D positioning workflow: upload references, collect data, and estimate position.
         
         This method orchestrates the full positioning process:
-        1. Upload reference data to FFPP web service
+        1. Check and upload reference data if needed (smart upload)
         2. Automatically collect camera images from multiple viewpoints
-        3. Estimate 3D position using triangulation
+        3. Estimate 3D position using triangulation (with minimal waiting)
         
         Returns:
             dict: Triangulation result containing 3D points and errors, or None if failed
         """
         try:
-            # Step 1: Upload reference data
-            msg = "Step 1: Uploading reference data to FFPP web service..."
+            # Step 1: Check if reference exists, upload only if needed
+            msg = "Step 1: Checking reference availability..."
             self.get_logger().info(msg)
             print(msg)
             
-            upload_success = self.upload_reference_data_to_ffpp_web()
-            if not upload_success:
-                msg = "✗ Failed to upload reference data. Aborting positioning."
-                self.get_logger().error(msg)
+            refs = self.positioning_client.list_references()
+            reference_exists = refs.get('success') and self.operation_name in refs.get('references', {})
+            
+            if not reference_exists:
+                msg = f"Reference '{self.operation_name}' not found, uploading to FFPP server..."
+                self.get_logger().info(msg)
                 print(msg)
-                return None
-            
-            msg = "✓ Reference data uploaded successfully!"
-            self.get_logger().info(msg)
-            print(msg)
+                
+                upload_success = self.upload_reference_data_to_ffpp_web()
+                if not upload_success:
+                    msg = "✗ Failed to upload reference data. Aborting positioning."
+                    self.get_logger().error(msg)
+                    print(msg)
+                    return None
+                
+                msg = "✓ Reference data uploaded successfully!"
+                self.get_logger().info(msg)
+                print(msg)
+            else:
+                msg = f"✓ Reference '{self.operation_name}' already loaded, skipping upload"
+                self.get_logger().info(msg)
+                print(msg)
             
             # Step 2: Initialize session for real-time upload
             msg = "Step 2: Initializing session for data collection..."
             self.get_logger().info(msg)
             print(msg)
             
-            session_result = self.positioning_client.init_session(reference_name=self.operation_name)
+            session_result = self.positioning_client.init_session()
             if not session_result.get('success'):
                 msg = f"✗ Failed to initialize session: {session_result.get('error')}"
                 self.get_logger().error(msg)
@@ -632,12 +526,26 @@ class URLocate(URCapture):
             self.get_logger().info(msg)
             print(msg)
             
-            # Step 4: Wait for triangulation result
-            msg = "Step 4: Waiting for positioning results (timeout: 30s)..."
-            self.get_logger().info(msg)
-            print(msg)
+            # Step 4: Get triangulation/fitting result (minimal wait due to parallel tracking)
+            if self.template_points:
+                msg = f"Step 4: Getting fitting results with {len(self.template_points)} template points..."
+                self.get_logger().info(msg)
+                print(msg)
+                msg = f"  → Fitting mode: estimating local2world transformation"
+                self.get_logger().info(msg)
+                print(msg)
+            else:
+                msg = "Step 4: Getting triangulation results..."
+                self.get_logger().info(msg)
+                print(msg)
             
-            result = self.positioning_client.get_result(session_id, timeout=30000)
+            # Most views should already be tracked due to parallel processing
+            # Only need short timeout for any remaining views
+            result = self.positioning_client.get_result(
+                session_id, 
+                template_points=self.template_points,  # None for standard mode, list for fitting mode
+                timeout=10000
+            )
             
             if not result.get('success'):
                 msg = f"✗ Failed to get result: {result.get('error')}"
@@ -668,9 +576,15 @@ class URLocate(URCapture):
                 self.positioning_client.terminate_session(session_id)
                 return None
             
-            msg = "✓ Triangulation completed!"
-            self.get_logger().info(msg)
-            print(msg)
+            # Display results based on mode
+            if self.template_points:
+                msg = "✓ Fitting completed!"
+                self.get_logger().info(msg)
+                print(msg)
+            else:
+                msg = "✓ Triangulation completed!"
+                self.get_logger().info(msg)
+                print(msg)
             
             triangulation_result = result['result']
             points_3d = np.array(triangulation_result['points_3d'])
@@ -690,6 +604,17 @@ class URLocate(URCapture):
             msg = f"   Number of views: {len(views_data)}"
             self.get_logger().info(msg)
             print(msg)
+            
+            # Display local2world transformation if in fitting mode
+            if self.template_points and 'local2world' in triangulation_result:
+                local2world = triangulation_result['local2world']
+                msg = "\n   Local-to-World Transformation Matrix:"
+                self.get_logger().info(msg)
+                print(msg)
+                for i, row in enumerate(local2world):
+                    row_str = f"    [{row[0]:8.4f}  {row[1]:8.4f}  {row[2]:8.4f}  {row[3]:8.4f}]"
+                    self.get_logger().info(row_str)
+                    print(row_str)
             
             # Terminate session
             msg = "Step 5: Terminating session..."
@@ -725,8 +650,13 @@ class URLocate(URCapture):
                 'points_3d': result['result']['points_3d'],
                 'mean_error': result['result']['mean_error'],
                 'processing_time': result['result'].get('processing_time', 0),
-                'views': result.get('views', [])
+                'views': result.get('views', []),
+                'fitting_mode': self.template_points is not None
             }
+            
+            # Save local2world transformation if in fitting mode
+            if self.template_points and 'local2world' in result['result']:
+                result_data['local2world'] = result['result']['local2world']
             
             # Save to JSON file
             positioning_result_file_path = os.path.join(self.session_result_dir, '3d_positioning_result.json')
@@ -1004,492 +934,6 @@ class URLocate(URCapture):
             traceback.print_exc()
             return False
 
-    # =================================== functions for wobj frame building ===================================
-    def perform_wobj_frame_building(self, session_result_dir=None, kp_index_for_wobj_x_axis=[0, 1]):
-        """
-        Build a wobj coordinate system based on 3D positioning keypoints.
-        
-        The coordinate system is defined as follows:
-        - Origin: at keypoint[kp_index_for_wobj_x_axis[0]]
-        - X-axis: keypoint[kp_index_for_wobj_x_axis[0]] → keypoint[kp_index_for_wobj_x_axis[1]] direction
-        - Z-axis: positive direction aligns with base Z-axis (upward)
-        - Y-axis: follows right-hand rule (Z × X)
-        
-        Args:
-            session_result_dir (str): Path to session result directory (e.g., 'result/20231119_143022')
-                                     If None, uses the most recent session
-            kp_index_for_wobj_x_axis (list): [start_index, end_index] for X-axis definition
-            
-        Returns:
-            dict: Coordinate system information or None if failed
-        """
-        self.get_logger().info(">>> Building wobj Coordinate System")
-        
-        try:
-            # Determine session result directory
-            if session_result_dir is None:
-                # Use current session result directory if available
-                if hasattr(self, 'session_result_dir') and self.session_result_dir:
-                    session_result_dir = self.session_result_dir
-                    self.get_logger().info(f"Using current session: {os.path.basename(session_result_dir)}")
-                else:
-                    # Find most recent session in result directory
-                    if not os.path.exists(self.result_dir):
-                        self.get_logger().error(f"Result directory not found: {self.result_dir}")
-                        return None
-                    
-                    sessions = [d for d in os.listdir(self.result_dir) 
-                               if os.path.isdir(os.path.join(self.result_dir, d))]
-                    
-                    if not sessions:
-                        self.get_logger().error("No session directories found in result directory")
-                        return None
-                    
-                    # Sort by name (assuming timestamp-based naming)
-                    sessions.sort(reverse=True)
-                    session_result_dir = os.path.join(self.result_dir, sessions[0])
-                    self.get_logger().info(f"Using most recent session: {os.path.basename(session_result_dir)}")
-            
-            # Verify session result directory exists
-            if not os.path.exists(session_result_dir):
-                self.get_logger().error(f"Session result directory not found: {session_result_dir}")
-                return None
-            
-            # Load 3D positioning result from session result directory
-            positioning_result_file = os.path.join(session_result_dir, '3d_positioning_result.json')
-            
-            if not os.path.exists(positioning_result_file):
-                self.get_logger().error(f"3D positioning result file not found: {positioning_result_file}")
-                return None
-            
-            self.get_logger().info(f"📖 Loading 3D positioning results from: {positioning_result_file}")
-            
-            with open(positioning_result_file, 'r') as f:
-                positioning_data = json.load(f)
-            
-            points_3d = positioning_data.get('points_3d', [])
-            
-            if len(points_3d) == 0:
-                self.get_logger().error("No 3D points found in positioning results")
-                return None
-            
-            self.get_logger().info(f"✓ Loaded {len(points_3d)} 3D points")
-            
-            # Get keypoint indices for X-axis
-            kp_start_idx = kp_index_for_wobj_x_axis[0]
-            kp_end_idx = kp_index_for_wobj_x_axis[1]
-            
-            if len(points_3d) < max(kp_start_idx, kp_end_idx) + 1:
-                self.get_logger().error(
-                    f"Insufficient keypoints for wobj coordinate system "
-                    f"(need at least {max(kp_start_idx, kp_end_idx) + 1}, got {len(points_3d)})"
-                )
-                return None
-            
-            # Extract 3D coordinates of the specified keypoints
-            kp_start = np.array(points_3d[kp_start_idx])
-            kp_end = np.array(points_3d[kp_end_idx])
-            
-            self.get_logger().info(f"✓ Using keypoints for wobj coordinate system:")
-            self.get_logger().info(f"  KP{kp_start_idx}: ({kp_start[0]:.6f}, {kp_start[1]:.6f}, {kp_start[2]:.6f})")
-            self.get_logger().info(f"  KP{kp_end_idx}: ({kp_end[0]:.6f}, {kp_end[1]:.6f}, {kp_end[2]:.6f})")
-            
-            # Origin of the coordinate system is at the start keypoint
-            origin = kp_start.copy()
-            self.get_logger().info(f"  Origin defined at KP{kp_start_idx}: ({origin[0]:.6f}, {origin[1]:.6f}, {origin[2]:.6f})")
-            
-            # X-axis: from start keypoint to end keypoint
-            x_vec_raw = kp_end - kp_start
-            x_axis_length = np.linalg.norm(x_vec_raw)
-            x_vec = x_vec_raw / x_axis_length
-            
-            self.get_logger().info(f"  X-axis defined as from KP{kp_start_idx}→KP{kp_end_idx}:")
-            self.get_logger().info(f"  X = [{x_vec[0]:.6f}, {x_vec[1]:.6f}, {x_vec[2]:.6f}]")
-            
-            # Z-axis: should align with base Z-axis (positive upward)
-            base_z = np.array([0.0, 0.0, 1.0])
-            
-            # Make Z-axis orthogonal to X-axis using Gram-Schmidt process
-            # Project base_z onto plane perpendicular to X-axis
-            z_vec_raw = base_z - np.dot(base_z, x_vec) * x_vec
-            z_vec_norm = np.linalg.norm(z_vec_raw)
-            
-            if z_vec_norm < 1e-6:
-                self.get_logger().warn("Warning: X-axis is nearly parallel to base Z-axis, using alternative Z-axis")
-                # Use alternative: pick perpendicular vector
-                if abs(x_vec[2]) < 0.9:
-                    z_vec_raw = np.cross(np.array([1.0, 0.0, 0.0]), x_vec)
-                else:
-                    z_vec_raw = np.cross(np.array([0.0, 1.0, 0.0]), x_vec)
-                z_vec_norm = np.linalg.norm(z_vec_raw)
-            
-            z_vec = z_vec_raw / z_vec_norm
-            
-            # Check alignment with base Z
-            z_dot_base_z = np.dot(z_vec, base_z)
-            self.get_logger().info(f"  Z-axis defined align with base Z:")
-            self.get_logger().info(f"  Z = [{z_vec[0]:.6f}, {z_vec[1]:.6f}, {z_vec[2]:.6f}]")
-            
-            # Y-axis: right-hand rule (Z × X)
-            y_vec = np.cross(z_vec, x_vec)
-            y_vec = y_vec / np.linalg.norm(y_vec)
-            
-            self.get_logger().info(f"  Y-axis defined follow from right-hand rule (Y = Z × X)")
-            self.get_logger().info(f"  Y = [{y_vec[0]:.6f}, {y_vec[1]:.6f}, {y_vec[2]:.6f}]")
-            
-            # Verify orthogonality
-            dot_xy = np.dot(x_vec, y_vec)
-            dot_xz = np.dot(x_vec, z_vec)
-            dot_yz = np.dot(y_vec, z_vec)
-            
-            self.get_logger().info(f"\n🔍 Orthogonality check:")
-            self.get_logger().info(f"  X·Y = {dot_xy:.8f} (should be ~0)")
-            self.get_logger().info(f"  X·Z = {dot_xz:.8f} (should be ~0)")
-            self.get_logger().info(f"  Y·Z = {dot_yz:.8f} (should be ~0)")
-            
-            # Build rotation matrix (columns are the axis vectors)
-            rot_matrix = np.column_stack([x_vec, y_vec, z_vec])
-            
-            # Verify it's a valid rotation matrix
-            det_R = np.linalg.det(rot_matrix)
-            self.get_logger().info(f"  det(R) = {det_R:.8f} (should be ~1)")
-            
-            if abs(det_R - 1.0) > 0.01:
-                self.get_logger().warn(f"⚠ Warning: Rotation matrix determinant is not 1, may indicate numerical issues")
-            
-            # Build 4x4 transformation matrix
-            T = np.eye(4)
-            T[:3, :3] = rot_matrix  # Rotation part
-            T[:3, 3] = origin  # Translation part
-            
-            # Convert rotation matrix to axis-angle representation for robot use
-            rotation_scipy = R.from_matrix(rot_matrix)
-            rotvec = rotation_scipy.as_rotvec()
-            rx, ry, rz = rotvec[0], rotvec[1], rotvec[2]
-            
-            # Create coordinate system information
-            coord_system = {
-                "origin": {
-                    "x": float(origin[0]),
-                    "y": float(origin[1]), 
-                    "z": float(origin[2])
-                },
-                "axes": {
-                    "x_axis": {
-                        "vector": [float(x_vec[0]), float(x_vec[1]), float(x_vec[2])],
-                        "source": f"KP{kp_start_idx}→KP{kp_end_idx}",
-                        "length": float(x_axis_length)
-                    },
-                    "y_axis": {
-                        "vector": [float(y_vec[0]), float(y_vec[1]), float(y_vec[2])],
-                        "source": "right_hand_rule_Z_cross_X"
-                    },
-                    "z_axis": {
-                        "vector": [float(z_vec[0]), float(z_vec[1]), float(z_vec[2])],
-                        "source": "aligned_with_base_z",
-                        "alignment_with_base_z": float(z_dot_base_z)
-                    }
-                },
-                "transformation_matrix": T.tolist(),
-                "pose_representation": {
-                    "x": float(origin[0]),
-                    "y": float(origin[1]),
-                    "z": float(origin[2]),
-                    "rx": float(rx),
-                    "ry": float(ry),
-                    "rz": float(rz)
-                },
-                "orthogonality_check": {
-                    "x_dot_y": float(dot_xy),
-                    "x_dot_z": float(dot_xz),
-                    "y_dot_z": float(dot_yz),
-                    "determinant": float(det_R)
-                },
-                "keypoints_used": [
-                    {"index": kp_start_idx, "coordinates": [float(kp_start[0]), float(kp_start[1]), float(kp_start[2])]},
-                    {"index": kp_end_idx, "coordinates": [float(kp_end[0]), float(kp_end[1]), float(kp_end[2])]}
-                ],
-                "kp_index_for_wobj_x_axis": kp_index_for_wobj_x_axis,
-                "timestamp": datetime.now().isoformat(),
-                "method": f"kp{kp_start_idx}_kp{kp_end_idx}_based_coordinate_system",
-                "source_file": positioning_result_file
-            }
-            
-            # Save coordinate system to session result directory
-            coord_system_path = os.path.join(session_result_dir, 'wobj_frame_building_result.json')
-            with open(coord_system_path, 'w') as f:
-                json.dump(coord_system, f, indent=2)
-            
-            self.get_logger().info(f"💾 Wobj coordinate system saved to: {coord_system_path}")
-            self.get_logger().info(f"🎯 Wobj coordinate system established successfully!")
-            
-            # Save wobj coordinate system to robot_status
-            if self.robot_status_client:
-                try:
-                    # Save origin
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_origin', [float(origin[0]), float(origin[1]), float(origin[2])]):
-                        self.get_logger().info(f"✓ wobj_origin saved to robot_status")
-                    
-                    # Save x_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_x', [float(x_vec[0]), float(x_vec[1]), float(x_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_x saved to robot_status")
-                    
-                    # Save y_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_y', [float(y_vec[0]), float(y_vec[1]), float(y_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_y saved to robot_status")
-                    
-                    # Save z_axis
-                    if self.robot_status_client.set_status(self.operation_name, 'wobj_z', [float(z_vec[0]), float(z_vec[1]), float(z_vec[2])]):
-                        self.get_logger().info(f"✓ wobj_z saved to robot_status")
-                    
-                    self.get_logger().info(f"✓ Wobj coordinate system saved to robot_status (namespace: {self.operation_name})")
-                except Exception as e:
-                    self.get_logger().warning(f"Error saving wobj coordinate system to robot_status: {e}")
-            
-            # Validate wobj frame building results
-            self.get_logger().info(">>> Validating wobj frame building results...")
-            validation_success = self.validate_wobj_frame_building_results(
-                session_result_dir, 
-                coord_system, 
-                verbose=self.verbose
-            )
-            
-            if validation_success:
-                self.get_logger().info("✓ Validation completed successfully!")
-            else:
-                self.get_logger().warn("⚠ Validation completed with warnings")
-            
-            return coord_system
-            
-        except Exception as e:
-            self.get_logger().error(f"Error building wobj coordinate system: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
-    def validate_wobj_frame_building_results(self, session_result_dir, coord_system, verbose=True):
-        """
-        Validate workpiece coordinate system by drawing it on captured images.
-        
-        Draws the coordinate system axes on each captured image by:
-        1. Projecting the 3D origin and axis endpoints to 2D image coordinates
-        2. Drawing arrows for X (red), Y (green), Z (blue) axes on the images
-        
-        Args:
-            session_result_dir (str): Path to session result directory
-            coord_system (dict): Dictionary containing coordinate system information
-                                (output from perform_wobj_frame_building)
-            verbose (bool): If True, saves validation images to disk
-            
-        Returns:
-            bool: True if validation successful, False otherwise
-        """
-
-        self.get_logger().info("Drawing Wobj Coordinate System on Images")
-        
-        try:
-            if coord_system is None:
-                self.get_logger().error("Error: coord_system is None")
-                return False
-            
-            # Extract origin and axes from coord_system
-            origin_3d = np.array([
-                coord_system['origin']['x'],
-                coord_system['origin']['y'],
-                coord_system['origin']['z']
-            ])
-            
-            x_axis = np.array(coord_system['axes']['x_axis']['vector'])
-            y_axis = np.array(coord_system['axes']['y_axis']['vector'])
-            z_axis = np.array(coord_system['axes']['z_axis']['vector'])
-                        
-            # Define arrow length in 3D space (meters)
-            arrow_length = 0.10  # 5cm arrows
-            
-            # Calculate 3D endpoints of axes
-            x_end_3d = origin_3d + x_axis * arrow_length
-            y_end_3d = origin_3d + y_axis * arrow_length
-            z_end_3d = origin_3d + z_axis * arrow_length
-            
-            # Get session_dir from session_result_dir
-            session_name = os.path.basename(session_result_dir)
-            session_dir = os.path.join(self.data_dir, session_name)
-            
-            if not os.path.exists(session_dir):
-                self.get_logger().error(f"Session data directory not found: {session_dir}")
-                return False
-            
-            # Find all test images and their pose files
-            test_img_dir = Path(session_dir)
-            image_files = sorted(test_img_dir.glob("*.jpg"))
-            
-            if len(image_files) == 0:
-                self.get_logger().error(f"No images found in {session_dir}")
-                return False
-            
-            self.get_logger().info(f"📖 Found {len(image_files)} images for validation")
-            
-            # Create visualization for each image
-            num_images = len(image_files)
-            cols = min(3, num_images)
-            rows = (num_images + cols - 1) // cols
-            
-            import matplotlib.pyplot as plt
-            fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
-            if num_images == 1:
-                axes = np.array([axes])
-            axes = axes.flatten() if num_images > 1 else axes
-            
-            for idx, img_file in enumerate(image_files):
-                if idx >= len(axes):
-                    break
-                
-                ax = axes[idx]
-                
-                # Load image
-                img = cv2.imread(str(img_file))
-                if img is None:
-                    self.get_logger().warn(f"⚠ Failed to load image: {img_file}")
-                    ax.axis('off')
-                    continue
-                
-                # Convert BGR to RGB for matplotlib
-                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                
-                # Load camera parameters for this view
-                pose_file = img_file.parent / f"{img_file.stem}_pose.json"
-                if not pose_file.exists():
-                    self.get_logger().warn(f"⚠ Pose file not found: {pose_file}")
-                    ax.axis('off')
-                    continue
-                
-                try:
-                    intrinsic, distortion, extrinsic = load_camera_params_from_json(str(pose_file))
-                except Exception as e:
-                    self.get_logger().warn(f"⚠ Failed to load pose: {e}")
-                    ax.axis('off')
-                    continue
-                
-                # extrinsic is already base2cam (world to camera transformation)
-                # Convert to rvec and tvec for cv2.projectPoints
-                base2cam = extrinsic
-                rotation_matrix = base2cam[:3, :3]
-                translation_vector = base2cam[:3, 3]
-                rvec, _ = cv2.Rodrigues(rotation_matrix)
-                tvec = translation_vector.reshape(3, 1)
-                
-                # Prepare 3D points for projection: origin and axis endpoints
-                points_3d_to_project = np.array([
-                    origin_3d,
-                    x_end_3d,
-                    y_end_3d,
-                    z_end_3d
-                ], dtype=np.float32)
-                
-                # Project all points using cv2.projectPoints
-                dist_coeffs = distortion if distortion is not None else np.zeros(5, dtype=np.float32)
-                projected_points, _ = cv2.projectPoints(
-                    points_3d_to_project,
-                    rvec,
-                    tvec,
-                    intrinsic,
-                    dist_coeffs
-                )
-                projected_points = projected_points.reshape(-1, 2)
-                
-                # Extract projected 2D points
-                origin_2d = tuple(projected_points[0])
-                x_end_2d = tuple(projected_points[1])
-                y_end_2d = tuple(projected_points[2])
-                z_end_2d = tuple(projected_points[3])
-                
-                # Draw on image
-                img_draw = img_rgb.copy()
-                arrow_thickness = 3
-                circle_radius = 5
-                
-                if origin_2d is not None:
-                    # Draw origin as black circle
-                    cv2.circle(img_draw, (int(origin_2d[0]), int(origin_2d[1])), 
-                              circle_radius, (0, 0, 0), -1)
-                    
-                    # Draw X-axis (red arrow)
-                    if x_end_2d is not None:
-                        cv2.arrowedLine(img_draw, 
-                                       (int(origin_2d[0]), int(origin_2d[1])),
-                                       (int(x_end_2d[0]), int(x_end_2d[1])),
-                                       (255, 0, 0), arrow_thickness, tipLength=0.3)
-                        cv2.putText(img_draw, 'X', 
-                                   (int(x_end_2d[0]) + 10, int(x_end_2d[1])),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
-                    
-                    # Draw Y-axis (green arrow)
-                    if y_end_2d is not None:
-                        cv2.arrowedLine(img_draw, 
-                                       (int(origin_2d[0]), int(origin_2d[1])),
-                                       (int(y_end_2d[0]), int(y_end_2d[1])),
-                                       (0, 255, 0), arrow_thickness, tipLength=0.3)
-                        cv2.putText(img_draw, 'Y', 
-                                   (int(y_end_2d[0]) + 10, int(y_end_2d[1])),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                    
-                    # Draw Z-axis (blue arrow)
-                    if z_end_2d is not None:
-                        cv2.arrowedLine(img_draw, 
-                                       (int(origin_2d[0]), int(origin_2d[1])),
-                                       (int(z_end_2d[0]), int(z_end_2d[1])),
-                                       (0, 0, 255), arrow_thickness, tipLength=0.3)
-                        cv2.putText(img_draw, 'Z', 
-                                   (int(z_end_2d[0]) + 10, int(z_end_2d[1])),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                
-                # Display image with coordinate system
-                ax.imshow(img_draw)
-                ax.set_title(f'View {idx}\n{img_file.name}', fontsize=10)
-                ax.axis('off')
-                
-                self.get_logger().info(f"  ✓ Drawn coordinate system on {img_file.name}")
-            
-            # Hide unused subplots
-            for idx in range(num_images, len(axes)):
-                axes[idx].axis('off')
-            
-            # Add overall title
-            fig.suptitle('Workpiece Coordinate System Validation\nRed: X-axis | Green: Y-axis | Blue: Z-axis',
-                        fontsize=14, fontweight='bold', y=0.98)
-            
-            # Add coordinate system information as text
-            kp_indices = coord_system.get('kp_index_for_wobj_x_axis', [0, 1])
-            info_text = (
-                f"Coordinate System Properties:\n"
-                f"Origin: ({origin_3d[0]:.4f}, {origin_3d[1]:.4f}, {origin_3d[2]:.4f}) m\n"
-                f"X-axis: KP{kp_indices[0]}→KP{kp_indices[1]}, length: {coord_system['axes']['x_axis']['length']:.4f}m\n"
-                f"Z alignment with base: {coord_system['axes']['z_axis']['alignment_with_base_z']:.4f}\n"
-                f"Arrow length: {arrow_length:.3f}m"
-            )
-            
-            fig.text(0.02, 0.02, info_text, fontsize=9,
-                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
-                    verticalalignment='bottom')
-            
-            # Save figure to session result directory (if verbose)
-            if verbose:
-                output_path = os.path.join(session_result_dir, 'wobj_coordinate_system_validation.jpg')
-                plt.tight_layout()
-                plt.savefig(output_path, dpi=150, bbox_inches='tight')
-                self.get_logger().info(f"💾 Wobj frame visualization result saved to: {output_path}")
-            
-            # Close plot to free memory
-            plt.close(fig)
-            
-            return True
-            
-        except Exception as e:
-            self.get_logger().error(f"Error validating coordinate system: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-
 
 def main():
     """
@@ -1512,8 +956,9 @@ def main():
     
     args = parser.parse_args()
     
-    # Initialize ROS2
-    rclpy.init()
+    # Initialize ROS2 (only if not already initialized)
+    if not rclpy.ok():
+        rclpy.init()
     
     try:
         # Initialize URLocate instance with command line arguments
@@ -1535,8 +980,16 @@ def main():
         executor = MultiThreadedExecutor()
         executor.add_node(ur_locate)
         
+        # Flag to control executor spinning
+        stop_spinning = threading.Event()
+        
+        def spin_executor():
+            """Spin executor until stop signal is received."""
+            while not stop_spinning.is_set() and rclpy.ok():
+                executor.spin_once(timeout_sec=0.1)
+        
         # Start executor in a separate thread
-        executor_thread = threading.Thread(target=executor.spin, daemon=True)
+        executor_thread = threading.Thread(target=spin_executor, daemon=False)
         executor_thread.start()
         
         print('URLocate node is running. Waiting for camera image...')
@@ -1560,22 +1013,6 @@ def main():
                     except Exception as e:
                         print(f"⚠️  Error sending last_points_3d to ur15 workspace: {e}")
                 
-                # # Perform workpiece frame building
-                # print(">>> Building Workpiece Coordinate System...")
-                
-                # coord_system = ur_locate.perform_wobj_frame_building()
-                
-                # if coord_system:
-                #     print("\n" + "="*60)
-                #     print("✓ Wobj Coordinate System built successfully!")
-                #     origin = coord_system['origin']
-                #     pose = coord_system['pose_representation']
-                #     print(f"  Origin: ({origin['x']:.4f}, {origin['y']:.4f}, {origin['z']:.4f}) m")
-                #     print(f"  Pose: x={pose['x']:.4f}, y={pose['y']:.4f}, z={pose['z']:.4f}")
-                #     print(f"        rx={pose['rx']:.4f}, ry={pose['ry']:.4f}, rz={pose['rz']:.4f}")
-                #     print("="*60 + "\n")
-                # else:
-                #     print("\n✗ Wobj Coordinate System building failed!")
             else:
                 print("\n✗ 3D Positioning failed!")
                 
@@ -1590,15 +1027,36 @@ def main():
                 print("Disconnecting robot...")
                 ur_locate.robot.close()
                 print("✓ Robot disconnected")
+            
+            # Proper cleanup sequence to avoid threading issues
+            try:
+                # Signal executor thread to stop
+                stop_spinning.set()
                 
-            # Shutdown executor
-            executor.shutdown()
-            # Destroy ROS node
-            ur_locate.destroy_node()
+                # Wait for executor thread to finish
+                if executor_thread.is_alive():
+                    executor_thread.join(timeout=3.0)
+                    if executor_thread.is_alive():
+                        print("⚠️  Executor thread did not finish in time")
+                
+                # Shutdown executor
+                executor.shutdown()
+                
+                # Destroy the node
+                try:
+                    ur_locate.destroy_node()
+                except Exception as e:
+                    print(f"⚠️  Warning during node destruction: {e}")
+            except Exception as e:
+                print(f"⚠️  Warning during executor cleanup: {e}")
     
     finally:
-        # Shutdown ROS2
-        rclpy.shutdown()
+        # Shutdown ROS2 (only if we initialized it)
+        if rclpy.ok():
+            try:
+                rclpy.shutdown()
+            except Exception as e:
+                print(f"⚠️  Warning during ROS2 shutdown: {e}")
 
 
 if __name__ == "__main__":

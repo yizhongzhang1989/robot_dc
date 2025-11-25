@@ -10,25 +10,30 @@ from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
+from common.config_manager import ConfigManager
 
 
 def generate_launch_description():
-    # Declare arguments
+    # Load configuration
+    config = ConfigManager()
+    ur15_config = config.get_robot('ur15')
+    
+    # Declare arguments with defaults from config
     ur15_ip_arg = DeclareLaunchArgument(
         'ur15_ip',
-        default_value='192.168.1.15',
+        default_value=ur15_config.get('robot.ip'),
         description='IP address of the UR15 robot'
     )
     
     ur_type_arg = DeclareLaunchArgument(
         'ur_type',
-        default_value='ur15',
+        default_value=ur15_config.get('robot.type'),
         description='Type of UR robot'
     )
     
     launch_rviz_arg = DeclareLaunchArgument(
         'launch_rviz',
-        default_value='false',
+        default_value=str(ur15_config.get('robot.launch_rviz')).lower(),
         description='Launch RViz for visualization'
     )
     

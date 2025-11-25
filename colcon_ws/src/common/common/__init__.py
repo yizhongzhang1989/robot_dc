@@ -11,11 +11,21 @@ from .workspace_utils import (
     get_scripts_directory,
     get_calibration_images_directory
 )
+from .config_manager import (
+    ConfigManager,
+    RobotConfig,
+    ConfigError,
+    get_config
+)
 
 # Export public API
 __all__ = [
     'get_workspace_root',
     'get_temp_directory', 
     'get_scripts_directory',
-    'get_calibration_images_directory'
+    'get_calibration_images_directory',
+    'ConfigManager',
+    'RobotConfig',
+    'ConfigError',
+    'get_config'
 ]

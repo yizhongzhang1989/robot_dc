@@ -38,10 +38,26 @@ class RobotStatusNode(Node):
             automatically_declare_parameters_from_overrides=True
         )
         
-        # Initialize Redis backend
-        if not is_redis_available():
+        # Get Redis configuration from parameters
+        if not self.has_parameter('redis_host'):
+            self.declare_parameter('redis_host', 'localhost')
+        if not self.has_parameter('redis_port'):
+            self.declare_parameter('redis_port', 6379)
+        if not self.has_parameter('redis_db'):
+            self.declare_parameter('redis_db', 0)
+        if not self.has_parameter('redis_password'):
+            self.declare_parameter('redis_password', '')
+        
+        redis_host = self.get_parameter('redis_host').value
+        redis_port = self.get_parameter('redis_port').value
+        redis_db = self.get_parameter('redis_db').value
+        redis_password = self.get_parameter('redis_password').value
+        redis_password = redis_password if redis_password else None
+        
+        # Initialize Redis backend with config parameters
+        if not is_redis_available(redis_host, redis_port, redis_db, redis_password):
             error_msg = (
-                "Redis is not available. Please install and start Redis:\n"
+                f"Redis is not available at {redis_host}:{redis_port}. Please install and start Redis:\n"
                 "  sudo apt-get install redis-server\n"
                 "  sudo systemctl start redis-server\n"
                 "  pip3 install redis\n"
@@ -50,9 +66,9 @@ class RobotStatusNode(Node):
             self.get_logger().error(error_msg)
             raise ConnectionError(error_msg)
         
-        self._redis_backend = get_redis_backend()
+        self._redis_backend = get_redis_backend(redis_host, redis_port, redis_db, redis_password)
         if self._redis_backend is None:
-            raise ConnectionError("Failed to connect to Redis")
+            raise ConnectionError(f"Failed to connect to Redis at {redis_host}:{redis_port}")
         
         self.get_logger().info("✓ Connected to Redis backend")
         
@@ -198,6 +214,7 @@ class RobotStatusNode(Node):
                 host=self._redis_backend.host,
                 port=self._redis_backend.port,
                 db=self._redis_backend.db,
+                password=self._redis_backend.password,
                 decode_responses=True
             )
             self._pubsub = self._pubsub_client.pubsub()

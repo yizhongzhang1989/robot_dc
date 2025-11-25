@@ -61,18 +61,6 @@ except Exception as e:
     UR15Robot = None
 
 
-def find_available_port(start_port=8030, max_attempts=10):
-    """Find an available port starting from start_port."""
-    for port in range(start_port, start_port + max_attempts):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
-                return port
-        except OSError:
-            continue
-    return None
-
-
 class UR15WebNode(Node):
     """ROS2 node for UR15 web interface with camera calibration validation."""
     
@@ -86,6 +74,7 @@ class UR15WebNode(Node):
         self.declare_parameter('ur15_port', 30002)
         self.declare_parameter('dataset_dir', '/tmp/dataset')
         self.declare_parameter('calib_data_dir', '/tmp/ur15_cam_calibration_data')
+        self.declare_parameter('calib_result_dir', '/tmp/ur15_cam_calibration_result')
         self.declare_parameter('chessboard_config', '/tmp/ur15_cam_calibration_data/chessboard_config.json')
         
         # Get parameters
@@ -93,8 +82,9 @@ class UR15WebNode(Node):
         web_port = self.get_parameter('web_port').value
         self.ur15_ip = self.get_parameter('ur15_ip').value
         self.ur15_port = self.get_parameter('ur15_port').value
-        self.data_dir = self.get_parameter('dataset_dir').value
+        self.dataset_dir = self.get_parameter('dataset_dir').value
         self.calibration_data_dir = self.get_parameter('calib_data_dir').value
+        self.calibration_result_dir = self.get_parameter('calib_result_dir').value
         self.chessboard_config = self.get_parameter('chessboard_config').value
         
         # Use only the specified port, clear it if occupied
@@ -348,6 +338,13 @@ class UR15WebNode(Node):
         
         self.get_logger().info("Cleaning up resources...")
         
+        # Stop Flask server
+        self.flask_running = False
+        if hasattr(self, 'flask_thread') and self.flask_thread and self.flask_thread.is_alive():
+            self.get_logger().info("Stopping Flask server...")
+            # Flask is in daemon thread, just mark it as stopped
+            # The thread will exit when the main process exits
+        
         # Terminate all child processes
         with self.process_lock:
             for process in self.child_processes:
@@ -453,11 +450,11 @@ class UR15WebNode(Node):
     
     def _get_next_file_number(self):
         """Find the next available file number by checking existing files in data_dir."""
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir, exist_ok=True)
+        if not os.path.exists(self.dataset_dir):
+            os.makedirs(self.dataset_dir, exist_ok=True)
             return 0
         
-        existing_files = [f for f in os.listdir(self.data_dir) if f.endswith('.json')]
+        existing_files = [f for f in os.listdir(self.dataset_dir) if f.endswith('.json')]
         if not existing_files:
             return 0
         
@@ -665,7 +662,7 @@ class UR15WebNode(Node):
                 
                 # Replace template variables
                 html_content = html_content.replace('{{ camera_topic }}', self.camera_topic)
-                html_content = html_content.replace('{{ data_dir }}', self._simplify_path(self.data_dir))
+                html_content = html_content.replace('{{ data_dir }}', self._simplify_path(self.dataset_dir))
                 html_content = html_content.replace('{{ calibration_data_dir }}', self._simplify_path(self.calibration_data_dir))
                 html_content = html_content.replace('{{ chessboard_config }}', self._simplify_path(self.chessboard_config))
                 
@@ -752,7 +749,7 @@ class UR15WebNode(Node):
             return jsonify({
                 'has_image': has_image,
                 'camera_topic': self.camera_topic,
-                'data_dir': self._simplify_path(self.data_dir),
+                'data_dir': self._simplify_path(self.dataset_dir),
                 'calibration_data_dir': self._simplify_path(self.calibration_data_dir),
                 'has_intrinsic': has_intrinsic,
                 'has_extrinsic': has_extrinsic,
@@ -818,10 +815,28 @@ class UR15WebNode(Node):
                 # Build the image URL that can be accessed from browser
                 image_url = url_for('serve_last_captured_image', _external=True)
                 
+                # Check for corresponding ref_img_*.json file
+                # Extract base name and construct json filename
+                image_dir = os.path.dirname(image_path)
+                image_filename = os.path.basename(image_path)
+                json_filename = os.path.splitext(image_filename)[0] + '.json'
+                json_path = os.path.join(image_dir, json_filename)
+                
                 # Use the same hostname as the request to build labeling URL
                 host = request.host.split(':')[0]  # Extract hostname without port
                 encoded_image_path = quote(image_path)
+                
+                # Build labeling URL with optional labels parameter
                 labeling_url = f'http://{host}:8007?imageUrl={image_url}&imagePath={encoded_image_path}'
+                
+                # If JSON file exists, add labelsUrl parameter
+                if os.path.exists(json_path):
+                    labels_url = url_for('serve_labels_json', _external=True)
+                    labeling_url += f'&labelsUrl={labels_url}'
+                    self.get_logger().info(f"Found existing labels file: {json_path}")
+                    self.get_logger().info(f"Labels URL: {labels_url}")
+                else:
+                    self.get_logger().info(f"No existing labels file found at: {json_path}")
                 
                 self.get_logger().info(f"Preparing last captured image: {image_path}")
                 self.get_logger().info(f"Image URL: {image_url}")
@@ -831,7 +846,8 @@ class UR15WebNode(Node):
                     'status': 'success',
                     'image_url': image_url,
                     'labeling_url': labeling_url,
-                    'image_path': image_path
+                    'image_path': image_path,
+                    'json_path': json_path if os.path.exists(json_path) else None
                 })
                 
             except Exception as e:
@@ -867,6 +883,40 @@ class UR15WebNode(Node):
                 
             except Exception as e:
                 self.get_logger().error(f"Error serving last captured image: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/serve_labels_json', methods=['GET'])
+        def serve_labels_json():
+            """Serve the JSON labels file corresponding to the last captured image."""
+            from flask import send_file, jsonify, make_response
+            
+            try:
+                # Get last_picture path from robot_status service
+                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                
+                if image_path is None:
+                    return jsonify({'error': 'No image has been captured yet'}), 404
+                
+                # Construct JSON file path
+                image_dir = os.path.dirname(image_path)
+                image_filename = os.path.basename(image_path)
+                json_filename = os.path.splitext(image_filename)[0] + '.json'
+                json_path = os.path.join(image_dir, json_filename)
+                
+                if not os.path.exists(json_path):
+                    return jsonify({'error': 'Labels file not found'}), 404
+                
+                self.get_logger().info(f"Serving labels JSON: {json_path}")
+                
+                # Send the file with CORS headers to allow cross-origin access
+                response = make_response(send_file(json_path, mimetype='application/json'))
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                return response
+                
+            except Exception as e:
+                self.get_logger().error(f"Error serving labels JSON: {e}")
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/save_labels', methods=['POST', 'OPTIONS'])
@@ -1042,7 +1092,7 @@ class UR15WebNode(Node):
                 # Create directory if it doesn't exist
                 try:
                     os.makedirs(new_dir, exist_ok=True)
-                    self.data_dir = new_dir
+                    self.dataset_dir = new_dir
                     self.get_logger().info(f"Dataset directory changed to: {new_dir}")
                     return jsonify({
                         'success': True, 
@@ -1873,12 +1923,8 @@ class UR15WebNode(Node):
                         'message': f'Script not found: {script_path}'
                     })
                 
-                # Calculate output directory: CalibData path's parent directory + '/ur15_cam_calibration_result'
-                calib_data_parent = os.path.dirname(self.calibration_data_dir)
-                output_dir = os.path.join(calib_data_parent, 'ur15_cam_calibration_result')
-                
                 self.get_logger().info(f"Calibration data dir: {self.calibration_data_dir}")
-                self.get_logger().info(f"Output dir: {output_dir}")
+                self.get_logger().info(f"Output dir: {self.calibration_result_dir}")
                 
                 # Prepare log file path
                 log_file_path = os.path.join(self.calibration_data_dir if hasattr(self, 'calibration_data_dir') else '/tmp', 'calibrate_cam_log.txt')
@@ -1889,7 +1935,7 @@ class UR15WebNode(Node):
                 # Prepare command with config-file parameter
                 cmd = ['python3', script_path, 
                        '--data-dir', self.calibration_data_dir,
-                       '--output-dir', output_dir,
+                       '--output-dir', self.calibration_result_dir,
                        '--config-file', config_file_path,
                        '--verbose']
                 
@@ -1931,7 +1977,7 @@ class UR15WebNode(Node):
                                 self.push_web_log("📥 Auto-loading calibration parameters...", 'info')
                                 
                                 # Load intrinsic parameters
-                                camera_params_dir = os.path.join(output_dir, 'ur15_camera_parameters')
+                                camera_params_dir = os.path.join(self.calibration_result_dir, 'ur15_camera_parameters')
                                 intrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_calibration_result.json')
                                 extrinsic_file = os.path.join(camera_params_dir, 'ur15_cam_eye_in_hand_result.json')
                                 
@@ -2049,7 +2095,7 @@ class UR15WebNode(Node):
                 self.get_logger().info(f"Started camera calibration monitoring thread")
                 self.get_logger().info(f"  Data directory: {self.calibration_data_dir}")
                 self.get_logger().info(f"  Config file: {config_file_path}")
-                self.get_logger().info(f"  Output directory: {output_dir}")
+                self.get_logger().info(f"  Output directory: {self.calibration_result_dir}")
                 self.get_logger().info(f"  Script output will be logged to: {log_file_path}")
                 
                 # Push start message to web log
@@ -2061,7 +2107,7 @@ class UR15WebNode(Node):
                     'success': True,
                     'message': 'Camera calibration script started. Results will be auto-loaded when complete.',
                     'config_file': self._simplify_path(config_file_path),
-                    'output_dir': self._simplify_path(output_dir),
+                    'output_dir': self._simplify_path(self.calibration_result_dir),
                     'log_file': self._simplify_path(log_file_path)
                 })
                 
@@ -2516,6 +2562,9 @@ class UR15WebNode(Node):
                         'message': 'Joint positions not provided'
                     })
                 
+                # Get blocking parameter (default: False)
+                blocking = request_data.get('blocking', False)
+                
                 # Validate joint positions
                 if not isinstance(joint_positions, list) or len(joint_positions) != 6:
                     return jsonify({
@@ -2558,16 +2607,16 @@ class UR15WebNode(Node):
                     
                     # Send movej command
                     try:
-                        self.get_logger().info(f"Moving robot to joint positions: {joint_positions_rad}")
+                        self.get_logger().info(f"Moving robot to joint positions: {joint_positions_rad}, blocking: {blocking}")
                         result = self.ur15_robot.movej(
                             joint_positions_rad,
                             a=0.5,  # acceleration 0.5 rad/s^2
                             v=0.3,  # velocity 0.3 rad/s
-                            blocking=False  # Don't block web interface
+                            blocking=blocking  # Use blocking parameter from request
                         )
                         
                         if result == 0:
-                            self.push_web_log(f"🤖 Moving to joints: {[f'{pos:.3f}' for pos in joint_positions_rad]}", 'info')
+                            # Don't push to web log to avoid duplicate logs from frontend
                             return jsonify({
                                 'success': True,
                                 'message': 'Robot movement started',
@@ -2713,7 +2762,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_rack', methods=['POST'])
         def locate_rack():
-            """Execute locate rack script (ur_locate_base.py)."""
+            """Execute locate rack script (ur_locate_rack.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -2727,7 +2776,7 @@ class UR15WebNode(Node):
                         'message': 'Could not find scripts directory'
                     })
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_base.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate_rack.py')
                 
                 # Check if script exists
                 if not os.path.exists(script_path):
@@ -2797,7 +2846,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_last_operation', methods=['POST'])
         def locate_last_operation():
-            """Execute locate last operation script (ur_locate_test.py)."""
+            """Execute locate last operation script (ur_3d_positioning.py)."""
             from flask import request, jsonify
             import subprocess
             import threading
@@ -2827,7 +2876,7 @@ class UR15WebNode(Node):
                         'message': 'Could not find scripts directory'
                     })
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_test.py')
+                script_path = os.path.join(scripts_dir, 'ur_3d_positioning.py')
                 
                 # Check if script exists
                 if not os.path.exists(script_path):
@@ -2864,7 +2913,7 @@ class UR15WebNode(Node):
                         for line in process.stdout:
                             line = line.rstrip()
                             if line:
-                                self.get_logger().info(f"[ur_locate_test] {line}")
+                                self.get_logger().info(f"[ur_3d_positioning] {line}")
                                 # Also push important messages to web log
                                 if '✓' in line or '✗' in line or 'Step' in line or 'Error' in line:
                                     if '✗' in line or 'Error' in line or 'failed' in line.lower():
@@ -2912,7 +2961,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_unlock_knob', methods=['POST'])
         def locate_unlock_knob():
-            """Execute locate unlock knob script (ur_locate_knob.py)."""
+            """Execute locate unlock knob script (ur_locate.py --operation-name unlock_knob)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -2922,11 +2971,11 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_knob.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                cmd = ['python3', script_path, '--operation-name', 'unlock_knob']
                 self.get_logger().info(f"Locate unlock knob command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -2960,7 +3009,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_open_handle', methods=['POST'])
         def locate_open_handle():
-            """Execute locate open handle script (ur_locate_prepull.py)."""
+            """Execute locate open handle script (ur_locate.py --operation-name open_handle)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -2970,11 +3019,11 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_prepull.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                cmd = ['python3', script_path, '--operation-name', 'open_handle']
                 self.get_logger().info(f"Locate open handle command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3008,7 +3057,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_close_left', methods=['POST'])
         def locate_close_left():
-            """Execute locate close left script (ur_locate_close_left.py)."""
+            """Execute locate close left script (ur_locate.py --operation-name close_left)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3018,11 +3067,11 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_close_left.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                cmd = ['python3', script_path, '--operation-name', 'close_left']
                 self.get_logger().info(f"Locate close left command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3056,7 +3105,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/locate_close_right', methods=['POST'])
         def locate_close_right():
-            """Execute locate close right script (ur_locate_close_right.py)."""
+            """Execute locate close right script (ur_locate.py --operation-name close_right)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3066,11 +3115,11 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_locate_close_right.py')
+                script_path = os.path.join(scripts_dir, 'ur_locate.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                cmd = ['python3', script_path, '--operation-name', 'close_right']
                 self.get_logger().info(f"Locate close right command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3104,7 +3153,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_unlock_knob', methods=['POST'])
         def execute_unlock_knob():
-            """Execute unlock knob script (ur_execute_knob.py)."""
+            """Execute unlock knob script (ur_op_unlock_knob.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3114,7 +3163,7 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_execute_knob.py')
+                script_path = os.path.join(scripts_dir, 'ur_op_unlock_knob.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
@@ -3152,7 +3201,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_open_handle', methods=['POST'])
         def execute_open_handle():
-            """Execute open handle script (ur_execute_prepull.py)."""
+            """Execute open handle script (ur_op_open_handle.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3162,7 +3211,7 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_execute_prepull.py')
+                script_path = os.path.join(scripts_dir, 'ur_op_open_handle.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
@@ -3200,7 +3249,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_close_left', methods=['POST'])
         def execute_close_left():
-            """Execute close left script (ur_execute_close_left.py)."""
+            """Execute close left script (ur_op_close_left.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3210,7 +3259,7 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_execute_close_left.py')
+                script_path = os.path.join(scripts_dir, 'ur_op_close_left.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
@@ -3248,7 +3297,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_close_right', methods=['POST'])
         def execute_close_right():
-            """Execute close right script (ur_execute_close_right.py)."""
+            """Execute close right script (ur_op_close_right.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3258,7 +3307,7 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_execute_close_right.py')
+                script_path = os.path.join(scripts_dir, 'ur_op_close_right.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
@@ -3294,74 +3343,253 @@ class UR15WebNode(Node):
                 self.push_web_log(f"❌ Failed to start execute close right: {str(e)}", 'error')
                 return jsonify({'success': False, 'message': str(e)})
         
-        @self.app.route('/emergency_stop', methods=['POST'])
-        def emergency_stop():
-            """Execute emergency stop via UR Dashboard Server."""
-            from flask import jsonify
-            import socket
+        @self.app.route('/save_rack_positions', methods=['POST'])
+        def save_rack_positions():
+            """Save rack positions to JSON file."""
+            from flask import request, jsonify
+            import json
             
             try:
-                # Get robot IP from node parameters
-                robot_ip = self.ur15_ip if hasattr(self, 'ur15_ip') else '192.168.1.15'
-                dashboard_port = 29999
+                data = request.get_json()
+                rack_number = data.get('rack_number')
+                positions = data.get('positions')
+                rack_key = data.get('rack_key')  # Now accept custom key name
                 
-                self.get_logger().warn(f"🚨 EMERGENCY STOP triggered! Connecting to {robot_ip}:{dashboard_port}")
-                self.push_web_log(f"🚨 EMERGENCY STOP: Connecting to robot...", 'error')
+                if rack_number is None or positions is None:
+                    return jsonify({'success': False, 'message': 'Missing rack_number or positions'})
                 
-                # Create socket connection to Dashboard Server
-                dash = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                dash.settimeout(5.0)  # 5 second timeout
+                if len(positions) != 6:
+                    return jsonify({'success': False, 'message': 'Positions must contain 6 values'})
                 
-                try:
-                    dash.connect((robot_ip, dashboard_port))
-                    self.get_logger().info("Connected to UR Dashboard Server")
-                    
-                    # Send stop command
-                    dash.send(b"stop\n")
-                    self.get_logger().warn("Emergency stop command sent")
-                    
-                    # Wait for response
-                    response = dash.recv(1024).decode('utf-8').strip()
-                    self.get_logger().info(f"Dashboard Server response: {response}")
-                    
-                    dash.close()
-                    
-                    self.push_web_log("🛑 EMERGENCY STOP executed successfully!", 'error')
-                    self.push_web_log(f"📡 Server response: {response}", 'info')
-                    
-                    return jsonify({
-                        'success': True,
-                        'message': 'Emergency stop command sent successfully',
-                        'response': response
-                    })
-                    
-                except socket.timeout:
-                    dash.close()
-                    error_msg = "Connection to Dashboard Server timed out"
-                    self.get_logger().error(error_msg)
-                    self.push_web_log(f"❌ Emergency stop failed: {error_msg}", 'error')
-                    return jsonify({
-                        'success': False,
-                        'message': error_msg
-                    })
-                    
-                except socket.error as e:
-                    dash.close()
-                    error_msg = f"Socket error: {str(e)}"
-                    self.get_logger().error(error_msg)
-                    self.push_web_log(f"❌ Emergency stop failed: {error_msg}", 'error')
-                    return jsonify({
-                        'success': False,
-                        'message': error_msg
-                    })
-                    
+                # Get the JSON file path
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
+                
+                # Default rack key mapping if not provided
+                if rack_key is None:
+                    rack_key_map = {
+                        1: 'lower_left',
+                        2: 'lower_right',
+                        3: 'top_left',
+                        4: 'top_right'
+                    }
+                    rack_key = rack_key_map.get(rack_number)
+                    if rack_key is None:
+                        return jsonify({'success': False, 'message': 'Invalid rack number'})
+                
+                # Read existing data or create new
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        rack_data = json.load(f)
+                else:
+                    rack_data = {
+                        'lower_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'lower_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'top_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    }
+                
+                # Update the specific rack with the custom key name
+                rack_data[rack_key] = positions
+                
+                # Save to file
+                os.makedirs(os.path.dirname(json_path), exist_ok=True)
+                with open(json_path, 'w') as f:
+                    json.dump(rack_data, f, indent=4)
+                
+                self.get_logger().info(f"Saved rack {rack_number} (key: {rack_key}) positions to {json_path}")
+                
+                return jsonify({'success': True, 'message': f'Rack {rack_number} positions saved'})
+                
             except Exception as e:
-                self.get_logger().error(f"Error in emergency stop: {e}")
-                self.push_web_log(f"❌ Emergency stop error: {str(e)}", 'error')
-                return jsonify({
-                    'success': False,
-                    'message': str(e)
-                })
+                self.get_logger().error(f"Error saving rack positions: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/rename_rack_key', methods=['POST'])
+        def rename_rack_key():
+            """Rename a rack key in the JSON file while preserving order."""
+            from flask import request, jsonify
+            import json
+            from collections import OrderedDict
+            
+            try:
+                data = request.get_json()
+                rack_number = data.get('rack_number')
+                old_key = data.get('old_key')
+                new_key = data.get('new_key')
+                position = data.get('position')  # 0-indexed position
+                
+                if not old_key or not new_key:
+                    return jsonify({'success': False, 'message': 'Missing old_key or new_key'})
+                
+                if position is None:
+                    position = rack_number - 1 if rack_number else 0
+                
+                # Get the JSON file path
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
+                
+                # Read existing data
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        # Load as regular dict first
+                        rack_data = json.load(f)
+                else:
+                    # If file doesn't exist, create with new key
+                    rack_data = OrderedDict()
+                    rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+                    with open(json_path, 'w') as f:
+                        json.dump(rack_data, f, indent=4)
+                    return jsonify({'success': True, 'message': f'Created new key: {new_key}'})
+                
+                # Get keys in order
+                keys = list(rack_data.keys())
+                
+                # Find the position of old_key
+                old_position = keys.index(old_key) if old_key in keys else -1
+                
+                # Create new ordered dict
+                new_rack_data = OrderedDict()
+                
+                if old_position >= 0:
+                    # Rename the key at the specific position
+                    for i, key in enumerate(keys):
+                        if i == old_position:
+                            # Replace old key with new key at this position
+                            new_rack_data[new_key] = rack_data[old_key]
+                        else:
+                            new_rack_data[key] = rack_data[key]
+                else:
+                    # Old key doesn't exist, insert at specified position
+                    inserted = False
+                    for i, key in enumerate(keys):
+                        if i == position and not inserted:
+                            new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                            inserted = True
+                        new_rack_data[key] = rack_data[key]
+                    
+                    # If position is at the end or beyond
+                    if not inserted:
+                        new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                
+                # Save to file (regular dict will maintain insertion order in Python 3.7+)
+                with open(json_path, 'w') as f:
+                    json.dump(dict(new_rack_data), f, indent=4)
+                
+                self.get_logger().info(f"Renamed rack key from '{old_key}' to '{new_key}' at position {position}")
+                return jsonify({'success': True, 'message': f'Renamed key from {old_key} to {new_key}'})
+                
+            except Exception as e:
+                self.get_logger().error(f"Error renaming rack key: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/load_rack_positions', methods=['GET'])
+        def load_rack_positions():
+            """Load rack positions from JSON file."""
+            from flask import jsonify
+            import json
+            
+            try:
+                # Get the JSON file path
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
+                
+                # Read data
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        rack_data = json.load(f)
+                    
+                    self.get_logger().info(f"Loaded rack positions from {json_path}")
+                    return jsonify({'success': True, 'data': rack_data})
+                else:
+                    # Return default values if file doesn't exist
+                    default_data = {
+                        'lower_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'lower_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'top_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    }
+                    return jsonify({'success': True, 'data': default_data})
+                
+            except Exception as e:
+                self.get_logger().error(f"Error loading rack positions: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        # Asset route must come BEFORE the main report route to avoid conflicts
+        @self.app.route('/calibration_report/<report_type>/<path:filename>')
+        def serve_calibration_assets(report_type, filename):
+            """Serve images and other assets from calibration report directories."""
+            from flask import send_from_directory, jsonify
+            from common.workspace_utils import get_temp_directory
+            
+            try:
+                if report_type == 'eye_in_hand':
+                    report_dir = os.path.join(self.calibration_result_dir, 
+                                            'ur15_eye_in_hand_calibration_report')
+                elif report_type == 'intrinsic':
+                    report_dir = os.path.join(self.calibration_result_dir, 
+                                            'ur15_intrinsic_calibration_report')
+                else:
+                    return jsonify({'error': 'Invalid report type'}), 404
+                
+                if not os.path.exists(report_dir):
+                    return jsonify({'error': 'Report directory not found'}), 404
+                
+                self.get_logger().info(f"Serving calibration asset: {filename} from {report_dir}")
+                return send_from_directory(report_dir, filename)
+                
+            except Exception as e:
+                self.get_logger().error(f"Error serving calibration asset: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/calibration_report/<report_type>')
+        def serve_calibration_report(report_type):
+            """Serve calibration report HTML with base tag injection."""
+            from flask import jsonify, Response
+            from common.workspace_utils import get_temp_directory
+            
+            try:
+                if report_type == 'eye_in_hand':
+                    report_path = os.path.join(self.calibration_result_dir, 
+                                             'ur15_eye_in_hand_calibration_report', 
+                                             'calibration_report.html')
+                elif report_type == 'intrinsic':
+                    report_path = os.path.join(self.calibration_result_dir,
+                                             'ur15_intrinsic_calibration_report', 
+                                             'calibration_report.html')
+                else:
+                    return jsonify({'error': 'Invalid report type'}), 404
+                
+                if not os.path.exists(report_path):
+                    self.get_logger().warn(f"Calibration report not found: {report_path}")
+                    return jsonify({'error': 'Calibration report not found'}), 404
+                
+                self.get_logger().info(f"Serving calibration report: {report_path}")
+                
+                # Read the HTML and inject a base tag to fix relative paths
+                with open(report_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                
+                # Inject base tag after <head> to make relative URLs work
+                base_tag = f'<base href="/calibration_report/{report_type}/">'
+                if '<head>' in html_content:
+                    html_content = html_content.replace('<head>', f'<head>\n    {base_tag}', 1)
+                
+                return Response(html_content, mimetype='text/html')
+                
+            except Exception as e:
+                self.get_logger().error(f"Error serving calibration report: {e}")
+                return jsonify({'error': str(e)}), 500
     
     def _get_camera_calib_params(self):
         """
@@ -3454,17 +3682,18 @@ class UR15WebNode(Node):
             # Get camera parameters using helper function
             params = self._get_camera_calib_params()
             if params is None:
+                self.get_logger().warn("Camera calibration parameters not available for rack drawing")
                 return frame
             
             # Get rack work object parameters - client handles caching internally
-            wobj_origin = self.status_client.get_status('rack', 'wobj_origin')
-            wobj_x = self.status_client.get_status('rack', 'wobj_x')
-            wobj_y = self.status_client.get_status('rack', 'wobj_y')
-            wobj_z = self.status_client.get_status('rack', 'wobj_z')
+            wobj_origin = self.status_client.get_status('wobj', 'wobj_origin')
+            wobj_x = self.status_client.get_status('wobj', 'wobj_x')
+            wobj_y = self.status_client.get_status('wobj', 'wobj_y')
+            wobj_z = self.status_client.get_status('wobj', 'wobj_z')
             
             # Check if all work object parameters are available
             if wobj_origin is None or wobj_x is None or wobj_y is None or wobj_z is None:
-                self.get_logger().debug("Rack work object parameters not available yet")
+                self.get_logger().warn(f"Wobj parameters not available - origin: {wobj_origin is not None}, x: {wobj_x is not None}, y: {wobj_y is not None}, z: {wobj_z is not None}", throttle_duration_sec=5.0)
                 return frame
             
             # Convert to numpy arrays

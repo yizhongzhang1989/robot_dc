@@ -14,21 +14,26 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from common.config_manager import ConfigManager
 
 
 def generate_launch_description():
     """Generate launch description for image_labeling service."""
     
-    # Declare launch arguments
+    # Load configuration
+    config = ConfigManager()
+    service_config = config.get('services.image_labeling')
+    
+    # Declare launch arguments with defaults from config
     port_arg = DeclareLaunchArgument(
         'port',
-        default_value='8007',
+        default_value=str(service_config['port']),
         description='Port for the web service'
     )
     
     host_arg = DeclareLaunchArgument(
         'host',
-        default_value='0.0.0.0',
+        default_value=service_config['host'],
         description='Host address for the web service'
     )
     
