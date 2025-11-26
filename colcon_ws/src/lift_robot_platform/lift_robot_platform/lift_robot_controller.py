@@ -250,15 +250,6 @@ class LiftRobotController(ModbusDevice):
         }.get(relay_address, f'Relay{relay_address}')
         self.node.get_logger().info(f"[SEQ {seq_id}] Async flash start: {relay_name} (max_attempts={max_attempts})")
         self._try_on()
-        # Start watchdog to avoid indefinite lock if read never returns
-        # Timeout = max_attempts * ~140ms/attempt * 2 (ON+OFF phases) + 0.5s safety margin
-        watchdog_timeout = max(2.0, max_attempts * 0.14 * 2 + 0.5)
-        try:
-            wd = threading.Timer(watchdog_timeout, self._flash_watchdog)
-            wd.start()
-            self.flash_context['watchdog'] = wd
-        except Exception:
-            pass
 
     def _try_on(self):
         """尝试打开继电器: 发送ON命令 → 10ms后验证."""
@@ -480,13 +471,6 @@ class LiftRobotController(ModbusDevice):
             except Exception as e:
                 self.node.get_logger().error(f"[SEQ {seq_id}] Flash complete callback error: {e}")
         
-        # Cancel watchdog if present
-        wd = ctx.get('watchdog')
-        if wd and wd.is_alive():
-            try:
-                wd.cancel()
-            except Exception:
-                pass
         self.flash_context = None
         self.flash_active = False
 
@@ -509,15 +493,6 @@ class LiftRobotController(ModbusDevice):
             # Normal flash failure - trigger emergency reset
             self.node.get_logger().error(f"[SEQ {seq_id}] ❌ Async flash FAILED: {reason} -> EMERGENCY RESET")
         
-        # Cancel watchdog before cleanup
-        if ctx:
-            wd = ctx.get('watchdog')
-            if wd and wd.is_alive():
-                try:
-                    wd.cancel()
-                except Exception:
-                    pass
-        
         # Trigger emergency reset only if not already in reset
         if not is_reset_flash:
             try:
@@ -527,18 +502,6 @@ class LiftRobotController(ModbusDevice):
         
         self.flash_context = None
         self.flash_active = False
-
-    def _flash_watchdog(self):
-        """Watchdog: if flash still active after threshold, abort to prevent lock."""
-        ctx = self.flash_context
-        if not ctx or not self.flash_active:
-            return
-        # Watchdog已经按照超时时间触发,不需要再检查elapsed
-        # 如果到这里flash还在进行,说明确实超时了
-        relay = ctx['relay']
-        relay_name = self._get_relay_name(relay)
-        elapsed = time.time() - ctx['start_time']
-        self._flash_fail(f"watchdog timeout {relay_name} phase={ctx.get('phase')} elapsed={elapsed:.3f}s")
 
     # Legacy sync method retained for compatibility (not used now)
     def flash_relay(self, relay_address, duration_ms=100, seq_id=None):
