@@ -11,10 +11,14 @@ Usage:
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler
+from launch.substitutions import LaunchConfiguration, TextSubstitution
+from launch.event_handlers import OnProcessExit, OnShutdown
+from launch.events import Shutdown
 from common.config_manager import ConfigManager
+from common.workspace_utils import get_workspace_root
+import os
+import signal
 
 
 def generate_launch_description():
@@ -23,6 +27,11 @@ def generate_launch_description():
     # Load configuration
     config = ConfigManager()
     service_config = config.get('services.image_labeling')
+    
+    # Get paths
+    workspace_root = get_workspace_root()
+    launch_script = os.path.join(workspace_root, 'scripts', 'ThirdParty', 'robot_vision', 
+                                  'ThirdParty', 'ImageLabelingWeb', 'launch_server.py')
     
     # Declare launch arguments with defaults from config
     port_arg = DeclareLaunchArgument(
@@ -41,17 +50,20 @@ def generate_launch_description():
     port = LaunchConfiguration('port')
     host = LaunchConfiguration('host')
     
-    # Define the image_labeling service node
-    image_labeling_node = Node(
-        package='image_labeling_service',
-        executable='image_labeling_node',
-        name='image_labeling_service_node',
+    # Define the web service process (direct Python launch, no ROS node wrapper)
+    web_process = ExecuteProcess(
+        cmd=[
+            'python3', launch_script,
+            '--host', host,
+            '--port', port,
+            '--no-browser'  # Don't open browser automatically
+        ],
         output='screen',
-        parameters=[{
-            'port': port,
-            'host': host
-        }],
-        emulate_tty=True
+        name='image_labeling_web',
+        # Use process group for proper signal handling
+        sigterm_timeout='2',
+        sigkill_timeout='2',
+        emulate_tty=True,
     )
     
     return LaunchDescription([
@@ -59,6 +71,6 @@ def generate_launch_description():
         port_arg,
         host_arg,
         
-        # Nodes
-        image_labeling_node
+        # Process
+        web_process
     ])

@@ -1,10 +1,12 @@
 # Image Labeling Service
 
-ROS2 wrapper package for the Image Labeling Web service.
+ROS2 launch configuration for the Image Labeling Web service.
 
 ## Overview
 
-This package provides a ROS2 node that manages the lifecycle of the Image Labeling web application. The web service allows users to upload and label images with keypoints, featuring sub-pixel precision, zoom/pan functionality, and JSON export.
+This package provides a ROS2 launch file that starts the Image Labeling web application. The web service allows users to upload and label images with keypoints, featuring sub-pixel precision, zoom/pan functionality, and JSON export.
+
+**Note:** This package uses `ExecuteProcess` to directly launch the web service without a ROS node wrapper, ensuring clean startup/shutdown.
 
 ## Features
 
@@ -90,24 +92,23 @@ http://<robot-ip>:8002
 
 ## Architecture
 
-The node wraps the `launch_server.py` script located at:
+The launch file uses `ExecuteProcess` to directly run the `launch_server.py` script:
 ```
 scripts/ThirdParty/robot_vision/ThirdParty/ImageLabelingWeb/launch_server.py
 ```
 
-The node:
-1. Locates the launch_server.py script
-2. Starts it as a subprocess with configured parameters
-3. Monitors output for errors and warnings
-4. Handles graceful shutdown on node termination
+Process management:
+1. Launch file locates the script using workspace utilities
+2. Starts it with `--no-browser` flag (non-interactive)
+3. Passes configured host and port parameters
+4. Handles graceful shutdown with SIGTERM/SIGKILL on Ctrl+C
 
-## Logging
+## Benefits of Direct Launch
 
-The node filters output to show only critical messages:
-- **Errors**: Displayed with ERROR level
-- **Warnings**: Displayed with WARN level
-- **HTTP requests**: Filtered out (not displayed)
-- **Startup messages**: Displayed with INFO level
+- **Clean shutdown**: Proper signal handling ensures processes terminate cleanly
+- **No ROS overhead**: Direct process execution without unnecessary node wrapper
+- **Simple architecture**: Launch file only, no Python node code needed
+- **Standard tooling**: Uses standard Flask server, easy to debug
 
 ## Troubleshooting
 
@@ -131,13 +132,17 @@ git submodule update --init --recursive
 ### Check if service is running
 
 ```bash
-ros2 node list | grep image_labeling
+# Check if process is running
+ps aux | grep launch_server.py
+
+# Check if port is in use
+sudo lsof -i :8002
 ```
 
-### View logs
+### Stop service manually if needed
 
 ```bash
-ros2 node info /image_labeling_service_node
+pkill -f "launch_server.py"
 ```
 
 ## License

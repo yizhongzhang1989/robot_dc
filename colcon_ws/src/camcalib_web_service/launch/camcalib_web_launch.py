@@ -11,10 +11,11 @@ Usage:
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
 from common.config_manager import ConfigManager
+from common.workspace_utils import get_workspace_root
+import os
 
 
 def generate_launch_description():
@@ -23,6 +24,11 @@ def generate_launch_description():
     # Load configuration
     config = ConfigManager()
     service_config = config.get('services.camcalib_web')
+    
+    # Get paths
+    workspace_root = get_workspace_root()
+    app_path = os.path.join(workspace_root, 'scripts', 'ThirdParty', 
+                            'camera_calibration_toolkit', 'web', 'app.py')
     
     # Declare launch arguments with defaults from config
     port_arg = DeclareLaunchArgument(
@@ -41,20 +47,19 @@ def generate_launch_description():
     port = LaunchConfiguration('port')
     host = LaunchConfiguration('host')
     
-    # Define the camcalib_web service node with proper signal handling
-    camcalib_web_node = Node(
-        package='camcalib_web_service',
-        executable='camcalib_web_node',
-        name='camcalib_web_service_node',
+    # Define the web service process (direct Flask launch, no ROS node wrapper)
+    web_process = ExecuteProcess(
+        cmd=[
+            'flask', '--app', app_path, 'run',
+            '--host', host,
+            '--port', port
+        ],
         output='screen',
-        parameters=[{
-            'port': port,
-            'host': host
-        }],
+        name='camcalib_web',
+        # Proper signal handling for clean shutdown
+        sigterm_timeout='2',
+        sigkill_timeout='2',
         emulate_tty=True,
-        # Important: this ensures the node receives SIGINT/SIGTERM properly
-        sigterm_timeout='5',
-        sigkill_timeout='10'
     )
     
     return LaunchDescription([
@@ -62,6 +67,6 @@ def generate_launch_description():
         port_arg,
         host_arg,
         
-        # Nodes
-        camcalib_web_node
+        # Process
+        web_process
     ])
