@@ -81,18 +81,21 @@ def generate_launch_description():
         emulate_tty=True
     )
     
-    # Web dashboard node (optional)
-    web_dashboard_node = Node(
-        package='robot_status_redis',
-        executable='web_dashboard_node.py',
-        name='robot_status_web',
+    # Web dashboard process (optional)
+    from launch.actions import ExecuteProcess
+    import sys
+    
+    web_dashboard_process = ExecuteProcess(
+        cmd=[
+            sys.executable,
+            '-m', 'robot_status_redis.web_dashboard',
+            '--host', web_host,
+            '--port', web_port
+        ],
         output='screen',
-        parameters=[{
-            'port': web_port,
-            'host': web_host
-        }],
-        condition=IfCondition(web_enabled),
-        emulate_tty=True
+        sigterm_timeout='2',
+        sigkill_timeout='2',
+        condition=IfCondition(web_enabled)
     )
     
     return LaunchDescription([
@@ -104,5 +107,5 @@ def generate_launch_description():
         
         # Nodes
         robot_status_node,
-        web_dashboard_node
+        web_dashboard_process
     ])
