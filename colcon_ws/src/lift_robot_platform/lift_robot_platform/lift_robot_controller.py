@@ -533,12 +533,12 @@ class LiftRobotController(ModbusDevice):
         ctx = self.flash_context
         if not ctx or not self.flash_active:
             return
+        # Watchdog已经按照超时时间触发,不需要再检查elapsed
+        # 如果到这里flash还在进行,说明确实超时了
+        relay = ctx['relay']
+        relay_name = self._get_relay_name(relay)
         elapsed = time.time() - ctx['start_time']
-        # If more than 0.6s elapsed without completion, fail
-        if elapsed > 0.6:
-            relay = ctx['relay']
-            relay_name = self._get_relay_name(relay)
-            self._flash_fail(f"watchdog timeout {relay_name} phase={ctx.get('phase')} elapsed={elapsed:.3f}s")
+        self._flash_fail(f"watchdog timeout {relay_name} phase={ctx.get('phase')} elapsed={elapsed:.3f}s")
 
     # Legacy sync method retained for compatibility (not used now)
     def flash_relay(self, relay_address, duration_ms=100, seq_id=None):
