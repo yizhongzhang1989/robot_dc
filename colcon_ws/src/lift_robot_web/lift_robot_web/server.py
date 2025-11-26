@@ -92,18 +92,20 @@ class LiftRobotWeb(Node):
         # ROS interfaces
         self.sub = self.create_subscription(String, self.sensor_topic, self.sensor_cb, 10)
         # Force sensor subscriptions (Float32)
-        try:
-            from std_msgs.msg import Float32
-            # Subscribe to calibrated force sensor topics (for control)
-            self.force_sub_right = self.create_subscription(Float32, '/force_sensor', self.force_cb_right, 10)
-            self.force_sub_left = self.create_subscription(Float32, '/force_sensor_2', self.force_cb_left, 10)
-            # Subscribe to raw force sensor topics (for calibration display)
-            self.force_raw_sub_right = self.create_subscription(Float32, '/force_sensor/raw', self.force_raw_cb_right, 10)
-            self.force_raw_sub_left = self.create_subscription(Float32, '/force_sensor_2/raw', self.force_raw_cb_left, 10)
-            self.get_logger().info("Subscribed to /force_sensor (right) and /force_sensor_2 (left)")
-            self.get_logger().info("Subscribed to /force_sensor/raw and /force_sensor_2/raw (for calibration)")
-        except Exception as e:
-            self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
+        # TEMPORARILY DISABLED for testing - lift_robot_node still subscribes to force sensors
+        # try:
+        #     from std_msgs.msg import Float32
+        #     # Subscribe to calibrated force sensor topics (for control)
+        #     self.force_sub_right = self.create_subscription(Float32, '/force_sensor', self.force_cb_right, 10)
+        #     self.force_sub_left = self.create_subscription(Float32, '/force_sensor_2', self.force_cb_left, 10)
+        #     # Subscribe to raw force sensor topics (for calibration display)
+        #     self.force_raw_sub_right = self.create_subscription(Float32, '/force_sensor/raw', self.force_raw_cb_right, 10)
+        #     self.force_raw_sub_left = self.create_subscription(Float32, '/force_sensor_2/raw', self.force_raw_cb_left, 10)
+        #     self.get_logger().info("Subscribed to /force_sensor (right) and /force_sensor_2 (left)")
+        #     self.get_logger().info("Subscribed to /force_sensor/raw and /force_sensor_2/raw (for calibration)")
+        # except Exception as e:
+        #     self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
+        self.get_logger().warn("Force sensor subscriptions DISABLED for testing - lift_robot_node still active")
         # Status subscriptions
         self.platform_status_sub = self.create_subscription(String, '/lift_robot_platform/status', self.platform_status_cb, 10)
         
