@@ -85,9 +85,10 @@ class ModbusDevice(ABC):
                 callback([])
             return []
 
-        # callback cannot be None if func_code is 3
-        if func_code != 3 and callback is not None:
-            self.node.get_logger().warn("Callback is required for this function code.")
+        # For function codes other than 3 (read holding registers), callback is required
+        # because recv is async and returns immediately
+        if func_code != 3 and callback is None:
+            self.node.get_logger().warn("Callback is required for async read (func_code != 3).")
             return []
 
         req = ModbusRequest.Request()
@@ -110,6 +111,7 @@ class ModbusDevice(ABC):
             resp = result.response if result and result.success else []
             self.node.get_logger().debug(f"[SEQ {req.seq_id}] ✅ Modbus read OK: fc={func_code} addr={hex(addr)} count={count} => {resp}")
             if callback:
+                
                 callback(resp)
 
         future.add_done_callback(handle_recv_response)

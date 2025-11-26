@@ -4,7 +4,6 @@ import threading
 import time
 from collections import deque
 import rclpy
-from modbus_driver_interfaces.srv import ModbusRequest as ModbusRequestSrv
 
 class LiftRobotController(ModbusDevice):
     """
@@ -41,6 +40,20 @@ class LiftRobotController(ModbusDevice):
         self.RELAY_PUSHROD_STOP = 3
         self.RELAY_PUSHROD_DOWN = 4
         self.RELAY_PUSHROD_UP = 5
+
+    @staticmethod
+    def _wrap_response_as_future(response):
+        """包装recv()回调响应为Future兼容对象,用于evaluate函数."""
+        class FakeFuture:
+            def __init__(self, resp):
+                self.resp = resp
+            def result(self):
+                class FakeResult:
+                    def __init__(self, r):
+                        self.success = r is not None and len(r) > 0
+                        self.response = r if r else []
+                return FakeResult(self.resp)
+        return FakeFuture(response)
         
         # Timer-based movement attributes
         self.active_timers = {}  # Dictionary to store active timers
@@ -236,7 +249,7 @@ class LiftRobotController(ModbusDevice):
             5: 'PUSHROD_UP'
         }.get(relay_address, f'Relay{relay_address}')
         self.node.get_logger().info(f"[SEQ {seq_id}] Async flash start: {relay_name} (max_attempts={max_attempts})")
-        self._flash_attempt_on()
+        self._try_on()
         # Start watchdog to avoid indefinite lock if read never returns
         # Timeout = max_attempts * ~140ms/attempt * 2 (ON+OFF phases) + 0.5s safety margin
         watchdog_timeout = max(2.0, max_attempts * 0.14 * 2 + 0.5)
@@ -247,7 +260,8 @@ class LiftRobotController(ModbusDevice):
         except Exception:
             pass
 
-    def _flash_attempt_on(self):
+    def _try_on(self):
+        """尝试打开继电器: 发送ON命令 → 10ms后验证."""
         ctx = self.flash_context
         if ctx is None:
             return
@@ -257,87 +271,65 @@ class LiftRobotController(ModbusDevice):
         seq_id = ctx['seq_id']
         relay_name = self._get_relay_name(relay)
         self.node.get_logger().info(f"[SEQ {seq_id}] ON attempt {attempt}/{ctx['max']} for {relay_name}")
-        # CRITICAL: Reset evaluation flags for each new attempt so callbacks can run.
+        # 重置验证标志
         ctx['on_eval_done'] = False
         ctx['on_inner_read_count'] = 0
-        # Send ON write (FC05) then schedule read after fixed 10ms delay (simpler, ACK may be slow)
+        # 发送ON命令,10ms后验证
         self.send(5, relay, [0xFF00], seq_id=seq_id)
-        threading.Timer(0.01, self._flash_read_on_result).start()
+        threading.Timer(0.01, self._verify_on).start()
 
-    def _flash_read_on_result(self):
+    def _verify_on(self):
+        """验证ON状态: 主读取 + 补充读取(最多2次)."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'ON':
             return
+        
         relay = ctx['relay']
         seq_id = ctx['seq_id']
-        # Supplementary read rationale:
-        # Primary verification read is scheduled 10ms after write to allow relay settle & Modbus bus turn-around.
-        # Inner supplementary reads provide redundancy if the primary future stalls in driver/transport.
-        # Previous fail-fast (<20ms) caused false emergencies because device responses often arrive ~40-60ms.
-        # We now only issue up to 2 extra reads at wider intervals (10ms) without triggering emergency.
-        req = ModbusRequestSrv.Request()
-        req.slave_id = self.device_id
-        req.function_code = 1
-        req.address = 0x0000
-        req.count = 6  # Read 6 relays (0-5) to support pushrod relays (3,4,5)
-        req.values = []
-        req.seq_id = seq_id if seq_id is not None else 0
-        future = self.cli.call_async(req)
-        def first_done(f):
-            ctx_local = self.flash_context
-            if ctx_local is None or ctx_local.get('phase') != 'ON':
+        done = {'flag': False}  # 主读取完成标志
+        
+        def on_response(response):
+            if self.flash_context is None or self.flash_context.get('phase') != 'ON':
                 return
-            if ctx_local['on_eval_done']:
+            if self.flash_context['on_eval_done']:
                 return
-            ctx_local['on_eval_done'] = True
-            self._flash_on_evaluate(f)
-        future.add_done_callback(first_done)
-        # Schedule micro-timeout extra read after 2ms if first not finished
-        threading.Timer(0.002, self._flash_on_second_read, args=[future]).start()
+            self.flash_context['on_eval_done'] = True
+            done['flag'] = True
+            self._check_on(self._wrap_response_as_future(response))
+        
+        # 主读取: FC01读取6个继电器
+        self.recv(1, 0x0000, 6, callback=on_response, seq_id=seq_id)
+        # 2ms后启动补充读取链
+        threading.Timer(0.002, self._retry_verify_on, args=[done]).start()
 
-    def _flash_on_second_read(self, first_future):
+    def _retry_verify_on(self, done):
+        """补充读取ON: 主读取未完成时重试(递归最多2次)."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'ON':
             return
-        if ctx['on_eval_done']:
-            return
-        if first_future.done():
-            return  # primary future will trigger evaluation
-        # Allow up to 2 inner micro-timeout reads (increase inner retry by 1)
+        if ctx['on_eval_done'] or done['flag']:
+            return  # 已完成
         if ctx['on_inner_read_count'] >= 2:
-            return
+            return  # 超过限制
+        
         ctx['on_inner_read_count'] += 1
-        relay = ctx['relay']
-        seq_id = ctx['seq_id']
-        req = ModbusRequestSrv.Request()
-        req.slave_id = self.device_id
-        req.function_code = 1
-        req.address = 0x0000
-        req.count = 3
-        req.values = []
-        req.seq_id = seq_id if seq_id is not None else 0
-        second_future = self.cli.call_async(req)
-        def second_done(f):
-            ctx_local = self.flash_context
-            if ctx_local is None or ctx_local.get('phase') != 'ON':
+        
+        def on_retry_response(response):
+            if self.flash_context is None or self.flash_context.get('phase') != 'ON':
                 return
-            if ctx_local['on_eval_done']:
+            if self.flash_context['on_eval_done']:
                 return
-            ctx_local['on_eval_done'] = True
-            self._flash_on_evaluate(f)
-        second_future.add_done_callback(second_done)
-        # Legacy fail-fast removed: allow normal future completion or outer retry.
-        # If still not done after interval and we have remaining inner retries, schedule ONE more inner read.
+            self.flash_context['on_eval_done'] = True
+            self._check_on(self._wrap_response_as_future(response))
+        
+        # 补充读取: FC01读取3个继电器
+        self.recv(1, 0x0000, 3, callback=on_retry_response, seq_id=ctx['seq_id'])
+        # 10ms后递归
         if ctx['on_inner_read_count'] < 2:
-            threading.Timer(0.01, self._flash_on_second_read, args=[first_future]).start()  # widen interval to 10ms to match device latency
+            threading.Timer(0.01, self._retry_verify_on, args=[done]).start()
 
-    def _flash_on_inner_timeout(self):
-        # Removed emergency fail-fast. Retained as no-op for backward compatibility.
-        ctx = self.flash_context
-        if ctx and ctx.get('phase') == 'ON' and not ctx.get('on_eval_done'):
-            self.node.get_logger().debug("[FLASH] ON inner timeout (ignored - fail-fast disabled)")
-
-    def _flash_on_evaluate(self, future):
+    def _check_on(self, future):
+        """检查ON验证结果: 成功→进入OFF阶段, 失败→重试."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'ON':
             return
@@ -358,22 +350,22 @@ class LiftRobotController(ModbusDevice):
                 # Reset OFF phase micro-timeout flags
                 ctx['off_eval_done'] = False
                 ctx['off_inner_read_count'] = 0
-                self._flash_attempt_off()
+                self._try_off()
             else:
                 self.node.get_logger().warn(f"[SEQ {seq_id}] ⚠️ {relay_name} ON verify failed attempt {ctx['on_attempts']} (status={status})")
                 if ctx['on_attempts'] < ctx['max']:
-                    # Retry ON
-                    self._flash_attempt_on()
+                    self._try_on()
                 else:
                     self._flash_fail(f"{relay_name} ON phase failed after {ctx['max']} attempts")
         except Exception as e:
             self.node.get_logger().error(f"[SEQ {seq_id}] ON evaluate exception: {e}")
             if ctx['on_attempts'] < ctx['max']:
-                self._flash_attempt_on()
+                self._try_on()
             else:
                 self._flash_fail(f"{relay_name} ON exception: {e}")
 
-    def _flash_attempt_off(self):
+    def _try_off(self):
+        """尝试关闭继电器: 发送OFF命令 → 10ms后验证."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'OFF':
             return
@@ -383,81 +375,59 @@ class LiftRobotController(ModbusDevice):
         seq_id = ctx['seq_id']
         relay_name = self._get_relay_name(relay)
         self.node.get_logger().info(f"[SEQ {seq_id}] OFF attempt {attempt}/{ctx['max']} for {relay_name}")
-        # CRITICAL: Reset evaluation flags for each new OFF attempt
         ctx['off_eval_done'] = False
         ctx['off_inner_read_count'] = 0
-        # Send OFF write then schedule read after fixed 10ms delay
         self.send(5, relay, [0x0000], seq_id=seq_id)
-        threading.Timer(0.01, self._flash_read_off_result).start()
+        threading.Timer(0.01, self._verify_off).start()
 
-    def _flash_read_off_result(self):
+    def _verify_off(self):
+        """验证OFF状态: 主读取 + 补充读取(镜像ON)."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'OFF':
             return
+        
         relay = ctx['relay']
         seq_id = ctx['seq_id']
-        # OFF phase supplementary reads mirror ON logic for symmetry and robustness.
-        # They guard against rare missed responses while avoiding aggressive timeouts.
-        req = ModbusRequestSrv.Request()
-        req.slave_id = self.device_id
-        req.function_code = 1
-        req.address = 0x0000
-        req.count = 6  # Read 6 relays (0-5) to support pushrod relays (3,4,5)
-        req.values = []
-        req.seq_id = seq_id if seq_id is not None else 0
-        future = self.cli.call_async(req)
-        def first_done(f):
-            ctx_local = self.flash_context
-            if ctx_local is None or ctx_local.get('phase') != 'OFF':
+        done = {'flag': False}
+        
+        def off_response(response):
+            if self.flash_context is None or self.flash_context.get('phase') != 'OFF':
                 return
-            if ctx_local['off_eval_done']:
+            if self.flash_context['off_eval_done']:
                 return
-            ctx_local['off_eval_done'] = True
-            self._flash_off_evaluate(f)
-        future.add_done_callback(first_done)
-        threading.Timer(0.002, self._flash_off_second_read, args=[future]).start()
+            self.flash_context['off_eval_done'] = True
+            done['flag'] = True
+            self._check_off(self._wrap_response_as_future(response))
+        
+        self.recv(1, 0x0000, 6, callback=off_response, seq_id=seq_id)
+        threading.Timer(0.002, self._retry_verify_off, args=[done]).start()
 
-    def _flash_off_second_read(self, first_future):
+    def _retry_verify_off(self, done):
+        """补充读取OFF: 主读取未完成时重试(递归最多2次)."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'OFF':
             return
-        if ctx['off_eval_done']:
-            return
-        if first_future.done():
+        if ctx['off_eval_done'] or done['flag']:
             return
         if ctx['off_inner_read_count'] >= 2:
             return
+        
         ctx['off_inner_read_count'] += 1
-        relay = ctx['relay']
-        seq_id = ctx['seq_id']
-        req = ModbusRequestSrv.Request()
-        req.slave_id = self.device_id
-        req.function_code = 1
-        req.address = 0x0000
-        req.count = 6  # Read 6 relays (0-5) to support pushrod relays (3,4,5)
-        req.values = []
-        req.seq_id = seq_id if seq_id is not None else 0
-        second_future = self.cli.call_async(req)
-        def second_done(f):
-            ctx_local = self.flash_context
-            if ctx_local is None or ctx_local.get('phase') != 'OFF':
+        
+        def off_retry_response(response):
+            if self.flash_context is None or self.flash_context.get('phase') != 'OFF':
                 return
-            if ctx_local['off_eval_done']:
+            if self.flash_context['off_eval_done']:
                 return
-            ctx_local['off_eval_done'] = True
-            self._flash_off_evaluate(f)
-        second_future.add_done_callback(second_done)
-        # Fail-fast removed; schedule one more inner read only if under limit.
+            self.flash_context['off_eval_done'] = True
+            self._check_off(self._wrap_response_as_future(response))
+        
+        self.recv(1, 0x0000, 6, callback=off_retry_response, seq_id=ctx['seq_id'])
         if ctx['off_inner_read_count'] < 2:
-            threading.Timer(0.01, self._flash_off_second_read, args=[first_future]).start()  # widen interval to 10ms
+            threading.Timer(0.01, self._retry_verify_off, args=[done]).start()
 
-    def _flash_off_inner_timeout(self):
-        # Removed emergency fail-fast. Retained as no-op for backward compatibility.
-        ctx = self.flash_context
-        if ctx and ctx.get('phase') == 'OFF' and not ctx.get('off_eval_done'):
-            self.node.get_logger().debug("[FLASH] OFF inner timeout (ignored - fail-fast disabled)")
-
-    def _flash_off_evaluate(self, future):
+    def _check_off(self, future):
+        """检查OFF验证结果: 成功→完成, 失败→重试."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'OFF':
             return
@@ -477,13 +447,13 @@ class LiftRobotController(ModbusDevice):
             else:
                 self.node.get_logger().warn(f"[SEQ {seq_id}] ⚠️ {relay_name} OFF verify failed attempt {ctx['off_attempts']} (status={status})")
                 if ctx['off_attempts'] < ctx['max']:
-                    self._flash_attempt_off()
+                    self._try_off()
                 else:
                     self._flash_fail(f"{relay_name} OFF phase failed after {ctx['max']} attempts")
         except Exception as e:
             self.node.get_logger().error(f"[SEQ {seq_id}] OFF evaluate exception: {e}")
             if ctx['off_attempts'] < ctx['max']:
-                self._flash_attempt_off()
+                self._try_off()
             else:
                 self._flash_fail(f"{relay_name} OFF exception: {e}")
 
