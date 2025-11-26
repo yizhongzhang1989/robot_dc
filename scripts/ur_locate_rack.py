@@ -524,13 +524,13 @@ class URLocateRack(URCapture):
                             else:
                                 print(f"  ✗ Validation completed with warnings")
                             
-                            # Save to robot_status
-                            if self.robot_status_client:
-                                try:
-                                    if self.robot_status_client.set_status(operation_name, 'points_3d', positioning_result['points_3d']):
-                                        print(f"  ✓ points_3d saved to robot_status (namespace: {operation_name})")
-                                except Exception as e:
-                                    print(f"  ✗ Error saving to robot_status: {e}")
+                            # # Save to robot_status
+                            # if self.robot_status_client:
+                            #     try:
+                            #         if self.robot_status_client.set_status(operation_name, 'points_3d', positioning_result['points_3d']):
+                            #             print(f"  ✓ points_3d saved to robot_status (namespace: {operation_name})")
+                            #     except Exception as e:
+                            #         print(f"  ✗ Error saving to robot_status: {e}")
                             
                             # Update results
                             results[operation_name]['success'] = True
