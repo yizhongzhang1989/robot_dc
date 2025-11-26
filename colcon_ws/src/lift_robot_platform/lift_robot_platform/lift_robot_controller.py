@@ -275,7 +275,10 @@ class LiftRobotController(ModbusDevice):
         ctx['on_eval_done'] = False
         ctx['on_inner_read_count'] = 0
         # 发送ON命令,10ms后验证
-        self.send(5, relay, [0xFF00], seq_id=seq_id)
+        try: 
+            self.send(5, relay, [0xFF00], seq_id=seq_id)
+        except Exception as e:
+            self.node.get_logger().error(f"[***SEQ {seq_id}] Exception during send ON: {e}")
         threading.Timer(0.01, self._verify_on).start()
 
     def _verify_on(self):
@@ -298,7 +301,10 @@ class LiftRobotController(ModbusDevice):
             self._check_on(self._wrap_response_as_future(response))
         
         # 主读取: FC01读取6个继电器
-        self.recv(1, 0x0000, 6, callback=on_response, seq_id=seq_id)
+        try:
+            self.recv(1, 0x0000, 6, callback=on_response, seq_id=seq_id)
+        except Exception as e:
+            self.node.get_logger().error(f"[***SEQ {seq_id}] Exception during recv ON: {e}")
         # 2ms后启动补充读取链
         threading.Timer(0.002, self._retry_verify_on, args=[done]).start()
 
