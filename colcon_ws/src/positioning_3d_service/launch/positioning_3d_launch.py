@@ -12,12 +12,12 @@ Usage:
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
 from common.config_manager import ConfigManager
 from common.workspace_utils import get_workspace_root
 from pathlib import Path
+import os
 
 
 def generate_launch_description():
@@ -27,13 +27,18 @@ def generate_launch_description():
     config = ConfigManager()
     service_config = config.get('services.positioning_3d')
     
+    # Get paths
+    workspace_root = get_workspace_root()
+    app_path = os.path.join(workspace_root, 'scripts', 'ThirdParty', 'robot_vision',
+                            'web', 'positioning_3d', 'app.py')
+    
     # Resolve dataset path (handle both absolute and relative paths)
     dataset_path = service_config['dataset_path']
     dataset_path_obj = Path(dataset_path)
     if not dataset_path_obj.is_absolute():
         # Treat as relative path from workspace root
-        workspace_root = Path(get_workspace_root())
-        dataset_path = str(workspace_root / dataset_path)
+        workspace_root_path = Path(workspace_root)
+        dataset_path = str(workspace_root_path / dataset_path)
     
     # Declare launch arguments with defaults from config
     ffpp_url_arg = DeclareLaunchArgument(
@@ -62,23 +67,25 @@ def generate_launch_description():
     
     # Get launch configurations
     ffpp_url = LaunchConfiguration('ffpp_url')
-    dataset_path = LaunchConfiguration('dataset_path')
+    dataset_path_cfg = LaunchConfiguration('dataset_path')
     port = LaunchConfiguration('port')
     host = LaunchConfiguration('host')
     
-    # Define the positioning_3d service node
-    positioning_3d_node = Node(
-        package='positioning_3d_service',
-        executable='positioning_3d_node',
-        name='positioning_3d_service_node',
+    # Define the web service process (direct Python launch, no ROS node wrapper)
+    web_process = ExecuteProcess(
+        cmd=[
+            'python3', app_path,
+            '--ffpp-url', ffpp_url,
+            '--dataset-path', dataset_path_cfg,
+            '--host', host,
+            '--port', port
+        ],
         output='screen',
-        parameters=[{
-            'ffpp_url': ffpp_url,
-            'dataset_path': dataset_path,
-            'port': port,
-            'host': host
-        }],
-        emulate_tty=True
+        name='positioning_3d_web',
+        # Proper signal handling for clean shutdown
+        sigterm_timeout='2',
+        sigkill_timeout='2',
+        emulate_tty=True,
     )
     
     return LaunchDescription([
@@ -88,6 +95,6 @@ def generate_launch_description():
         port_arg,
         host_arg,
         
-        # Nodes
-        positioning_3d_node
+        # Process
+        web_process
     ])

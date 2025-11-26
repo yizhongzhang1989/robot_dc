@@ -1,10 +1,10 @@
 # 3D Positioning Service - ROS2 Package
 
-ROS2 wrapper for the 3D positioning triangulation service that uses FlowFormer++ for multi-view keypoint tracking.
+ROS2 launch configuration for the 3D positioning triangulation service that uses FlowFormer++ for multi-view keypoint tracking.
 
 ## Overview
 
-This package provides a ROS2 node that launches and manages the positioning_3d web service. The service enables multi-robot triangulation by:
+This package provides a ROS2 launch file that starts the positioning_3d web service using `ExecuteProcess` for direct Python execution without a node wrapper. The service enables multi-robot triangulation by:
 
 1. Tracking keypoints across multiple camera views using FlowFormer++
 2. Managing detection sessions from multiple robots
@@ -93,29 +93,47 @@ See the web interface documentation for detailed API usage.
 
 ## Architecture
 
+The launch file uses `ExecuteProcess` to directly run the Python app:
+```bash
+python3 scripts/ThirdParty/robot_vision/web/positioning_3d/app.py \
+    --ffpp-url <url> \
+    --dataset-path <path> \
+    --host <host> \
+    --port <port>
 ```
-positioning_3d_service (ROS2 Node)
+
+Service architecture:
+```
+positioning_3d Flask App
     │
-    └──> Launches positioning_3d Flask App
-            │
-            ├──> FFPP Client (keypoint tracking)
-            ├──> Session Manager (multi-robot)
-            ├──> Task Queue (serialized processing)
-            ├──> Triangulation Engine
-            └──> Web Dashboard
+    ├──> FFPP Client (keypoint tracking)
+    ├──> Session Manager (multi-robot)
+    ├──> Task Queue (serialized processing)
+    ├──> Triangulation Engine
+    └──> Web Dashboard
 ```
+
+Benefits of direct launch:
+- **Clean shutdown**: Proper signal handling (SIGTERM → SIGKILL)
+- **No ROS overhead**: Direct Python execution
+- **Simple**: Launch file only, no node wrapper needed
 
 ## Troubleshooting
 
 ### Service won't start
 - Check that the robot_vision submodule is initialized
 - Verify FFPP server is accessible: `curl http://msraig-ubuntu-4:8001/health`
-- Check port 8004 is not already in use: `lsof -i :8004`
+- Check port 8004 is not already in use: `sudo lsof -i :8004`
 
 ### Can't access web interface
 - Verify firewall allows port 8004: `sudo ufw allow 8004`
-- Check service is running: `ros2 node list`
+- Check service is running: `ps aux | grep positioning_3d`
 - View logs: Check terminal output
+
+### Stop service manually if needed
+```bash
+pkill -f "positioning_3d/app.py"
+```
 
 ### FFPP connection issues
 - Ping the FFPP server: `ping msraig-ubuntu-4`
@@ -128,12 +146,9 @@ Package structure:
 ```
 positioning_3d_service/
 ├── launch/
-│   └── positioning_3d_launch.py          # Launch file
-├── positioning_3d_service/
-│   ├── __init__.py
-│   └── positioning_3d_node.py            # ROS2 wrapper node
+│   └── positioning_3d_launch.py          # Launch file (ExecuteProcess)
 ├── package.xml
-├── setup.py
+├── setup.py                              # Simplified (no entry points)
 ├── setup.cfg
 └── README.md
 ```
@@ -142,6 +157,8 @@ The actual web service code is in:
 ```
 scripts/ThirdParty/robot_vision/web/positioning_3d/
 ```
+
+**Note**: The `positioning_3d_service/positioning_3d_node.py` file is no longer used as we now launch directly with `ExecuteProcess`.
 
 ## Related Packages
 
