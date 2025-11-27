@@ -40,6 +40,18 @@ class LiftRobotController(ModbusDevice):
         self.RELAY_PUSHROD_STOP = 3
         self.RELAY_PUSHROD_DOWN = 4
         self.RELAY_PUSHROD_UP = 5
+        
+        # Timer-based movement attributes
+        self.active_timers = {}  # Dictionary to store active timers
+        self.timer_lock = threading.Lock()  # Lock for thread safety
+        
+        # Callbacks (set by node)
+        self.on_auto_stop_callback = None  # Callback for timed operation auto-stop
+        self.on_flash_complete_callback = None  # Callback for relay flash verification success
+        
+        # Command queue for timed operations
+        self.timed_cmd_queue = deque()
+        self.waiting_for_timed_ack = False
 
     @staticmethod
     def _wrap_response_as_future(response):
@@ -54,18 +66,6 @@ class LiftRobotController(ModbusDevice):
                         self.response = r if r else []
                 return FakeResult(self.resp)
         return FakeFuture(response)
-        
-        # Timer-based movement attributes
-        self.active_timers = {}  # Dictionary to store active timers
-        self.timer_lock = threading.Lock()  # Lock for thread safety
-        
-        # Callbacks (set by node)
-        self.on_auto_stop_callback = None  # Callback for timed operation auto-stop
-        self.on_flash_complete_callback = None  # Callback for relay flash verification success
-        
-        # Command queue for timed operations
-        self.timed_cmd_queue = deque()
-        self.waiting_for_timed_ack = False
 
     def _get_relay_name(self, relay_address):
         """Get human-readable name for relay address."""
@@ -298,7 +298,7 @@ class LiftRobotController(ModbusDevice):
             self.send(5, relay, [0xFF00], seq_id=seq_id)
         except Exception as e:
             self.node.get_logger().error(f"[***SEQ {seq_id}] Exception during send ON: {e}")
-        threading.Timer(0.01, self._verify_on).start()
+        threading.Timer(0.02, self._verify_on).start()
 
     def _verify_on(self):
         """验证ON状态: 主读取 + 补充读取(最多2次) + 超时保护."""
@@ -325,8 +325,8 @@ class LiftRobotController(ModbusDevice):
         except Exception as e:
             self.node.get_logger().error(f"[***SEQ {seq_id}] Exception during recv ON: {e}")
         
-        # 10ms后启动补充读取链
-        threading.Timer(0.01, self._retry_verify_on, args=[done]).start()
+        # 20ms后启动补充读取链
+        threading.Timer(0.02, self._retry_verify_on, args=[done]).start()
         
         # 100ms验证超时: 如果所有读取都没返回,强制判定为失败并重试
         def on_verify_timeout():
@@ -339,7 +339,7 @@ class LiftRobotController(ModbusDevice):
             self.flash_context['on_eval_done'] = True
             relay_name = self._get_relay_name(relay)
             self.node.get_logger().warn(
-                f"[SEQ {seq_id}] ⏱️  {relay_name} ON verification TIMEOUT (100ms) - "
+                f"[SEQ {seq_id}] ⏱️  {relay_name} ON verification TIMEOUT (200ms) - "
                 f"no response from FC01, attempt {ctx['on_attempts']}/{ctx['max']}"
             )
             
@@ -353,7 +353,7 @@ class LiftRobotController(ModbusDevice):
             
             self._check_on(TimeoutFuture())
         
-        threading.Timer(0.1, on_verify_timeout).start()
+        threading.Timer(0.2, on_verify_timeout).start()
 
     def _retry_verify_on(self, done):
         """补充读取ON: 主读取未完成时重试(递归最多2次)."""
@@ -377,9 +377,9 @@ class LiftRobotController(ModbusDevice):
         
         # 补充读取: FC01读取3个继电器
         self.recv(1, 0x0000, 3, callback=on_retry_response, seq_id=ctx['seq_id'])
-        # 10ms后递归
+        # 20ms后递归
         if ctx['on_inner_read_count'] < 2:
-            threading.Timer(0.01, self._retry_verify_on, args=[done]).start()
+            threading.Timer(0.02, self._retry_verify_on, args=[done]).start()
 
     def _check_on(self, future):
         """检查ON验证结果: 成功→进入OFF阶段, 失败→重试."""
@@ -431,7 +431,7 @@ class LiftRobotController(ModbusDevice):
         ctx['off_eval_done'] = False
         ctx['off_inner_read_count'] = 0
         self.send(5, relay, [0x0000], seq_id=seq_id)
-        threading.Timer(0.01, self._verify_off).start()
+        threading.Timer(0.02, self._verify_off).start()
 
     def _verify_off(self):
         """验证OFF状态: 主读取 + 补充读取(镜像ON) + 超时保护."""
@@ -454,10 +454,10 @@ class LiftRobotController(ModbusDevice):
         
         self.recv(1, 0x0000, 6, callback=off_response, seq_id=seq_id)
         
-        # 10ms后启动补充读取链
-        threading.Timer(0.01, self._retry_verify_off, args=[done]).start()
+        # 20ms后启动补充读取链
+        threading.Timer(0.02, self._retry_verify_off, args=[done]).start()
         
-        # 100ms验证超时: 如果所有读取都没返回,强制判定为失败并重试
+        # 200ms验证超时: 如果所有读取都没返回,强制判定为失败并重试
         def off_verify_timeout():
             if self.flash_context is None or self.flash_context.get('phase') != 'OFF':
                 return
@@ -468,7 +468,7 @@ class LiftRobotController(ModbusDevice):
             self.flash_context['off_eval_done'] = True
             relay_name = self._get_relay_name(relay)
             self.node.get_logger().warn(
-                f"[SEQ {seq_id}] ⏱️  {relay_name} OFF verification TIMEOUT (100ms) - "
+                f"[SEQ {seq_id}] ⏱️  {relay_name} OFF verification TIMEOUT (200ms) - "
                 f"no response from FC01, attempt {ctx['off_attempts']}/{ctx['max']}"
             )
             
@@ -482,7 +482,7 @@ class LiftRobotController(ModbusDevice):
             
             self._check_off(TimeoutFuture())
         
-        threading.Timer(0.1, off_verify_timeout).start()
+        threading.Timer(0.2, off_verify_timeout).start()
 
     def _retry_verify_off(self, done):
         """补充读取OFF: 主读取未完成时重试(递归最多2次)."""
@@ -506,7 +506,7 @@ class LiftRobotController(ModbusDevice):
         
         self.recv(1, 0x0000, 6, callback=off_retry_response, seq_id=ctx['seq_id'])
         if ctx['off_inner_read_count'] < 2:
-            threading.Timer(0.01, self._retry_verify_off, args=[done]).start()
+            threading.Timer(0.02, self._retry_verify_off, args=[done]).start()
 
     def _check_off(self, future):
         """检查OFF验证结果: 成功→完成, 失败→重试."""
@@ -703,8 +703,11 @@ class LiftRobotController(ModbusDevice):
                 self.node.task_state = 'emergency_reset'
                 self.node.completion_reason = f'relay_failure: {reason}'
             
-            # Cancel all timers
-            self.cancel_all_timers()
+            # Cancel all timers (if controller has timers - it should)
+            try:
+                self.cancel_all_timers()
+            except AttributeError as e:
+                self.node.get_logger().warn(f"[SEQ {seq_id}] cancel_all_timers not available: {e}")
             
             # Reset all relays
             self.reset_all_relays(seq_id=seq_id)
