@@ -583,16 +583,34 @@ function update(d){
   
   // Dual channel force sensors (right=device_id 52, left=device_id 53)
   if(d.right_force_sensor!==undefined) {
-    const val = (d.right_force_sensor===null?'-':(d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(2):d.right_force_sensor));
-    $('rightForceVal').textContent = val;
+    const elem = $('rightForceVal');
+    if(d.right_force_sensor===null) {
+      elem.textContent = 'ERR';
+      elem.classList.add('text-red-600', 'font-bold');
+    } else {
+      elem.textContent = d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(2):d.right_force_sensor;
+      elem.classList.remove('text-red-600', 'font-bold');
+    }
   }
   if(d.left_force_sensor!==undefined) {
-    const val = (d.left_force_sensor===null?'-':(d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(2):d.left_force_sensor));
-    $('leftForceVal').textContent = val;
+    const elem = $('leftForceVal');
+    if(d.left_force_sensor===null) {
+      elem.textContent = 'ERR';
+      elem.classList.add('text-red-600', 'font-bold');
+    } else {
+      elem.textContent = d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(2):d.left_force_sensor;
+      elem.classList.remove('text-red-600', 'font-bold');
+    }
   }
   if(d.combined_force_sensor!==undefined) {
-    const val = (d.combined_force_sensor===null?'-':(d.combined_force_sensor.toFixed?d.combined_force_sensor.toFixed(2):d.combined_force_sensor));
-    $('combinedForceVal').textContent = val;
+    const elem = $('combinedForceVal');
+    if(d.combined_force_sensor===null) {
+      elem.textContent = 'ERR';
+      elem.classList.add('text-red-600', 'font-bold');
+    } else {
+      elem.textContent = d.combined_force_sensor.toFixed?d.combined_force_sensor.toFixed(2):d.combined_force_sensor;
+      elem.classList.remove('text-red-600', 'font-bold');
+    }
   }
   
   // Update unified task status

@@ -167,13 +167,10 @@ class LiftRobotWeb(Node):
                 if self.latest_obj is not None:
                     try:
                         merged = dict(self.latest_obj)
-                        # Add dual-channel force values
-                        if self.right_force_sensor is not None:
-                            merged['right_force_sensor'] = self.right_force_sensor
-                        if self.left_force_sensor is not None:
-                            merged['left_force_sensor'] = self.left_force_sensor
-                        if self.combined_force_sensor is not None:
-                            merged['combined_force_sensor'] = self.combined_force_sensor
+                        # Add dual-channel force values (always add, value can be None → JSON null)
+                        merged['right_force_sensor'] = self.right_force_sensor
+                        merged['left_force_sensor'] = self.left_force_sensor
+                        merged['combined_force_sensor'] = self.combined_force_sensor
                         
                         # Force sensor status detection
                         if self.last_force_update is None:
@@ -205,20 +202,38 @@ class LiftRobotWeb(Node):
     def force_cb_right(self, msg):
         """Right force sensor callback (device_id=52, /force_sensor) - calibrated value"""
         try:
-            self.right_force_sensor = msg.data
+            import math
+            value = msg.data
+            # Check for overflow (inf/nan) - set to None if invalid
+            if math.isinf(value) or math.isnan(value):
+                self.get_logger().warn(f"Right force sensor overflow detected: {value}")
+                self.right_force_sensor = None
+            else:
+                self.right_force_sensor = value
             self.last_force_update = time.time()
             self._update_combined_force()
         except Exception as e:
-            self.get_logger().warn(f"Right force callback error: {e}")
+            self.get_logger().error(f"Right force callback error: {e}")
+            self.right_force_sensor = None  # Set to None on exception
+            self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_cb_left(self, msg):
         """Left force sensor callback (device_id=53, /force_sensor_2) - calibrated value"""
         try:
-            self.left_force_sensor = msg.data
+            import math
+            value = msg.data
+            # Check for overflow (inf/nan) - set to None if invalid
+            if math.isinf(value) or math.isnan(value):
+                self.get_logger().warn(f"Left force sensor overflow detected: {value}")
+                self.left_force_sensor = None
+            else:
+                self.left_force_sensor = value
             self.last_force_update = time.time()
             self._update_combined_force()
         except Exception as e:
-            self.get_logger().warn(f"Left force callback error: {e}")
+            self.get_logger().error(f"Left force callback error: {e}")
+            self.left_force_sensor = None  # Set to None on exception
+            self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_raw_cb_right(self, msg):
         """Right force sensor raw callback (device_id=52, /force_sensor/raw) - raw value for calibration"""
@@ -235,12 +250,13 @@ class LiftRobotWeb(Node):
             self.get_logger().warn(f"Left force raw callback error: {e}")
 
     def _update_combined_force(self):
-        """Update combined force: sum if both exist; single value if only one exists; None if neither; prevent inf overflow"""
+        """Update combined force: sum if both exist; single value if only one exists; None if neither or overflow"""
         try:
+            import math
             if self.right_force_sensor is not None and self.left_force_sensor is not None:
                 combined = self.right_force_sensor + self.left_force_sensor
-                # Prevent overflow to inf
-                if combined > 4000 or combined < -1000:
+                # Check for overflow (inf/nan) - set to None if invalid
+                if math.isinf(combined) or math.isnan(combined):
                     self.get_logger().warn(f"Combined force overflow detected: {combined} (right={self.right_force_sensor}, left={self.left_force_sensor})")
                     self.combined_force_sensor = None
                 else:
