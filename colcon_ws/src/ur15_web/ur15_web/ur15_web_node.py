@@ -39,6 +39,8 @@ scripts_dir = get_scripts_directory()
 if scripts_dir and scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
+from generate_server_frame import GenerateServerFrame
+
 # Import camera calibration toolkit
 try:
     from ThirdParty.camera_calibration_toolkit.core.calibration_patterns import create_pattern_from_json
@@ -222,6 +224,19 @@ class UR15WebNode(Node):
         # auto_spin=False because this node is already spinning via launch file
         self.status_client = RobotStatusClient(self)
         self.get_logger().info("Status service client created")
+        
+        # Initialize GenerateServerFrame for server coordinate calculations
+        import sys
+        scripts_dir = get_scripts_directory()
+        if scripts_dir and scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        try:
+            from generate_server_frame import GenerateServerFrame
+            self.server_frame_generator = GenerateServerFrame()
+            self.get_logger().info("Server frame generator initialized")
+        except Exception as e:
+            self.get_logger().warning(f"Failed to initialize server frame generator: {e}")
+            self.server_frame_generator = None
         
         # Register cleanup handlers
         atexit.register(self.cleanup)
@@ -3775,14 +3790,39 @@ class UR15WebNode(Node):
                 thickness=2
             )
 
-            frame = draw_utils.draw_model_on_image(
-                frame,
-                intrinsic=params['intrinsic'],
-                extrinsic=rack2camera,
-                model=self.gb200server_model,
-                distortion=params['distortion'],
-                thickness=2
-            )
+            # Calculate server2camera transformation for GB200 server
+            # Get Operating Unit value from robot_status
+            operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+            if operating_unit_id is None:
+                operating_unit_id = 14  # Default to 14 if not set
+                self.get_logger().debug(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+            
+            # Generate server frame in rack coordinate system using class instance
+            if self.server_frame_generator is None:
+                self.get_logger().warn("Server frame generator not initialized")
+                return frame
+            
+            result = self.server_frame_generator.generate_server_frame_in_rack(index=operating_unit_id)
+            
+            if result is not None:
+                # Get server2rack transformation matrix
+                server2rack_matrix = result['target_server_transformation_matrix_in_rack']
+                
+                # Calculate server2camera transformation
+                # server2camera = base2camera @ rack2base @ server2rack
+                server2camera = base2camera @ rack2base_matrix @ server2rack_matrix
+                
+                # Draw GB200 server model with server2camera extrinsic
+                frame = draw_utils.draw_model_on_image(
+                    frame,
+                    intrinsic=params['intrinsic'],
+                    extrinsic=server2camera,
+                    model=self.gb200server_model,
+                    distortion=params['distortion'],
+                    thickness=2
+                )
+            else:
+                self.get_logger().warn(f"Failed to generate server frame for unit {operating_unit_id}")
 
 
         except Exception as e:
