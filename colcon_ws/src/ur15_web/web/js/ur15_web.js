@@ -2581,7 +2581,12 @@ function updateRackLabel(rackNumber, newLabel) {
     });
 }
 
-function selectRack(rackNumber) {
+function selectRack(rackNumber, event) {
+    // Stop event propagation to prevent global click handler
+    if (event) {
+        event.stopPropagation();
+    }
+    
     // Remove selected class from all rack rows
     document.querySelectorAll('.rack-row').forEach(row => {
         row.classList.remove('selected');
@@ -2595,6 +2600,22 @@ function selectRack(rackNumber) {
         logToWeb(`🎯 Selected ${rackDisplayNames[rackNumber]}`, 'info');
     }
 }
+
+// Add global click handler to deselect rack when clicking outside
+document.addEventListener('click', function(event) {
+    // Check if click is outside any rack row
+    if (!event.target.closest('.rack-row') && selectedRack !== null) {
+        // Store the name before clearing
+        const deselectedName = rackDisplayNames[selectedRack];
+        
+        // Remove selected class from all rack rows
+        document.querySelectorAll('.rack-row').forEach(row => {
+            row.classList.remove('selected');
+        });
+        selectedRack = null;
+        logToWeb(`🔵 Deselected ${deselectedName}`, 'info');
+    }
+});
 
 function recordPosition() {
     if (selectedRack === null) {
