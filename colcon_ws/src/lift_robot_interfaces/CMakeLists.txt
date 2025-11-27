@@ -17,6 +17,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ForceControl.action"
   "action/HybridControl.action"
   "action/ManualMove.action"
+  "action/StopMovement.action"
   DEPENDENCIES action_msgs std_msgs
 )
 
