@@ -865,6 +865,15 @@
                                 <span>Locate Rack</span>
                             </button>
                         </div>
+                        
+                        <!-- Operating Unit Input -->
+                        <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                            <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">Operating Unit:</span>
+                            <input type="number" id="operatingUnit" value="1" min="1" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200" style="width: 100%;" title="Enter operating unit number (starting from 1)" placeholder="1">
+                            <button onclick="setOperatingUnit()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set operating unit">
+                                📝 Set
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

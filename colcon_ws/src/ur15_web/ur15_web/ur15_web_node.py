@@ -1288,6 +1288,43 @@ class UR15WebNode(Node):
                 self.get_logger().error(f"Error changing operation path: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
+        @self.app.route('/set_operating_unit', methods=['POST'])
+        def set_operating_unit():
+            """Set operating unit to robot_status."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data or 'operating_unit' not in data:
+                    return jsonify({'success': False, 'message': 'No operating_unit provided'})
+                
+                operating_unit = data['operating_unit']
+                
+                # Validate the operating unit value
+                if not isinstance(operating_unit, int) or operating_unit < 1:
+                    return jsonify({'success': False, 'message': 'Operating unit must be an integer >= 1'})
+                
+                self.get_logger().info(f"Setting operating unit to: {operating_unit}")
+                
+                # Set to robot_status
+                if set_to_status(self, 'ur15', 'rack_operating_unit_id', operating_unit):
+                    self.get_logger().info(f"Successfully set rack_operating_unit_id to robot_status: {operating_unit}")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Operating unit set successfully',
+                        'operating_unit': operating_unit
+                    })
+                else:
+                    self.get_logger().warning("Failed to set rack_operating_unit_id to robot_status")
+                    return jsonify({
+                        'success': False,
+                        'message': 'Failed to set operating unit to robot_status'
+                    })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error setting operating unit: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
         @self.app.route('/get_pose_count', methods=['GET'])
         def get_pose_count():
             """Get the number of pose JSON files in calibration data directory."""
