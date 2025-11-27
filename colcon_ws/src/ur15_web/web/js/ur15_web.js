@@ -512,35 +512,8 @@ function confirmChessboardConfigChange() {
     const input = document.getElementById('chessboardConfigInput');
     const newPath = input.value.trim();
     
-    if (newPath === '') {
+    if (newPath === '' || newPath === currentPath) {
         closeChessboardConfigModal();
-        return;
-    }
-    
-    // If path is same, try to reload the config file (in case it was created after launch)
-    if (newPath === currentPath) {
-        logToWeb(`Reloading chessboard config from: ${newPath}`, 'info');
-        fetch('/load_chessboard_config', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ config_path: newPath })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                logToWeb(`Chessboard config reloaded successfully`, 'success');
-            } else {
-                logToWeb(`Failed to reload config: ${data.message || 'Unknown error'}`, 'warning');
-            }
-            closeChessboardConfigModal();
-        })
-        .catch(error => {
-            console.error('Failed to reload chessboard config:', error);
-            logToWeb(`Failed to reload chessboard config: ${error}`, 'error');
-            closeChessboardConfigModal();
-        });
         return;
     }
     

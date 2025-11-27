@@ -1202,23 +1202,17 @@ class UR15WebNode(Node):
                 config_path = os.path.expanduser(config_path)
                 
                 if not os.path.exists(config_path):
-                    error_msg = f'Config file not found: {config_path}'
-                    self.push_web_log(error_msg, 'error')
                     return jsonify({
                         'success': False,
-                        'message': error_msg
+                        'message': f'Config file not found: {config_path}'
                     })
                 
                 # Read and parse the config file
                 with open(config_path, 'r') as f:
                     config_data = json.load(f)
                 
-                pattern_id = config_data.get('pattern_id', 'Unknown')
                 self.get_logger().info(f"Loaded chessboard config from: {config_path}")
-                self.get_logger().info(f"Pattern ID: {pattern_id}")
-                
-                # Push success message to web log
-                self.push_web_log(f'Chessboard config loaded successfully (Pattern: {pattern_id})', 'success')
+                self.get_logger().info(f"Pattern ID: {config_data.get('pattern_id')}")
                 
                 return jsonify({
                     'success': True,
@@ -1227,20 +1221,16 @@ class UR15WebNode(Node):
                 })
                 
             except json.JSONDecodeError as e:
-                error_msg = f'Invalid JSON format: {str(e)}'
                 self.get_logger().error(f"Invalid JSON in config file: {e}")
-                self.push_web_log(error_msg, 'error')
                 return jsonify({
                     'success': False,
-                    'message': error_msg
+                    'message': f'Invalid JSON format: {str(e)}'
                 })
             except Exception as e:
-                error_msg = f'Error loading chessboard config: {str(e)}'
-                self.get_logger().error(error_msg)
-                self.push_web_log(error_msg, 'error')
+                self.get_logger().error(f"Error loading chessboard config: {e}")
                 return jsonify({
                     'success': False,
-                    'message': error_msg
+                    'message': str(e)
                 })
         
         @self.app.route('/change_operation_path', methods=['POST'])
