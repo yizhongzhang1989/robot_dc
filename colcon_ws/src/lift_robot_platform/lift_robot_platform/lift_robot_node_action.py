@@ -473,78 +473,17 @@ class LiftRobotNodeAction(Node):
                 except Exception as e:
                     self.get_logger().error(f"[RESET] Flash abort failed: {e}")
                 
-                # Step 5: Send STOP pulses sequentially (platform first, then pushrod)
+                # Step 5: Send STOP pulses (3 times, no verification)
                 # Note: reset_all_relays (Step 4) already cleared all relays to 0.
-                # The STOP pulses are safety measures to trigger hardware emergency stop circuits.
-                # Must wait for platform stop flash to complete before sending pushrod stop.
+                # Send multiple STOP commands to ensure hardware emergency stop is triggered.
                 try:
-                    # Setup flags to track stop completion and timeout
-                    self._reset_platform_stop_done = False
-                    self._reset_pushrod_stop_done = False
-                    self._reset_seq_id = seq_id
-                    self._reset_timeout_reached = False
-                    
-                    # Temporarily override flash callback to detect stop completion
-                    original_callback = self.controller.on_flash_complete_callback
-                    
-                    def reset_flash_callback(relay_address, seq_id):
-                        """Callback when flash completes during reset - chains platform→pushrod stops"""
-                        try:
-                            if relay_address == 0:  # Platform STOP completed
-                                self.get_logger().info("[RESET] Platform STOP flash completed, sending pushrod STOP...")
-                                self._reset_platform_stop_done = True
-                                # Now send pushrod stop (20ms delay for safety)
-                                threading.Timer(0.02, lambda: self.controller.pushrod_stop(seq_id=self._reset_seq_id)).start()
-                            elif relay_address == 3:  # Pushrod STOP completed
-                                self.get_logger().info("[RESET] Pushrod STOP flash completed - all stops done")
-                                self._reset_pushrod_stop_done = True
-                                # Restore original callback after sequence completes
-                                self.controller.on_flash_complete_callback = original_callback
-                            
-                            # Call original callback if exists
-                            if original_callback and relay_address in [0, 3]:
-                                try:
-                                    original_callback(relay_address, seq_id)
-                                except Exception as e:
-                                    self.get_logger().error(f"[RESET] Original callback error: {e}")
-                        except Exception as e:
-                            self.get_logger().error(f"[RESET] Flash callback error: {e}")
-                    
-                    def reset_timeout_handler():
-                        """Timeout handler if stop sequence takes too long"""
-                        if not (self._reset_platform_stop_done and self._reset_pushrod_stop_done):
-                            self._reset_timeout_reached = True
-                            self.get_logger().error(
-                                f"[RESET] ⚠️ STOP sequence timeout! "
-                                f"platform_done={self._reset_platform_stop_done}, "
-                                f"pushrod_done={self._reset_pushrod_stop_done} - "
-                                f"Continuing reset despite incomplete stops (Step 4 already cleared relays)"
-                            )
-                            # Restore original callback
-                            self.controller.on_flash_complete_callback = original_callback
-                            # Force abort any stuck flash
-                            try:
-                                self.controller.abort_active_flash()
-                            except:
-                                pass
-                    
-                    # Set temporary callback
-                    self.controller.on_flash_complete_callback = reset_flash_callback
-                    
-                    # Start timeout watchdog (500ms should be enough for 2 stops)
-                    timeout_timer = threading.Timer(0.5, reset_timeout_handler)
-                    timeout_timer.start()
-                    
-                    # Send platform stop first (will trigger pushrod stop in callback)
-                    self.controller.stop(seq_id=seq_id)
-                    self.get_logger().info("[RESET] Step 5: Sent platform STOP, will chain to pushrod STOP after completion...")
+                    self.get_logger().info("[RESET] Step 5: Sending 3x STOP pulses (no verification)...")
+                    for i in range(3):
+                        self.controller.stop(seq_id=seq_id)
+                        time.sleep(0.05)  # 50ms between commands
+                    self.get_logger().info("[RESET] Step 5: ✅ 3x STOP pulses sent")
                 except Exception as e:
                     self.get_logger().error(f"[RESET] Stop pulse sequence failed: {e}")
-                    # Restore callback on error
-                    if 'original_callback' in locals():
-                        self.controller.on_flash_complete_callback = original_callback
-                    if 'timeout_timer' in locals() and timeout_timer.is_alive():
-                        timeout_timer.cancel()
                 
                 # Step 6: Immediately recover to idle (frontend handles 5s display)
                 with self.state_lock:
