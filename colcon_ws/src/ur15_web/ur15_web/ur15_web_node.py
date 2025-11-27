@@ -178,9 +178,10 @@ class UR15WebNode(Node):
         self.target2base_matrix = None
         self.calibration_lock = threading.Lock()
         
-        # Generate 3D curves for visualization
-        self.ur15_base_curve = draw_utils.generate_ur15_base_curve(ray_length=3)
-        self.gb200rack_curve = draw_utils.generate_gb200rack_curve()
+        # Generate 3D models for visualization
+        self.ur15_base_model = draw_utils.generate_ur15_base_curve(ray_length=3)
+        self.gb200rack_model = draw_utils.generate_gb200rack_curve()
+        self.gb200server_model = draw_utils.generate_gb200server_wire()
         
         # Robot state data
         self.joint_positions = []
@@ -3660,14 +3661,13 @@ class UR15WebNode(Node):
             if params is None:
                 return frame
             
-            # Draw UR15 base curve
-            frame = draw_utils.draw_curves_on_image(
+            # Draw UR15 base model
+            frame = draw_utils.draw_model_on_image(
                 frame,
                 intrinsic=params['intrinsic'],
                 extrinsic=params['extrinsic'],
-                point3d=self.ur15_base_curve['curves'],
+                model=self.ur15_base_model,
                 distortion=params['distortion'],
-                color=self.ur15_base_curve['colors'],
                 thickness=2
             )
             
@@ -3721,17 +3721,26 @@ class UR15WebNode(Node):
             base2camera = params['extrinsic']
             rack2camera = base2camera @ rack2base_matrix
             
-            # Draw GB200 rack curve with rack2camera extrinsic
-            frame = draw_utils.draw_curves_on_image(
+            # Draw GB200 rack model with rack2camera extrinsic
+            frame = draw_utils.draw_model_on_image(
                 frame,
                 intrinsic=params['intrinsic'],
                 extrinsic=rack2camera,
-                point3d=self.gb200rack_curve['curves'],
+                model=self.gb200rack_model,
                 distortion=params['distortion'],
-                color=self.gb200rack_curve['colors'],
                 thickness=2
             )
-            
+
+            frame = draw_utils.draw_model_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=rack2camera,
+                model=self.gb200server_model,
+                distortion=params['distortion'],
+                thickness=2
+            )
+
+
         except Exception as e:
             self.get_logger().error(f"Error projecting rack to image: {e}")
         
