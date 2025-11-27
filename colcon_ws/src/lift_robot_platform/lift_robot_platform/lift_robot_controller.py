@@ -683,7 +683,7 @@ class LiftRobotController(ModbusDevice):
             return False
 
     def _trigger_emergency_reset(self, seq_id, reason):
-        """Trigger emergency reset - set state to emergency_reset for temporary display.
+        """Trigger emergency reset - clear all states and recover to idle.
         
         Args:
             seq_id: sequence id for logging
@@ -694,41 +694,81 @@ class LiftRobotController(ModbusDevice):
         )
         
         try:
-            # Signal node to perform emergency reset
+            # Step 1: Set emergency_reset state (Actions will detect and abort)
             with self.node.control_lock:
                 self.node.reset_in_progress = True
                 self.node.control_enabled = False
                 self.node.force_control_active = False
-                # Set emergency_reset state (flash failures during reset won't block new Actions)
                 self.node.task_state = 'emergency_reset'
                 self.node.completion_reason = f'relay_failure: {reason}'
+                self.node.get_logger().info(f"[SEQ {seq_id}] Emergency reset step 1: Set reset state")
             
-            # Cancel all timers (if controller has timers - it should)
+            # Step 2: Wait for Actions to abort
+            time.sleep(0.04)  # 40ms = 2 control loop cycles
+            self.node.get_logger().info(f"[SEQ {seq_id}] Emergency reset step 2: Waited for Actions to abort")
+            
+            # Step 3: Cancel all timers
             try:
                 self.cancel_all_timers()
-            except AttributeError as e:
-                self.node.get_logger().warn(f"[SEQ {seq_id}] cancel_all_timers not available: {e}")
+                self.node.get_logger().info(f"[SEQ {seq_id}] Emergency reset step 3: All timers cancelled")
+            except Exception as e:
+                self.node.get_logger().error(f"[SEQ {seq_id}] Emergency reset timer cancel failed: {e}")
             
-            # Reset all relays
+            # Step 4: Reset all relays to 0
             self.reset_all_relays(seq_id=seq_id)
+            self.node.get_logger().info(f"[SEQ {seq_id}] Emergency reset step 4: All relays cleared to 0")
             
-            # Send physical STOP pulse
-            # Note: This might also fail, but we try anyway
+            # Step 5: Force abort any active flash
+            try:
+                aborted = self.abort_active_flash()
+                if aborted:
+                    self.node.get_logger().warn(f"[SEQ {seq_id}] Emergency reset step 5: Aborted active flash")
+                else:
+                    self.node.get_logger().info(f"[SEQ {seq_id}] Emergency reset step 5: No active flash to abort")
+            except Exception as e:
+                self.node.get_logger().error(f"[SEQ {seq_id}] Emergency reset flash abort failed: {e}")
+            
+            # Step 6: Send physical STOP pulse (non-blocking, best effort)
             try:
                 self.open_relay(0, seq_id=seq_id)  # Relay 0 ON
                 time.sleep(0.1)
                 self.close_relay(0, seq_id=seq_id)  # Relay 0 OFF
+                self.node.get_logger().info(f"[SEQ {seq_id}] Emergency reset step 6: Physical STOP pulse sent")
             except Exception as e:
                 self.node.get_logger().error(f"[SEQ {seq_id}] ❌ Emergency STOP pulse failed: {e}")
             
-            # Clear reset flag
+            # Step 7: Clear all node states and recover to idle
             with self.node.control_lock:
+                self.node.movement_state = 'stop'
+                self.node.task_state = 'idle'
+                self.node.task_end_time = time.time()
+                self.node.completion_reason = 'emergency_reset'
+                self.node.current_manual_move_direction = None
                 self.node.reset_in_progress = False
                 self.node.system_busy = False
                 self.node.active_control_owner = None
+                # Clear goto measurement data
+                self.node.last_goto_target = None
+                self.node.last_goto_actual = None
+                self.node.last_goto_stop_height = None
+                self.node.last_goto_direction = None
+                self.node.last_goto_timestamp = None
+                # Clear range scan state
+                self.node.range_scan_active = False
+                self.node.range_scan_phase = None
+                self.node.range_scan_direction = None
+                self.node.range_scan_reference_height = None
+                self.node.range_scan_stall_start_time = None
+            
+            # Step 8: Reset pushrod stall detection
+            if hasattr(self.node, '_reset_pushrod_stall_detection'):
+                try:
+                    self.node._reset_pushrod_stall_detection()
+                except Exception as e:
+                    self.node.get_logger().error(f"[SEQ {seq_id}] Pushrod stall reset failed: {e}")
             
             self.node.get_logger().warn(
-                f"[SEQ {seq_id}] 🔴 Emergency reset complete - System in emergency_stop state"
+                f"[SEQ {seq_id}] ✅ Emergency reset complete - System recovered to idle state"
             )
             
         except Exception as e:
