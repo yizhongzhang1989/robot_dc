@@ -108,41 +108,60 @@ class LiftRobotForceSensorNode(Node):
     def periodic_read(self):
         try:
             seq = self.next_seq()
-            # Single channel read
-            self.controller.read_force(seq_id=seq)
+            # Single channel read - wrap in try to prevent Modbus errors from crashing
+            try:
+                self.controller.read_force(seq_id=seq)
+            except Exception as e:
+                self.get_logger().warn(f"[SEQ {seq}] Force sensor read_force error: {e}")
+                # Continue to next cycle without crashing
+                return
+            
             # After asynchronous callbacks complete, publish last known values (race acceptable for simple UI display)
-            last = self.controller.get_last()
-            from std_msgs.msg import Float32
-            if last['right_value'] is not None:  # Compatible with controller return structure
-                # Apply calibration: actual_force = sensor_reading × scale + offset
-                raw_value = float(last['right_value'])
-                calibrated_force = raw_value * self.calibration_scale + self.calibration_offset
-                
-                # Publish raw value (for calibration)
-                msg_raw = Float32()
-                msg_raw.data = raw_value
-                self.force_raw_pub.publish(msg_raw)
-                
-                # Publish calibrated value (for control)
-                msg_force = Float32()
-                msg_force.data = calibrated_force
-                self.force_pub.publish(msg_force)
+            try:
+                last = self.controller.get_last()
+                from std_msgs.msg import Float32
+                if last['right_value'] is not None:  # Compatible with controller return structure
+                    # Apply calibration: actual_force = sensor_reading × scale + offset
+                    raw_value = float(last['right_value'])
+                    calibrated_force = raw_value * self.calibration_scale + self.calibration_offset
+                    
+                    # Publish raw value (for calibration) - wrap to prevent publish errors
+                    try:
+                        msg_raw = Float32()
+                        msg_raw.data = raw_value
+                        self.force_raw_pub.publish(msg_raw)
+                    except Exception as e:
+                        self.get_logger().warn(f"[SEQ {seq}] Failed to publish raw force: {e}")
+                    
+                    # Publish calibrated value (for control) - wrap to prevent publish errors
+                    try:
+                        msg_force = Float32()
+                        msg_force.data = calibrated_force
+                        self.force_pub.publish(msg_force)
+                    except Exception as e:
+                        self.get_logger().warn(f"[SEQ {seq}] Failed to publish calibrated force: {e}")
+            except Exception as e:
+                self.get_logger().warn(f"[SEQ {seq}] Force sensor data processing error: {e}")
+            
             # Append to history for visualization (use calibrated values)
-            if self.enable_visualization and last['right_value'] is not None and last['left_value'] is not None:
-                now = time.time()
-                # Store calibrated values for visualization
-                raw_right = float(last['right_value'])
-                raw_left = float(last['left_value'])
-                cal_right = raw_right * self.calibration_scale + self.calibration_offset
-                cal_left = raw_left * self.calibration_scale + self.calibration_offset
-                self.force_history.append((now, cal_right, cal_left))
-                # Trim history older than max_history_seconds
-                cutoff = now - self.max_history_seconds
-                while self.force_history and self.force_history[0][0] < cutoff:
-                    self.force_history.pop(0)
+            try:
+                if self.enable_visualization and last['right_value'] is not None and last['left_value'] is not None:
+                    now = time.time()
+                    # Store calibrated values for visualization
+                    raw_right = float(last['right_value'])
+                    raw_left = float(last['left_value'])
+                    cal_right = raw_right * self.calibration_scale + self.calibration_offset
+                    cal_left = raw_left * self.calibration_scale + self.calibration_offset
+                    self.force_history.append((now, cal_right, cal_left))
+                    # Trim history older than max_history_seconds
+                    cutoff = now - self.max_history_seconds
+                    while self.force_history and self.force_history[0][0] < cutoff:
+                        self.force_history.pop(0)
+            except Exception as e:
+                self.get_logger().debug(f"Visualization history update error: {e}")
         except Exception as e:
             self.get_logger().error(f"Force sensor periodic read error: {e}")
-            # Continue with next cycle
+            # Continue with next cycle - don't crash the node
 
     # --------------- Visualization ---------------
     def _draw_visualization(self):

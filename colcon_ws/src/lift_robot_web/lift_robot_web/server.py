@@ -385,9 +385,44 @@ class LiftRobotWeb(Node):
 
             @app.get('/api/latest')
             def latest():
-                if self.latest_obj:
+                """Get latest sensor data with force sensor values merged in real-time"""
+                if self.latest_obj is None:
+                    return JSONResponse({'error': 'no data'}, status_code=404)
+                
+                try:
+                    # Merge force sensor data in real-time (same logic as sensor_cb)
+                    merged = dict(self.latest_obj)
+                    
+                    # Add dual-channel force values (always add, value can be None → JSON null)
+                    merged['right_force_sensor'] = self.right_force_sensor
+                    merged['left_force_sensor'] = self.left_force_sensor
+                    merged['combined_force_sensor'] = self.combined_force_sensor
+                    
+                    # Force sensor status detection
+                    if self.last_force_update is None:
+                        # Never received any force data
+                        merged['force_sensor_status'] = 'no_data'
+                        merged['force_stale'] = True
+                    elif (time.time() - self.last_force_update) > 2.0:
+                        # No update for >2s (connection lost or sensor failed)
+                        merged['force_sensor_status'] = 'stale'
+                        merged['force_stale'] = True
+                    else:
+                        # Normal operation
+                        merged['force_sensor_status'] = 'ok'
+                        merged['force_stale'] = False
+                    
+                    # Add platform/pushrod status if available
+                    if self.platform_status is not None:
+                        merged['platform_status'] = self.platform_status
+                    if self.pushrod_status is not None:
+                        merged['pushrod_status'] = self.pushrod_status
+                    
+                    return merged
+                except Exception as e:
+                    self.get_logger().warn(f"Latest data merge error: {e}")
+                    # Fallback to raw data without force sensors
                     return self.latest_obj
-                return JSONResponse({'error': 'no data'}, status_code=404)
 
             @app.post('/api/cmd')
             async def send_cmd(payload: dict):
