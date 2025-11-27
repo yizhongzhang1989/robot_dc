@@ -108,6 +108,14 @@ class LiftRobotWeb(Node):
         self.platform_status_sub = self.create_subscription(String, '/lift_robot_platform/status', self.platform_status_cb, 10)
         
         self.cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
+        
+        # Modbus publisher for direct commands (e.g., force sensor tare)
+        try:
+            from modbus_driver_interfaces.msg import ModbusPacket
+            self.modbus_pub = self.create_publisher(ModbusPacket, '/modbus_write', 10)
+            self.get_logger().info("Created Modbus publisher on /modbus_write")
+        except Exception as e:
+            self.get_logger().warn(f"Failed to create Modbus publisher: {e}")
 
         # ═══════════════════════════════════════════════════════════════
         # ROS2 Action Clients: Unified Platform+Pushrod (target parameter)
@@ -938,13 +946,14 @@ class LiftRobotWeb(Node):
 
             # Platform overshoot calibration API endpoints
             @app.post('/api/overshoot/add_sample')
-            async def add_overshoot_sample(request: dict):
+            async def add_overshoot_sample(request: Request):
                 """Add a platform overshoot sample"""
                 try:
-                    direction = request.get('direction')  # 'up' or 'down'
-                    target = request.get('target')
-                    actual = request.get('actual')
-                    stop_height = request.get('stop_height')  # Height when stop command issued
+                    body = await request.json()
+                    direction = body.get('direction')  # 'up' or 'down'
+                    target = body.get('target')
+                    actual = body.get('actual')
+                    stop_height = body.get('stop_height')  # Height when stop command issued
                     
                     if direction not in ['up', 'down']:
                         return JSONResponse({'success': False, 'error': 'Direction must be up or down'})
@@ -1631,11 +1640,12 @@ class LiftRobotWeb(Node):
             # Force Sensor Calibration API Endpoints (Dual-Channel)
             # ═══════════════════════════════════════════════════════════════
             @app.post('/api/force_calib/add_sample')
-            async def add_force_calib_sample(request: dict):
+            async def add_force_calib_sample(request: Request):
                 """Add a force sensor calibration sample (right or left channel)"""
                 try:
-                    channel = request.get('channel')  # 'right' or 'left'
-                    actual_force = request.get('force')  # Actual applied force (N)
+                    body = await request.json()
+                    channel = body.get('channel')  # 'right' or 'left'
+                    actual_force = body.get('force')  # Actual applied force (N)
                     
                     if channel not in ['right', 'left']:
                         return JSONResponse({'success': False, 'error': 'Channel must be right or left'})
@@ -1913,9 +1923,9 @@ class LiftRobotWeb(Node):
                     })
 
             @app.post('/api/force_calib/tare')
-            async def tare_force_sensor(request: dict):
+            async def tare_force_sensor(request: Request):
                 """
-                Tare (zero) force sensor by sending Modbus command.
+                Tare (zero) force sensor by publishing Modbus command to /modbus_write topic.
                 
                 Request body:
                 {
@@ -1923,10 +1933,10 @@ class LiftRobotWeb(Node):
                     "device_id": 52 or 53
                 }
                 
-                Sends Modbus function code 06 (Write Single Register) to address 0x0011 with value 0x0001.
+                Publishes Modbus function code 06 (Write Single Register) to address 0x0011 with value 0x0001.
                 """
                 try:
-                    from modbus_driver_interfaces.srv import ModbusRequest
+                    from modbus_driver_interfaces.msg import ModbusPacket
                     
                     body = await request.json()
                     channel = body.get('channel', 'right')
@@ -1944,58 +1954,28 @@ class LiftRobotWeb(Node):
                             'error': f'Channel "left" requires device_id=53, got {device_id}'
                         })
                     
-                    # Create Modbus request client
-                    tare_client = self.create_client(ModbusRequest, '/modbus_request')
-                    
-                    # Wait for service with timeout
-                    if not tare_client.wait_for_service(timeout_sec=2.0):
-                        return JSONResponse({
-                            'success': False,
-                            'error': 'Modbus service not available'
-                        })
-                    
                     # Prepare tare command (FC06, register 0x0011, value 0x0001)
-                    request_msg = ModbusRequest.Request()
-                    request_msg.function_code = 0x06  # Write Single Register
-                    request_msg.slave_id = device_id
-                    request_msg.address = 0x0011  # Tare command register
-                    request_msg.count = 0  # Not used for write operations
-                    request_msg.values = [0x0001]  # Trigger tare
-                    request_msg.seq_id = int(time.time() * 1000) % 65536
+                    msg = ModbusPacket()
+                    msg.function_code = 0x06  # Write Single Register
+                    msg.slave_id = device_id
+                    msg.address = 0x0011  # Tare command register
+                    msg.count = 1  # Write 1 register
+                    msg.values = [0x0001]  # Trigger tare
                     
                     self.get_logger().info(
-                        f'Sending tare command: device_id={device_id} (0x{device_id:02X}), '
+                        f'Publishing tare command: device_id={device_id} (0x{device_id:02X}), '
                         f'func=0x06, reg=0x0011, value=0x0001'
                     )
                     
-                    # Send request
-                    future = tare_client.call_async(request_msg)
+                    # Publish to /modbus_write topic
+                    self.modbus_pub.publish(msg)
                     
-                    # Wait for response with timeout
-                    start_time = time.time()
-                    while not future.done():
-                        if time.time() - start_time > 3.0:
-                            return JSONResponse({
-                                'success': False,
-                                'error': 'Tare command timeout (3s)'
-                            })
-                        await asyncio.sleep(0.05)
-                    
-                    response = future.result()
-                    
-                    if response.success:
-                        self.get_logger().info(f'Tare successful for device_id={device_id}')
-                        return JSONResponse({
-                            'success': True,
-                            'message': f'Tared {channel} sensor (device_id={device_id}). Zero point reset.',
-                            'device_id': device_id,
-                            'channel': channel
-                        })
-                    else:
-                        return JSONResponse({
-                            'success': False,
-                            'error': f'Modbus tare command failed: {response.message}'
-                        })
+                    return JSONResponse({
+                        'success': True,
+                        'message': f'Tare command sent to {channel} sensor (device_id={device_id}).',
+                        'device_id': device_id,
+                        'channel': channel
+                    })
                         
                 except Exception as e:
                     self.get_logger().error(f"Tare force sensor error: {e}")
@@ -2865,81 +2845,6 @@ class LiftRobotWeb(Node):
             # ═══════════════════════════════════════════════════════════════
             # ROS2 Action API Endpoints (Testing Action vs Topic)
             # ═══════════════════════════════════════════════════════════════
-            
-            @app.post('/api/action/goto_height')
-            async def send_action_goal(payload: dict):
-                """Send GotoHeight Action goal"""
-                if not self.action_client:
-                    return JSONResponse({'error': 'Action client not available'}, status_code=503)
-                
-                target_height = payload.get('target_height')
-                if target_height is None:
-                    return JSONResponse({'error': 'target_height required'}, status_code=400)
-                
-                try:
-                    from lift_robot_interfaces.action import GotoHeight
-                    
-                    # Create goal
-                    goal_msg = GotoHeight.Goal()
-                    goal_msg.target_height = float(target_height)
-                    
-                    self.get_logger().info(f'[Action] Sending goal: target_height={target_height}mm')
-                    
-                    # Reset state
-                    with self.action_lock:
-                        self.action_status = 'sending'
-                        self.action_feedback = None
-                        self.action_result = None
-                        self.action_goal_handle = None
-                    
-                    # Send goal (non-blocking)
-                    send_goal_future = self.action_client.send_goal_async(
-                        goal_msg, 
-                        feedback_callback=self.action_feedback_callback
-                    )
-                    send_goal_future.add_done_callback(self.action_goal_response_callback)
-                    
-                    return JSONResponse({
-                        'status': 'goal_sent',
-                        'target_height': target_height
-                    })
-                    
-                except ImportError:
-                    return JSONResponse({'error': 'GotoHeight action not available - interface not built'}, status_code=503)
-                except Exception as e:
-                    self.get_logger().error(f'[Action] Send goal error: {e}')
-                    return JSONResponse({'error': str(e)}, status_code=500)
-            
-            @app.post('/api/action/cancel_goto_height')
-            async def cancel_action():
-                """Cancel active Action goal"""
-                with self.action_lock:
-                    if not self.action_goal_handle:
-                        return JSONResponse({'error': 'No active goal to cancel'}, status_code=400)
-                    
-                    goal_handle = self.action_goal_handle
-                
-                try:
-                    self.get_logger().info('[Action] Cancelling goal...')
-                    cancel_future = goal_handle.cancel_goal_async()
-                    # Note: Result will be handled by result callback
-                    
-                    return JSONResponse({'status': 'cancel_sent'})
-                    
-                except Exception as e:
-                    self.get_logger().error(f'[Action] Cancel error: {e}')
-                    return JSONResponse({'error': str(e)}, status_code=500)
-            
-            @app.get('/api/action/status')
-            async def get_action_status():
-                """Get current Action status and feedback (polled by frontend)"""
-                with self.action_lock:
-                    return JSONResponse({
-                        'status': self.action_status,
-                        'feedback': self.action_feedback,
-                        'result': self.action_result
-                    })
-
             @app.websocket('/ws')
             async def ws_endpoint(ws: WebSocket):
                 await ws.accept()

@@ -562,15 +562,29 @@
   <!-- End main content area -->
   
 <script>
-let ws=null, lastReceive=null; let intervals=[]; let usePolling=false; let pollTimer=null; let readInterval=1000;
+let pollTimer=null, lastReceive=null; let intervals=[]; let readInterval=100; // 10Hz polling (100ms interval)
 // Emergency reset display state (frontend maintains 5s display even if backend is idle)
 let emergencyResetDisplayUntil = null;
 let emergencyResetCompletionReason = null;
 let lastEmergencyResetEndTime = null;  // Track last reset to avoid duplicate 5s countdowns
 function $(id){return document.getElementById(id);} 
 function setState(type,text){ const d=$('stateDot'); d.className='dot '+type; $('stateText').textContent=text; }
-function connect(){ const proto=location.protocol==='https:'?'wss':'ws'; ws=new WebSocket(proto+'://'+location.host+'/ws'); ws.onopen=()=>{usePolling=false; $('mode').textContent='WebSocket'; setState('live','Live'); if(pollTimer){clearInterval(pollTimer);} }; ws.onmessage=e=>{ if(e.data==='ping') return; handle(e.data); }; ws.onclose=()=>{ setState('disc','Disconnected'); fallback(); setTimeout(connect,3000); }; ws.onerror=()=> setState('disc','Error'); }
-function fallback(){ if(usePolling) return; usePolling=true; $('mode').textContent='Polling'; pollTimer=setInterval(async()=>{ try{ const r=await fetch('/api/latest'); if(!r.ok) return; handle(JSON.stringify(await r.json())); }catch(e){} }, 1000); }
+// HTTP Polling mode (10Hz = 100ms interval)
+function startPolling(){ 
+  $('mode').textContent='HTTP Polling (10Hz)'; 
+  pollTimer=setInterval(async()=>{ 
+    try{ 
+      const r=await fetch('/api/latest'); 
+      if(!r.ok){ setState('disc','Error'); return; }
+      const data = await r.json();
+      handle(JSON.stringify(data)); 
+    }catch(e){ 
+      setState('disc','Error'); 
+    } 
+  }, 100); // 10Hz = 100ms interval
+  // Initial poll
+  fetch('/api/latest').then(r=>r.json()).then(data=>handle(JSON.stringify(data))).catch(()=>{});
+}
 function handle(raw){ lastReceive=Date.now(); $('raw').textContent=raw; try{ const data=JSON.parse(raw); update(data); setState('live','Live'); }catch(e){} }
 function update(d){
   // Compact mode fields
@@ -763,7 +777,7 @@ function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
 
 function computeFreq(){ intervals.push(Date.now()); if(intervals.length>25) intervals.shift(); if(intervals.length>1){ const diffs=[]; for(let i=1;i<intervals.length;i++) diffs.push(intervals[i]-intervals[i-1]); const avg=diffs.reduce((a,b)=>a+b,0)/diffs.length; $('freq').textContent=(1000/avg).toFixed(2); } }
 setInterval(()=>{ if(!lastReceive){ $('age').textContent='-'; return; } const age=Date.now()-lastReceive; $('age').textContent=age; const staleThreshold=Math.max(2500,2.5*readInterval); if(age>staleThreshold){ setState('stale','Stale'); } },500);
-connect();
+startPolling(); // Start HTTP polling at 10Hz
 
 // Command buttons
 document.querySelectorAll('button[data-cmd]').forEach(btn=>{
