@@ -478,7 +478,7 @@ class URLocateRack(URCapture):
                                 try:
                                     self.robot_status_client.set_status(
                                         "ur15",
-                                        "rack_local2world",
+                                        "rack2base_matrix",
                                         local2world_matrix
                                     )
                                     self.robot_status_client.set_status(

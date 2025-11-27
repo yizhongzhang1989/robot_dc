@@ -3722,36 +3722,9 @@ class UR15WebNode(Node):
                 self.get_logger().warn("Camera calibration parameters not available for rack drawing")
                 return frame
             
-            # Get rack work object parameters - client handles caching internally
-            wobj_origin = self.status_client.get_status('wobj', 'wobj_origin')
-            wobj_x = self.status_client.get_status('wobj', 'wobj_x')
-            wobj_y = self.status_client.get_status('wobj', 'wobj_y')
-            wobj_z = self.status_client.get_status('wobj', 'wobj_z')
-            
-            # Check if all work object parameters are available
-            if wobj_origin is None or wobj_x is None or wobj_y is None or wobj_z is None:
-                self.get_logger().warn(f"Wobj parameters not available - origin: {wobj_origin is not None}, x: {wobj_x is not None}, y: {wobj_y is not None}, z: {wobj_z is not None}", throttle_duration_sec=5.0)
-                return frame
-            
-            # Convert to numpy arrays
-            wobj_origin = np.array(wobj_origin, dtype=np.float64)
-            wobj_x = np.array(wobj_x, dtype=np.float64)
-            wobj_y = np.array(wobj_y, dtype=np.float64)
-            wobj_z = np.array(wobj_z, dtype=np.float64)
-            
-            # Normalize the axes to ensure they are unit vectors
-            wobj_x = wobj_x / np.linalg.norm(wobj_x)
-            wobj_y = wobj_y / np.linalg.norm(wobj_y)
-            wobj_z = wobj_z / np.linalg.norm(wobj_z)
-            
-            # Build rack2base transformation matrix
-            # The rotation matrix is formed by the three axes as columns
-            rack2base_matrix = np.eye(4)
-            rack2base_matrix[:3, 0] = wobj_x  # X axis
-            rack2base_matrix[:3, 1] = wobj_y  # Y axis
-            rack2base_matrix[:3, 2] = wobj_z  # Z axis
-            rack2base_matrix[:3, 3] = wobj_origin  # Origin position
-            
+            # Get rack work object parameters - client handles caching internally            
+            rack2base_matrix = self.status_client.get_status('ur15', 'rack2base_matrix')
+                        
             # Calculate rack2camera transformation
             # base2camera = params['extrinsic']
             # rack2camera = base2camera @ rack2base
