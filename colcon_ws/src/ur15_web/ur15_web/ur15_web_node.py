@@ -179,9 +179,10 @@ class UR15WebNode(Node):
         self.target2base_matrix = None
         self.calibration_lock = threading.Lock()
         
-        # Generate 3D curves for visualization
-        self.ur15_base_curve = draw_utils.generate_ur15_base_curve(ray_length=3)
-        self.gb200rack_curve = draw_utils.generate_gb200rack_curve()
+        # Generate 3D models for visualization
+        self.ur15_base_model = draw_utils.generate_ur15_base_curve(ray_length=3)
+        self.gb200rack_model = draw_utils.generate_gb200rack_curve()
+        self.gb200server_model = draw_utils.generate_gb200server_wire()
         
         # Robot state data
         self.joint_positions = []
@@ -1372,6 +1373,43 @@ class UR15WebNode(Node):
                 
             except Exception as e:
                 self.get_logger().error(f"Error changing operation path: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/set_operating_unit', methods=['POST'])
+        def set_operating_unit():
+            """Set operating unit to robot_status."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data or 'operating_unit' not in data:
+                    return jsonify({'success': False, 'message': 'No operating_unit provided'})
+                
+                operating_unit = data['operating_unit']
+                
+                # Validate the operating unit value
+                if not isinstance(operating_unit, int) or operating_unit < 1:
+                    return jsonify({'success': False, 'message': 'Operating unit must be an integer >= 1'})
+                
+                self.get_logger().info(f"Setting operating unit to: {operating_unit}")
+                
+                # Set to robot_status
+                if set_to_status(self, 'ur15', 'rack_operating_unit_id', operating_unit):
+                    self.get_logger().info(f"Successfully set rack_operating_unit_id to robot_status: {operating_unit}")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Operating unit set successfully',
+                        'operating_unit': operating_unit
+                    })
+                else:
+                    self.get_logger().warning("Failed to set rack_operating_unit_id to robot_status")
+                    return jsonify({
+                        'success': False,
+                        'message': 'Failed to set operating unit to robot_status'
+                    })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error setting operating unit: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
         @self.app.route('/get_pose_count', methods=['GET'])
@@ -3694,14 +3732,13 @@ class UR15WebNode(Node):
             if params is None:
                 return frame
             
-            # Draw UR15 base curve
-            frame = draw_utils.draw_curves_on_image(
+            # Draw UR15 base model
+            frame = draw_utils.draw_model_on_image(
                 frame,
                 intrinsic=params['intrinsic'],
                 extrinsic=params['extrinsic'],
-                point3d=self.ur15_base_curve['curves'],
+                model=self.ur15_base_model,
                 distortion=params['distortion'],
-                color=self.ur15_base_curve['colors'],
                 thickness=2
             )
             
@@ -3719,53 +3756,35 @@ class UR15WebNode(Node):
                 self.get_logger().warn("Camera calibration parameters not available for rack drawing")
                 return frame
             
-            # Get rack work object parameters - client handles caching internally
-            wobj_origin = self.status_client.get_status('wobj', 'wobj_origin')
-            wobj_x = self.status_client.get_status('wobj', 'wobj_x')
-            wobj_y = self.status_client.get_status('wobj', 'wobj_y')
-            wobj_z = self.status_client.get_status('wobj', 'wobj_z')
-            
-            # Check if all work object parameters are available
-            if wobj_origin is None or wobj_x is None or wobj_y is None or wobj_z is None:
-                self.get_logger().warn(f"Wobj parameters not available - origin: {wobj_origin is not None}, x: {wobj_x is not None}, y: {wobj_y is not None}, z: {wobj_z is not None}", throttle_duration_sec=5.0)
-                return frame
-            
-            # Convert to numpy arrays
-            wobj_origin = np.array(wobj_origin, dtype=np.float64)
-            wobj_x = np.array(wobj_x, dtype=np.float64)
-            wobj_y = np.array(wobj_y, dtype=np.float64)
-            wobj_z = np.array(wobj_z, dtype=np.float64)
-            
-            # Normalize the axes to ensure they are unit vectors
-            wobj_x = wobj_x / np.linalg.norm(wobj_x)
-            wobj_y = wobj_y / np.linalg.norm(wobj_y)
-            wobj_z = wobj_z / np.linalg.norm(wobj_z)
-            
-            # Build rack2base transformation matrix
-            # The rotation matrix is formed by the three axes as columns
-            rack2base_matrix = np.eye(4)
-            rack2base_matrix[:3, 0] = wobj_x  # X axis
-            rack2base_matrix[:3, 1] = wobj_y  # Y axis
-            rack2base_matrix[:3, 2] = wobj_z  # Z axis
-            rack2base_matrix[:3, 3] = wobj_origin  # Origin position
-            
+            # Get rack work object parameters - client handles caching internally            
+            rack2base_matrix = self.status_client.get_status('ur15', 'rack2base_matrix')
+                        
             # Calculate rack2camera transformation
             # base2camera = params['extrinsic']
             # rack2camera = base2camera @ rack2base
             base2camera = params['extrinsic']
             rack2camera = base2camera @ rack2base_matrix
             
-            # Draw GB200 rack curve with rack2camera extrinsic
-            frame = draw_utils.draw_curves_on_image(
+            # Draw GB200 rack model with rack2camera extrinsic
+            frame = draw_utils.draw_model_on_image(
                 frame,
                 intrinsic=params['intrinsic'],
                 extrinsic=rack2camera,
-                point3d=self.gb200rack_curve['curves'],
+                model=self.gb200rack_model,
                 distortion=params['distortion'],
-                color=self.gb200rack_curve['colors'],
                 thickness=2
             )
-            
+
+            frame = draw_utils.draw_model_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=rack2camera,
+                model=self.gb200server_model,
+                distortion=params['distortion'],
+                thickness=2
+            )
+
+
         except Exception as e:
             self.get_logger().error(f"Error projecting rack to image: {e}")
         

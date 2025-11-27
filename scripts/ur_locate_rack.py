@@ -470,7 +470,25 @@ class URLocateRack(URCapture):
                         print(f"✓ Positioning completed!")
                         print(f"  Number of 3D points: {len(points_3d)}")
                         print(f"  Mean reprojection error: {mean_error:.3f} pixels")
-                        
+
+                        # save rack localization data to status
+                        if 'local2world' in positioning_result and positioning_result['local2world'] is not None:
+                            local2world_matrix = np.array(positioning_result['local2world'])
+                            if self.robot_status_client:
+                                try:
+                                    self.robot_status_client.set_status(
+                                        "ur15",
+                                        "rack2base_matrix",
+                                        local2world_matrix
+                                    )
+                                    self.robot_status_client.set_status(
+                                        "ur15",
+                                        "rack_points_3d",
+                                        points_3d
+                                    )
+                                except Exception as e:
+                                    print(f"  ✗ Error saving local2world to robot_status: {e}")
+
                         # Save results for each rack
                         for operation_name in self.operation_names:
                             if operation_name not in results or not results[operation_name].get('capture_success', False):
@@ -1487,7 +1505,7 @@ def main():
         all_positioning_success = all(
             r.get('positioning_success', False) for r in results.values()
         )
-        
+
         if not all_positioning_success:
             print("\n✗ Some positioning operations failed.")
             print("✗ Skipping wobj coordinate system building")

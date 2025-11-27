@@ -256,6 +256,43 @@ function changeOperationPath() {
     changeOperationName();
 }
 
+function setOperatingUnit() {
+    const inputElement = document.getElementById('operatingUnit');
+    const unitValue = parseInt(inputElement.value);
+    
+    // Validate the input
+    if (isNaN(unitValue) || unitValue < 1) {
+        logToWeb('Please enter a valid operating unit (must be >= 1)', 'warning');
+        inputElement.focus();
+        return;
+    }
+    
+    logToWeb(`Setting operating unit to: ${unitValue}`, 'info');
+    
+    // Send to server to set in robot_status
+    fetch('/set_operating_unit', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            operating_unit: unitValue
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`Operating unit set successfully: ${unitValue}`, 'success');
+        } else {
+            logToWeb(`Failed to set operating unit: ${data.message || 'Unknown error'}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`Error setting operating unit: ${error.message}`, 'error');
+        console.error('Error:', error);
+    });
+}
+
 function updateAllTaskPaths(datasetDir) {
     // Reset operation name when dataset directory changes
     const operationNameInput = document.getElementById('operationName');
