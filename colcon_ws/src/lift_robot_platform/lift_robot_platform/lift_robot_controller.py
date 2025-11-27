@@ -273,7 +273,7 @@ class LiftRobotController(ModbusDevice):
         threading.Timer(0.01, self._verify_on).start()
 
     def _verify_on(self):
-        """验证ON状态: 主读取 + 补充读取(最多2次)."""
+        """验证ON状态: 主读取 + 补充读取(最多2次) + 超时保护."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'ON':
             return
@@ -296,8 +296,36 @@ class LiftRobotController(ModbusDevice):
             self.recv(1, 0x0000, 6, callback=on_response, seq_id=seq_id)
         except Exception as e:
             self.node.get_logger().error(f"[***SEQ {seq_id}] Exception during recv ON: {e}")
-        # 2ms后启动补充读取链
-        threading.Timer(0.002, self._retry_verify_on, args=[done]).start()
+        
+        # 10ms后启动补充读取链
+        threading.Timer(0.01, self._retry_verify_on, args=[done]).start()
+        
+        # 100ms验证超时: 如果所有读取都没返回,强制判定为失败并重试
+        def on_verify_timeout():
+            if self.flash_context is None or self.flash_context.get('phase') != 'ON':
+                return
+            if self.flash_context['on_eval_done']:
+                return  # 已经有回调返回了
+            
+            # 所有读取都超时,强制标记为已处理并判定失败
+            self.flash_context['on_eval_done'] = True
+            relay_name = self._get_relay_name(relay)
+            self.node.get_logger().warn(
+                f"[SEQ {seq_id}] ⏱️  {relay_name} ON verification TIMEOUT (100ms) - "
+                f"no response from FC01, attempt {ctx['on_attempts']}/{ctx['max']}"
+            )
+            
+            # 创建失败的future并调用check
+            class TimeoutFuture:
+                def result(self):
+                    class TimeoutResult:
+                        success = False
+                        response = []
+                    return TimeoutResult()
+            
+            self._check_on(TimeoutFuture())
+        
+        threading.Timer(0.1, on_verify_timeout).start()
 
     def _retry_verify_on(self, done):
         """补充读取ON: 主读取未完成时重试(递归最多2次)."""
@@ -378,7 +406,7 @@ class LiftRobotController(ModbusDevice):
         threading.Timer(0.01, self._verify_off).start()
 
     def _verify_off(self):
-        """验证OFF状态: 主读取 + 补充读取(镜像ON)."""
+        """验证OFF状态: 主读取 + 补充读取(镜像ON) + 超时保护."""
         ctx = self.flash_context
         if ctx is None or ctx.get('phase') != 'OFF':
             return
@@ -397,7 +425,36 @@ class LiftRobotController(ModbusDevice):
             self._check_off(self._wrap_response_as_future(response))
         
         self.recv(1, 0x0000, 6, callback=off_response, seq_id=seq_id)
-        threading.Timer(0.002, self._retry_verify_off, args=[done]).start()
+        
+        # 10ms后启动补充读取链
+        threading.Timer(0.01, self._retry_verify_off, args=[done]).start()
+        
+        # 100ms验证超时: 如果所有读取都没返回,强制判定为失败并重试
+        def off_verify_timeout():
+            if self.flash_context is None or self.flash_context.get('phase') != 'OFF':
+                return
+            if self.flash_context['off_eval_done']:
+                return  # 已经有回调返回了
+            
+            # 所有读取都超时,强制标记为已处理并判定失败
+            self.flash_context['off_eval_done'] = True
+            relay_name = self._get_relay_name(relay)
+            self.node.get_logger().warn(
+                f"[SEQ {seq_id}] ⏱️  {relay_name} OFF verification TIMEOUT (100ms) - "
+                f"no response from FC01, attempt {ctx['off_attempts']}/{ctx['max']}"
+            )
+            
+            # 创建失败的future并调用check
+            class TimeoutFuture:
+                def result(self):
+                    class TimeoutResult:
+                        success = False
+                        response = []
+                    return TimeoutResult()
+            
+            self._check_off(TimeoutFuture())
+        
+        threading.Timer(0.1, off_verify_timeout).start()
 
     def _retry_verify_off(self, done):
         """补充读取OFF: 主读取未完成时重试(递归最多2次)."""
