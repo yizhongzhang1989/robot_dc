@@ -28,6 +28,7 @@ import subprocess
 import signal
 import atexit
 from flask import Flask, render_template_string, Response
+from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
 from ur15_web import draw_utils
@@ -200,6 +201,12 @@ class UR15WebNode(Node):
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
+        # GB200 rack positions file path and data
+        self.rack_positions_file_path = self._get_rack_positions_file_path()
+        self.rack_positions_data = None
+        self.rack_positions_lock = threading.Lock()
+        self._load_rack_positions_from_file()
+        
         # Child process management
         self.child_processes = []
         self.process_lock = threading.Lock()
@@ -273,6 +280,76 @@ class UR15WebNode(Node):
         # Create a timer to load calibration parameters after async cache is populated
         self._load_calib_retry_count = 0
         self._load_calib_timer = self.create_timer(0.5, self._load_calibration_from_status)
+    
+    def _get_rack_positions_file_path(self):
+        """Get the file path for recorded GB200 locate positions."""
+        try:
+            scripts_dir = get_scripts_directory()
+            if scripts_dir:
+                return os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
+            else:
+                self.get_logger().warn("Could not find scripts directory, using fallback path")
+                return 'recorded_GB200_locate_positions.json'
+        except Exception as e:
+            self.get_logger().warn(f"Failed to determine rack positions file path: {e}")
+            return 'recorded_GB200_locate_positions.json'
+    
+    def _load_rack_positions_from_file(self):
+        """Load rack positions from JSON file if it exists."""
+        if not os.path.exists(self.rack_positions_file_path):
+            self.get_logger().info(f"Rack positions file not found: {self.rack_positions_file_path}")
+            self.get_logger().info("Creating file with default values")
+            # Initialize with default data
+            with self.rack_positions_lock:
+                self.rack_positions_data = {
+                    'position1': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    'position2': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    'position3': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    'position4': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                }
+            # Create the file immediately
+            self._save_rack_positions_to_file()
+            return
+        
+        try:
+            with open(self.rack_positions_file_path, 'r') as f:
+                data = json.load(f)
+            
+            with self.rack_positions_lock:
+                self.rack_positions_data = data
+            
+            self.get_logger().info(f"Loaded rack positions from {self.rack_positions_file_path}")
+            self.get_logger().info(f"Found {len(data)} rack positions")
+            
+        except Exception as e:
+            self.get_logger().error(f"Failed to load rack positions file: {e}")
+            # Initialize with default data on error
+            with self.rack_positions_lock:
+                self.rack_positions_data = {
+                    'position1': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    'position2': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    'position3': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    'position4': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                }
+    
+    def _save_rack_positions_to_file(self):
+        """Save rack positions to JSON file."""
+        try:
+            # Ensure the directory exists
+            file_path = Path(self.rack_positions_file_path)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write to file
+            with self.rack_positions_lock:
+                data_to_save = self.rack_positions_data.copy()
+            
+            with open(self.rack_positions_file_path, 'w') as f:
+                json.dump(data_to_save, f, indent=4)
+            
+            self.get_logger().info(f"Saved rack positions to {self.rack_positions_file_path}")
+            
+        except Exception as e:
+            self.get_logger().error(f"Failed to save rack positions file: {e}")
     
     def _load_calibration_from_status(self):
         """Load calibration parameters from robot_status service."""
@@ -3371,13 +3448,6 @@ class UR15WebNode(Node):
                 if len(positions) != 6:
                     return jsonify({'success': False, 'message': 'Positions must contain 6 values'})
                 
-                # Get the JSON file path
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
-                
                 # Default rack key mapping if not provided
                 if rack_key is None:
                     rack_key_map = {
@@ -3390,27 +3460,14 @@ class UR15WebNode(Node):
                     if rack_key is None:
                         return jsonify({'success': False, 'message': 'Invalid rack number'})
                 
-                # Read existing data or create new
-                if os.path.exists(json_path):
-                    with open(json_path, 'r') as f:
-                        rack_data = json.load(f)
-                else:
-                    rack_data = {
-                        'lower_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'lower_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'top_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                    }
-                
-                # Update the specific rack with the custom key name
-                rack_data[rack_key] = positions
+                # Update in-memory data
+                with self.rack_positions_lock:
+                    self.rack_positions_data[rack_key] = positions
                 
                 # Save to file
-                os.makedirs(os.path.dirname(json_path), exist_ok=True)
-                with open(json_path, 'w') as f:
-                    json.dump(rack_data, f, indent=4)
+                self._save_rack_positions_to_file()
                 
-                self.get_logger().info(f"Saved rack {rack_number} (key: {rack_key}) positions to {json_path}")
+                self.get_logger().info(f"Saved rack {rack_number} (key: {rack_key}) positions")
                 
                 return jsonify({'success': True, 'message': f'Rack {rack_number} positions saved'})
                 
@@ -3438,26 +3495,9 @@ class UR15WebNode(Node):
                 if position is None:
                     position = rack_number - 1 if rack_number else 0
                 
-                # Get the JSON file path
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
-                
-                # Read existing data
-                if os.path.exists(json_path):
-                    with open(json_path, 'r') as f:
-                        # Load as regular dict first
-                        rack_data = json.load(f)
-                else:
-                    # If file doesn't exist, create with new key
-                    rack_data = OrderedDict()
-                    rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                    os.makedirs(os.path.dirname(json_path), exist_ok=True)
-                    with open(json_path, 'w') as f:
-                        json.dump(rack_data, f, indent=4)
-                    return jsonify({'success': True, 'message': f'Created new key: {new_key}'})
+                # Use in-memory data
+                with self.rack_positions_lock:
+                    rack_data = self.rack_positions_data.copy()
                 
                 # Get keys in order
                 keys = list(rack_data.keys())
@@ -3489,9 +3529,11 @@ class UR15WebNode(Node):
                     if not inserted:
                         new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
                 
-                # Save to file (regular dict will maintain insertion order in Python 3.7+)
-                with open(json_path, 'w') as f:
-                    json.dump(dict(new_rack_data), f, indent=4)
+                # Update in-memory data and save
+                with self.rack_positions_lock:
+                    self.rack_positions_data = dict(new_rack_data)
+                
+                self._save_rack_positions_to_file()
                 
                 self.get_logger().info(f"Renamed rack key from '{old_key}' to '{new_key}' at position {position}")
                 return jsonify({'success': True, 'message': f'Renamed key from {old_key} to {new_key}'})
@@ -3502,34 +3544,16 @@ class UR15WebNode(Node):
         
         @self.app.route('/load_rack_positions', methods=['GET'])
         def load_rack_positions():
-            """Load rack positions from JSON file."""
+            """Load rack positions from memory."""
             from flask import jsonify
-            import json
             
             try:
-                # Get the JSON file path
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                # Return in-memory data
+                with self.rack_positions_lock:
+                    rack_data = self.rack_positions_data.copy()
                 
-                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
-                
-                # Read data
-                if os.path.exists(json_path):
-                    with open(json_path, 'r') as f:
-                        rack_data = json.load(f)
-                    
-                    self.get_logger().info(f"Loaded rack positions from {json_path}")
-                    return jsonify({'success': True, 'data': rack_data})
-                else:
-                    # Return default values if file doesn't exist
-                    default_data = {
-                        'lower_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'lower_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'top_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                    }
-                    return jsonify({'success': True, 'data': default_data})
+                self.get_logger().info("Returned rack positions from memory")
+                return jsonify({'success': True, 'data': rack_data})
                 
             except Exception as e:
                 self.get_logger().error(f"Error loading rack positions: {e}")
