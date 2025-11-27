@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Robot Status Dashboard</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=2">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <h1>🤖 Robot Status Dashboard</h1>
+                <div class="update-info">
+                    Last updated: <span id="last-update">Loading...</span>
+                    <span style="margin-left: 20px;">Auto-refresh: <strong>ON</strong> (every 2s)</span>
+                    <span class="connection-status connecting" id="connection-status">⚪ Connecting...</span>
+                </div>
+            </div>
+            <button class="refresh-btn" onclick="refreshStatus()">🔄 Refresh Now</button>
+        </div>
+
+        <div class="namespace-tabs" id="tabs"></div>
+        <div id="content"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='dashboard.js') }}?v=2"></script>
+</body>
+</html>

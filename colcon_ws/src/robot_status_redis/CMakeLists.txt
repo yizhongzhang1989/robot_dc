@@ -22,6 +22,13 @@ install(FILES
   DESTINATION local/lib/python3.10/dist-packages/robot_status_redis
 )
 
+# Install web dashboard templates and static files
+install(DIRECTORY
+  robot_status_redis/templates
+  robot_status_redis/static
+  DESTINATION local/lib/python3.10/dist-packages/robot_status_redis
+)
+
 # Set PYTHONPATH for the package
 ament_environment_hooks("${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/robot_status_redis.dsv.in")
 
@@ -38,7 +45,6 @@ install(DIRECTORY examples
 # Install Python executables (make them executable)
 install(PROGRAMS
   robot_status_redis/robot_status_node.py
-  robot_status_redis/web_dashboard_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
