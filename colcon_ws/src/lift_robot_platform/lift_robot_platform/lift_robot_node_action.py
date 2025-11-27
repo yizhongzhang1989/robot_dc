@@ -1027,6 +1027,8 @@ class LiftRobotNodeAction(Node):
         CRITICAL: This ensures Action only exits after stop command is physically verified.
         Prevents race conditions where new Action starts before old one truly stopped.
         
+        If stop command is rejected due to flash conflict, will retry every 200ms.
+        
         Args:
             target: 'platform' or 'pushrod'
             timeout: Maximum wait time in seconds (default 5s for 10 attempts * 500ms)
@@ -1036,6 +1038,8 @@ class LiftRobotNodeAction(Node):
         """
         start_wait = time.time()
         stop_completed = False
+        last_retry_time = 0
+        retry_count = 0
         
         self.get_logger().info(f"[WAIT_STOP] Waiting for {target} stop flash to complete (timeout={timeout}s)...")
         
@@ -1052,6 +1056,23 @@ class LiftRobotNodeAction(Node):
                     self.get_logger().error(f"[WAIT_STOP] Emergency reset detected during stop wait!")
                     return False
             
+            # Retry stop command if rejected due to flash conflict (every 200ms)
+            now = time.time()
+            if (now - last_retry_time) > 0.2:
+                # Try sending stop command - it will return False if flash conflict
+                accepted = False
+                if target == 'platform':
+                    accepted = self.controller.stop()
+                else:
+                    accepted = self.controller.pushrod_stop()
+                
+                if not accepted:
+                    retry_count += 1
+                    self.get_logger().warn(
+                        f"[WAIT_STOP] Stop rejected (flash conflict), retry #{retry_count}..."
+                    )
+                last_retry_time = now
+            
             time.sleep(0.02)  # 50Hz polling
         
         elapsed = time.time() - start_wait
@@ -1066,9 +1087,8 @@ class LiftRobotNodeAction(Node):
             )
             # Trigger emergency reset if stop fails
             try:
-                reset_msg = String()
-                reset_msg.data = json.dumps({'command': 'reset'})
-                self.cmd_publisher.publish(reset_msg)
+                self.get_logger().warn(f"[WAIT_STOP] Triggering emergency reset via controller...")
+                self.controller.emergency_reset()
             except Exception as e:
                 self.get_logger().error(f"[WAIT_STOP] Failed to trigger emergency reset: {e}")
             return False
@@ -1310,11 +1330,18 @@ class LiftRobotNodeAction(Node):
                 
                 # Check for cancellation
                 if goal_handle.is_cancel_requested:
-                    # Send stop command based on target
-                    if target == 'platform':
-                        self.controller.stop()
-                    else:  # pushrod
-                        self.controller.pushrod_stop()
+                    # Send stop command based on target (retry until accepted)
+                    accepted = False
+                    retry_count = 0
+                    while not accepted and retry_count < 10:
+                        if target == 'platform':
+                            accepted = self.controller.stop()
+                        else:  # pushrod
+                            accepted = self.controller.pushrod_stop()
+                        if not accepted:
+                            retry_count += 1
+                            self.get_logger().warn(f"[GotoHeight] Stop rejected (flash conflict), retry #{retry_count}/10...")
+                            time.sleep(0.05)
                     
                     # CRITICAL: Wait for stop flash to complete
                     stop_success = self._wait_for_stop_complete(target, timeout=5.0)
@@ -1365,16 +1392,17 @@ class LiftRobotNodeAction(Node):
                 if target_reached:
                     stop_height = current_height
                     direction_before_stop = movement_state
-                    # Send stop command based on target
+                    # Send stop command and wait for completion
                     if target == 'platform':
                         self.controller.stop()
                     else:  # pushrod
                         self.controller.pushrod_stop()
-                    # Clear movement_command_sent to allow stop to be processed
-                    with self.state_lock:
-                        self.movement_command_sent = False
-                    # Wait for stop verification and platform to settle
-                    time.sleep(0.5)
+                    # Wait for stop flash to complete
+                    stop_success = self._wait_for_stop_complete(target, timeout=2.0)
+                    if not stop_success:
+                        self.get_logger().warn(f"[GotoHeight] Stop verification failed at target_reached")
+                    # Wait for platform to settle
+                    time.sleep(0.3)
                     
                     # Read final stable height
                     with self.state_lock:
@@ -1443,7 +1471,9 @@ class LiftRobotNodeAction(Node):
                     direction = 'up' if error > 0 else 'down'
                     if self._check_range_limits(current_height, direction):
                         self.controller.stop()
-                        time.sleep(0.1)
+                        stop_success = self._wait_for_stop_complete('platform', timeout=2.0)
+                        if not stop_success:
+                            self.get_logger().warn(f"[GotoHeight] Stop verification failed at limit")
                         
                         result = GotoHeight.Result()
                         result.success = True
@@ -1469,15 +1499,18 @@ class LiftRobotNodeAction(Node):
                     early_stop_height = target_height - max(overshoot_up - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
                     if current_height >= early_stop_height and movement_state == 'up':
                         stop_height = current_height  # Record height when stop command issued
-                        # Send stop command based on target
+                        # Send stop command and wait for completion
                         if target == 'platform':
                             self.controller.stop()
                         else:  # pushrod
                             self.controller.pushrod_stop()
+                        stop_success = self._wait_for_stop_complete(target, timeout=2.0)
+                        if not stop_success:
+                            self.get_logger().warn(f"[GotoHeight] Stop verification failed at early_stop UP")
                         self.get_logger().info(f"Early stop UP: height={current_height:.2f}, target={target_height:.2f}, overshoot={overshoot_up:.2f}")
                         
-                        # Wait for platform to settle (like Topic version's OVERSHOOT_SETTLE_DELAY)
-                        time.sleep(0.5)
+                        # Wait for platform to settle
+                        time.sleep(0.3)
                         
                         # Read final stable height
                         with self.state_lock:
@@ -1517,15 +1550,18 @@ class LiftRobotNodeAction(Node):
                     early_stop_height = target_height + max(overshoot_down - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
                     if current_height <= early_stop_height and movement_state == 'down':
                         stop_height = current_height  # Record height when stop command issued
-                        # Send stop command based on target
+                        # Send stop command and wait for completion
                         if target == 'platform':
                             self.controller.stop()
                         else:  # pushrod
                             self.controller.pushrod_stop()
+                        stop_success = self._wait_for_stop_complete(target, timeout=2.0)
+                        if not stop_success:
+                            self.get_logger().warn(f"[GotoHeight] Stop verification failed at early_stop DOWN")
                         self.get_logger().info(f"Early stop DOWN: height={current_height:.2f}, target={target_height:.2f}, overshoot={overshoot_down:.2f}")
                         
                         # Wait for platform to settle
-                        time.sleep(0.5)
+                        time.sleep(0.3)
                         
                         # Read final stable height
                         with self.state_lock:
@@ -1684,7 +1720,15 @@ class LiftRobotNodeAction(Node):
                 
                 # Check for cancellation
                 if goal_handle.is_cancel_requested:
-                    self.controller.stop()
+                    # Send stop with retry
+                    accepted = False
+                    retry_count = 0
+                    while not accepted and retry_count < 10:
+                        accepted = self.controller.stop()
+                        if not accepted:
+                            retry_count += 1
+                            self.get_logger().warn(f"[ForceControl] Stop rejected (flash conflict), retry #{retry_count}/10...")
+                            time.sleep(0.05)
                     
                     # CRITICAL: Wait for stop flash to complete
                     stop_success = self._wait_for_stop_complete('platform', timeout=5.0)
@@ -1740,7 +1784,9 @@ class LiftRobotNodeAction(Node):
                 
                 if force_reached:
                     self.controller.stop()
-                    time.sleep(0.1)
+                    stop_success = self._wait_for_stop_complete('platform', timeout=2.0)
+                    if not stop_success:
+                        self.get_logger().warn(f"[ForceControl] Stop verification failed at target_reached")
                     result = ForceControl.Result()
                     result.success = True
                     result.final_force = current_force
@@ -1760,6 +1806,9 @@ class LiftRobotNodeAction(Node):
                 # Check range limits
                 if self._check_range_limits(current_height, direction):
                     self.controller.stop()
+                    stop_success = self._wait_for_stop_complete('platform', timeout=2.0)
+                    if not stop_success:
+                        self.get_logger().warn(f"[ForceControl] Stop verification failed at limit")
                     result = ForceControl.Result()
                     result.success = False
                     result.final_force = current_force
@@ -1889,7 +1938,15 @@ class LiftRobotNodeAction(Node):
                     return result
                 
                 if goal_handle.is_cancel_requested:
-                    self.controller.stop()
+                    # Send stop with retry
+                    accepted = False
+                    retry_count = 0
+                    while not accepted and retry_count < 10:
+                        accepted = self.controller.stop()
+                        if not accepted:
+                            retry_count += 1
+                            self.get_logger().warn(f"[HybridControl] Stop rejected (flash conflict), retry #{retry_count}/10...")
+                            time.sleep(0.05)
                     
                     # CRITICAL: Wait for stop flash to complete
                     stop_success = self._wait_for_stop_complete('platform', timeout=5.0)
@@ -2322,7 +2379,16 @@ class LiftRobotNodeAction(Node):
                         if self.current_manual_move_direction == direction:
                             self.current_manual_move_direction = None
                     
-                    goal_handle.canceled()
+                    # Set goal state with exception protection (may already be in final state)
+                    try:
+                        # Only attempt to cancel if not already in a terminal state
+                        # ROS2 doesn't provide is_active() check, so we rely on exception
+                        goal_handle.canceled()
+                        self.get_logger().debug(f"[STATE] Goal successfully canceled")
+                    except Exception as e:
+                        # Goal already in final state (likely ABORTED by framework during long wait)
+                        # This is not an error - the action is stopping anyway
+                        self.get_logger().debug(f"[STATE] Goal already in final state, skipping cancel: {e}")
                     
                     result = ManualMove.Result()
                     result.success = stop_success
@@ -2401,8 +2467,13 @@ class LiftRobotNodeAction(Node):
                         if self.current_manual_move_direction == direction:
                             self.current_manual_move_direction = None
                     
-                    # Mark as canceled only after stop completes
-                    goal_handle.canceled()
+                    # Mark as canceled only after stop completes (with exception protection)
+                    try:
+                        goal_handle.canceled()
+                        self.get_logger().debug(f"[STATE] Goal successfully canceled")
+                    except Exception as e:
+                        # Goal already in final state - this is expected during long waits
+                        self.get_logger().debug(f"[STATE] Goal already in final state, skipping cancel: {e}")
                     
                     result = ManualMove.Result()
                     result.success = stop_success

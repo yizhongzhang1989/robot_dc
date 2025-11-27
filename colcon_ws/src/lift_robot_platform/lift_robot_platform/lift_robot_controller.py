@@ -144,37 +144,61 @@ class LiftRobotController(ModbusDevice):
             return False
 
     def stop(self, seq_id=None):
-        """Stop motion (pulse relay 0)."""
+        """Stop motion (pulse relay 0).
+        
+        Returns:
+            bool: True if flash started, False if rejected due to conflict
+        """
         self.node.get_logger().info(f"[SEQ {seq_id}] Stop command (relay 0 pulse)")
-        self.start_flash_async(relay_address=0, seq_id=seq_id, max_attempts=10)
+        return self.start_flash_async(relay_address=0, seq_id=seq_id, max_attempts=10)
 
     def up(self, seq_id=None):
-        """Move up (pulse relay 1). Pulse width is fixed, velocity is hardware-defined."""
+        """Move up (pulse relay 1). Pulse width is fixed, velocity is hardware-defined.
+        
+        Returns:
+            bool: True if flash started, False if rejected due to conflict
+        """
         self.node.get_logger().info(f"[SEQ {seq_id}] Up command (relay 1 pulse)")
-        self.start_flash_async(relay_address=1, seq_id=seq_id, max_attempts=10)
+        return self.start_flash_async(relay_address=1, seq_id=seq_id, max_attempts=10)
 
     def down(self, seq_id=None):
-        """Move down (pulse relay 2). Pulse width is fixed, velocity is hardware-defined."""
+        """Move down (pulse relay 2). Pulse width is fixed, velocity is hardware-defined.
+        
+        Returns:
+            bool: True if flash started, False if rejected due to conflict
+        """
         self.node.get_logger().info(f"[SEQ {seq_id}] Down command (relay 2 pulse)")
-        self.start_flash_async(relay_address=2, seq_id=seq_id, max_attempts=10)
+        return self.start_flash_async(relay_address=2, seq_id=seq_id, max_attempts=10)
 
     # ═══════════════════════════════════════════════════════════════
     # Pushrod Control Methods (Relay 3, 4, 5)
     # ═══════════════════════════════════════════════════════════════
     def pushrod_stop(self, seq_id=None):
-        """Stop pushrod motion (pulse relay 3)."""
+        """Stop pushrod motion (pulse relay 3).
+        
+        Returns:
+            bool: True if flash started, False if rejected due to conflict
+        """
         self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod Stop command (relay 3 pulse)")
-        self.start_flash_async(relay_address=self.RELAY_PUSHROD_STOP, seq_id=seq_id, max_attempts=10)
+        return self.start_flash_async(relay_address=self.RELAY_PUSHROD_STOP, seq_id=seq_id, max_attempts=10)
 
     def pushrod_up(self, seq_id=None):
-        """Move pushrod up (pulse relay 5). Pulse width is fixed, velocity is hardware-defined."""
+        """Move pushrod up (pulse relay 5). Pulse width is fixed, velocity is hardware-defined.
+        
+        Returns:
+            bool: True if flash started, False if rejected due to conflict
+        """
         self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod Up command (relay 5 pulse)")
-        self.start_flash_async(relay_address=self.RELAY_PUSHROD_UP, seq_id=seq_id, max_attempts=10)
+        return self.start_flash_async(relay_address=self.RELAY_PUSHROD_UP, seq_id=seq_id, max_attempts=10)
 
     def pushrod_down(self, seq_id=None):
-        """Move pushrod down (pulse relay 4). Pulse width is fixed, velocity is hardware-defined."""
+        """Move pushrod down (pulse relay 4). Pulse width is fixed, velocity is hardware-defined.
+        
+        Returns:
+            bool: True if flash started, False if rejected due to conflict
+        """
         self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod Down command (relay 4 pulse)")
-        self.start_flash_async(relay_address=self.RELAY_PUSHROD_DOWN, seq_id=seq_id, max_attempts=10)
+        return self.start_flash_async(relay_address=self.RELAY_PUSHROD_DOWN, seq_id=seq_id, max_attempts=10)
 
     def open_relay(self, relay_address, seq_id=None):
         """Open relay.
@@ -218,11 +242,14 @@ class LiftRobotController(ModbusDevice):
         Non-blocking: scheduling is done via futures and threading.Timer so we never
         spin or sleep inside a ROS callback thread. Only one flash is allowed at a time.
         If another flash is active, the new request is ignored.
+        
+        Returns:
+            bool: True if flash started, False if rejected due to conflict
         """
         with getattr(self, 'flash_lock', threading.Lock()):
             if getattr(self, 'flash_active', False):
                 self.node.get_logger().warn(f"[SEQ {seq_id}] Flash already active, ignore new request relay={relay_address}")
-                return
+                return False
             # Initialize context
             self.flash_active = True
             self.flash_context = {
@@ -250,6 +277,7 @@ class LiftRobotController(ModbusDevice):
         }.get(relay_address, f'Relay{relay_address}')
         self.node.get_logger().info(f"[SEQ {seq_id}] Async flash start: {relay_name} (max_attempts={max_attempts})")
         self._try_on()
+        return True
 
     def _try_on(self):
         """尝试打开继电器: 发送ON命令 → 10ms后验证."""
