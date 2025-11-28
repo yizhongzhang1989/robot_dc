@@ -966,7 +966,8 @@ class LiftRobotNodeAction(Node):
         CRITICAL: This ensures Action only exits after stop command is physically verified.
         Prevents race conditions where new Action starts before old one truly stopped.
         
-        If stop command is rejected due to flash conflict, will retry every 200ms.
+        NOTE: Stop command should be sent BEFORE calling this function.
+        This function only WAITS for completion, it does NOT send the command.
         
         Args:
             target: 'platform' or 'pushrod'
@@ -977,8 +978,6 @@ class LiftRobotNodeAction(Node):
         """
         start_wait = time.time()
         stop_completed = False
-        last_retry_time = 0
-        retry_count = 0
         
         self.get_logger().info(f"[WAIT_STOP] Waiting for {target} stop flash to complete (timeout={timeout}s)...")
         
@@ -994,23 +993,6 @@ class LiftRobotNodeAction(Node):
                 if self.task_state == 'emergency_reset':
                     self.get_logger().error(f"[WAIT_STOP] Emergency reset detected during stop wait!")
                     return False
-            
-            # Retry stop command if rejected due to flash conflict (every 200ms)
-            now = time.time()
-            if (now - last_retry_time) > 0.2:
-                # Try sending stop command - it will return False if flash conflict
-                accepted = False
-                if target == 'platform':
-                    accepted = self.controller.stop()
-                else:
-                    accepted = self.controller.pushrod_stop()
-                
-                if not accepted:
-                    retry_count += 1
-                    self.get_logger().warn(
-                        f"[WAIT_STOP] Stop rejected (flash conflict), retry #{retry_count}..."
-                    )
-                last_retry_time = now
             
             time.sleep(0.02)  # 50Hz polling
         

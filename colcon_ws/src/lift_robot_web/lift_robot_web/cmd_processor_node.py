@@ -22,18 +22,17 @@ class CmdProcessorNode(Node):
         self.command_queue = deque()
         self.queue_lock = threading.Lock()
         
-        # Retry state for current command with timeout detection
+        # Retry state for current command (reject-based retry only)
         self.current_command = None
         self.current_goal_future = None
         self.retry_count = 0
-        self.max_retries = 5  # Increased to handle timeout retries
-        self.retry_timer = None
+        self.max_retries = 3  # Only retry on explicit rejection
         self.command_lock = threading.Lock()
         
         # Goal response state (updated by async callback)
-        self.goal_response = None  # None | 'accepted' | 'rejected' | 'timeout'
+        self.goal_response = None  # None | 'accepted' | 'rejected'
         self.goal_send_time = None
-        self.timeout_threshold = 0.1  # 100ms timeout
+        self.command_timeout = 1.0  # 1 second timeout to force skip stuck commands
         
         # Platform command publisher (for reset via topic)
         self.platform_cmd_pub = self.create_publisher(
@@ -76,9 +75,13 @@ class CmdProcessorNode(Node):
             self.command_queue.append(json.loads(msg.data))
     
     def _process_queue(self):
-        """Poll queue and send commands (only if not waiting for retry)"""
+        """Poll queue and send commands (check timeout first)"""
         with self.command_lock:
-            # Skip if we're waiting for retry or current command response
+            # Check if current command timed out (1 second)
+            if self.current_command is not None:
+                self._check_command_timeout()
+            
+            # Skip if still waiting for current command
             if self.current_command is not None:
                 return
         
@@ -124,10 +127,6 @@ class CmdProcessorNode(Node):
             with self.command_lock:
                 self.current_command = None
                 self.goal_response = None
-        
-        # Start timeout detection loop (only for Action commands)
-        if cmd != 'reset':
-            self._start_timeout_detection()
     
     def _send_manual_move(self, direction, target):
         from lift_robot_interfaces.action import ManualMove
@@ -205,100 +204,71 @@ class CmdProcessorNode(Node):
             self.current_goal_future = future
     
     def _goal_response_callback(self, future):
-        """Handle goal acceptance/rejection - updates goal_response state"""
+        """Handle goal acceptance/rejection - immediately clear on accept, retry on reject"""
         try:
             goal_handle = future.result()
             
-            with self.command_lock:
-                if goal_handle.accepted:
-                    self.goal_response = 'accepted'
-                    self.get_logger().info('✅ Goal accepted')
-                else:
+            if goal_handle.accepted:
+                # ✅ Accepted - clear command state immediately
+                with self.command_lock:
+                    self.get_logger().info('✅ Goal accepted - clearing command state')
+                    self.current_command = None
+                    self.retry_count = 0
+                    self.goal_response = None
+            else:
+                # ⚠️ Rejected - trigger retry
+                with self.command_lock:
                     self.goal_response = 'rejected'
                     self.get_logger().warn('⚠️ Goal rejected')
+                self._handle_rejection()
                 
         except Exception as e:
             self.get_logger().error(f'Goal response error: {e}')
             with self.command_lock:
                 self.goal_response = 'rejected'
+            self._handle_rejection()
     
-    def _start_timeout_detection(self):
-        """Start timeout detection loop - checks every 100ms for response or timeout"""
-        if self.retry_timer:
-            self.retry_timer.cancel()
-        
-        self.retry_timer = self.create_timer(0.1, self._check_response_or_timeout)
-    
-    def _check_response_or_timeout(self):
-        """Check if goal response received or timeout - decides whether to retry"""
+    def _check_command_timeout(self):
+        """Check if command has been waiting too long (1 second) - force skip if stuck"""
         with self.command_lock:
-            # If command already cleared (success/reset), stop checking
+            # If command already cleared, do nothing
             if self.current_command is None:
-                if self.retry_timer:
-                    self.retry_timer.cancel()
-                    self.retry_timer = None
                 return
             
-            # Check response state
-            if self.goal_response == 'accepted':
-                # ✅ Success - clear and move to next
-                self.get_logger().info('✅ Command successful - clearing state')
+            # Check if command has been waiting for 1 second
+            elapsed = time.time() - self.goal_send_time
+            if elapsed >= self.command_timeout:
+                # Force skip stuck command
+                self.get_logger().error(
+                    f'⏱️ Command TIMEOUT ({elapsed:.1f}s) - no callback received, skipping to next command'
+                )
                 self.current_command = None
                 self.retry_count = 0
                 self.goal_response = None
-                if self.retry_timer:
-                    self.retry_timer.cancel()
-                    self.retry_timer = None
-                return
-            
-            elif self.goal_response == 'rejected':
-                # ⚠️ Rejected - retry
-                if self.retry_timer:
-                    self.retry_timer.cancel()
-                    self.retry_timer = None
-                self._handle_rejection('rejected')
-                return
-            
-            else:  # goal_response is None
-                # Check timeout
-                elapsed = time.time() - self.goal_send_time
-                if elapsed >= self.timeout_threshold:
-                    # ⏱️ Timeout - retry
-                    self.get_logger().warn(f'⏱️ Timeout ({elapsed*1000:.0f}ms) - no response received')
-                    if self.retry_timer:
-                        self.retry_timer.cancel()
-                        self.retry_timer = None
-                    self._handle_rejection('timeout')
-                    return
-                # else: still waiting, next timer tick will check again
     
-    def _handle_rejection(self, reason):
-        """Handle goal rejection/timeout with retry logic"""
+    def _handle_rejection(self):
+        """Handle goal rejection with retry logic (reject callback only)"""
         with self.command_lock:
             self.retry_count += 1
             
             if self.retry_count > self.max_retries:
                 self.get_logger().error(
-                    f'❌ Max retries ({self.max_retries}) exceeded (reason={reason}) - triggering RESET'
+                    f'❌ Max retries ({self.max_retries}) exceeded - skipping command'
                 )
                 
-                # Clear command and trigger emergency reset
+                # Skip command without reset
                 self.current_command = None
                 self.retry_count = 0
                 self.current_goal_future = None
                 self.goal_response = None
-                
-                # Trigger reset
-                self._send_reset()
             else:
-                # Retry immediately for rejected, or after checking for timeout
-                reason_str = '⏱️ timeout' if reason == 'timeout' else '⚠️ rejected'
+                # Retry immediately on rejection
                 self.get_logger().warn(
-                    f'{reason_str} - retrying immediately ({self.retry_count}/{self.max_retries})'
+                    f'⚠️ Goal rejected - retrying ({self.retry_count}/{self.max_retries})'
                 )
                 command = self.current_command
                 
-                # Retry immediately (no delay timer)
+                # Retry immediately
                 self._send_command(command, is_retry=True)
 
 
