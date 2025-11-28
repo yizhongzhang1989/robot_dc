@@ -101,8 +101,6 @@ class ModbusManagerNode(Node):
             # 发送命令
             self.client.socket.write(bytes(full_command))
             
-            # 读取响应 (Modbus RTU响应通常是8字节: 地址+功能码+数据+CRC)
-            time.sleep(0.01)
             try:
                 # 尝试读取响应 (最多8字节)
                 response_bytes = self.client.socket.read(8)
@@ -173,6 +171,8 @@ class ModbusManagerNode(Node):
         
         # 原有的标准Modbus处理逻辑
         with self.lock:
+            # 记录开始时间
+            start_time = time.time()
             try:
                 fc = request.function_code
                 addr = request.address
@@ -242,10 +242,14 @@ class ModbusManagerNode(Node):
                 response.success = False
                 response.response = []
                 self.get_logger().error(f"[SEQ {seq_id}] [{now_str}] Modbus error response: success={response.success}, response={response.response}")
+            
+            # 计算响应时间
+            response_time_ms = (time.time() - start_time) * 1000
 
         # Update log entry
         log_entry['success'] = response.success
         log_entry['response'] = list(response.response) # Ensure it's a list for JSON serialization
+        log_entry['response_time_ms'] = response_time_ms
         if self.dashboard:
             self.dashboard.add_log(log_entry)
 
