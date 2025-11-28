@@ -2,6 +2,11 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+import sys
+import os
+
+# Add common package to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'common'))
 
 # Auto-detect serial port: prefer description containing 485/RS485; else first /dev/ttyUSB*; else fallback /dev/ttyUSB0
 def _auto_select_port(context):
@@ -32,8 +37,32 @@ def _auto_select_port(context):
         return '/dev/ttyUSB0'
 
 def _launch_setup(context, *args, **kwargs):
-    port = _auto_select_port(context)
-    baudrate = LaunchConfiguration('baudrate').perform(context)
+    # Try to load from config file
+    port = None
+    baudrate = None
+    
+    try:
+        from common.config_manager import ConfigManager
+        config = ConfigManager()
+        
+        if config.has('lift_robot.modbus.port'):
+            port = config.get('lift_robot.modbus.port', 'auto')
+            baudrate = config.get('lift_robot.modbus.baudrate', 115200)
+            print(f"[modbus_manager_launch] Loaded config: port={port}, baudrate={baudrate}")
+    except Exception as e:
+        print(f"[modbus_manager_launch] Could not load config: {e}")
+        print(f"[modbus_manager_launch] Using launch arguments")
+    
+    # Override with launch arguments if provided
+    if port is None:
+        port = LaunchConfiguration('modbus_port').perform(context)
+    if baudrate is None:
+        baudrate = LaunchConfiguration('baudrate').perform(context)
+    
+    # Auto-detect port if needed
+    if port == 'auto':
+        port = _auto_select_port(context)
+    
     # Create node with resolved port / baudrate
     node = Node(
         package='modbus_driver',

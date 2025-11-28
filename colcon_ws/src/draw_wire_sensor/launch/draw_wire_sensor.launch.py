@@ -4,11 +4,29 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 import os
 import json
+import sys
+
+# Add common package to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'common'))
 
 def generate_launch_description():
-    device_id_arg = DeclareLaunchArgument('device_id', default_value='51', description='Modbus device ID')
+    # Try to load from config file
+    default_device_id = '51'
+    default_read_interval = '0.06'
+    
+    try:
+        from common.config_manager import ConfigManager
+        config = ConfigManager()
+        default_device_id = str(config.get('lift_robot.device_ids.draw_wire_sensor', 51))
+        default_read_interval = str(config.get('lift_robot.sensors.draw_wire.read_interval', 0.06))
+        print(f"[draw_wire_sensor] Loaded from config: device_id={default_device_id}, interval={default_read_interval}")
+    except Exception as e:
+        print(f"[draw_wire_sensor] Could not load config: {e}")
+        print(f"[draw_wire_sensor] Using defaults: device_id={default_device_id}, interval={default_read_interval}")
+    
+    device_id_arg = DeclareLaunchArgument('device_id', default_value=default_device_id, description='Modbus device ID')
     # Default changed to 0.06s (~17Hz) for system-wide consistency
-    read_interval_arg = DeclareLaunchArgument('read_interval', default_value='0.06', description='Sensor read interval (s, 0.06=~17Hz)')
+    read_interval_arg = DeclareLaunchArgument('read_interval', default_value=default_read_interval, description='Sensor read interval (s, 0.06=~17Hz)')
     
     # Portable config path resolution (ENV -> colcon_ws -> CWD)
     env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
