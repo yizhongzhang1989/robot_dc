@@ -77,7 +77,7 @@ class ModbusManagerNode(Node):
             now_str: 时间戳字符串
         
         返回:
-            (success, response_data)
+            (success, response_data, response_time_ms)
         """
         try:
             # 构建完整的命令: [设备地址] + raw_message
@@ -95,28 +95,33 @@ class ModbusManagerNode(Node):
             command_hex = ' '.join([f'{b:02X}' for b in full_command])
             self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Sending raw Modbus command: {command_hex}")
             
+            # 记录发送时间
+            start_time = time.time()
+            
             # 发送命令
             self.client.socket.write(bytes(full_command))
             
             # 读取响应 (Modbus RTU响应通常是8字节: 地址+功能码+数据+CRC)
-            
+            time.sleep(0.01)
             try:
                 # 尝试读取响应 (最多8字节)
                 response_bytes = self.client.socket.read(8)
+                response_time_ms = (time.time() - start_time) * 1000
                 if response_bytes and len(response_bytes) > 0:
                     response_hex = ' '.join([f'{b:02X}' for b in response_bytes])
-                    self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Received response: {response_hex}")
+                    self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Received response: {response_hex} ({response_time_ms:.2f}ms)")
                 else:
-                    self.get_logger().warn(f"[SEQ {seq_id}] [{now_str}] No response received from device")
+                    self.get_logger().warn(f"[SEQ {seq_id}] [{now_str}] No response received from device ({response_time_ms:.2f}ms)")
             except Exception as read_error:
-                self.get_logger().warn(f"[SEQ {seq_id}] [{now_str}] Failed to read response: {read_error}")
+                response_time_ms = (time.time() - start_time) * 1000
+                self.get_logger().warn(f"[SEQ {seq_id}] [{now_str}] Failed to read response: {read_error} ({response_time_ms:.2f}ms)")
             
             self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Raw Modbus command sent successfully")
-            return True, full_command
+            return True, full_command, response_time_ms
             
         except Exception as e:
             self.get_logger().error(f"[SEQ {seq_id}] [{now_str}] Raw Modbus command failed: {e}")
-            return False, []
+            return False, [], 0.0
 
     def handle_modbus_request(self, request, response):
         seq_id = getattr(request, 'seq_id', None)
@@ -148,7 +153,7 @@ class ModbusManagerNode(Node):
             self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Detected raw_message, using custom handler")
             log_entry['raw_message'] = list(request.raw_message)
             with self.lock:
-                success, response_data = self.handle_raw_modbus_command(
+                success, response_data, response_time_ms = self.handle_raw_modbus_command(
                     request.slave_id, 
                     request.raw_message, 
                     seq_id, 
@@ -158,6 +163,7 @@ class ModbusManagerNode(Node):
                 response.response = response_data
                 log_entry['success'] = success
                 log_entry['response'] = response_data
+                log_entry['response_time_ms'] = response_time_ms
                 # 保存完整命令(包含设备ID和CRC)到 log_entry
                 if success and len(response_data) > 0:
                     log_entry['full_command'] = list(response_data)
