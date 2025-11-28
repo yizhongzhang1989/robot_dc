@@ -9,6 +9,7 @@ from .capture import CaptureImageHandler
 from .movement_pattern import MovementPatternHandler
 from .positioning import PositioningHandler
 from .coordinate_frame import CoordinateFrameHandler
+from .record import RecordDataHandler
 
 __all__ = [
     'RobotMoveHandler',
@@ -16,6 +17,7 @@ __all__ = [
     'MovementPatternHandler',
     'PositioningHandler',
     'CoordinateFrameHandler',
+    'RecordDataHandler',
 ]
 
 
@@ -31,5 +33,6 @@ def register_all_handlers(workflow_engine):
     workflow_engine.register_handler('movement_pattern', MovementPatternHandler)
     workflow_engine.register_handler('positioning', PositioningHandler)
     workflow_engine.register_handler('coordinate_frame', CoordinateFrameHandler)
+    workflow_engine.register_handler('record_data', RecordDataHandler)
     
     print("✓ All operation handlers registered")

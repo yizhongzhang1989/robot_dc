@@ -34,7 +34,7 @@ class CoordinateFrameHandler(OperationHandler):
             
             # Build frame based on method
             if method == 'four_point_orthogonal':
-                frame = self._build_four_point_frame(points_3d)
+                frame = self._build_coordinate_system_based_on_keypoints(points_3d)
             else:
                 return {'status': 'error', 'error': f'Unknown method: {method}'}
             
@@ -53,7 +53,7 @@ class CoordinateFrameHandler(OperationHandler):
         except Exception as e:
             return {'status': 'error', 'error': str(e)}
     
-    def _build_four_point_frame(self, points_3d: List) -> Dict[str, Any]:
+    def _build_coordinate_system_based_on_keypoints(self, points_3d: List) -> Dict[str, Any]:
         """
         Build orthogonal frame from 4 corner points
         Assumes points are: [bottom_left, bottom_right, top_left, top_right]

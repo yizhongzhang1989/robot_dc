@@ -28,18 +28,33 @@ from ur15_workflow.engine import WorkflowEngine
 from ur15_workflow.handlers import register_all_handlers
 
 # Import positioning and status utilities
-try:
-    sys.path.append(str(Path(__file__).parent.parent / 'scripts' / 'ThirdParty' / 'robot_vision'))
-    from core.positioning_3d_webapi import Positioning3DWebAPIClient
-except ImportError:
-    print("Warning: Positioning3DWebAPI not available")
-    Positioning3DWebAPIClient = None
+# Try to find scripts directory
+scripts_dir = None
+# 1. Try absolute path (dev env)
+if os.path.exists("/home/a/Documents/robot_dc/scripts"):
+    scripts_dir = Path("/home/a/Documents/robot_dc/scripts")
+# 2. Try relative to source (if running from source)
+elif (Path(__file__).parents[4] / 'scripts').exists():
+    scripts_dir = Path(__file__).parents[4] / 'scripts'
 
-try:
-    sys.path.append(str(Path(__file__).parent.parent / 'scripts'))
-    from robot_status.client_utils import RobotStatusClient
-except ImportError:
-    print("Warning: RobotStatusClient not available")
+if scripts_dir:
+    # Positioning3DWebAPIClient
+    try:
+        sys.path.append(str(scripts_dir / 'ThirdParty' / 'robot_vision'))
+        from core.positioning_3d_webapi import Positioning3DWebAPIClient
+    except ImportError:
+        print("Warning: Positioning3DWebAPI not available (ImportError)")
+        Positioning3DWebAPIClient = None
+
+    # RobotStatusClient (use Redis-based version)
+    try:
+        from robot_status_redis.client_utils import RobotStatusClient
+    except ImportError:
+        print("Warning: RobotStatusClient not available (ImportError)")
+        RobotStatusClient = None
+else:
+    print("Warning: Could not find 'scripts' directory. External services will be unavailable.")
+    Positioning3DWebAPIClient = None
     RobotStatusClient = None
 
 
@@ -131,19 +146,21 @@ class RobotWorkflowRunner:
         else:
             print("⊘ Positioning service not available (module not imported)")
         
-        # Initialize Robot Status Service
+        # Initialize Robot Status Service (Redis-based)
         if RobotStatusClient is not None:
             try:
-                # RobotStatusClient needs a ROS node, we'll create a simple one
+                # RobotStatusClient (Redis version) optionally takes a ROS node for logging
+                # Create a dummy node for logging purposes
                 class DummyNode(Node):
                     def __init__(self):
                         super().__init__('workflow_runner_node')
                 
                 dummy_node = DummyNode()
-                robot_status_client = RobotStatusClient(dummy_node, timeout_sec=5.0)
+                # Redis-based client doesn't need timeout_sec parameter
+                robot_status_client = RobotStatusClient(node=dummy_node)
                 context['robot_status_client'] = robot_status_client
                 context['ros_node'] = dummy_node
-                print("✓ RobotStatusClient initialized")
+                print("✓ RobotStatusClient initialized (Redis backend)")
                 
             except Exception as e:
                 print(f"✗ Failed to initialize RobotStatusClient: {e}")
@@ -176,7 +193,7 @@ class RobotWorkflowRunner:
         if self.workflow_engine and self.workflow_engine.context.get('robot'):
             try:
                 robot = self.workflow_engine.context['robot']
-                robot.disconnect()
+                robot.close()
                 print("✓ Robot disconnected")
             except Exception as e:
                 print(f"✗ Error disconnecting robot: {e}")

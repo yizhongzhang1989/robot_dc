@@ -299,11 +299,19 @@ class WorkflowEngine:
             output_path: Path to save results
         """
         try:
+            # Filter context to remove non-serializable objects
+            serializable_context = {}
+            for k, v in self.context.items():
+                if isinstance(v, (str, int, float, bool, list, dict, type(None))):
+                    serializable_context[k] = v
+                else:
+                    serializable_context[k] = f"<{type(v).__name__} object>"
+
             output_data = {
                 'timestamp': datetime.now().isoformat(),
                 'workflow': self.workflow,
                 'results': self.results,
-                'context': self.context
+                'context': serializable_context
             }
             
             with open(output_path, 'w') as f:

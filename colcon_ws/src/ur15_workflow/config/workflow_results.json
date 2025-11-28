@@ -1,0 +1,1305 @@
+{
+  "timestamp": "2025-11-28T17:55:21.288431",
+  "workflow": [
+    {
+      "id": "upload_reference_data_for_rack_location",
+      "type": "positioning",
+      "description": "upload reference data to server for rack location",
+      "positioning_type": "upload_references",
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "init_session_for_rack_location",
+      "type": "positioning",
+      "description": "init session for rack location",
+      "positioning_type": "init_session",
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "*move_to_location_pose1",
+      "type": "robot_move",
+      "description": "Move robot to rack location task pose1",
+      "robot_pose": [
+        1.2078,
+        -0.2548,
+        2.0944,
+        -3.0927,
+        -0.5061,
+        -1.864
+      ],
+      "move_type": "movej",
+      "velocity": 0.5,
+      "acceleration": 0.5,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose1",
+      "type": "capture_image",
+      "description": "Capture image at capture pose1 in location task pose1",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_bottom_left/1.jpg",
+      "timeout": 3.0,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose1",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose1 in location task pose1",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_bottom_left/1.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_1",
+      "type": "positioning",
+      "description": "Upload view data1",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "image_path": "../temp/rack_location/rack_bottom_left/1.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_left/1.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_to_capture_pose2",
+      "type": "robot_move",
+      "description": "Move robot to capture pose2 in location task pose1",
+      "robot_pose": [
+        0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose2",
+      "type": "capture_image",
+      "description": "Capture image at capture pose2 in location task pose1",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_bottom_left/2.jpg",
+      "timeout": 3.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose2",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose2 in location task pose1",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_bottom_left/2.json",
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_2",
+      "type": "positioning",
+      "description": "Upload view data2",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "image_path": "../temp/rack_location/rack_bottom_left/2.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_left/2.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_back_to_location_pose",
+      "type": "robot_move",
+      "description": "Move robot back to location pose",
+      "robot_pose": [
+        -0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_to_capture_pose3",
+      "type": "robot_move",
+      "description": "Move robot to capture pose3 in location task pose1",
+      "robot_pose": [
+        0.0,
+        0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose3",
+      "type": "capture_image",
+      "description": "Capture image at capture pose3 in location task pose1",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_bottom_left/3.jpg",
+      "timeout": 3.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose3",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose3 in location task pose1",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_bottom_left/3.json",
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_3",
+      "type": "positioning",
+      "description": "Upload view data3",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "image_path": "../temp/rack_location/rack_bottom_left/3.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_left/3.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_back_to_location_pose",
+      "type": "robot_move",
+      "description": "Move robot back to location pose",
+      "robot_pose": [
+        0.0,
+        -0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "*move_to_location_pose2",
+      "type": "robot_move",
+      "description": "Move robot to rack location task pose2",
+      "robot_pose": [
+        1.212,
+        -0.2062,
+        2.0071,
+        -2.9594,
+        -0.4538,
+        -1.9862
+      ],
+      "move_type": "movej",
+      "velocity": 0.5,
+      "acceleration": 0.5,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose1",
+      "type": "capture_image",
+      "description": "Capture image at capture pose1 in location task pose1",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_bottom_right/1.jpg",
+      "timeout": 3.0,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose1",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose1 in location task pose1",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_bottom_right/1.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_1",
+      "type": "positioning",
+      "description": "Upload view data1",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_right",
+      "image_path": "../temp/rack_location/rack_bottom_right/1.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_right/1.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_to_capture_pose2",
+      "type": "robot_move",
+      "description": "Move robot to capture pose2 in location task pose1",
+      "robot_pose": [
+        0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose2",
+      "type": "capture_image",
+      "description": "Capture image at capture pose2 in location task pose1",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_bottom_right/2.jpg",
+      "timeout": 3.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose2",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose2 in location task pose1",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_bottom_right/2.json",
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_2",
+      "type": "positioning",
+      "description": "Upload view data2",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_right",
+      "image_path": "../temp/rack_location/rack_bottom_right/2.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_right/2.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_back_to_location_pose",
+      "type": "robot_move",
+      "description": "Move robot back to location pose",
+      "robot_pose": [
+        -0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_to_capture_pose3",
+      "type": "robot_move",
+      "description": "Move robot to capture pose3 in location task pose1",
+      "robot_pose": [
+        0.0,
+        0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose3",
+      "type": "capture_image",
+      "description": "Capture image at capture pose3 in location task pose1",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_bottom_right/3.jpg",
+      "timeout": 3.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose3",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose3 in location task pose1",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_bottom_right/3.json",
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_3",
+      "type": "positioning",
+      "description": "Upload view data3",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_right",
+      "image_path": "../temp/rack_location/rack_bottom_right/3.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_right/3.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_back_to_location_pose",
+      "type": "robot_move",
+      "description": "Move robot back to location pose",
+      "robot_pose": [
+        0.0,
+        -0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "*move_to_location_pose3",
+      "type": "robot_move",
+      "description": "Move robot to rack location task pose3",
+      "robot_pose": [
+        1.078,
+        -1.922,
+        1.1886,
+        -0.7557,
+        0.322,
+        -1.5943
+      ],
+      "move_type": "movej",
+      "velocity": 0.5,
+      "acceleration": 0.5,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose1",
+      "type": "capture_image",
+      "description": "Capture image at capture pose1 in location task pose3",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_top_left/1.jpg",
+      "timeout": 3.0,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose1",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose1 in location task pose3",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_top_left/1.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_1",
+      "type": "positioning",
+      "description": "Upload view data1",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_left",
+      "image_path": "../temp/rack_location/rack_top_left/1.jpg",
+      "pose_path": "../temp/rack_location/rack_top_left/1.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_to_capture_pose2",
+      "type": "robot_move",
+      "description": "Move robot to capture pose2 in location task pose3",
+      "robot_pose": [
+        0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose2",
+      "type": "capture_image",
+      "description": "Capture image at capture pose2 in location task pose3",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_top_left/2.jpg",
+      "timeout": 3.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose2",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose2 in location task pose3",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_top_left/2.json",
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_2",
+      "type": "positioning",
+      "description": "Upload view data2",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_left",
+      "image_path": "../temp/rack_location/rack_top_left/2.jpg",
+      "pose_path": "../temp/rack_location/rack_top_left/2.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_back_to_location_pose",
+      "type": "robot_move",
+      "description": "Move robot back to location pose",
+      "robot_pose": [
+        -0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_to_capture_pose3",
+      "type": "robot_move",
+      "description": "Move robot to capture pose3 in location task pose3",
+      "robot_pose": [
+        0.0,
+        0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose3",
+      "type": "capture_image",
+      "description": "Capture image at capture pose3 in location task pose3",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_top_left/3.jpg",
+      "timeout": 3.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose3",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose3 in location task pose3",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_top_left/3.json",
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_3",
+      "type": "positioning",
+      "description": "Upload view data3",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_left",
+      "image_path": "../temp/rack_location/rack_top_left/3.jpg",
+      "pose_path": "../temp/rack_location/rack_top_left/3.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_back_to_location_pose",
+      "type": "robot_move",
+      "description": "Move robot back to location pose",
+      "robot_pose": [
+        0.0,
+        -0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "*move_to_location_pose4",
+      "type": "robot_move",
+      "description": "Move robot to rack location task pose4",
+      "robot_pose": [
+        1.0786,
+        -1.9785,
+        1.1903,
+        -0.7679,
+        0.281,
+        -1.5917
+      ],
+      "move_type": "movej",
+      "velocity": 0.5,
+      "acceleration": 0.5,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose1",
+      "type": "capture_image",
+      "description": "Capture image at capture pose1 in location task pose4",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_top_right/1.jpg",
+      "timeout": 3.0,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose1",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose1 in location task pose4",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_top_right/1.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_1",
+      "type": "positioning",
+      "description": "Upload view data1",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_right",
+      "image_path": "../temp/rack_location/rack_top_right/1.jpg",
+      "pose_path": "../temp/rack_location/rack_top_right/1.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_to_capture_pose2",
+      "type": "robot_move",
+      "description": "Move robot to capture pose2 in location task pose4",
+      "robot_pose": [
+        0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose2",
+      "type": "capture_image",
+      "description": "Capture image at capture pose2 in location task pose4",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_top_right/2.jpg",
+      "timeout": 3.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose2",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose2 in location task pose4",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_top_right/2.json",
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_2",
+      "type": "positioning",
+      "description": "Upload view data2",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_right",
+      "image_path": "../temp/rack_location/rack_top_right/2.jpg",
+      "pose_path": "../temp/rack_location/rack_top_right/2.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_back_to_location_pose",
+      "type": "robot_move",
+      "description": "Move robot back to location pose",
+      "robot_pose": [
+        -0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_to_capture_pose3",
+      "type": "robot_move",
+      "description": "Move robot to capture pose3 in location task pose4",
+      "robot_pose": [
+        0.0,
+        0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_pose3",
+      "type": "capture_image",
+      "description": "Capture image at capture pose3 in location task pose4",
+      "camera_topic": "/ur15_camera/image_raw",
+      "save_path": "../temp/rack_location/rack_top_right/3.jpg",
+      "timeout": 3.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_pose3",
+      "type": "record_data",
+      "description": "Record robot pose data at capture pose3 in location task pose4",
+      "record_type": "pose",
+      "save_path": "../temp/rack_location/rack_top_right/3.json",
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view_3",
+      "type": "positioning",
+      "description": "Upload view data3",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_right",
+      "image_path": "../temp/rack_location/rack_top_right/3.jpg",
+      "pose_path": "../temp/rack_location/rack_top_right/3.json",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_back_to_location_pose",
+      "type": "robot_move",
+      "description": "Move robot back to location pose",
+      "robot_pose": [
+        0.0,
+        -0.01,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "get_positioning_result_from_server",
+      "type": "positioning",
+      "description": "Get positioning result from server for rack location",
+      "positioning_type": "get_result",
+      "template_points": [
+        {
+          "name": "GB200_Rack_Bottom_Left_Corner",
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        {
+          "name": "GB200_Rack_Bottom_Right_Corner",
+          "x": 0.55,
+          "y": 0,
+          "z": 0
+        },
+        {
+          "name": "GB200_Rack_Top_Left_Corner",
+          "x": 0,
+          "y": 0,
+          "z": 2.145
+        },
+        {
+          "name": "GB200_Rack_Top_Right_Corner",
+          "x": 0.55,
+          "y": 0,
+          "z": 2.145
+        }
+      ],
+      "save_path": "../temp/rack_location/positioning_result.json",
+      "timeout": 10000,
+      "status_namespace": "ur15",
+      "status_key_name": "rack_points_3d",
+      "local2world_matrix_name": "rack_local2world",
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "terminate_session_for_rack_location",
+      "type": "positioning",
+      "description": "Terminate session for rack location",
+      "positioning_type": "terminate_session",
+      "wait_time": 0.5,
+      "stop_on_failure": false
+    }
+  ],
+  "results": {
+    "upload_reference_data_for_rack_location": {
+      "status": "success",
+      "outputs": {
+        "references_found": 10,
+        "references_loaded": 10,
+        "success": true,
+        "timestamp": "2025-11-28T17:54:33.304814"
+      },
+      "elapsed_time": 5.162153959274292
+    },
+    "init_session_for_rack_location": {
+      "status": "success",
+      "outputs": {
+        "session_id": "session_1764323673_3b10dd76"
+      },
+      "elapsed_time": 0.0030090808868408203
+    },
+    "*move_to_location_pose1": {
+      "status": "success",
+      "outputs": {
+        "current_robot_pose": [
+          0.07154153632678519,
+          -0.6654237939559903,
+          -0.22726372445943774,
+          -1.361170898230626,
+          1.7639676831637687,
+          -1.0036215436316567
+        ]
+      },
+      "elapsed_time": 6.728912115097046
+    },
+    "capture_pose1": {
+      "status": "success",
+      "outputs": {
+        "captured_image_path": "../temp/rack_location/rack_top_right/1.jpg"
+      },
+      "elapsed_time": 0.04589533805847168
+    },
+    "record_pose1": {
+      "status": "success",
+      "outputs": {
+        "recorded_data_path": "../temp/rack_location/rack_top_right/1.json"
+      },
+      "elapsed_time": 0.0205690860748291
+    },
+    "upload_view_1": {
+      "status": "success",
+      "outputs": {
+        "queue_position": 1,
+        "status": "queued",
+        "success": true,
+        "timestamp": "2025-11-28T17:55:13.815999",
+        "view_id": "view_1764323713802387"
+      },
+      "elapsed_time": 0.1310100555419922
+    },
+    "move_to_capture_pose2": {
+      "status": "success",
+      "outputs": {
+        "current_robot_pose": [
+          0.1544698341547993,
+          -0.3755559987524418,
+          1.2179426860975502,
+          -0.771392204797388,
+          1.3055936430759836,
+          -1.744854315709334
+        ]
+      },
+      "elapsed_time": 1.7622370719909668
+    },
+    "capture_pose2": {
+      "status": "success",
+      "outputs": {
+        "captured_image_path": "../temp/rack_location/rack_top_right/2.jpg"
+      },
+      "elapsed_time": 0.04300355911254883
+    },
+    "record_pose2": {
+      "status": "success",
+      "outputs": {
+        "recorded_data_path": "../temp/rack_location/rack_top_right/2.json"
+      },
+      "elapsed_time": 0.016528844833374023
+    },
+    "upload_view_2": {
+      "status": "success",
+      "outputs": {
+        "queue_position": 1,
+        "status": "queued",
+        "success": true,
+        "timestamp": "2025-11-28T17:55:15.757474",
+        "view_id": "view_1764323715740740"
+      },
+      "elapsed_time": 0.10935473442077637
+    },
+    "move_back_to_location_pose": {
+      "status": "success",
+      "outputs": {
+        "current_robot_pose": [
+          0.1593675958875686,
+          -0.36681392626413567,
+          1.2178895106706993,
+          -0.7713923459676539,
+          1.305580676845186,
+          -1.7448397745130213
+        ]
+      },
+      "elapsed_time": 1.7670109272003174
+    },
+    "move_to_capture_pose3": {
+      "status": "success",
+      "outputs": {
+        "current_robot_pose": [
+          0.1617842181123676,
+          -0.3682040858963893,
+          1.208303960089505,
+          -0.7714228011820317,
+          1.3055711866001065,
+          -1.7448721753231982
+        ]
+      },
+      "elapsed_time": 1.7681138515472412
+    },
+    "capture_pose3": {
+      "status": "success",
+      "outputs": {
+        "captured_image_path": "../temp/rack_location/rack_top_right/3.jpg"
+      },
+      "elapsed_time": 0.03767204284667969
+    },
+    "record_pose3": {
+      "status": "success",
+      "outputs": {
+        "recorded_data_path": "../temp/rack_location/rack_top_right/3.json"
+      },
+      "elapsed_time": 0.02128767967224121
+    },
+    "upload_view_3": {
+      "status": "success",
+      "outputs": {
+        "queue_position": 1,
+        "status": "queued",
+        "success": true,
+        "timestamp": "2025-11-28T17:55:19.465149",
+        "view_id": "view_1764323719447708"
+      },
+      "elapsed_time": 0.12367820739746094
+    },
+    "*move_to_location_pose2": {
+      "status": "success",
+      "outputs": {
+        "current_robot_pose": [
+          0.07094710921561599,
+          -0.6834405871816653,
+          -0.26655070653993373,
+          -1.368985175476595,
+          1.6768478266622406,
+          -1.0494330251409094
+        ]
+      },
+      "elapsed_time": 2.1139063835144043
+    },
+    "*move_to_location_pose3": {
+      "status": "success",
+      "outputs": {
+        "current_robot_pose": [
+          0.13101752981947595,
+          -0.41558790937788265,
+          1.207093981869777,
+          -0.6851669373604538,
+          1.2915828719375106,
+          -1.7296699104620525
+        ]
+      },
+      "elapsed_time": 6.4822447299957275
+    },
+    "*move_to_location_pose4": {
+      "status": "success",
+      "outputs": {
+        "current_robot_pose": [
+          0.15936327427003477,
+          -0.36681369626631666,
+          1.2178928149351422,
+          -0.771397827090963,
+          1.305590640678136,
+          -1.7448518089340288
+        ]
+      },
+      "elapsed_time": 1.7538013458251953
+    },
+    "get_positioning_result_from_server": {
+      "status": "success",
+      "outputs": {
+        "points_3d": [
+          [
+            0.8832261989391604,
+            -0.5202717145626868,
+            -0.6205044917991903
+          ],
+          [
+            0.755272769510455,
+            -1.0551808679395511,
+            -0.6208473198606258
+          ],
+          [
+            0.8704746946535178,
+            -0.5185962043854547,
+            1.5244569511652517
+          ],
+          [
+            0.7425212652248123,
+            -1.053505357762319,
+            1.524114123103816
+          ]
+        ],
+        "mean_error": 1.4491856134177503,
+        "positioning_result": {
+          "error_message": null,
+          "local2world": [
+            [
+              -0.2326425989612827,
+              0.9725441280527403,
+              -0.005944757242723857,
+              0.8832261989391604
+            ],
+            [
+              -0.972562097048844,
+              -0.23264212264728934,
+              0.0007811236257492357,
+              -0.5202717145626868
+            ],
+            [
+              -0.0006233237480644405,
+              0.005963368200834179,
+              0.9999820246920474,
+              -0.6205044917991903
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "mean_error": 1.4491856134177503,
+          "num_points": 4,
+          "points_3d": [
+            [
+              0.8832261989391604,
+              -0.5202717145626868,
+              -0.6205044917991903
+            ],
+            [
+              0.755272769510455,
+              -1.0551808679395511,
+              -0.6208473198606258
+            ],
+            [
+              0.8704746946535178,
+              -0.5185962043854547,
+              1.5244569511652517
+            ],
+            [
+              0.7425212652248123,
+              -1.053505357762319,
+              1.524114123103816
+            ]
+          ],
+          "processing_time": 0.036896705627441406,
+          "reprojection_errors": [
+            [
+              0.09856436379241303,
+              1.3413171209910226,
+              null,
+              null
+            ],
+            [
+              0.35195792129782905,
+              0.6057723168744982,
+              null,
+              null
+            ],
+            [
+              0.816360702396223,
+              1.6422829286659033,
+              null,
+              null
+            ],
+            [
+              1.2879726331214896,
+              0.216711556328024,
+              null,
+              null
+            ],
+            [
+              1.7975886981769718,
+              0.5797502093180825,
+              null,
+              null
+            ],
+            [
+              1.519774421478388,
+              1.3661097731463934,
+              null,
+              null
+            ],
+            [
+              null,
+              null,
+              1.7707878880524544,
+              1.4686797493000014
+            ],
+            [
+              null,
+              null,
+              1.586665735504822,
+              1.5248121761892433
+            ],
+            [
+              null,
+              null,
+              1.234261982595564,
+              2.158027040508039
+            ],
+            [
+              null,
+              null,
+              4.050657339790359,
+              0.19960230850187005
+            ],
+            [
+              null,
+              null,
+              4.708771230267057,
+              0.3593975260734522
+            ],
+            [
+              null,
+              null,
+              3.7806395603333547,
+              0.3139895393225481
+            ]
+          ],
+          "success": true
+        }
+      },
+      "elapsed_time": 0.04140329360961914
+    },
+    "terminate_session_for_rack_location": {
+      "status": "success",
+      "elapsed_time": 0.0025205612182617188
+    }
+  },
+  "context": {
+    "robot_ip": "192.168.1.15",
+    "robot_port": 30002,
+    "camera_topic": "/ur15_camera/image_raw",
+    "positioning_client": "<Positioning3DWebAPIClient object>",
+    "robot_status_client": "<RobotStatusClient object>",
+    "ros_node": "<DummyNode object>",
+    "references_found": 10,
+    "references_loaded": 10,
+    "success": true,
+    "timestamp": "2025-11-28T17:55:19.465149",
+    "session_id": "session_1764323673_3b10dd76",
+    "robot": "<UR15Robot object>",
+    "current_robot_pose": [
+      0.1593675958875686,
+      -0.36681392626413567,
+      1.2178895106706993,
+      -0.7713923459676539,
+      1.305580676845186,
+      -1.7448397745130213
+    ],
+    "captured_image_path": "../temp/rack_location/rack_top_right/3.jpg",
+    "recorded_data_path": "../temp/rack_location/rack_top_right/3.json",
+    "queue_position": 1,
+    "status": "queued",
+    "view_id": "view_1764323719447708",
+    "points_3d": [
+      [
+        0.8832261989391604,
+        -0.5202717145626868,
+        -0.6205044917991903
+      ],
+      [
+        0.755272769510455,
+        -1.0551808679395511,
+        -0.6208473198606258
+      ],
+      [
+        0.8704746946535178,
+        -0.5185962043854547,
+        1.5244569511652517
+      ],
+      [
+        0.7425212652248123,
+        -1.053505357762319,
+        1.524114123103816
+      ]
+    ],
+    "mean_error": 1.4491856134177503,
+    "positioning_result": {
+      "error_message": null,
+      "local2world": [
+        [
+          -0.2326425989612827,
+          0.9725441280527403,
+          -0.005944757242723857,
+          0.8832261989391604
+        ],
+        [
+          -0.972562097048844,
+          -0.23264212264728934,
+          0.0007811236257492357,
+          -0.5202717145626868
+        ],
+        [
+          -0.0006233237480644405,
+          0.005963368200834179,
+          0.9999820246920474,
+          -0.6205044917991903
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "mean_error": 1.4491856134177503,
+      "num_points": 4,
+      "points_3d": [
+        [
+          0.8832261989391604,
+          -0.5202717145626868,
+          -0.6205044917991903
+        ],
+        [
+          0.755272769510455,
+          -1.0551808679395511,
+          -0.6208473198606258
+        ],
+        [
+          0.8704746946535178,
+          -0.5185962043854547,
+          1.5244569511652517
+        ],
+        [
+          0.7425212652248123,
+          -1.053505357762319,
+          1.524114123103816
+        ]
+      ],
+      "processing_time": 0.036896705627441406,
+      "reprojection_errors": [
+        [
+          0.09856436379241303,
+          1.3413171209910226,
+          null,
+          null
+        ],
+        [
+          0.35195792129782905,
+          0.6057723168744982,
+          null,
+          null
+        ],
+        [
+          0.816360702396223,
+          1.6422829286659033,
+          null,
+          null
+        ],
+        [
+          1.2879726331214896,
+          0.216711556328024,
+          null,
+          null
+        ],
+        [
+          1.7975886981769718,
+          0.5797502093180825,
+          null,
+          null
+        ],
+        [
+          1.519774421478388,
+          1.3661097731463934,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          1.7707878880524544,
+          1.4686797493000014
+        ],
+        [
+          null,
+          null,
+          1.586665735504822,
+          1.5248121761892433
+        ],
+        [
+          null,
+          null,
+          1.234261982595564,
+          2.158027040508039
+        ],
+        [
+          null,
+          null,
+          4.050657339790359,
+          0.19960230850187005
+        ],
+        [
+          null,
+          null,
+          4.708771230267057,
+          0.3593975260734522
+        ],
+        [
+          null,
+          null,
+          3.7806395603333547,
+          0.3139895393225481
+        ]
+      ],
+      "success": true
+    }
+  }
+}

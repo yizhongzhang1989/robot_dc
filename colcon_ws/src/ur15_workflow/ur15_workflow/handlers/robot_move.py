@@ -47,6 +47,8 @@ class RobotMoveHandler(OperationHandler):
                 robot_ip = context.get('robot_ip', '192.168.1.15')
                 robot_port = context.get('robot_port', 30002)
                 robot = UR15Robot(robot_ip, robot_port)
+                if robot.open() != 0:
+                    return {'status': 'error', 'error': f'Failed to connect to robot at {robot_ip}:{robot_port}'}
                 context['robot'] = robot
             
             # Resolve target pose
@@ -74,6 +76,9 @@ class RobotMoveHandler(OperationHandler):
                 result_code = robot.movej(target_pose, a=acceleration, v=velocity, t=0, r=0)
             elif move_type == 'movel':
                 result_code = robot.movel(target_pose, a=acceleration, v=velocity, t=0, r=0)
+            elif move_type == 'move_tcp':
+                # For move_tcp, target_pose is treated as the offset [x,y,z,rx,ry,rz]
+                result_code = robot.move_tcp(target_pose, a=acceleration, v=velocity, t=0, r=0)
             else:
                 return {'status': 'error', 'error': f"Unknown move type: {move_type}"}
             
