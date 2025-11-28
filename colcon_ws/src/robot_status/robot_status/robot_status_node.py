@@ -244,7 +244,12 @@ class RobotStatusNode(Node):
             
             response.success = True
             response.message = f"Set {param_name}"
-            self.get_logger().info(f"Set: {param_name} = {request.value[:100]}...")
+            
+            # Don't log frequently updated parameters to reduce log spam
+            # Only log other parameters for debugging
+            if param_name not in ['ur15.joint_positions', 'ur15.tcp_pose']:
+                self.get_logger().info(f"Set: {param_name}")
+            # else: silently skip logging for joint_positions and tcp_pose
             
             # Auto-save after successful set
             self._save_status_to_file()

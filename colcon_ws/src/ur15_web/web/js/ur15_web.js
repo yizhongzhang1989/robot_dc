@@ -5,6 +5,11 @@ let validationActive = false;
 let cornerDetectionEnabled = false;
 let currentOperationPath = ''; // Store the full operation path
 
+// Robot state update throttling
+let lastRobotStateUpdate = 0;
+let pendingRobotStateUpdate = null;
+const ROBOT_STATE_UPDATE_INTERVAL = 1000; // Update every 1 second
+
 // Web Log Functions
 function logToWeb(message, type = 'info') {
     const logContainer = document.getElementById('webLogContainer');
@@ -840,6 +845,74 @@ function calibrateCam() {
     });
 }
 
+// Send robot state (joint positions and TCP pose) to robot_status
+function sendRobotStateToStatus(jointPositions, tcpPose) {
+    const now = Date.now();
+    
+    // Throttle updates to avoid overwhelming the server
+    if (now - lastRobotStateUpdate < ROBOT_STATE_UPDATE_INTERVAL) {
+        // Store pending update to send later
+        if (pendingRobotStateUpdate) {
+            clearTimeout(pendingRobotStateUpdate);
+        }
+        
+        pendingRobotStateUpdate = setTimeout(() => {
+            sendRobotStateToStatus(jointPositions, tcpPose);
+        }, ROBOT_STATE_UPDATE_INTERVAL - (now - lastRobotStateUpdate));
+        
+        return;
+    }
+    
+    lastRobotStateUpdate = now;
+    pendingRobotStateUpdate = null;
+    
+    // Prepare data to send
+    const dataToSend = {};
+    
+    if (jointPositions && jointPositions.length === 6) {
+        // Joint positions are already in degrees (deg), send as array for numpy conversion
+        dataToSend.joint_positions = jointPositions;
+    }
+    
+    if (tcpPose) {
+        // Convert TCP pose from mm and quaternion to m and axis-angle (rad)
+        const axisAngle = quaternionToAxisAngle(tcpPose.qx, tcpPose.qy, tcpPose.qz, tcpPose.qw);
+        
+        // Send as array in order: [x, y, z, rx, ry, rz] for numpy conversion
+        dataToSend.tcp_pose = [
+            tcpPose.x / 1000.0,  // x in meters
+            tcpPose.y / 1000.0,  // y in meters
+            tcpPose.z / 1000.0,  // z in meters
+            axisAngle.rx * Math.PI / 180.0,  // rx in radians
+            axisAngle.ry * Math.PI / 180.0,  // ry in radians
+            axisAngle.rz * Math.PI / 180.0   // rz in radians
+        ];
+    }
+    
+    // Only send if there's data to update
+    if (Object.keys(dataToSend).length === 0) {
+        return;
+    }
+    
+    // Send to server
+    fetch('/update_robot_state', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(dataToSend)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            console.warn('Failed to update robot state to robot_status:', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating robot state:', error);
+    });
+}
+
 function updateStatus() {
     fetch('/get_status')
     .then(response => response.json())
@@ -922,6 +995,9 @@ function updateStatus() {
                     }
                 }
             }
+            
+            // Send joint positions to robot_status
+            sendRobotStateToStatus(data.joint_positions, data.tcp_pose);
         } else {
             // Set all joint values to no data state (only if not being edited)
             for (let i = 0; i < 6; i++) {

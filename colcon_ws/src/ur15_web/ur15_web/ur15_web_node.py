@@ -1427,6 +1427,62 @@ class UR15WebNode(Node):
                 self.get_logger().error(f"Error setting operating unit: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
+        @self.app.route('/update_robot_state', methods=['POST'])
+        def update_robot_state():
+            """Update joint positions and TCP pose to robot_status."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data:
+                    return jsonify({'success': False, 'message': 'No data provided'})
+                
+                success_count = 0
+                failed_items = []
+                
+                # Update joint positions if provided
+                if 'joint_positions' in data:
+                    joint_positions = data['joint_positions']
+                    if isinstance(joint_positions, list) and len(joint_positions) == 6:
+                        # Convert to numpy array
+                        joint_positions_array = np.array(joint_positions, dtype=np.float64)
+                        if set_to_status(self, 'ur15', 'joint_positions', joint_positions_array):
+                            success_count += 1
+                            self.get_logger().debug(f"Updated joint_positions to robot_status as numpy array")
+                        else:
+                            failed_items.append('joint_positions')
+                            self.get_logger().warning("Failed to set joint_positions to robot_status")
+                
+                # Update TCP pose if provided
+                if 'tcp_pose' in data:
+                    tcp_pose = data['tcp_pose']
+                    if isinstance(tcp_pose, list) and len(tcp_pose) == 6:
+                        # Convert to numpy array in order [x, y, z, rx, ry, rz]
+                        tcp_pose_array = np.array(tcp_pose, dtype=np.float64)
+                        if set_to_status(self, 'ur15', 'tcp_pose', tcp_pose_array):
+                            success_count += 1
+                            self.get_logger().debug(f"Updated tcp_pose to robot_status as numpy array [x, y, z, rx, ry, rz]")
+                        else:
+                            failed_items.append('tcp_pose')
+                            self.get_logger().warning("Failed to set tcp_pose to robot_status")
+                
+                if success_count > 0:
+                    return jsonify({
+                        'success': True,
+                        'message': f'Successfully updated {success_count} item(s)',
+                        'failed_items': failed_items
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No valid data to update or all updates failed',
+                        'failed_items': failed_items
+                    })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error updating robot state: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
         @self.app.route('/get_pose_count', methods=['GET'])
         def get_pose_count():
             """Get the number of pose JSON files in calibration data directory."""
