@@ -39,7 +39,7 @@ class CaptureImageHandler(OperationHandler):
         
         Operation parameters:
             - camera_topic: ROS topic for camera (default: /ur15_camera/image_raw)
-            - save_path: Where to save image
+            - image_name: Name to identify this image in context (e.g., "1.jpg")
             - timeout: Timeout for image capture (default: 5.0)
         """
         subscription = None
@@ -50,14 +50,11 @@ class CaptureImageHandler(OperationHandler):
             
             # Get parameters
             camera_topic = operation.get('camera_topic', context.get('camera_topic', '/ur15_camera/image_raw'))
-            save_path = self._resolve_parameter(operation.get('save_path'), context)
+            image_name = self._resolve_parameter(operation.get('image_name'), context)
             timeout = operation.get('timeout', 5.0)
             
-            if not save_path:
-                return {'status': 'error', 'error': 'No save_path specified'}
-            
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            if not image_name:
+                return {'status': 'error', 'error': 'No image_name specified'}
             
             # Get ROS node
             node = context.get('ros_node')
@@ -89,15 +86,14 @@ class CaptureImageHandler(OperationHandler):
                 
                 rclpy.spin_once(node, timeout_sec=0.1)
             
-            # Save image
+            # Store image in context by name
             if self.latest_image is not None:
-                cv2.imwrite(save_path, self.latest_image)
-                print(f"    ✓ Image saved to {save_path}")
+                print(f"    ✓ Image captured and stored as '{image_name}'")
                 
                 return {
                     'status': 'success',
                     'outputs': {
-                        'captured_image_path': save_path
+                        image_name: self.latest_image
                     }
                 }
             else:

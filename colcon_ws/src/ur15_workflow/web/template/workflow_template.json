@@ -39,9 +39,9 @@
         {
         "id": "capture_at_current_pose",
         "type": "capture_image",
-        "description": "Capture image at current pose",
+        "description": "Capture image at current pose and store in memory",
         "camera_topic": "/ur15_camera/image_raw",
-        "save_path": "../temp/rack_location/rack_bottom_left/1.jpg",
+        "image_name": "1.jpg",
         "timeout": 3.0,
         "wait_time": 0.5,
         "stop_on_failure": true
@@ -52,9 +52,9 @@
         {
         "id": "record_data_pose",
         "type": "record_data",
-        "description": "Record robot pose data",
+        "description": "Record robot pose data and store in memory",
         "record_type": "pose",
-        "save_path": "../temp/rack_location/rack_bottom_left/1.json",
+        "pose_name": "1.json",
         "wait_time": 0.5,
         "stop_on_failure": true
         }
@@ -78,13 +78,13 @@
         "stop_on_failure": true
         },
         {
-        "id": "upload_view_from_files",
+        "id": "upload_view",
         "type": "positioning",
-        "description": "Upload view data from files to server",
+        "description": "Upload view data from memory to server (auto-saves to dataset after upload)",
         "positioning_type": "upload_view",
         "reference_name": "rack_bottom_left",
-        "image_path": "../temp/rack_location/rack_bottom_left/1.jpg",
-        "pose_path": "../temp/rack_location/rack_bottom_left/1.json",
+        "image_name": "1.jpg",
+        "data_name": "1.json",
         "wait_time": 0.5,
         "stop_on_failure": true
         },

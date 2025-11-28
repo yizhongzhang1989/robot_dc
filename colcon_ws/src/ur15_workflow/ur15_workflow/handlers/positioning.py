@@ -81,47 +81,36 @@ class PositioningHandler(OperationHandler):
                            previous_results: Dict[str, Any]) -> Dict[str, Any]:
         session_id = context.get('current_session_id')
         if not session_id:
-            # Try to auto-create session if missing?
-            # For now, fail if no session.
-            # Or maybe we can support creating one if requested.
             return {'status': 'error', 'error': 'No active session found in context'}
             
         reference_name = operation.get('reference_name')
         if not reference_name:
             return {'status': 'error', 'error': 'reference_name is required for upload_view'}
-            
-        # Resolve image and pose paths
-        # They might be in previous_results from 'capture_image' and 'record_data' steps
-        # We need to know the keys used in previous steps.
-        # Assuming standard keys or passed via operation config.
         
-        image_path = self._resolve_parameter(operation.get('image_path'), context)
-        pose_path = self._resolve_parameter(operation.get('pose_path'), context)
+        # Get image and pose names from operation
+        image_name = self._resolve_parameter(operation.get('image_name'), context)
+        data_name = self._resolve_parameter(operation.get('data_name'), context)
         
-        # If not explicitly provided, try to find in previous results
-        if not image_path:
-            # Look for last capture result
-            # This is tricky because previous_results is a dict of all previous steps.
-            # We might need to look for specific keys.
-            # For now, let's assume the user passes them or we find them in specific keys.
-            pass
-            
-        if not image_path or not os.path.exists(image_path):
-            return {'status': 'error', 'error': f'Image path not found: {image_path}'}
-            
-        if not pose_path or not os.path.exists(pose_path):
-            return {'status': 'error', 'error': f'Pose path not found: {pose_path}'}
-            
+        if not image_name:
+            return {'status': 'error', 'error': 'image_name is required for upload_view'}
+        if not data_name:
+            return {'status': 'error', 'error': 'data_name is required for upload_view'}
+        
         print(f"    Uploading view for {reference_name}...")
         
         try:
-            # Load image
-            image = cv2.imread(image_path)
+            # Load image from context (numpy array)
+            image = context.get(image_name)
             if image is None:
-                return {'status': 'error', 'error': f'Failed to load image: {image_path}'}
-                
-            # Load params
-            intrinsic, distortion, extrinsic = self._load_camera_params(pose_path, context)
+                return {'status': 'error', 'error': f'Image not found in context: {image_name}'}
+            
+            # Load pose data from context
+            pose_data = context.get(data_name)
+            if pose_data is None:
+                return {'status': 'error', 'error': f'Pose data not found in context: {data_name}'}
+            
+            # Extract camera parameters from pose_data
+            intrinsic, distortion, extrinsic = self._load_camera_params_from_memory(pose_data, context)
             
             # Upload
             result = client.upload_view(
@@ -135,6 +124,22 @@ class PositioningHandler(OperationHandler):
             
             if result.get('success'):
                 print(f"    ✓ View uploaded successfully")
+                
+                # Save image and data to dataset folder after successful upload
+                try:
+                    self._save_uploaded_view(image, pose_data, reference_name, session_id, image_name, data_name)
+                    
+                    # Remove data from context after successful save
+                    if image_name in context:
+                        del context[image_name]
+                        print(f"    🗑️  Removed '{image_name}' from context")
+                    if data_name in context:
+                        del context[data_name]
+                        print(f"    🗑️  Removed '{data_name}' from context")
+                        
+                except Exception as e:
+                    print(f"    ⚠ Warning: Failed to save view to dataset: {e}")
+                
                 return {'status': 'success', 'outputs': result}
             else:
                 return {'status': 'error', 'error': result.get('error', 'Failed to upload view')}
@@ -187,13 +192,24 @@ class PositioningHandler(OperationHandler):
                 try:
                     os.makedirs(os.path.dirname(save_path), exist_ok=True)
                     
+                    # Convert numpy arrays to lists for JSON serialization
+                    def convert_to_serializable(obj):
+                        if isinstance(obj, np.ndarray):
+                            return obj.tolist()
+                        elif isinstance(obj, dict):
+                            return {k: convert_to_serializable(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [convert_to_serializable(item) for item in obj]
+                        else:
+                            return obj
+                    
                     # Prepare data to save
                     save_data = {
                         'timestamp': datetime.now().isoformat(),
                         'session_id': session_id,
-                        'points_3d': points_3d,
+                        'points_3d': convert_to_serializable(points_3d),
                         'mean_error': mean_error,
-                        'positioning_result': positioning_result,
+                        'positioning_result': convert_to_serializable(positioning_result),
                         'template_points': template_points
                     }
                     
@@ -291,17 +307,14 @@ class PositioningHandler(OperationHandler):
         else:
             return 'filtered'
 
-    def _load_camera_params(self, json_path: str, context: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _load_camera_params_from_memory(self, pose_data: Dict[str, Any], context: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Load camera parameters.
+        Load camera parameters from memory.
         Static params from RobotStatus (ur15 namespace).
-        Dynamic params (end2base) from JSON file.
+        Dynamic params (end2base) from pose_data dict.
         """
-        # Load end2base from JSON
-        with open(json_path, 'r') as f:
-            data = json.load(f)
-        
-        end2base = np.array(data['end2base'], dtype=np.float64)
+        # Get end2base from pose_data (already numpy array)
+        end2base = pose_data['end2base']
         
         # Get RobotStatusClient
         client = context.get('robot_status_client')
@@ -331,4 +344,38 @@ class PositioningHandler(OperationHandler):
         extrinsic = np.linalg.inv(cam2base)
         
         return intrinsic, distortion, extrinsic
+
+    def _save_uploaded_view(self, image: np.ndarray, pose_data: Dict[str, Any], 
+                           reference_name: str, session_id: str, 
+                           image_name: str, data_name: str):
+        """
+        Save uploaded view (image and pose data) to dataset folder.
+        Path format: /home/a/Documents/robot_dc/dataset/{reference_name}/test/session_{session_id}/
+        """
+        # Build save directory path - use absolute path to robot_dc
+        save_dir = os.path.join("/home/a/Documents/robot_dc", "dataset", reference_name, "test", f"session_{session_id}")
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # Save image
+        image_path = os.path.join(save_dir, image_name)
+        cv2.imwrite(image_path, image)
+        print(f"    💾 Image saved to {image_path}")
+        
+        # Save pose data as JSON
+        data_path = os.path.join(save_dir, data_name)
+        
+        # Convert numpy arrays to lists for JSON serialization
+        save_data = {
+            'joint_angles': pose_data['joint_angles'].tolist(),
+            'end_xyzrpy': pose_data['end_xyzrpy'],
+            'end2base': pose_data['end2base'].tolist(),
+            'camera_matrix': pose_data['camera_matrix'].tolist() if pose_data['camera_matrix'] is not None else None,
+            'distortion_coefficients': pose_data['distortion_coefficients'].tolist() if pose_data['distortion_coefficients'] is not None else None,
+            'cam2end_matrix': pose_data['cam2end_matrix'].tolist() if pose_data['cam2end_matrix'] is not None else None,
+            'timestamp': pose_data['timestamp']
+        }
+        
+        with open(data_path, 'w') as f:
+            json.dump(save_data, f, indent=2)
+        print(f"    💾 Pose data saved to {data_path}")
 

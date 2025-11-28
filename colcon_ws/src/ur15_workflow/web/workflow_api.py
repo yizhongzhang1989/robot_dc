@@ -3,13 +3,13 @@
 Workflow API Server - Provides CRUD operations for workflow files
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
 import json
 from pathlib import Path
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)  # Enable CORS
 
 # Workflow configuration directory
@@ -202,8 +202,21 @@ def get_robot_status(namespace, key):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/')
+def index():
+    """Serve the main HTML page"""
+    return send_from_directory('.', 'workflow_index.html')
+
+
+@app.route('/<path:path>')
+def serve_static(path):
+    """Serve static files (HTML, JS, CSS, etc.)"""
+    return send_from_directory('.', path)
+
+
 if __name__ == '__main__':
     print(f"Workflow API Server starting...")
     print(f"Workflow config directory: {WORKFLOW_CONFIG_DIR}")
     print(f"Server running on http://localhost:8008")
+    print(f"Open browser: http://localhost:8008")
     app.run(host='0.0.0.0', port=8008, debug=True)

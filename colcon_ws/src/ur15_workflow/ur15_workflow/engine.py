@@ -299,18 +299,30 @@ class WorkflowEngine:
             output_path: Path to save results
         """
         try:
+            import numpy as np
+            
+            # Helper function to convert non-serializable objects
+            def make_serializable(obj):
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, dict):
+                    return {k: make_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [make_serializable(item) for item in obj]
+                elif isinstance(obj, (str, int, float, bool, type(None))):
+                    return obj
+                else:
+                    return f"<{type(obj).__name__} object>"
+            
             # Filter context to remove non-serializable objects
             serializable_context = {}
             for k, v in self.context.items():
-                if isinstance(v, (str, int, float, bool, list, dict, type(None))):
-                    serializable_context[k] = v
-                else:
-                    serializable_context[k] = f"<{type(v).__name__} object>"
+                serializable_context[k] = make_serializable(v)
 
             output_data = {
                 'timestamp': datetime.now().isoformat(),
                 'workflow': self.workflow,
-                'results': self.results,
+                'results': make_serializable(self.results),
                 'context': serializable_context
             }
             

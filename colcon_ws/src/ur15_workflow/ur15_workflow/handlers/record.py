@@ -26,12 +26,11 @@ class RecordDataHandler(OperationHandler):
     def execute(self, operation: Dict[str, Any], context: Dict[str, Any], 
                 previous_results: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Record robot data to JSON file
+        Record robot data to memory
         
         Operation parameters:
             - record_type: Type of data to record (default: 'pose')
-            - save_path: Where to save the JSON file
-            - camera_params_path: Path to camera calibration parameters (optional)
+            - pose_name: Name to identify this pose data in context (e.g., "1.json")
         """
         try:
             if UR15Robot is None:
@@ -44,15 +43,12 @@ class RecordDataHandler(OperationHandler):
             
             # Get parameters
             record_type = operation.get('record_type', 'pose')
-            save_path = self._resolve_parameter(operation.get('save_path'), context)
+            pose_name = self._resolve_parameter(operation.get('pose_name'), context)
             
-            if not save_path:
-                return {'status': 'error', 'error': 'No save_path specified'}
+            if not pose_name:
+                return {'status': 'error', 'error': 'No pose_name specified'}
             
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            
-            print(f"    Recording {record_type} data to {save_path}...")
+            print(f"    Recording {record_type} data as '{pose_name}'...")
             
             data = {}
             
@@ -101,16 +97,21 @@ class RecordDataHandler(OperationHandler):
             else:
                 return {'status': 'error', 'error': f"Unknown record_type: {record_type}"}
             
-            # Save to JSON file
-            with open(save_path, 'w') as f:
-                json.dump(data, f, indent=2)
+            print(f"    ✓ Pose data stored in memory as '{pose_name}'")
             
-            print(f"    ✓ Data saved to {save_path}")
-            
+            # Store data in context with numpy arrays for efficient access
             return {
                 'status': 'success',
                 'outputs': {
-                    'recorded_data_path': save_path
+                    pose_name: {
+                        'joint_angles': np.array(data['joint_angles']),
+                        'end_xyzrpy': data['end_xyzrpy'],
+                        'end2base': np.array(data['end2base']),
+                        'camera_matrix': np.array(data['camera_matrix']) if data['camera_matrix'] else None,
+                        'distortion_coefficients': np.array(data['distortion_coefficients']) if data['distortion_coefficients'] else None,
+                        'cam2end_matrix': np.array(data['cam2end_matrix']) if data['cam2end_matrix'] else None,
+                        'timestamp': data['timestamp']
+                    }
                 }
             }
             
