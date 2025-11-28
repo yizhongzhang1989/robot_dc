@@ -41,6 +41,9 @@ class ModbusDashboard:
         self.log_dir = os.path.abspath(log_dir)
         os.makedirs(self.log_dir, exist_ok=True)
         
+        # File logging toggle (disabled by default)
+        self.enabled_file_logging = False
+        
         # Create log file with timestamp
         log_filename = f"modbus_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
         self.log_file_path = os.path.join(self.log_dir, log_filename)
@@ -110,10 +113,21 @@ class ModbusDashboard:
                 return jsonify({
                     'filename': os.path.basename(self.log_file_path),
                     'size': file_size,
-                    'size_mb': round(file_size / 1024 / 1024, 2)
+                    'size_mb': round(file_size / 1024 / 1024, 2),
+                    'file_logging_enabled': self.enabled_file_logging
                 })
             else:
                 return jsonify({'error': 'Log file not found'}), 404
+        
+        @self.app.route('/api/toggle_file_logging', methods=['POST'])
+        def toggle_file_logging():
+            data = request.get_json()
+            enabled = data.get('enabled', False)
+            self.enabled_file_logging = enabled
+            return jsonify({
+                'success': True,
+                'file_logging_enabled': self.enabled_file_logging
+            })
 
     def _queue_processor(self):
         """Worker thread that processes log queue (non-blocking for Modbus)"""
@@ -121,19 +135,20 @@ class ModbusDashboard:
             try:
                 log_entry = self.log_queue.get(timeout=0.1)
                 
-                # Add to file buffer
-                with self.file_buffer_lock:
-                    self.file_buffer.append(log_entry)
-                    # Force flush if buffer is full
-                    if len(self.file_buffer) >= self.buffer_size:
-                        try:
-                            with self.log_file_lock:
-                                for entry in self.file_buffer:
-                                    self.log_file_handle.write(json.dumps(entry) + '\n')
-                                self.log_file_handle.flush()
-                            self.file_buffer.clear()
-                        except Exception as e:
-                            print(f"Error flushing file buffer: {e}")
+                # Add to file buffer only if file logging is enabled
+                if self.enabled_file_logging:
+                    with self.file_buffer_lock:
+                        self.file_buffer.append(log_entry)
+                        # Force flush if buffer is full
+                        if len(self.file_buffer) >= self.buffer_size:
+                            try:
+                                with self.log_file_lock:
+                                    for entry in self.file_buffer:
+                                        self.log_file_handle.write(json.dumps(entry) + '\n')
+                                    self.log_file_handle.flush()
+                                self.file_buffer.clear()
+                            except Exception as e:
+                                print(f"Error flushing file buffer: {e}")
                 
                 # Keep last 100 in memory for real-time display
                 self.request_logs.append(log_entry)
@@ -172,16 +187,17 @@ class ModbusDashboard:
         import time
         while self.running:
             time.sleep(self.batch_interval)
-            with self.file_buffer_lock:
-                if self.file_buffer:
-                    try:
-                        with self.log_file_lock:
-                            for log_entry in self.file_buffer:
-                                self.log_file_handle.write(json.dumps(log_entry) + '\n')
-                            self.log_file_handle.flush()
-                        self.file_buffer.clear()
-                    except Exception as e:
-                        print(f"Error writing batch to log file: {e}")
+            if self.enabled_file_logging:
+                with self.file_buffer_lock:
+                    if self.file_buffer:
+                        try:
+                            with self.log_file_lock:
+                                for log_entry in self.file_buffer:
+                                    self.log_file_handle.write(json.dumps(log_entry) + '\n')
+                                self.log_file_handle.flush()
+                            self.file_buffer.clear()
+                        except Exception as e:
+                            print(f"Error writing batch to log file: {e}")
     
     def _run(self):
         self.socketio.run(self.app, host=self.host, port=self.port, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)

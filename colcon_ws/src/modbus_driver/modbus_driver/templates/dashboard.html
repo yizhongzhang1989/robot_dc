@@ -32,6 +32,32 @@
             <p>Connection: <span id="connection-status" class="disconnected">Checking...</span></p>
             <p>Total Requests: <span id="total-requests">0</span></p>
             <p>Log File: <span id="log-filename">Loading...</span> (<span id="log-size">0</span> MB)</p>
+            <p>
+                <label style="display: inline-flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="file-logging-toggle" onchange="toggleFileLogging()" style="margin-right: 8px; cursor: pointer; width: 18px; height: 18px;">
+                    <span style="font-weight: bold;">Enable File Logging</span>
+                </label>
+                <span style="margin-left: 10px; color: #666; font-size: 0.9em;">(Logs grow fast, enable only when needed)</span>
+            </p>
+            <p>
+                <label style="display: inline-flex; align-items: center;">
+                    <span style="font-weight: bold; margin-right: 8px;">Display Limit:</span>
+                    <select id="display-limit" onchange="changeDisplayLimit()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                        <option value="100" selected>100</option>
+                        <option value="200">200</option>
+                        <option value="500">500</option>
+                        <option value="1000">1000</option>
+                    </select>
+                    <span style="margin-left: 10px; color: #666; font-size: 0.9em;">rows</span>
+                </label>
+            </p>
+            <p>
+                <label style="display: inline-flex; align-items: center;">
+                    <span style="font-weight: bold; margin-right: 8px;">Filter Device IDs:</span>
+                    <input type="text" id="device-filter" oninput="applyDeviceFilter()" placeholder="e.g., 1,2,5" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 200px;">
+                    <span style="margin-left: 10px; color: #666; font-size: 0.9em;">(comma-separated, empty = show all)</span>
+                </label>
+            </p>
             <button onclick="downloadLog()" style="padding: 8px 16px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">Download Log File</button>
             <button id="pause-btn" onclick="togglePause()" style="padding: 8px 16px; background-color: #ffc107; color: black; border: none; border-radius: 4px; cursor: pointer;">Pause Updates</button>
         </div>
@@ -64,6 +90,16 @@
         let isPaused = false;
         let pendingBatches = [];
         let updateScheduled = false;
+        let displayLimit = 100;
+        let filteredDeviceIds = null; // null means show all, otherwise array of device IDs
+
+        // Helper function to check if log should be shown based on filter
+        function shouldShowLog(log) {
+            if (!filteredDeviceIds || filteredDeviceIds.length === 0) {
+                return true; // Show all if no filter
+            }
+            return filteredDeviceIds.includes(String(log.slave_id));
+        }
 
         // Initialize Socket.IO connection
         const socket = io();
@@ -108,6 +144,11 @@
             if (log.id > lastLogId) {
                 lastLogId = log.id;
                 
+                // Skip if filtered out
+                if (!shouldShowLog(log)) {
+                    return;
+                }
+                
                 let delta = 0;
                 if (lastTimestamp > 0 && log.timestamp_raw) {
                     delta = (log.timestamp_raw - lastTimestamp) * 1000;
@@ -141,8 +182,8 @@
                     tbody.appendChild(row);
                 }
 
-                // Limit rows to 100
-                while (tbody.children.length > 100) {
+                // Limit rows to displayLimit
+                while (tbody.children.length > displayLimit) {
                     tbody.removeChild(tbody.lastChild);
                 }
             }
@@ -167,6 +208,11 @@
                 batchData.logs.forEach(log => {
                     if (log.id > lastLogId) {
                         lastLogId = log.id;
+                        
+                        // Skip if filtered out
+                        if (!shouldShowLog(log)) {
+                            return;
+                        }
                         
                         let delta = 0;
                         if (lastTimestamp > 0 && log.timestamp_raw) {
@@ -209,8 +255,8 @@
                     tbody.appendChild(fragment);
                 }
                 
-                // Limit rows to 100
-                while (tbody.children.length > 100) {
+                // Limit rows to displayLimit
+                while (tbody.children.length > displayLimit) {
                     tbody.removeChild(tbody.lastChild);
                 }
             }
@@ -247,6 +293,11 @@
                         if (log.id > lastLogId) {
                             lastLogId = log.id;
                             
+                            // Skip if filtered out
+                            if (!shouldShowLog(log)) {
+                                return;
+                            }
+                            
                             let delta = 0;
                             if (lastTimestamp > 0 && log.timestamp_raw) {
                                 delta = (log.timestamp_raw - lastTimestamp) * 1000;
@@ -281,6 +332,11 @@
                             }
                         }
                     });
+                    
+                    // Limit rows to displayLimit
+                    while (tbody.children.length > displayLimit) {
+                        tbody.removeChild(tbody.lastChild);
+                    }
                 })
                 .catch(err => {
                     console.error('Error fetching initial logs:', err);
@@ -295,6 +351,8 @@
                     if (!data.error) {
                         document.getElementById('log-filename').textContent = data.filename;
                         document.getElementById('log-size').textContent = data.size_mb;
+                        // Update checkbox state
+                        document.getElementById('file-logging-toggle').checked = data.file_logging_enabled || false;
                     }
                 })
                 .catch(err => {
@@ -305,6 +363,88 @@
         // Download log file
         function downloadLog() {
             window.location.href = '/api/download_log';
+        }
+
+        // Apply device ID filter
+        function applyDeviceFilter() {
+            const input = document.getElementById('device-filter');
+            const value = input.value.trim();
+            
+            if (value === '') {
+                filteredDeviceIds = null; // Show all
+            } else {
+                // Parse comma-separated device IDs
+                filteredDeviceIds = value.split(',').map(id => id.trim()).filter(id => id !== '');
+            }
+            
+            // Re-filter existing rows
+            const tbody = document.getElementById('log-table-body');
+            const rows = Array.from(tbody.children);
+            
+            rows.forEach(row => {
+                const deviceIdCell = row.children[5]; // Device ID is the 6th column (index 5)
+                const deviceId = deviceIdCell.textContent.trim();
+                
+                if (!filteredDeviceIds || filteredDeviceIds.length === 0 || filteredDeviceIds.includes(deviceId)) {
+                    row.style.display = ''; // Show row
+                } else {
+                    row.style.display = 'none'; // Hide row
+                }
+            });
+            
+            console.log('Filter applied:', filteredDeviceIds || 'Show all');
+        }
+
+        // Change display limit
+        function changeDisplayLimit() {
+            const select = document.getElementById('display-limit');
+            displayLimit = parseInt(select.value);
+            
+            // Trim or reload logs based on new limit
+            const tbody = document.getElementById('log-table-body');
+            
+            if (tbody.children.length > displayLimit) {
+                // Remove excess rows from the bottom
+                while (tbody.children.length > displayLimit) {
+                    tbody.removeChild(tbody.lastChild);
+                }
+            } else if (tbody.children.length < displayLimit) {
+                // Could load more logs here if needed
+                // For now, new logs will fill up to the new limit
+            }
+            
+            console.log('Display limit changed to:', displayLimit);
+        }
+
+        // Toggle file logging
+        function toggleFileLogging() {
+            const checkbox = document.getElementById('file-logging-toggle');
+            const enabled = checkbox.checked;
+            
+            fetch('/api/toggle_file_logging', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ enabled: enabled })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('File logging ' + (enabled ? 'enabled' : 'disabled'));
+                    // Update log info to reflect changes
+                    loadLogInfo();
+                } else {
+                    console.error('Failed to toggle file logging');
+                    // Revert checkbox on failure
+                    checkbox.checked = !enabled;
+                }
+            })
+            .catch(err => {
+                console.error('Error toggling file logging:', err);
+                // Revert checkbox on error
+                checkbox.checked = !enabled;
+            });
         }
 
         // Update log info every 10 seconds
