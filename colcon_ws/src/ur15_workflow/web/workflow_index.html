@@ -115,11 +115,16 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(5px);
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal[style*="display: block"] {
+            display: flex !important;
         }
         
         .modal-content {
             background-color: white;
-            margin: 15% auto;
             padding: 2rem;
             border-radius: 12px;
             width: 500px;
@@ -438,6 +443,27 @@
             margin-top: 0.25rem;
         }
         
+        /* Type colors matching handler library */
+        .workflow-step-type[data-type="robot_move"] {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            box-shadow: 0 1px 2px rgba(59, 130, 246, 0.2);
+        }
+        
+        .workflow-step-type[data-type="capture_image"] {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            box-shadow: 0 1px 2px rgba(139, 92, 246, 0.2);
+        }
+        
+        .workflow-step-type[data-type="record_data"] {
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+            box-shadow: 0 1px 2px rgba(249, 115, 22, 0.2);
+        }
+        
+        .workflow-step-type[data-type="positioning"] {
+            background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+            box-shadow: 0 1px 2px rgba(20, 184, 166, 0.2);
+        }
+        
         .workflow-step-actions {
             display: flex;
             gap: 0.5rem;
@@ -702,21 +728,62 @@
             </div>
         </div>
         
-        <!-- Edit Step Parameters Modal -->
-        <div id="editParamsModal" class="modal">
-            <div class="modal-content" style="max-width: 800px;">
-                <div class="modal-header" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);">Edit Handler Parameters</div>
+        <!-- Delete Step Confirmation Modal -->
+        <div id="deleteStepModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">Delete Step</div>
                 <div class="modal-body">
-                    <div style="margin-bottom: 1rem;">
-                        <label class="modal-label">Handler: <strong id="editParamsHandlerName"></strong></label>
-                    </div>
-                    <label class="modal-label" for="paramsEditor">Parameters (JSON format):</label>
-                    <textarea id="paramsEditor" class="modal-input" style="font-family: 'Courier New', monospace; min-height: 300px; white-space: pre; overflow-wrap: normal; overflow-x: auto;" spellcheck="false"></textarea>
-                    <div id="paramsErrorMessage" style="color: #ef4444; margin-top: 0.5rem; font-size: 0.875rem; display: none;"></div>
+                    <p style="color: #4a5568; line-height: 1.6;">
+                        Are you sure you want to delete step <strong id="deleteStepNumber"></strong>: <strong id="deleteStepName"></strong>?
+                        <br><br>
+                        This action cannot be undone.
+                    </p>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn-cancel" onclick="closeEditParamsModal()">Cancel</button>
-                    <button class="btn-confirm" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);" onclick="confirmEditParams()">Save</button>
+                    <button class="btn-cancel" onclick="closeDeleteStepModal()">Cancel</button>
+                    <button class="btn-confirm" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);" onclick="confirmDeleteStep()">Delete</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Edit Step Parameters Modal -->
+        <div id="editParamsModal" class="modal">
+            <div class="modal-content" style="max-width: 900px; max-height: 90vh; display: flex; flex-direction: column;">
+                <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; padding: 1.5rem 2rem; border-radius: 12px 12px 0 0; margin: -2rem -2rem 0 -2rem;">
+                    <div style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem;">✏️ Edit Handler Parameters</div>
+                    <div style="font-size: 0.9rem; opacity: 0.95;">Configure parameters for: <strong id="editParamsHandlerName" style="font-size: 1.05rem;"></strong></div>
+                </div>
+                <div class="modal-body" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; padding-top: 1.5rem;">
+                    <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%); border-left: 4px solid #8b5cf6; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; color: #5b21b6; font-weight: 600; margin-bottom: 0.25rem;">
+                            <span style="font-size: 1.1rem;">💡</span>
+                            <span>Parameters (JSON format)</span>
+                        </div>
+                        <div style="font-size: 0.85rem; color: #6b7280;">Edit the handler parameters below. Make sure the JSON syntax is valid.</div>
+                    </div>
+                    <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                        <textarea id="paramsEditor" style="flex: 1; font-family: 'Courier New', monospace; font-size: 0.9rem; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 8px; background: #1e1e1e; color: #d4d4d4; resize: none; box-sizing: border-box; min-height: 350px; line-height: 1.6;" spellcheck="false" placeholder="Enter parameters in JSON format..."></textarea>
+                    </div>
+                    <div id="paramsErrorMessage" style="color: #ef4444; background: #fef2f2; border: 1px solid #fecaca; padding: 0.75rem 1rem; border-radius: 6px; margin-top: 1rem; font-size: 0.875rem; display: none; font-weight: 500;">
+                        <span style="margin-right: 0.5rem;">⚠️</span>
+                        <span id="paramsErrorText"></span>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding-top: 1.5rem; border-top: 2px solid #f3f4f6; margin-top: 1rem; justify-content: space-between;">
+                    <button id="loadJointAnglesBtn" class="btn-confirm" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); display: none; align-items: center; gap: 0.5rem;" onclick="loadJointAngles()">
+                        <span>🤖</span>
+                        <span>Load Joint Angles</span>
+                    </button>
+                    <div style="display: flex; gap: 1rem;">
+                        <button class="btn-cancel" onclick="closeEditParamsModal()" style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span>✖️</span>
+                            <span>Cancel</span>
+                        </button>
+                        <button class="btn-confirm" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); display: flex; align-items: center; gap: 0.5rem;" onclick="confirmEditParams()">
+                            <span>💾</span>
+                            <span>Save Changes</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

@@ -15,6 +15,16 @@ CORS(app)  # Enable CORS
 # Workflow configuration directory
 WORKFLOW_CONFIG_DIR = Path(__file__).parent.parent.parent / 'ur15_workflow' / 'config'
 
+# Initialize RobotStatusClient for Redis access
+robot_status_client = None
+try:
+    from robot_status_redis.client_utils import RobotStatusClient
+    robot_status_client = RobotStatusClient()
+    print("✓ RobotStatusClient initialized")
+except Exception as e:
+    print(f"✗ Failed to initialize RobotStatusClient: {e}")
+    print("  Robot status endpoints will not be available")
+
 
 @app.route('/api/workflow', methods=['POST'])
 def create_workflow():
@@ -158,6 +168,34 @@ def get_workflow(filename):
             'success': True,
             'content': content,
             'filename': filename
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/robot_status/<namespace>/<key>', methods=['GET'])
+def get_robot_status(namespace, key):
+    """Get robot status from Redis"""
+    try:
+        if robot_status_client is None:
+            return jsonify({'success': False, 'error': 'RobotStatusClient not available'}), 503
+        
+        value = robot_status_client.get_status(namespace, key)
+        
+        if value is None:
+            return jsonify({'success': False, 'error': f'Status not found: {namespace}/{key}'}), 404
+        
+        # Convert numpy arrays to lists for JSON serialization
+        import numpy as np
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+        
+        return jsonify({
+            'success': True,
+            'namespace': namespace,
+            'key': key,
+            'value': value
         })
         
     except Exception as e:

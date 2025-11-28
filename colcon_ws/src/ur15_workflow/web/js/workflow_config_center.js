@@ -610,6 +610,7 @@ function handleDrop(e) {
 
 // Modular view drag and drop handlers
 let dragOverThrottle = null;
+let lastClientY = null;
 
 function handleModularDragOver(e) {
     e.preventDefault();
@@ -621,49 +622,32 @@ function handleModularDragOver(e) {
     
     e.dataTransfer.dropEffect = 'copy';
     
+    // Only update if mouse moved significantly (reduce updates)
+    if (lastClientY !== null && Math.abs(e.clientY - lastClientY) < 5) {
+        return;
+    }
+    
+    lastClientY = e.clientY;
+    
     // Throttle the indicator update to improve performance
     if (dragOverThrottle) {
-        clearTimeout(dragOverThrottle);
+        return; // Skip if already scheduled
     }
     
     dragOverThrottle = setTimeout(() => {
-        updateDropIndicator(e.clientY);
-    }, 10);
+        updateDropIndicator(lastClientY);
+        dragOverThrottle = null;
+    }, 50);
 }
 
 function updateDropIndicator(clientY) {
-    console.log('updateDropIndicator called with clientY:', clientY);
-    
     const modularView = document.getElementById('workflowModularView');
     const steps = modularView.querySelectorAll('.workflow-step:not(.dragging)');
     
-    console.log('Number of steps:', steps.length);
-    
-    // Remove existing indicator
-    const existingIndicator = document.querySelector('.drop-indicator');
-    if (existingIndicator) {
-        existingIndicator.remove();
-    }
-    
-    // Create the indicator
-    const indicator = document.createElement('div');
-    indicator.className = 'drop-indicator';
-    indicator.style.cssText = `
-        height: 4px;
-        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-        margin: 8px 0;
-        border-radius: 2px;
-        box-shadow: 0 0 12px rgba(59, 130, 246, 0.8);
-        animation: pulse 1s ease-in-out infinite;
-        pointer-events: none;
-        width: 100%;
-        flex-shrink: 0;
-    `;
-    
     // Find where to show the indicator
+    let insertBeforeStep = null;
+    
     if (steps.length > 0) {
-        let insertBeforeStep = null;
-        
         for (let i = 0; i < steps.length; i++) {
             const step = steps[i];
             const rect = step.getBoundingClientRect();
@@ -674,20 +658,45 @@ function updateDropIndicator(clientY) {
                 break;
             }
         }
-        
-        if (insertBeforeStep) {
-            console.log('Inserting indicator before step:', insertBeforeStep.dataset.index);
-            modularView.insertBefore(indicator, insertBeforeStep);
-        } else {
-            console.log('Inserting indicator at the end');
-            modularView.appendChild(indicator);
-        }
-    } else {
-        console.log('No steps, inserting indicator in empty space');
-        modularView.appendChild(indicator);
     }
     
-    console.log('Indicator inserted:', document.querySelector('.drop-indicator'));
+    // Check if indicator already exists
+    let indicator = document.querySelector('.drop-indicator');
+    
+    if (!indicator) {
+        // Create the indicator if it doesn't exist
+        indicator = document.createElement('div');
+        indicator.className = 'drop-indicator';
+        indicator.style.cssText = `
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            margin: 8px 0;
+            border-radius: 2px;
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.8);
+            animation: pulse 1s ease-in-out infinite;
+            pointer-events: none;
+            width: 100%;
+            flex-shrink: 0;
+        `;
+    }
+    
+    // Check if we need to move the indicator
+    const currentNextSibling = indicator.nextSibling;
+    const needsMove = currentNextSibling !== insertBeforeStep;
+    
+    if (needsMove) {
+        // Remove from current position (if in DOM)
+        if (indicator.parentNode) {
+            indicator.parentNode.removeChild(indicator);
+        }
+        
+        // Insert at new position
+        if (insertBeforeStep) {
+            modularView.insertBefore(indicator, insertBeforeStep);
+        } else {
+            modularView.appendChild(indicator);
+        }
+    }
 }
 
 function handleModularDragLeave(e) {
@@ -698,6 +707,7 @@ function handleModularDragLeave(e) {
     // Check if we're leaving to outside the modular view
     if (!modularView.contains(relatedTarget)) {
         e.currentTarget.style.background = '';
+        lastClientY = null;
         
         // Clear throttle timeout
         if (dragOverThrottle) {
@@ -717,20 +727,78 @@ function handleModularDrop(e) {
     e.preventDefault();
     e.currentTarget.style.background = '';
     
+    // Reset tracking variables
+    lastClientY = null;
+    
     // Clear throttle timeout
     if (dragOverThrottle) {
         clearTimeout(dragOverThrottle);
         dragOverThrottle = null;
     }
     
-    // Remove drop indicator if exists
+    // Get the indicator's position before removing it
     const existingIndicator = document.querySelector('.drop-indicator');
+    let insertBeforeElement = null;
     if (existingIndicator) {
+        insertBeforeElement = existingIndicator.nextSibling;
         existingIndicator.remove();
+    }
+    
+    // Check if this is a step reorder operation
+    if (e.dataTransfer.effectAllowed === 'move' && draggedStepIndex !== null) {
+        // This is a step reorder, handle it here for container drops
+        const editor = document.getElementById('jsonEditor');
+        try {
+            const workflowData = JSON.parse(editor.value);
+            const workflow = workflowData.workflow;
+            
+            // Calculate insert index based on where the indicator was
+            let insertIndex;
+            if (insertBeforeElement && insertBeforeElement.classList && insertBeforeElement.classList.contains('workflow-step')) {
+                // Insert before this step
+                insertIndex = parseInt(insertBeforeElement.dataset.index);
+                
+                // Adjust for removal of dragged item
+                if (draggedStepIndex < insertIndex) {
+                    insertIndex--;
+                }
+            } else {
+                // Insert at the end
+                insertIndex = workflow.length - 1;
+            }
+            
+            // Skip if not actually moving
+            if (insertIndex === draggedStepIndex) {
+                draggedStepIndex = null;
+                return;
+            }
+            
+            // Reorder steps
+            const draggedStep = workflow[draggedStepIndex];
+            workflow.splice(draggedStepIndex, 1);
+            workflow.splice(insertIndex, 0, draggedStep);
+            
+            editor.value = JSON.stringify(workflowData, null, 2);
+            renderModularView();
+            
+            console.log('Moved step', draggedStepIndex, 'to', insertIndex);
+            draggedStepIndex = null;
+            return;
+        } catch (error) {
+            console.error('Error moving step:', error);
+            draggedStepIndex = null;
+            return;
+        }
     }
     
     try {
         const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        
+        // Check if this is actually a reorder marker (not a handler)
+        if (data.reorder) {
+            console.log('Ignoring reorder marker in handleModularDrop');
+            return;
+        }
         
         // Get template for this handler
         const template = getHandlerTemplate(data.handler_type, data.handler_id);
@@ -895,7 +963,7 @@ function renderModularView() {
                     <div class="workflow-step-number">${index + 1}</div>
                     <div class="workflow-step-info">
                         <div class="workflow-step-handler">${handlerId}</div>
-                        <span class="workflow-step-type">${handlerType}</span>
+                        <span class="workflow-step-type" data-type="${handlerType}">${handlerType}</span>
                         ${description ? `<div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">${description}</div>` : ''}
                     </div>
                     <div class="workflow-step-actions">
@@ -975,6 +1043,14 @@ function editStepParams(index) {
         const handlerName = step.id || step.handler_id || 'Unknown';
         document.getElementById('editParamsHandlerName').textContent = handlerName;
         
+        // Show/hide Load Joint Angles button for movej_to_pose
+        const loadJointAnglesBtn = document.getElementById('loadJointAnglesBtn');
+        if (handlerName === 'movej_to_pose') {
+            loadJointAnglesBtn.style.display = 'flex';
+        } else {
+            loadJointAnglesBtn.style.display = 'none';
+        }
+        
         // Extract parameters for editing
         // Exclude id, type, and description which are metadata
         const paramsToEdit = {...step};
@@ -990,8 +1066,9 @@ function editStepParams(index) {
         
         // Clear error message
         const errorMsg = document.getElementById('paramsErrorMessage');
+        const errorText = document.getElementById('paramsErrorText');
         errorMsg.style.display = 'none';
-        errorMsg.textContent = '';
+        if (errorText) errorText.textContent = '';
         
         // Show modal
         document.getElementById('editParamsModal').style.display = 'block';
@@ -1004,6 +1081,49 @@ function editStepParams(index) {
 function closeEditParamsModal() {
     document.getElementById('editParamsModal').style.display = 'none';
     currentEditingStepIndex = null;
+}
+
+async function loadJointAngles() {
+    try {
+        // Get joint positions from Redis via workflow API
+        const response = await fetch('http://localhost:8008/api/robot_status/ur15/joint_positions', {
+            method: 'GET'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to get joint positions from Redis');
+        }
+        
+        const data = await response.json();
+        
+        if (!data.success || !data.value || data.value.length !== 6) {
+            throw new Error('Invalid joint positions data');
+        }
+        
+        // Convert from degrees to radians and round to 4 decimal places
+        const jointAnglesRad = data.value.map(deg => parseFloat((deg * Math.PI / 180).toFixed(4)));
+        
+        // Get current parameters from editor
+        const paramsEditor = document.getElementById('paramsEditor');
+        let params;
+        try {
+            params = JSON.parse(paramsEditor.value);
+        } catch (e) {
+            params = {};
+        }
+        
+        // Update robot_pose with joint angles
+        params.robot_pose = jointAnglesRad;
+        
+        // Update editor with new parameters
+        paramsEditor.value = JSON.stringify(params, null, 2);
+        
+        console.log('Loaded joint angles:', jointAnglesRad);
+        
+    } catch (error) {
+        console.error('Error loading joint angles:', error);
+        showErrorModal('Failed to load joint angles: ' + error.message);
+    }
 }
 
 function confirmEditParams() {
@@ -1052,22 +1172,59 @@ function confirmEditParams() {
         }
     } catch (e) {
         // Show error in modal
-        errorMsg.textContent = 'Invalid JSON format: ' + e.message;
+        const errorText = document.getElementById('paramsErrorText');
+        if (errorText) {
+            errorText.textContent = 'Invalid JSON format: ' + e.message;
+        } else {
+            errorMsg.textContent = 'Invalid JSON format: ' + e.message;
+        }
         errorMsg.style.display = 'block';
     }
 }
+
+let currentDeletingStepIndex = null;
 
 function deleteStep(index) {
     const editor = document.getElementById('jsonEditor');
     try {
         const workflowData = JSON.parse(editor.value);
-        if (workflowData.workflow && confirm('Delete this step?')) {
-            workflowData.workflow.splice(index, 1);
+        if (workflowData.workflow && workflowData.workflow[index]) {
+            const step = workflowData.workflow[index];
+            currentDeletingStepIndex = index;
+            
+            // Set step info in modal
+            document.getElementById('deleteStepNumber').textContent = index + 1;
+            document.getElementById('deleteStepName').textContent = step.id || step.handler_id || 'Unknown';
+            
+            // Show modal
+            document.getElementById('deleteStepModal').style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error opening delete modal:', error);
+    }
+}
+
+function closeDeleteStepModal() {
+    document.getElementById('deleteStepModal').style.display = 'none';
+    currentDeletingStepIndex = null;
+}
+
+function confirmDeleteStep() {
+    if (currentDeletingStepIndex === null) return;
+    
+    const editor = document.getElementById('jsonEditor');
+    try {
+        const workflowData = JSON.parse(editor.value);
+        if (workflowData.workflow) {
+            workflowData.workflow.splice(currentDeletingStepIndex, 1);
             editor.value = JSON.stringify(workflowData, null, 2);
             renderModularView();
+            closeDeleteStepModal();
+            console.log('Deleted step at index:', currentDeletingStepIndex);
         }
     } catch (error) {
         console.error('Error deleting step:', error);
+        showErrorModal('Failed to delete step: ' + error.message);
     }
 }
 
@@ -1077,8 +1234,14 @@ function addStepDragListeners() {
         step.addEventListener('dragstart', handleStepDragStart);
         step.addEventListener('dragend', handleStepDragEnd);
         step.addEventListener('dragover', handleStepDragOver);
+        step.addEventListener('dragleave', handleStepDragLeave);
         step.addEventListener('drop', handleStepDrop);
     });
+}
+
+function handleStepDragLeave(e) {
+    // Don't remove indicator on step leave, only clear throttle
+    // The indicator will be repositioned by dragover on the next step
 }
 
 let draggedStepIndex = null;
@@ -1087,6 +1250,8 @@ function handleStepDragStart(e) {
     draggedStepIndex = parseInt(e.currentTarget.dataset.index);
     e.currentTarget.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
+    // Set some data to prevent errors (but won't be used for reordering)
+    e.dataTransfer.setData('text/plain', JSON.stringify({ reorder: true }));
 }
 
 function handleStepDragEnd(e) {
@@ -1108,29 +1273,37 @@ function handleStepDragEnd(e) {
 function handleStepDragOver(e) {
     e.preventDefault();
     
-    console.log('handleStepDragOver triggered, effectAllowed:', e.dataTransfer.effectAllowed);
-    
     // Check if this is a reorder (move) or new handler (copy)
     if (e.dataTransfer.effectAllowed === 'move') {
         e.dataTransfer.dropEffect = 'move';
-        console.log('Move mode - skipping indicator');
     } else {
         e.dataTransfer.dropEffect = 'copy';
-        console.log('Copy mode - showing indicator');
-        
-        // Use the shared update function
-        if (dragOverThrottle) {
-            clearTimeout(dragOverThrottle);
-        }
-        
-        dragOverThrottle = setTimeout(() => {
-            updateDropIndicator(e.clientY);
-        }, 10);
     }
+    
+    // Only update if mouse moved significantly (reduce updates)
+    if (lastClientY !== null && Math.abs(e.clientY - lastClientY) < 5) {
+        return;
+    }
+    
+    lastClientY = e.clientY;
+    
+    // Throttle the indicator update
+    if (dragOverThrottle) {
+        return; // Skip if already scheduled
+    }
+    
+    dragOverThrottle = setTimeout(() => {
+        updateDropIndicator(lastClientY);
+        dragOverThrottle = null;
+    }, 50);
 }
 
 function handleStepDrop(e) {
     e.preventDefault();
+    e.stopPropagation(); // Prevent event from bubbling to container
+    
+    // Reset tracking variables
+    lastClientY = null;
     
     // Clear throttle timeout
     if (dragOverThrottle) {
@@ -1138,38 +1311,114 @@ function handleStepDrop(e) {
         dragOverThrottle = null;
     }
     
-    // Remove drop indicator
+    // Get the indicator's position before removing it
     const existingIndicator = document.querySelector('.drop-indicator');
+    let insertBeforeElement = null;
     if (existingIndicator) {
+        insertBeforeElement = existingIndicator.nextSibling;
         existingIndicator.remove();
     }
-    
-    const dropIndex = parseInt(e.currentTarget.dataset.index);
     
     // Check if this is a reorder (move) or new handler (copy)
     if (e.dataTransfer.effectAllowed === 'move') {
         // Handle reordering
-        if (draggedStepIndex !== null && draggedStepIndex !== dropIndex) {
+        if (draggedStepIndex !== null) {
             const editor = document.getElementById('jsonEditor');
             try {
                 const workflowData = JSON.parse(editor.value);
                 const workflow = workflowData.workflow;
                 
+                // Calculate insert index based on where the indicator was
+                let insertIndex;
+                if (insertBeforeElement && insertBeforeElement.classList && insertBeforeElement.classList.contains('workflow-step')) {
+                    // Insert before this step
+                    insertIndex = parseInt(insertBeforeElement.dataset.index);
+                } else {
+                    // Insert at the end
+                    insertIndex = workflow.length;
+                }
+                
+                // Skip if dropping on itself
+                if (insertIndex === draggedStepIndex || insertIndex === draggedStepIndex + 1) {
+                    draggedStepIndex = null;
+                    return;
+                }
+                
+                // Adjust for removal of dragged item
+                if (draggedStepIndex < insertIndex) {
+                    insertIndex--;
+                }
+                
                 // Reorder steps
                 const draggedStep = workflow[draggedStepIndex];
                 workflow.splice(draggedStepIndex, 1);
-                workflow.splice(dropIndex, 0, draggedStep);
+                workflow.splice(insertIndex, 0, draggedStep);
                 
                 editor.value = JSON.stringify(workflowData, null, 2);
                 renderModularView();
+                
+                console.log('Reordered step from', draggedStepIndex, 'to', insertIndex);
             } catch (error) {
                 console.error('Error reordering steps:', error);
+                showErrorModal('Failed to reorder steps: ' + error.message);
             }
         }
         draggedStepIndex = null;
     } else {
-        // Handle new handler drop - delegate to handleModularDrop
-        handleModularDrop(e);
+        // Handle new handler drop on step
+        try {
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            
+            // Make sure this is a valid handler drop, not a reorder
+            if (data.handler_id && data.handler_type) {
+                // Get template for this handler
+                const template = getHandlerTemplate(data.handler_type, data.handler_id);
+                
+                if (!template) {
+                    showErrorModal('Template not found for handler: ' + data.handler_id);
+                    return;
+                }
+                
+                const editor = document.getElementById('jsonEditor');
+                let workflowData;
+                
+                try {
+                    workflowData = JSON.parse(editor.value);
+                } catch (error) {
+                    showErrorModal('Invalid JSON format in editor.');
+                    return;
+                }
+                
+                if (!workflowData.workflow) {
+                    workflowData.workflow = [];
+                }
+                
+                // Find insert position based on mouse position
+                const dropIndex = parseInt(e.currentTarget.dataset.index);
+                const rect = e.currentTarget.getBoundingClientRect();
+                const midpoint = rect.top + rect.height / 2;
+                
+                let insertIndex = dropIndex;
+                if (e.clientY < midpoint) {
+                    // Insert before this step
+                    insertIndex = dropIndex;
+                } else {
+                    // Insert after this step
+                    insertIndex = dropIndex + 1;
+                }
+                
+                // Insert new step
+                workflowData.workflow.splice(insertIndex, 0, template);
+                
+                // Update editor
+                editor.value = JSON.stringify(workflowData, null, 2);
+                renderModularView();
+                
+                console.log('Handler added at position', insertIndex);
+            }
+        } catch (error) {
+            console.error('Error handling drop:', error);
+        }
     }
 }
 
@@ -1179,6 +1428,7 @@ window.onclick = function(event) {
     const loadWorkflowModal = document.getElementById('loadWorkflowModal');
     const deleteWorkflowModal = document.getElementById('deleteWorkflowModal');
     const clearWorkflowModal = document.getElementById('clearWorkflowModal');
+    const deleteStepModal = document.getElementById('deleteStepModal');
     const successModal = document.getElementById('successModal');
     
     if (event.target === newWorkflowModal) {
@@ -1199,5 +1449,9 @@ window.onclick = function(event) {
     
     if (event.target === successModal) {
         closeSuccessModal();
+    }
+    
+    if (event.target === deleteStepModal) {
+        closeDeleteStepModal();
     }
 }

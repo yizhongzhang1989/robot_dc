@@ -5,16 +5,5 @@
     "camera_topic": "/ur15_camera/image_raw",
     "positioning_service_url": "http://localhost:8004"
   },
-  "workflow": [
-    {
-      "id": "capture_at_current_pose",
-      "type": "capture_image",
-      "description": "Capture image at current pose",
-      "camera_topic": "/ur15_camera/image_raw",
-      "save_path": "../temp/rack_location/rack_bottom_left/1.jpg",
-      "timeout": 3,
-      "wait_time": 0.5,
-      "stop_on_failure": true
-    }
-  ]
+  "workflow": []
 }
