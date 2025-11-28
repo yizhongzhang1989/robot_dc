@@ -1,141 +1,141 @@
-# CourierRobot 快速测试命令
+# CourierRobot Quick Test Commands
 
-所有命令在 `/home/robot/Desktop/robot_dc_test` 目录下执行
+All commands should be executed in the `/home/robot/Desktop/robot_dc_test` directory
 
-**重要提示**：从现在开始，所有命令会自动打印执行结果，无需手动添加 `print`！
+**Important Note**: All commands now automatically print execution results, no need to manually add `print`!
 
-## 1. 状态查询命令
+## 1. Status Query Commands
 
-### 查看完整状态（平台+传感器）
+### View Complete Status (Platform + Sensors)
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.get_status()"
 ```
 
-### 只看高度和力
+### View Height and Force Only
 ```bash
-python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=r.get_status(); print(f\"高度:{s['sensors']['height']}mm, 力:{s['sensors']['combined_force']}N\")"
+python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=r.get_status(); print(f\"Height:{s['sensors']['height']}mm, Force:{s['sensors']['combined_force']}N\")"
 ```
 
-### 查看平台运动状态
+### View Platform Movement Status
 ```bash
-python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=r.get_status(); print(f\"任务状态:{s['data']['platform']['task_state']}, 运动状态:{s['data']['platform']['movement_state']}\")"
+python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=r.get_status(); print(f\"Task State:{s['data']['platform']['task_state']}, Movement State:{s['data']['platform']['movement_state']}\")"
 ```
 
-### 查看推杆状态
+### View Pushrod Status
 ```bash
-python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=r.get_status(); print(f\"推杆状态:{s['data']['pushrod']['task_state']}, 运动:{s['data']['pushrod']['movement_state']}\")"
+python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=r.get_status(); print(f\"Pushrod State:{s['data']['pushrod']['task_state']}, Movement:{s['data']['pushrod']['movement_state']}\")"
 ```
 
-## 2. 平台手动控制命令
+## 2. Platform Manual Control Commands
 
-### 平台上升
+### Platform Up
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_up()"
 ```
 
-### 平台下降
+### Platform Down
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_down()"
 ```
 
-### 平台停止
+### Platform Stop
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_stop()"
 ```
 
-## 3. 平台高度控制命令
+## 3. Platform Height Control Commands
 
-### 移动到指定高度 (800mm)
+### Move to Specific Height (800mm)
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_goto_height(800)"
 ```
 
-### 移动到高度并等待完成 (850mm)
+### Move to Height and Wait for Completion (850mm)
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_goto_height(850); r.wait_for_completion('platform', timeout=30)"
 ```
 
-### 移动到最低位置 (700mm)
+### Move to Lowest Position (700mm)
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_goto_height(700)"
 ```
 
-### 移动到最高位置 (900mm)
+### Move to Highest Position (900mm)
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_goto_height(900)"
 ```
 
-## 4. 平台力控制命令
+## 4. Platform Force Control Commands
 
-### 力控向上到 50N
+### Force Control Up to 50N
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_force_up(50)"
 ```
 
-### 力控向下到 30N
+### Force Control Down to 30N
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_force_down(30)"
 ```
 
-### 力控向下到 20N 并等待完成
+### Force Control Down to 20N and Wait for Completion
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_force_down(20); r.wait_for_completion('platform', timeout=30)"
 ```
 
-## 5. 平台混合控制命令
+## 5. Platform Hybrid Control Commands
 
-### 混合控制: 800mm OR 40N (先到先停)
+### Hybrid Control: 800mm OR 40N (whichever is reached first)
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_hybrid_control(800, 40)"
 ```
 
-### 混合控制并等待完成
+### Hybrid Control and Wait for Completion
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_hybrid_control(850, 35); r.wait_for_completion('platform', timeout=30)"
 ```
 
-## 6. 推杆控制命令
+## 6. Pushrod Control Commands
 
-### 推杆上升
+### Pushrod Up
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.pushrod_up()"
 ```
 
-### 推杆下降
+### Pushrod Down
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.pushrod_down()"
 ```
 
-### 推杆停止
+### Pushrod Stop
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.pushrod_stop()"
 ```
 
-### 推杆绝对定位到 750mm
+### Pushrod Absolute Positioning to 750mm
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.pushrod_goto_height(750, mode='absolute')"
 ```
 
-### 推杆相对移动 +10mm
+### Pushrod Relative Move +10mm
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.pushrod_goto_height(10, mode='relative')"
 ```
 
-### 推杆相对移动 -5mm
+### Pushrod Relative Move -5mm
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.pushrod_goto_height(-5, mode='relative')"
 ```
 
-## 7. 紧急复位命令
+## 7. Emergency Reset Command
 
-### 紧急停止并复位所有状态
+### Emergency Stop and Reset All States
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.emergency_reset()"
 ```
 
-## 8. 组合测试命令（简化版）
+## 8. Combined Test Commands (Simplified)
 
-### 完整流程测试: 移动到目标高度并验证
+### Complete Flow Test: Move to Target Height and Verify
 ```bash
 python3 -c "
 from scripts.courier_robot import CourierRobot
@@ -145,7 +145,7 @@ r.wait_for_completion('platform', timeout=30)
 "
 ```
 
-### 测试力控精度
+### Test Force Control Accuracy
 ```bash
 python3 -c "
 from scripts.courier_robot import CourierRobot
@@ -155,7 +155,7 @@ r.wait_for_completion('platform', timeout=30)
 "
 ```
 
-### 连续监控传感器数据 (10次，间隔1秒)
+### Continuous Sensor Monitoring (10 times, 1 second interval)
 ```bash
 python3 -c "
 from scripts.courier_robot import CourierRobot
@@ -163,37 +163,37 @@ import time
 r = CourierRobot()
 for i in range(10):
     s = r.get_status()
-    print(f'{i+1}. 高度:{s[\"sensors\"][\"height\"]:.2f}mm, 力:{s[\"sensors\"][\"combined_force\"]:.2f}N')
+    print(f'{i+1}. Height:{s[\"sensors\"][\"height\"]:.2f}mm, Force:{s[\"sensors\"][\"combined_force\"]:.2f}N')
     time.sleep(1)
 "
 ```
 
-### 测试状态检查机制
+### Test State Checking Mechanism
 ```bash
 python3 -c "
 from scripts.courier_robot import CourierRobot
 r = CourierRobot()
-r.platform_goto_height(800)  # 第一个命令
-r.platform_goto_height(900)  # 第二个命令（会被拒绝）
+r.platform_goto_height(800)  # First command
+r.platform_goto_height(900)  # Second command (will be rejected)
 r.wait_for_completion('platform', timeout=30)
-r.platform_goto_height(900)  # 第三个命令（成功）
+r.platform_goto_height(900)  # Third command (success)
 "
 ```
 
-## 9. 静默模式（不显示自动输出）
+## 9. Silent Mode (No Auto-Output)
 
-如果你不想看到自动打印的信息，可以设置 `verbose=False`：
+If you don't want to see automatic output, set `verbose=False`:
 
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(verbose=False); r.platform_goto_height(800)"
 ```
 
-## 10. 常用快捷命令别名
+## 10. Common Command Aliases
 
-可以在 `~/.bashrc` 中添加以下别名：
+You can add the following aliases to `~/.bashrc`:
 
 ```bash
-# 添加到 ~/.bashrc
+# Add to ~/.bashrc
 alias robot_status='cd /home/robot/Desktop/robot_dc_test && python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.get_status()"'
 
 alias robot_up='cd /home/robot/Desktop/robot_dc_test && python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_up()"'
@@ -205,23 +205,23 @@ alias robot_stop='cd /home/robot/Desktop/robot_dc_test && python3 -c "from scrip
 alias robot_reset='cd /home/robot/Desktop/robot_dc_test && python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.emergency_reset()"'
 ```
 
-然后执行：
+Then execute:
 ```bash
 source ~/.bashrc
 ```
 
-使用别名（可在任意目录执行）：
+Use aliases (can be executed from any directory):
 ```bash
-robot_status          # 查看状态
-robot_up              # 平台上升
-robot_down            # 平台下降
-robot_stop            # 平台停止
-robot_reset           # 紧急复位
+robot_status          # View status
+robot_up              # Platform up
+robot_down            # Platform down
+robot_stop            # Platform stop
+robot_reset           # Emergency reset
 ```
 
-## 11. 交互式 Python 使用
+## 11. Interactive Python Usage
 
-如果需要多次操作，推荐进入 Python 交互模式：
+If you need multiple operations, it's recommended to enter Python interactive mode:
 
 ```bash
 cd /home/robot/Desktop/robot_dc_test
@@ -232,33 +232,33 @@ python3
 from scripts.courier_robot import CourierRobot
 r = CourierRobot()
 
-# 所有命令自动显示结果
+# All commands automatically display results
 r.get_status()
 r.platform_goto_height(800)
 r.wait_for_completion('platform', timeout=30)
 
-# 如果不想看到自动输出
+# If you don't want auto-output
 r_quiet = CourierRobot(verbose=False)
 result = r_quiet.platform_goto_height(850)
-print(result)  # 手动打印你需要的信息
+print(result)  # Manually print the info you need
 ```
 
-## 注意事项
+## Notes
 
-1. **自动输出**: 默认 `verbose=True`，所有操作会自动打印友好的状态信息
+1. **Auto-output**: Default `verbose=True`, all operations will automatically print friendly status information
 
-2. **静默模式**: 设置 `verbose=False` 可关闭自动输出，适合在脚本中使用
+2. **Silent Mode**: Set `verbose=False` to disable auto-output, suitable for use in scripts
 
-3. **状态检查**: 除了 `stop` 和 `emergency_reset`，所有运动命令都会检查状态，只有在 `idle` 或 `completed` 时才会执行
+3. **State Checking**: Except for `stop` and `emergency_reset`, all motion commands check the state and will only execute when in `idle` or `completed` state
 
-4. **返回值**: 所有命令都返回包含 `status` 字段的完整状态字典，可以用于编程判断
+4. **Return Values**: All commands return a complete status dictionary containing a `status` field, which can be used for programmatic decisions
 
-5. **base_url**: 默认是 `http://192.168.1.3:8090`，如需修改：
+5. **base_url**: Default is `http://192.168.1.3:8090`, to modify:
    ```bash
    python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(base_url='http://localhost:8090'); r.platform_up()"
    ```
 
-6. **超时设置**: `wait_for_completion()` 默认超时 60 秒，可自定义：
+6. **Timeout Settings**: `wait_for_completion()` default timeout is 60 seconds, customizable:
    ```bash
    python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_goto_height(800); r.wait_for_completion('platform', timeout=45)"
    ```

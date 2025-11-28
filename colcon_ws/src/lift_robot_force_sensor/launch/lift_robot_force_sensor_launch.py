@@ -4,6 +4,10 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 import os
 import json
+import sys
+
+# Add common package to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'common'))
 
 
 def launch_setup(context, *args, **kwargs):
@@ -123,16 +127,33 @@ def generate_launch_description():
             3. CWD/config
     """
     
+    # Try to load defaults from config file (like other nodes do)
+    default_device_id = '52'
+    default_topic = '/force_sensor'
+    default_read_interval = '0.06'
+    
+    try:
+        from common.config_manager import ConfigManager
+        config = ConfigManager()
+        # For right sensor by default
+        default_device_id = str(config.get('lift_robot.device_ids.force_sensor_right', 52))
+        default_topic = config.get('lift_robot.sensors.force_sensor.topics.right', '/force_sensor')
+        default_read_interval = str(config.get('lift_robot.sensors.force_sensor.read_interval', 0.06))
+        print(f"[force_sensor_launch] Loaded from config: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
+    except Exception as e:
+        print(f"[force_sensor_launch] Could not load config: {e}")
+        print(f"[force_sensor_launch] Using defaults: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
+    
     # Declare launch arguments
     device_id_arg = DeclareLaunchArgument(
         'device_id',
-        default_value='52',
-        description='Force sensor Modbus device ID (52=right sensor, 53=left sensor)'
+        default_value=default_device_id,
+        description='Force sensor Modbus device ID (52=right, 53=left)'
     )
     
     topic_name_arg = DeclareLaunchArgument(
         'topic_name',
-        default_value='/force_sensor',
+        default_value=default_topic,
         description='Topic name for publishing force data'
     )
     
@@ -144,7 +165,7 @@ def generate_launch_description():
     
     read_interval_arg = DeclareLaunchArgument(
         'read_interval',
-        default_value='0.06',
+        default_value=default_read_interval,
         description='Sensor read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz, 0.01 = 100Hz)'
     )
     
