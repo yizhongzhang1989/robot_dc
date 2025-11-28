@@ -7,8 +7,8 @@ import json
 
 def generate_launch_description():
     device_id_arg = DeclareLaunchArgument('device_id', default_value='51', description='Modbus device ID')
-    # Default changed to 0.02s (50Hz) for system-wide consistency
-    read_interval_arg = DeclareLaunchArgument('read_interval', default_value='0.02', description='Sensor read interval (s, 0.02=50Hz)')
+    # Default changed to 0.06s (~17Hz) for system-wide consistency
+    read_interval_arg = DeclareLaunchArgument('read_interval', default_value='0.06', description='Sensor read interval (s, 0.06=~17Hz)')
     
     # Portable config path resolution (ENV -> colcon_ws -> CWD)
     env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')

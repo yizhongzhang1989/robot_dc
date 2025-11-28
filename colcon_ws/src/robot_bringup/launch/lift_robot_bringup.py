@@ -13,6 +13,12 @@ def generate_launch_description():
         'start_web', default_value='true', description='Start lift_robot_web server')
     web_port_arg = DeclareLaunchArgument(
         'web_port', default_value='8090', description='Port for lift_robot_web server')
+    
+    # Sensor read interval arguments (frequency configuration)
+    draw_wire_interval_arg = DeclareLaunchArgument(
+        'draw_wire_interval', default_value='0.06', description='Draw wire sensor read interval (s, 0.06=~17Hz)')
+    force_sensor_interval_arg = DeclareLaunchArgument(
+        'force_sensor_interval', default_value='0.06', description='Force sensor read interval (s, 0.06=~17Hz)')
     # Paths to launch files
     modbus_path = os.path.join(
         get_package_share_directory('modbus_driver'),
@@ -58,7 +64,10 @@ def generate_launch_description():
     # Start cable sensor after modbus driver is ready
     cable_sensor_launch = TimerAction(
         period=4.0,
-        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cable_sensor_path), launch_arguments={'device_id': '51', 'read_interval': '0.02'}.items())]
+        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cable_sensor_path), launch_arguments={
+            'device_id': '51',
+            'read_interval': LaunchConfiguration('draw_wire_interval')
+        }.items())]
     )
 
     # Start force sensor (device_id=52, topic=/force_sensor) after cable sensor
@@ -69,7 +78,8 @@ def generate_launch_description():
             launch_arguments={
                 'device_id': '52',
                 'topic_name': '/force_sensor',
-                'node_name_suffix': 'right'
+                'node_name_suffix': 'right',
+                'read_interval': LaunchConfiguration('force_sensor_interval')
             }.items()
         )]
     )
@@ -82,7 +92,8 @@ def generate_launch_description():
             launch_arguments={
                 'device_id': '53',
                 'topic_name': '/force_sensor_2',
-                'node_name_suffix': 'left'
+                'node_name_suffix': 'left',
+                'read_interval': LaunchConfiguration('force_sensor_interval')
             }.items()
         )]
     )
@@ -103,6 +114,8 @@ def generate_launch_description():
     return LaunchDescription([
         start_web_arg,
         web_port_arg,
+        draw_wire_interval_arg,
+        force_sensor_interval_arg,
         modbus_launch,
         lift_robot_launch,
         cable_sensor_launch,

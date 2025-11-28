@@ -15,6 +15,7 @@ def launch_setup(context, *args, **kwargs):
     device_id = int(LaunchConfiguration('device_id').perform(context))
     topic_name = LaunchConfiguration('topic_name').perform(context)
     node_name_suffix = LaunchConfiguration('node_name_suffix').perform(context)
+    read_interval = float(LaunchConfiguration('read_interval').perform(context))
     
     # Portable config path resolution (ENV -> colcon_ws -> CWD)
     env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
@@ -92,7 +93,7 @@ def launch_setup(context, *args, **kwargs):
                 'topic_name': topic_name,
                 'node_name_suffix': node_name_suffix,
                 'use_ack_patch': True,
-                'read_interval': 0.02,  # 50Hz
+                'read_interval': read_interval,
                 'calibration_scale': calib_scale,
                 'calibration_offset': calib_offset
             }]
@@ -141,10 +142,17 @@ def generate_launch_description():
         description='Suffix for node name (e.g., "right", "left")'
     )
     
+    read_interval_arg = DeclareLaunchArgument(
+        'read_interval',
+        default_value='0.06',
+        description='Sensor read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz, 0.01 = 100Hz)'
+    )
+    
     return LaunchDescription([
         device_id_arg,
         topic_name_arg,
         node_name_suffix_arg,
+        read_interval_arg,
         OpaqueFunction(function=launch_setup)
     ])
 

@@ -1,0 +1,17 @@
+# Stop movement action
+# Cancels the currently running action and sends stop flash
+# Works for any action: ManualMove, GotoHeight, ForceControl, HybridControl
+
+# Goal: which device to stop
+string target      # "platform" or "pushrod"
+---
+# Result: outcome of stop operation
+bool success                 # True if stop completed successfully
+string stopped_action        # Which action was stopped: "manual_move", "goto_height", "force_control", "hybrid_control", "none"
+float64 final_height         # Final height after stop (mm)
+float64 execution_time       # Time to complete stop (seconds)
+string completion_reason     # "stopped", "no_active_action", "stop_failed", "timeout"
+---
+# Feedback: stop progress
+string status                # "cancelling", "waiting_stop_flash", "verifying", "completed"
+float64 elapsed_time         # Time elapsed (seconds)

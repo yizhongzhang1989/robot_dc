@@ -3,10 +3,15 @@ from modbus_driver_interfaces.srv import ModbusRequest
 
 
 class ModbusDevice(ABC):
-    def __init__(self, device_id, node, use_ack_patch=False):
+    def __init__(self, device_id, node, use_ack_patch=False, callback_group=None):
         self.device_id = device_id
         self.node = node
-        self.cli = node.create_client(ModbusRequest, '/modbus_request')
+        # Create client with dedicated callback group for high-priority ModBus responses
+        self.cli = node.create_client(
+            ModbusRequest, 
+            '/modbus_request',
+            callback_group=callback_group
+        )
         self.use_ack_patch = use_ack_patch
         if use_ack_patch:
             # Save the original send method so we can call it later
@@ -85,9 +90,10 @@ class ModbusDevice(ABC):
                 callback([])
             return []
 
-        # callback cannot be None if func_code is 3
-        if func_code != 3 and callback is not None:
-            self.node.get_logger().warn("Callback is required for this function code.")
+        # For function codes other than 3 (read holding registers), callback is required
+        # because recv is async and returns immediately
+        if func_code != 3 and callback is None:
+            self.node.get_logger().warn("Callback is required for async read (func_code != 3).")
             return []
 
         req = ModbusRequest.Request()
@@ -110,7 +116,61 @@ class ModbusDevice(ABC):
             resp = result.response if result and result.success else []
             self.node.get_logger().debug(f"[SEQ {req.seq_id}] ✅ Modbus read OK: fc={func_code} addr={hex(addr)} count={count} => {resp}")
             if callback:
+                
                 callback(resp)
 
         future.add_done_callback(handle_recv_response)
         return []
+    def send_raw(self, raw_message, seq_id=None, callback=None):
+        """Send raw Modbus message using non-standard protocol.
+        
+        Args:
+            raw_message: List of bytes [function_code, operation_type, relay_addr, interval_high, interval_low]
+            seq_id: Sequence ID for logging
+            callback: Optional callback function
+        """
+        # Check if the Modbus service is available
+        if not self.cli.service_is_ready():
+            self.node.get_logger().warn("Modbus service not available. Skipping raw request.")
+            return
+
+        # Build the ModbusRequest message with raw_message field
+        req = ModbusRequest.Request()
+        req.slave_id = self.device_id
+        req.raw_message = raw_message
+        # Fill dummy values for standard fields (not used when raw_message is present)
+        req.function_code = 0
+        req.address = 0
+        req.count = 0
+        req.values = []
+
+        # Assign sequence ID
+        if seq_id is not None:
+            req.seq_id = seq_id
+        else:
+            req.seq_id = getattr(self.node, 'seq_id', 0)
+
+        # Send the request asynchronously
+        future = self.cli.call_async(req)
+
+        # Define the response handler
+        def handle_raw_response(fut):
+            result = fut.result()
+            # Log ack if received
+            if hasattr(result, 'ack') and result.ack == 1:
+                self.node.get_logger().debug("Manager ACK received: 1")
+
+            # Log result status
+            if result is not None and result.success:
+                self.node.get_logger().debug(
+                    f"[SEQ {req.seq_id}] ✅ Raw Modbus command OK: {[hex(b) for b in raw_message]}"
+                )
+            else:
+                self.node.get_logger().error(f"[SEQ {req.seq_id}] ❌ Raw Modbus request failed")
+
+            # If a callback was given, call it
+            if callback:
+                callback(fut)
+
+        # Register the response handler to the future
+        future.add_done_callback(handle_raw_response)
