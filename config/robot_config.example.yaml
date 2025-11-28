@@ -189,3 +189,50 @@ shared:
 # Set these environment variables before running services:
 #
 # export ROBOT_DC_ROOT="/path/to/robot_dc"     # Optional, auto-detected
+
+# ============================================================================
+# Lift Robot (Courier Platform) Configuration
+# ============================================================================
+lift_robot:
+  # Modbus communication settings
+  modbus:
+    port: "auto"              # Serial port (auto-detect RS485 device, or specify like /dev/ttyUSB0)
+    baudrate: 115200          # Serial baudrate
+    
+  # Device IDs for each component
+  device_ids:
+    platform: 50              # Lift platform device ID
+    draw_wire_sensor: 51      # Draw wire height sensor device ID
+    force_sensor_right: 52    # Right force sensor device ID
+    force_sensor_left: 53     # Left force sensor device ID
+  
+  # Sensor configuration
+  sensors:
+    draw_wire:
+      read_interval: 0.06     # Read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz)
+      topic: "/draw_wire_sensor/data"
+    force_sensor:
+      read_interval: 0.06     # Read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz)
+      topics:
+        right: "/force_sensor"
+        left: "/force_sensor_2"
+  
+  # Web interface configuration
+  web:
+    host: "localhost"         # Web server host address (localhost or IP like 192.168.1.3)
+    port: 8090                # Web server port
+    listen_host: "0.0.0.0"    # Listen on all interfaces (for server binding)
+    sensor_topic: "/draw_wire_sensor/data"
+  
+  # Launch sequence timing (delays in seconds)
+  launch_timing:
+    modbus_ready: 3.0         # Wait for modbus driver initialization
+    platform_delay: 3.0       # Platform node launch delay
+    draw_wire_delay: 4.0      # Draw wire sensor launch delay
+    force_sensor_delay: 4.5   # Force sensor launch delay
+    force_sensor_2_delay: 5.0 # Second force sensor launch delay
+    web_delay: 5.5            # Web interface launch delay
+  
+  # Optional launch flags
+  launch_flags:
+    start_web: true           # Launch web interface

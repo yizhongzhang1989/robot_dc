@@ -15,15 +15,18 @@ class CourierRobot:
     Provides all control functions available in the web interface
     """
     
-    def __init__(self, base_url="http://192.168.1.3:8090"):
+    def __init__(self, base_url="http://192.168.1.3:8090", verbose=True):
         """
         Initialize courier robot controller
         
         Args:
             base_url: HTTP server base URL (default: http://192.168.1.3:8090)
+            verbose: If True, automatically print command results (default: True)
         """
         self.base_url = base_url
-        print(f"📡 CourierRobot initialized with base URL: {base_url}")
+        self.verbose = verbose
+        if verbose:
+            print(f"📡 CourierRobot initialized with base URL: {base_url}")
     
     def _send_command(self, target, command, **kwargs):
         """
@@ -59,17 +62,40 @@ class CourierRobot:
     
     def get_status(self):
         """
-        Get current status of platform and pushrod
+        Get current status of platform and pushrod with sensor data
         
         Returns:
-            dict with success and status data
+            dict with complete system status including:
+            - data: platform and pushrod task_state, movement_state, etc.
+            - sensors: height, force, frequency, etc.
         """
         try:
-            url = f"{self.base_url}/api/status"
-            response = requests.get(url, timeout=2)
-            if response.status_code == 200:
-                return {"success": True, "data": response.json()}
-            return {"success": False, "error": f"HTTP {response.status_code}"}
+            # Get task status
+            status_url = f"{self.base_url}/api/status"
+            status_response = requests.get(status_url, timeout=2)
+            
+            # Get sensor data
+            sensor_url = f"{self.base_url}/api/latest"
+            sensor_response = requests.get(sensor_url, timeout=2)
+            
+            if status_response.status_code == 200:
+                result = {"success": True, "data": status_response.json()}
+                
+                # Merge sensor data if available
+                if sensor_response.status_code == 200:
+                    sensor_data = sensor_response.json()
+                    result['sensors'] = {
+                        'height': sensor_data.get('height'),
+                        'right_force': sensor_data.get('right_force_sensor'),
+                        'left_force': sensor_data.get('left_force_sensor'),
+                        'combined_force': sensor_data.get('combined_force_sensor'),
+                        'freq_hz': sensor_data.get('freq_hz')
+                    }
+                else:
+                    result['sensors'] = {}
+                
+                return result
+            return {"success": False, "error": f"HTTP {status_response.status_code}"}
         except Exception as e:
             return {"success": False, "error": str(e)}
     
@@ -96,30 +122,86 @@ class CourierRobot:
         Platform manual up movement
         
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print("⬆️  [Platform] Manual UP")
-        return self._send_command('platform', 'up')
+        # Check if platform is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
+            if platform_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Platform is busy (state: {platform_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"⬆️  [Platform] Manual UP")
+        result = self._send_command('platform', 'up')
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Platform UP command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     def platform_down(self):
         """
         Platform manual down movement
         
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print("⬇️  [Platform] Manual DOWN")
-        return self._send_command('platform', 'down')
+        # Check if platform is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
+            if platform_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Platform is busy (state: {platform_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"⬇️  [Platform] Manual DOWN")
+        result = self._send_command('platform', 'down')
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Platform DOWN command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     def platform_stop(self):
         """
         Platform stop
         
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print("⏹️  [Platform] STOP")
-        return self._send_command('platform', 'stop')
+        # Stop command should always be allowed (no state check)
+        if self.verbose:
+            print(f"🛑 [Platform] STOP")
+        result = self._send_command('platform', 'stop')
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            print(f"✅ Platform STOP command sent")
+        return result
     
     # ==================== Platform Height Control ====================
     
@@ -131,10 +213,33 @@ class CourierRobot:
             target_height: Target height in mm
             
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print(f"🎯 [Platform] Goto height: {target_height}mm")
-        return self._send_command('platform', 'goto_height', target_height=target_height)
+        # Check if platform is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
+            if platform_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Platform is busy (state: {platform_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"🎯 [Platform] Goto height: {target_height}mm")
+        result = self._send_command('platform', 'goto_height', target_height=target_height)
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Goto height command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     # ==================== Platform Force Control ====================
     
@@ -146,10 +251,33 @@ class CourierRobot:
             target_force: Target force in Newtons
             
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print(f"⚡⬆️  [Platform] Force UP to {target_force}N")
-        return self._send_command('platform', 'force_up', target_force=target_force)
+        # Check if platform is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
+            if platform_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Platform is busy (state: {platform_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"⚡⬆️  [Platform] Force UP to {target_force}N")
+        result = self._send_command('platform', 'force_up', target_force=target_force)
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Force UP command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     def platform_force_down(self, target_force):
         """
@@ -159,10 +287,33 @@ class CourierRobot:
             target_force: Target force in Newtons
             
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print(f"⚡⬇️  [Platform] Force DOWN to {target_force}N")
-        return self._send_command('platform', 'force_down', target_force=target_force)
+        # Check if platform is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
+            if platform_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Platform is busy (state: {platform_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"⚡⬇️  [Platform] Force DOWN to {target_force}N")
+        result = self._send_command('platform', 'force_down', target_force=target_force)
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Force DOWN command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     # ==================== Platform Hybrid Control ====================
     
@@ -175,12 +326,34 @@ class CourierRobot:
             target_force: Target force in Newtons
             
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print(f"🎯⚡ [Platform] Hybrid: {target_height}mm OR {target_force}N")
-        return self._send_command('platform', 'hybrid_control', 
-                                 target_height=target_height, 
-                                 target_force=target_force)
+        # Check if platform is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
+            if platform_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Platform is busy (state: {platform_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"🎯⚡ [Platform] Hybrid: {target_height}mm OR {target_force}N")
+        result = self._send_command('platform', 'hybrid_control', 
+                                target_height=target_height, target_force=target_force)
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Hybrid control command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     # ==================== Pushrod Manual Control ====================
     
@@ -189,30 +362,86 @@ class CourierRobot:
         Pushrod manual up movement
         
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print("⬆️  [Pushrod] Manual UP")
-        return self._send_command('pushrod', 'up')
+        # Check if pushrod is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
+            if pushrod_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Pushrod is busy (state: {pushrod_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"⬆️  [Pushrod] Manual UP")
+        result = self._send_command('pushrod', 'up')
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Pushrod UP command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     def pushrod_down(self):
         """
         Pushrod manual down movement
         
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print("⬇️  [Pushrod] Manual DOWN")
-        return self._send_command('pushrod', 'down')
+        # Check if pushrod is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
+            if pushrod_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Pushrod is busy (state: {pushrod_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"⬇️  [Pushrod] Manual DOWN")
+        result = self._send_command('pushrod', 'down')
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Pushrod DOWN command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     def pushrod_stop(self):
         """
         Pushrod stop
         
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print("⏹️  [Pushrod] STOP")
-        return self._send_command('pushrod', 'stop')
+        # Stop command should always be allowed (no state check)
+        if self.verbose:
+            print(f"🛑 [Pushrod] STOP")
+        result = self._send_command('pushrod', 'stop')
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            print(f"✅ Pushrod STOP command sent")
+        return result
     
     # ==================== Pushrod Height Control ====================
     
@@ -225,12 +454,35 @@ class CourierRobot:
             mode: 'absolute' or 'relative' (default: 'absolute')
             
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print(f"🎯 [Pushrod] Goto height: {target_height}mm (mode: {mode})")
-        return self._send_command('pushrod', 'goto_height', 
+        # Check if pushrod is idle or completed before sending command
+        status = self.get_status()
+        if status.get('success'):
+            pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
+            if pushrod_state not in ['idle', 'completed']:
+                return {
+                    'success': False,
+                    'error': f'Pushrod is busy (state: {pushrod_state})',
+                    'status': status
+                }
+        
+        if self.verbose:
+            print(f"🎯 [Pushrod] Goto height: {target_height}mm (mode: {mode})")
+        result = self._send_command('pushrod', 'goto_height', 
                                  target_height=target_height, 
                                  mode=mode)
+        
+        # Get final status after command
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            if result['success']:
+                print(f"✅ Goto height command sent successfully")
+            else:
+                print(f"❌ Failed: {result.get('error')}")
+        return result
     
     # ==================== Emergency Reset ====================
     
@@ -239,10 +491,22 @@ class CourierRobot:
         Emergency reset - stops all movements and clears all states
         
         Returns:
-            dict with success status
+            dict with success status and complete state
         """
-        print("🚨 EMERGENCY RESET")
-        return self._send_command('platform', 'reset')
+        # Emergency reset should always be allowed (no state check)
+        if self.verbose:
+            print("🚨 EMERGENCY RESET")
+        result = self._send_command('platform', 'reset')
+        
+        # Get final status after command
+        import time
+        time.sleep(0.5)  # Wait a bit for reset to complete
+        final_status = self.get_status()
+        result['status'] = final_status
+        
+        if self.verbose:
+            print(f"✅ Emergency reset completed")
+        return result
     
     # ==================== Convenience Methods ====================
     
@@ -259,7 +523,8 @@ class CourierRobot:
             dict with success status and completion info
         """
         start_time = time.time()
-        print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
+        if self.verbose:
+            print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
         
         while time.time() - start_time < timeout:
             status_result = self.get_status()
@@ -270,7 +535,8 @@ class CourierRobot:
                 if task_state == 'completed':
                     reason = status_result['data'][target].get('completion_reason', 'unknown')
                     duration = status_result['data'][target].get('task_duration', 0)
-                    print(f"✅ Task completed: {reason} (duration: {duration:.2f}s)")
+                    if self.verbose:
+                        print(f"✅ Task completed: {reason} (duration: {duration:.2f}s)")
                     return {
                         "success": True,
                         "task_state": task_state,
@@ -279,7 +545,8 @@ class CourierRobot:
                     }
                 elif task_state == 'emergency_stop':
                     reason = status_result['data'][target].get('completion_reason', 'unknown')
-                    print(f"🚨 EMERGENCY STOP: {reason}")
+                    if self.verbose:
+                        print(f"🚨 EMERGENCY STOP: {reason}")
                     return {
                         "success": False,
                         "task_state": task_state,
@@ -289,7 +556,8 @@ class CourierRobot:
             time.sleep(poll_interval)
         
         # Timeout
-        print(f"⏱️  Timeout after {timeout}s")
+        if self.verbose:
+            print(f"⏱️  Timeout after {timeout}s")
         return {
             "success": False,
             "error": f"Timeout after {timeout}s"
