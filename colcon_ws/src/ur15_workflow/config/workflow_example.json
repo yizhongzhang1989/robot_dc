@@ -3,7 +3,6 @@
     "robot_ip": "192.168.1.15",
     "robot_port": 30002,
     "camera_topic": "/ur15_camera/image_raw",
-    "camera_params_path": "../temp/ur15_cam_calibration_result/ur15_camera_parameters",
     "positioning_service_url": "http://localhost:8004"
   },
   "workflow": [

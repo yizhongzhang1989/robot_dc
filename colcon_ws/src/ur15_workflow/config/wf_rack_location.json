@@ -1,616 +1,776 @@
 {
   "context": {
+    "camera_topic": "/ur15_camera/image_raw",
     "robot_ip": "192.168.1.15",
-    "robot_port": 30002,
-    "camera_topic": "/ur15_camera/image_raw"
+    "robot_port": 30002
   },
   "workflow": [
     {
-        "id": "upload_reference_data_for_rack_location",
-        "type": "positioning",
-        "description": "upload reference data to server for rack location",
-        "positioning_type": "upload_references",
-        "wait_time": 1.0,
-        "stop_on_failure": true
+      "description": "upload reference data to server for rack location",
+      "id": "upload_reference_data_for_rack_location",
+      "positioning_type": "upload_references",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 1
     },
     {
-        "id": "init_session_for_rack_location",
-        "type": "positioning",
-        "description": "init session for rack location",
-        "positioning_type": "init_session",
-        "wait_time": 1.0,
-        "stop_on_failure": true
+      "description": "init session for rack location",
+      "id": "init_session_for_rack_location",
+      "positioning_type": "init_session",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 1
     },
     {
-      "id": "*move_to_location_pose1",
-      "type": "robot_move",
-      "description": "Move robot to rack location task pose1",
-      "robot_pose": [1.2078, -0.2548, 2.0944, -3.0927, -0.5061, -1.8640],
-      "move_type": "movej",
-      "velocity": 0.5,
       "acceleration": 0.5,
-      "wait_time": 1.0,
-      "stop_on_failure": true
+      "description": "Move robot to rack location task pose1",
+      "id": "*move_to_location_pose1",
+      "move_type": "movej",
+      "robot_pose": [
+        1.2078,
+        -0.2548,
+        2.0944,
+        -3.0927,
+        -0.5061,
+        -1.864
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.5,
+      "wait_time": 1
     },
     {
-      "id": "capture_pose1",
-      "type": "capture_image",
-      "description": "Capture image at capture pose1 in location task pose1",
       "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose1 in location task pose1",
+      "id": "capture_pose1",
       "save_path": "../temp/rack_location/rack_bottom_left/1.jpg",
-      "timeout": 3.0,
-      "wait_time": 0.5,
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image",
+      "wait_time": 0.5
     },
     {
-      "id": "record_pose1",
-      "type": "record_data",
       "description": "Record robot pose data at capture pose1 in location task pose1",
+      "id": "record_pose1",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_bottom_left/1.json",
-      "wait_time": 0.5,
-      "stop_on_failure": true
-    },
-    {
-        "id": "upload_view_1",
-        "type": "positioning",
-        "description": "Upload view data1",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_bottom_left",
-        "image_path": "../temp/rack_location/rack_bottom_left/1.jpg",
-        "pose_path": "../temp/rack_location/rack_bottom_left/1.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
-    },
-    {
-      "id": "move_to_capture_pose2",
-      "type": "robot_move",
-      "description": "Move robot to capture pose2 in location task pose1",
-      "robot_pose": [0.01, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "capture_pose2",
-      "type": "capture_image",
-      "description": "Capture image at capture pose2 in location task pose1",
-      "camera_topic": "/ur15_camera/image_raw",
-      "save_path": "../temp/rack_location/rack_bottom_left/2.jpg",
-      "timeout": 3.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "record_pose2",
+      "stop_on_failure": true,
       "type": "record_data",
+      "wait_time": 0.5
+    },
+    {
+      "description": "Upload view data1",
+      "id": "upload_view_1",
+      "image_path": "../temp/rack_location/rack_bottom_left/1.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_left/1.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
+    },
+    {
+      "acceleration": 0.1,
+      "description": "Move robot to capture pose2 in location task pose1",
+      "id": "move_to_capture_pose2",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0.01,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
+      "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose2 in location task pose1",
+      "id": "capture_pose2",
+      "save_path": "../temp/rack_location/rack_bottom_left/2.jpg",
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image"
+    },
+    {
       "description": "Record robot pose data at capture pose2 in location task pose1",
+      "id": "record_pose2",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_bottom_left/2.json",
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "type": "record_data"
     },
     {
-        "id": "upload_view_2",
-        "type": "positioning",
-        "description": "Upload view data2",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_bottom_left",
-        "image_path": "../temp/rack_location/rack_bottom_left/2.jpg",
-        "pose_path": "../temp/rack_location/rack_bottom_left/2.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
+      "description": "Upload view data2",
+      "id": "upload_view_2",
+      "image_path": "../temp/rack_location/rack_bottom_left/2.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_left/2.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
     },
     {
-      "id": "move_back_to_location_pose",
-      "type": "robot_move",
+      "acceleration": 0.1,
       "description": "Move robot back to location pose",
-      "robot_pose": [-0.01, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "id": "move_back_to_location_pose",
       "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "move_to_capture_pose3",
+      "robot_pose": [
+        -0.01,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
       "type": "robot_move",
-      "description": "Move robot to capture pose3 in location task pose1",
-      "robot_pose": [0.0, 0.01, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
       "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
       "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
+      "description": "Move robot to capture pose3 in location task pose1",
+      "id": "move_to_capture_pose3",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0,
+        0.01,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
     },
     {
-      "id": "capture_pose3",
-      "type": "capture_image",
-      "description": "Capture image at capture pose3 in location task pose1",
       "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose3 in location task pose1",
+      "id": "capture_pose3",
       "save_path": "../temp/rack_location/rack_bottom_left/3.jpg",
-      "timeout": 3.0,
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image"
     },
     {
-      "id": "record_pose3",
-      "type": "record_data",
       "description": "Record robot pose data at capture pose3 in location task pose1",
+      "id": "record_pose3",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_bottom_left/3.json",
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "type": "record_data"
     },
     {
-        "id": "upload_view_3",
-        "type": "positioning",
-        "description": "Upload view data3",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_bottom_left",
-        "image_path": "../temp/rack_location/rack_bottom_left/3.jpg",
-        "pose_path": "../temp/rack_location/rack_bottom_left/3.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
+      "description": "Upload view data3",
+      "id": "upload_view_3",
+      "image_path": "../temp/rack_location/rack_bottom_left/3.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_left/3.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
     },
     {
-      "id": "move_back_to_location_pose",
-      "type": "robot_move",
-      "description": "Move robot back to location pose",
-      "robot_pose": [0.0, -0.01, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
-      "velocity": 0.1,
       "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "*move_to_location_pose2",
+      "description": "Move robot back to location pose",
+      "id": "move_back_to_location_pose",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0,
+        -0.01,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
       "type": "robot_move",
-      "description": "Move robot to rack location task pose2",
-      "robot_pose": [1.2120, -0.2062, 2.0071, -2.9594, -0.4538, -1.9862],
-      "move_type": "movej",
-      "velocity": 0.5,
+      "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
       "acceleration": 0.5,
-      "wait_time": 1.0,
-      "stop_on_failure": true
+      "description": "Move robot to rack location task pose2",
+      "id": "*move_to_location_pose2",
+      "move_type": "movej",
+      "robot_pose": [
+        1.212,
+        -0.2062,
+        2.0071,
+        -2.9594,
+        -0.4538,
+        -1.9862
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.5,
+      "wait_time": 1
     },
     {
-      "id": "capture_pose1",
-      "type": "capture_image",
-      "description": "Capture image at capture pose1 in location task pose1",
       "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose1 in location task pose1",
+      "id": "capture_pose1",
       "save_path": "../temp/rack_location/rack_bottom_right/1.jpg",
-      "timeout": 3.0,
-      "wait_time": 0.5,
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image",
+      "wait_time": 0.5
     },
     {
-      "id": "record_pose1",
-      "type": "record_data",
       "description": "Record robot pose data at capture pose1 in location task pose1",
+      "id": "record_pose1",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_bottom_right/1.json",
-      "wait_time": 0.5,
-      "stop_on_failure": true
-    },
-    {
-        "id": "upload_view_1",
-        "type": "positioning",
-        "description": "Upload view data1",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_bottom_right",
-        "image_path": "../temp/rack_location/rack_bottom_right/1.jpg",
-        "pose_path": "../temp/rack_location/rack_bottom_right/1.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
-    },
-    {
-      "id": "move_to_capture_pose2",
-      "type": "robot_move",
-      "description": "Move robot to capture pose2 in location task pose1",
-      "robot_pose": [0.01, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "capture_pose2",
-      "type": "capture_image",
-      "description": "Capture image at capture pose2 in location task pose1",
-      "camera_topic": "/ur15_camera/image_raw",
-      "save_path": "../temp/rack_location/rack_bottom_right/2.jpg",
-      "timeout": 3.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "record_pose2",
+      "stop_on_failure": true,
       "type": "record_data",
+      "wait_time": 0.5
+    },
+    {
+      "description": "Upload view data1",
+      "id": "upload_view_1",
+      "image_path": "../temp/rack_location/rack_bottom_right/1.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_right/1.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_right",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
+    },
+    {
+      "acceleration": 0.1,
+      "description": "Move robot to capture pose2 in location task pose1",
+      "id": "move_to_capture_pose2",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0.01,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
+      "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose2 in location task pose1",
+      "id": "capture_pose2",
+      "save_path": "../temp/rack_location/rack_bottom_right/2.jpg",
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image"
+    },
+    {
       "description": "Record robot pose data at capture pose2 in location task pose1",
+      "id": "record_pose2",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_bottom_right/2.json",
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "type": "record_data"
     },
     {
-        "id": "upload_view_2",
-        "type": "positioning",
-        "description": "Upload view data2",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_bottom_right",
-        "image_path": "../temp/rack_location/rack_bottom_right/2.jpg",
-        "pose_path": "../temp/rack_location/rack_bottom_right/2.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
+      "description": "Upload view data2",
+      "id": "upload_view_2",
+      "image_path": "../temp/rack_location/rack_bottom_right/2.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_right/2.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_right",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
     },
     {
-      "id": "move_back_to_location_pose",
-      "type": "robot_move",
+      "acceleration": 0.1,
       "description": "Move robot back to location pose",
-      "robot_pose": [-0.01, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "id": "move_back_to_location_pose",
       "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "move_to_capture_pose3",
+      "robot_pose": [
+        -0.01,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
       "type": "robot_move",
-      "description": "Move robot to capture pose3 in location task pose1",
-      "robot_pose": [0.0, 0.01, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
       "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
       "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
+      "description": "Move robot to capture pose3 in location task pose1",
+      "id": "move_to_capture_pose3",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0,
+        0.01,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
     },
     {
-      "id": "capture_pose3",
-      "type": "capture_image",
-      "description": "Capture image at capture pose3 in location task pose1",
       "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose3 in location task pose1",
+      "id": "capture_pose3",
       "save_path": "../temp/rack_location/rack_bottom_right/3.jpg",
-      "timeout": 3.0,
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image"
     },
     {
-      "id": "record_pose3",
-      "type": "record_data",
       "description": "Record robot pose data at capture pose3 in location task pose1",
+      "id": "record_pose3",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_bottom_right/3.json",
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "type": "record_data"
     },
     {
-        "id": "upload_view_3",
-        "type": "positioning",
-        "description": "Upload view data3",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_bottom_right",
-        "image_path": "../temp/rack_location/rack_bottom_right/3.jpg",
-        "pose_path": "../temp/rack_location/rack_bottom_right/3.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
+      "description": "Upload view data3",
+      "id": "upload_view_3",
+      "image_path": "../temp/rack_location/rack_bottom_right/3.jpg",
+      "pose_path": "../temp/rack_location/rack_bottom_right/3.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_right",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
     },
     {
-      "id": "move_back_to_location_pose",
-      "type": "robot_move",
-      "description": "Move robot back to location pose",
-      "robot_pose": [0.0, -0.01, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
-      "velocity": 0.1,
       "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "*move_to_location_pose3",
+      "description": "Move robot back to location pose",
+      "id": "move_back_to_location_pose",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0,
+        -0.01,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
       "type": "robot_move",
-      "description": "Move robot to rack location task pose3",
-      "robot_pose": [1.0780, -1.9220, 1.1886, -0.7557, 0.3220, -1.5943],
-      "move_type": "movej",
-      "velocity": 0.5,
+      "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
       "acceleration": 0.5,
-      "wait_time": 1.0,
-      "stop_on_failure": true
+      "description": "Move robot to rack location task pose3",
+      "id": "*move_to_location_pose3",
+      "move_type": "movej",
+      "robot_pose": [
+        1.078,
+        -1.922,
+        1.1886,
+        -0.7557,
+        0.322,
+        -1.5943
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.5,
+      "wait_time": 1
     },
     {
-      "id": "capture_pose1",
-      "type": "capture_image",
-      "description": "Capture image at capture pose1 in location task pose3",
       "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose1 in location task pose3",
+      "id": "capture_pose1",
       "save_path": "../temp/rack_location/rack_top_left/1.jpg",
-      "timeout": 3.0,
-      "wait_time": 0.5,
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image",
+      "wait_time": 0.5
     },
     {
-      "id": "record_pose1",
-      "type": "record_data",
       "description": "Record robot pose data at capture pose1 in location task pose3",
+      "id": "record_pose1",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_top_left/1.json",
-      "wait_time": 0.5,
-      "stop_on_failure": true
-    },
-    {
-        "id": "upload_view_1",
-        "type": "positioning",
-        "description": "Upload view data1",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_top_left",
-        "image_path": "../temp/rack_location/rack_top_left/1.jpg",
-        "pose_path": "../temp/rack_location/rack_top_left/1.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
-    },
-    {
-      "id": "move_to_capture_pose2",
-      "type": "robot_move",
-      "description": "Move robot to capture pose2 in location task pose3",
-      "robot_pose": [0.01, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "capture_pose2",
-      "type": "capture_image",
-      "description": "Capture image at capture pose2 in location task pose3",
-      "camera_topic": "/ur15_camera/image_raw",
-      "save_path": "../temp/rack_location/rack_top_left/2.jpg",
-      "timeout": 3.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "record_pose2",
+      "stop_on_failure": true,
       "type": "record_data",
+      "wait_time": 0.5
+    },
+    {
+      "description": "Upload view data1",
+      "id": "upload_view_1",
+      "image_path": "../temp/rack_location/rack_top_left/1.jpg",
+      "pose_path": "../temp/rack_location/rack_top_left/1.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_left",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
+    },
+    {
+      "acceleration": 0.1,
+      "description": "Move robot to capture pose2 in location task pose3",
+      "id": "move_to_capture_pose2",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0.01,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
+      "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose2 in location task pose3",
+      "id": "capture_pose2",
+      "save_path": "../temp/rack_location/rack_top_left/2.jpg",
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image"
+    },
+    {
       "description": "Record robot pose data at capture pose2 in location task pose3",
+      "id": "record_pose2",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_top_left/2.json",
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "type": "record_data"
     },
     {
-        "id": "upload_view_2",
-        "type": "positioning",
-        "description": "Upload view data2",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_top_left",
-        "image_path": "../temp/rack_location/rack_top_left/2.jpg",
-        "pose_path": "../temp/rack_location/rack_top_left/2.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
+      "description": "Upload view data2",
+      "id": "upload_view_2",
+      "image_path": "../temp/rack_location/rack_top_left/2.jpg",
+      "pose_path": "../temp/rack_location/rack_top_left/2.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_left",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
     },
     {
-      "id": "move_back_to_location_pose",
-      "type": "robot_move",
+      "acceleration": 0.1,
       "description": "Move robot back to location pose",
-      "robot_pose": [-0.01, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "id": "move_back_to_location_pose",
       "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "move_to_capture_pose3",
+      "robot_pose": [
+        -0.01,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
       "type": "robot_move",
-      "description": "Move robot to capture pose3 in location task pose3",
-      "robot_pose": [0.0, 0.01, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
       "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
       "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
+      "description": "Move robot to capture pose3 in location task pose3",
+      "id": "move_to_capture_pose3",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0,
+        0.01,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
     },
     {
-      "id": "capture_pose3",
-      "type": "capture_image",
-      "description": "Capture image at capture pose3 in location task pose3",
       "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose3 in location task pose3",
+      "id": "capture_pose3",
       "save_path": "../temp/rack_location/rack_top_left/3.jpg",
-      "timeout": 3.0,
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image"
     },
     {
-      "id": "record_pose3",
-      "type": "record_data",
       "description": "Record robot pose data at capture pose3 in location task pose3",
+      "id": "record_pose3",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_top_left/3.json",
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "type": "record_data"
     },
     {
-        "id": "upload_view_3",
-        "type": "positioning",
-        "description": "Upload view data3",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_top_left",
-        "image_path": "../temp/rack_location/rack_top_left/3.jpg",
-        "pose_path": "../temp/rack_location/rack_top_left/3.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
+      "description": "Upload view data3",
+      "id": "upload_view_3",
+      "image_path": "../temp/rack_location/rack_top_left/3.jpg",
+      "pose_path": "../temp/rack_location/rack_top_left/3.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_left",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
     },
     {
-      "id": "move_back_to_location_pose",
-      "type": "robot_move",
-      "description": "Move robot back to location pose",
-      "robot_pose": [0.0, -0.01, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
-      "velocity": 0.1,
       "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "*move_to_location_pose4",
+      "description": "Move robot back to location pose",
+      "id": "move_back_to_location_pose",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0,
+        -0.01,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
       "type": "robot_move",
-      "description": "Move robot to rack location task pose4",
-      "robot_pose": [1.0786, -1.9785, 1.1903, -0.7679, 0.2810, -1.5917],
-      "move_type": "movej",
-      "velocity": 0.5,
+      "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
       "acceleration": 0.5,
-      "wait_time": 1.0,
-      "stop_on_failure": true
+      "description": "Move robot to rack location task pose4",
+      "id": "*move_to_location_pose4",
+      "move_type": "movej",
+      "robot_pose": [
+        1.0786,
+        -1.9785,
+        1.1903,
+        -0.7679,
+        0.281,
+        -1.5917
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.5,
+      "wait_time": 1
     },
     {
-      "id": "capture_pose1",
-      "type": "capture_image",
-      "description": "Capture image at capture pose1 in location task pose4",
       "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose1 in location task pose4",
+      "id": "capture_pose1",
       "save_path": "../temp/rack_location/rack_top_right/1.jpg",
-      "timeout": 3.0,
-      "wait_time": 0.5,
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image",
+      "wait_time": 0.5
     },
     {
-      "id": "record_pose1",
-      "type": "record_data",
       "description": "Record robot pose data at capture pose1 in location task pose4",
+      "id": "record_pose1",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_top_right/1.json",
-      "wait_time": 0.5,
-      "stop_on_failure": true
-    },
-    {
-        "id": "upload_view_1",
-        "type": "positioning",
-        "description": "Upload view data1",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_top_right",
-        "image_path": "../temp/rack_location/rack_top_right/1.jpg",
-        "pose_path": "../temp/rack_location/rack_top_right/1.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
-    },
-    {
-      "id": "move_to_capture_pose2",
-      "type": "robot_move",
-      "description": "Move robot to capture pose2 in location task pose4",
-      "robot_pose": [0.01, 0.0, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "capture_pose2",
-      "type": "capture_image",
-      "description": "Capture image at capture pose2 in location task pose4",
-      "camera_topic": "/ur15_camera/image_raw",
-      "save_path": "../temp/rack_location/rack_top_right/2.jpg",
-      "timeout": 3.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "record_pose2",
+      "stop_on_failure": true,
       "type": "record_data",
+      "wait_time": 0.5
+    },
+    {
+      "description": "Upload view data1",
+      "id": "upload_view_1",
+      "image_path": "../temp/rack_location/rack_top_right/1.jpg",
+      "pose_path": "../temp/rack_location/rack_top_right/1.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_right",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
+    },
+    {
+      "acceleration": 0.1,
+      "description": "Move robot to capture pose2 in location task pose4",
+      "id": "move_to_capture_pose2",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0.01,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
+      "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose2 in location task pose4",
+      "id": "capture_pose2",
+      "save_path": "../temp/rack_location/rack_top_right/2.jpg",
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image"
+    },
+    {
       "description": "Record robot pose data at capture pose2 in location task pose4",
+      "id": "record_pose2",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_top_right/2.json",
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "type": "record_data"
     },
     {
-        "id": "upload_view_2",
-        "type": "positioning",
-        "description": "Upload view data2",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_top_right",
-        "image_path": "../temp/rack_location/rack_top_right/2.jpg",
-        "pose_path": "../temp/rack_location/rack_top_right/2.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
+      "description": "Upload view data2",
+      "id": "upload_view_2",
+      "image_path": "../temp/rack_location/rack_top_right/2.jpg",
+      "pose_path": "../temp/rack_location/rack_top_right/2.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_right",
+      "stop_on_failure": true,
+      "type": "positioning",
+      "wait_time": 0.5
     },
     {
-      "id": "move_back_to_location_pose",
-      "type": "robot_move",
+      "acceleration": 0.1,
       "description": "Move robot back to location pose",
-      "robot_pose": [-0.01, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "id": "move_back_to_location_pose",
       "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-      "id": "move_to_capture_pose3",
+      "robot_pose": [
+        -0.01,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
       "type": "robot_move",
-      "description": "Move robot to capture pose3 in location task pose4",
-      "robot_pose": [0.0, 0.01, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
       "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
       "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
+      "description": "Move robot to capture pose3 in location task pose4",
+      "id": "move_to_capture_pose3",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0,
+        0.01,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
     },
     {
-      "id": "capture_pose3",
-      "type": "capture_image",
-      "description": "Capture image at capture pose3 in location task pose4",
       "camera_topic": "/ur15_camera/image_raw",
+      "description": "Capture image at capture pose3 in location task pose4",
+      "id": "capture_pose3",
       "save_path": "../temp/rack_location/rack_top_right/3.jpg",
-      "timeout": 3.0,
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "timeout": 3,
+      "type": "capture_image"
     },
     {
-      "id": "record_pose3",
-      "type": "record_data",
       "description": "Record robot pose data at capture pose3 in location task pose4",
+      "id": "record_pose3",
       "record_type": "pose",
       "save_path": "../temp/rack_location/rack_top_right/3.json",
-      "stop_on_failure": true
+      "stop_on_failure": true,
+      "type": "record_data"
     },
     {
-        "id": "upload_view_3",
-        "type": "positioning",
-        "description": "Upload view data3",
-        "positioning_type": "upload_view",
-        "reference_name": "rack_top_right",
-        "image_path": "../temp/rack_location/rack_top_right/3.jpg",
-        "pose_path": "../temp/rack_location/rack_top_right/3.json",
-        "wait_time": 0.5,
-        "stop_on_failure": true
-    },
-    {
-      "id": "move_back_to_location_pose",
-      "type": "robot_move",
-      "description": "Move robot back to location pose",
-      "robot_pose": [0.0, -0.01, 0.0, 0.0, 0.0, 0.0],
-      "move_type": "move_tcp",
-      "velocity": 0.1,
-      "acceleration": 0.1,
-      "wait_time": 1.0,
-      "stop_on_failure": true
-    },
-    {
-        "id": "get_positioning_result_from_server",
-        "type": "positioning",
-        "description": "Get positioning result from server for rack location",
-        "positioning_type": "get_result",
-        "template_points": [
-            { "name": "GB200_Rack_Bottom_Left_Corner", "x": 0, "y": 0, "z": 0 },
-            { "name": "GB200_Rack_Bottom_Right_Corner", "x": 0.55, "y": 0, "z": 0 },
-            { "name": "GB200_Rack_Top_Left_Corner", "x": 0, "y": 0, "z": 2.145 },
-            { "name": "GB200_Rack_Top_Right_Corner", "x": 0.55, "y": 0, "z": 2.145 }
-        ],
-        "save_path": "../temp/rack_location/positioning_result.json",
-        "timeout": 10000,
-        "status_namespace": "ur15",
-        "status_key_name": "rack_points_3d",
-        "local2world_matrix_name": "rack_local2world",
-        "wait_time": 1.0,
-        "stop_on_failure": true
-    },
-    {
-      "id": "terminate_session_for_rack_location",
+      "description": "Upload view data3",
+      "id": "upload_view_3",
+      "image_path": "../temp/rack_location/rack_top_right/3.jpg",
+      "pose_path": "../temp/rack_location/rack_top_right/3.json",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_top_right",
+      "stop_on_failure": true,
       "type": "positioning",
+      "wait_time": 0.5
+    },
+    {
+      "acceleration": 0.1,
+      "description": "Move robot back to location pose",
+      "id": "move_back_to_location_pose",
+      "move_type": "move_tcp",
+      "robot_pose": [
+        0,
+        -0.01,
+        0,
+        0,
+        0,
+        0
+      ],
+      "stop_on_failure": true,
+      "type": "robot_move",
+      "velocity": 0.1,
+      "wait_time": 1
+    },
+    {
+      "description": "Get positioning result from server for rack location",
+      "id": "get_positioning_result_from_server",
+      "local2world_matrix_name": "rack_local2world",
+      "positioning_type": "get_result",
+      "save_path": "../temp/rack_location/positioning_result.json",
+      "status_key_name": "rack_points_3d",
+      "status_namespace": "ur15",
+      "stop_on_failure": true,
+      "template_points": [
+        {
+          "name": "GB200_Rack_Bottom_Left_Corner",
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        {
+          "name": "GB200_Rack_Bottom_Right_Corner",
+          "x": 0.55,
+          "y": 0,
+          "z": 0
+        },
+        {
+          "name": "GB200_Rack_Top_Left_Corner",
+          "x": 0,
+          "y": 0,
+          "z": 2.145
+        },
+        {
+          "name": "GB200_Rack_Top_Right_Corner",
+          "x": 0.55,
+          "y": 0,
+          "z": 2.145
+        }
+      ],
+      "timeout": 10000,
+      "type": "positioning",
+      "wait_time": 1
+    },
+    {
       "description": "Terminate session for rack location",
+      "id": "terminate_session_for_rack_location",
       "positioning_type": "terminate_session",
-      "wait_time": 0.5,
-      "stop_on_failure": false
+      "stop_on_failure": false,
+      "type": "positioning",
+      "wait_time": 0.5
     }
   ]
 }

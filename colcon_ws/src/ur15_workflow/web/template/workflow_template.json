@@ -1,0 +1,148 @@
+{
+    "robot_move":
+    [
+        {
+        "id": "movej_to_pose",
+        "type": "robot_move",
+        "description": "Move robot to pose using movej",
+        "robot_pose": [0, -1.57, 0, -1.57, 0, 0],
+        "move_type": "movej",
+        "velocity": 0.5,
+        "acceleration": 0.5,
+        "wait_time": 1.0,
+        "stop_on_failure": true
+        },
+        {
+        "id": "movel_to_pose",
+        "type": "robot_move",
+        "description": "Move robot to pose1",
+        "robot_pose": [0.1594, -0.3668, 1.2179, -0.7714,  1.3050, -1.7453],
+        "move_type": "movel",
+        "velocity": 0.1,
+        "acceleration": 0.1,
+        "wait_time": 1.0,
+        "stop_on_failure": true
+        },
+        {
+        "id": "move_tcp_to_offset",
+        "type": "robot_move",
+        "description": "Move robot to offset using move_tcp",
+        "robot_pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "move_type": "move_tcp",
+        "velocity": 0.1,
+        "acceleration": 0.1,
+        "wait_time": 1.0
+        }
+    ],
+    "capture_image":
+    [
+        {
+        "id": "capture_at_current_pose",
+        "type": "capture_image",
+        "description": "Capture image at current pose",
+        "camera_topic": "/ur15_camera/image_raw",
+        "save_path": "../temp/rack_location/rack_bottom_left/1.jpg",
+        "timeout": 3.0,
+        "wait_time": 0.5,
+        "stop_on_failure": true
+        }
+    ],
+    "record_data":
+    [
+        {
+        "id": "record_data_pose",
+        "type": "record_data",
+        "description": "Record robot pose data",
+        "record_type": "pose",
+        "save_path": "../temp/rack_location/rack_bottom_left/1.json",
+        "wait_time": 0.5,
+        "stop_on_failure": true
+        }
+    ],
+    "positioning":
+    [
+        {
+        "id": "upload_reference_data",
+        "type": "positioning",
+        "description": "Upload reference data to server",
+        "positioning_type": "upload_references",
+        "wait_time": 1.0,
+        "stop_on_failure": true
+        },
+        {
+        "id": "init_session",
+        "type": "positioning",
+        "description": "Initialize session on server",
+        "positioning_type": "init_session",
+        "wait_time": 1.0,
+        "stop_on_failure": true
+        },
+        {
+        "id": "upload_view_from_files",
+        "type": "positioning",
+        "description": "Upload view data from files to server",
+        "positioning_type": "upload_view",
+        "reference_name": "rack_bottom_left",
+        "image_path": "../temp/rack_location/rack_bottom_left/1.jpg",
+        "pose_path": "../temp/rack_location/rack_bottom_left/1.json",
+        "wait_time": 0.5,
+        "stop_on_failure": true
+        },
+        {
+        "id": "get_result_fitting",
+        "type": "positioning",
+        "description": "Get positioning result by fitting mode",
+        "positioning_type": "get_result",
+        "template_points": [
+            {"name": "GB200_Rack_Bottom_Left_Corner", "x": 0, "y": 0, "z": 0},
+            {"name": "GB200_Rack_Bottom_Right_Corner", "x": 0.55, "y": 0, "z": 0},
+            {"name": "GB200_Rack_Top_Left_Corner", "x": 0, "y": 0, "z": 2.145},
+            {"name": "GB200_Rack_Top_Right_Corner", "x": 0.55, "y": 0, "z": 2.145}
+        ],
+        "save_path": "../temp/rack_location/positioning_result.json",
+        "timeout": 10000,
+        "status_namespace": "ur15",
+        "status_key_name": "rack_points_3d",
+        "local2world_matrix_name": "rack_local2world",
+        "wait_time": 1.0,
+        "stop_on_failure": true
+        },
+        {
+        "id": "get_result_standard",
+        "type": "positioning",
+        "description": "Get positioning result by standard triangulation mode",
+        "positioning_type": "get_result",
+        "template_points": [],
+        "save_path": "../temp/positioning_result_standard.json",
+        "timeout": 10000,
+        "wait_time": 1.0,
+        "stop_on_failure": true
+        },
+        {
+        "id": "get_result_filtered",
+        "type": "positioning",
+        "description": "Get positioning result by filtered keypoints mode",
+        "positioning_type": "get_result",
+        "template_points": [
+            {"name": "GB200_Rack_Bottom_Left_Corner"},
+            {"name": "GB200_Rack_Bottom_Right_Corner"},
+            {"name": "GB200_Rack_Top_Left_Corner"},
+            {"name": "GB200_Rack_Top_Right_Corner"}
+        ],
+        "save_path": "../temp/positioning_result_filtered.json",
+        "timeout": 10000,
+        "status_namespace": "ur15",
+        "status_key_name": "rack_corner_points",
+        "wait_time": 1.0,
+        "stop_on_failure": true
+        },
+        {
+        "id": "terminate_session",
+        "type": "positioning",
+        "description": "Terminate session on server",
+        "positioning_type": "terminate_session",
+        "wait_time": 0.5,
+        "stop_on_failure": false
+        }
+    ]
+}
