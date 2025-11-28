@@ -519,7 +519,7 @@ class LiftRobotNodeAction(Node):
                 self.get_logger().info("[RESET] ✅ Reset complete: system recovered to idle (ready for new Actions)")
             
             elif command == 'range_scan_down':
-                # Start range scan: Step 1 - pushrod归位, Step 2 - 平台向下, Step 3 - 平台向上
+                # Start range scan: Step 1 - pushrod home, Step 2 - platform down, Step 3 - platform up
                 if self.range_scan_active:
                     self.get_logger().warning(f"[SEQ {seq_id_str}] range_scan_down rejected - scan already active")
                     return
@@ -533,7 +533,7 @@ class LiftRobotNodeAction(Node):
                 # Initialize scan state
                 with self.state_lock:
                     self.range_scan_active = True
-                    self.range_scan_phase = 'pushrod_home'  # Start with pushrod归位
+                    self.range_scan_phase = 'pushrod_home'  # Start with pushrod homing
                     self.range_scan_direction = None  # Will be set after pushrod homes
                     self.range_scan_low_reached = False
                     self.range_scan_high_reached = False
@@ -1418,8 +1418,8 @@ class LiftRobotNodeAction(Node):
                         return result
                 
                 # Early stop with overshoot compensation (ONLY for platform, pushrod uses simple control)
-                # Platform: Topic版本逻辑: 提前停后disable_control并complete_task,控制循环退出
-                #           Action版本逻辑: 提前停后发送STOP,等待静止,测量overshoot,然后succeed返回
+                # Platform: Topic version logic: early stop then disable_control and complete_task, control loop exits
+                #           Action version logic: early stop then send STOP, wait for stillness, measure overshoot, then succeed return
                 # Pushrod: Skip early stop logic - uses simple real-time control below
                 if target == 'platform' and error > 0:  # Moving up
                     early_stop_height = target_height - max(overshoot_up - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)

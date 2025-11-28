@@ -53,7 +53,7 @@ class ModbusManagerNode(Node):
 
     def calculate_crc16(self, data):
         """
-        计算Modbus CRC16校验和
+        Calculate Modbus CRC16 checksum
         """
         crc = 0xFFFF
         for byte in data:
@@ -67,42 +67,42 @@ class ModbusManagerNode(Node):
 
     def handle_raw_modbus_command(self, slave_id, raw_message, seq_id, now_str):
         """
-        处理非标准Modbus协议的原始命令(如继电器闪开闪闭指令)
+        Handle non-standard Modbus protocol raw commands (e.g., relay flash-open/flash-close)
         
-        参数:
-            slave_id: 设备地址 (0x01-0xFF)
-            raw_message: 原始消息字节列表 [功能码, 操作类型, 继电器地址, 间隔时间高字节, 间隔时间低字节]
-                        例如: [0x05, 0x02, 0x00, 0x00, 0x07] 表示闪开指令
-            seq_id: 序列号
-            now_str: 时间戳字符串
+        Args:
+            slave_id: Device address (0x01-0xFF)
+            raw_message: Raw message byte list [function_code, operation_type, relay_addr, interval_high, interval_low]
+                        Example: [0x05, 0x02, 0x00, 0x00, 0x07] for flash-open command
+            seq_id: Sequence ID
+            now_str: Timestamp string
         
-        返回:
+        Returns:
             (success, response_data, response_time_ms)
         """
         try:
-            # 构建完整的命令: [设备地址] + raw_message
+            # Build complete command: [device_address] + raw_message
             command = [slave_id] + list(raw_message)
             
-            # 计算CRC16校验和
+            # Calculate CRC16 checksum
             crc = self.calculate_crc16(command)
             crc_low = crc & 0xFF
             crc_high = (crc >> 8) & 0xFF
             
-            # 完整命令包含CRC
+            # Complete command with CRC
             full_command = command + [crc_low, crc_high]
             
-            # 记录发送的命令
+            # Log command to send
             command_hex = ' '.join([f'{b:02X}' for b in full_command])
             self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Sending raw Modbus command: {command_hex}")
             
-            # 记录发送时间
+            # Record send time
             start_time = time.time()
             
-            # 发送命令
+            # Send command
             self.client.socket.write(bytes(full_command))
             
             try:
-                # 尝试读取响应 (最多8字节)
+                # Try to read response (up to 8 bytes)
                 response_bytes = self.client.socket.read(8)
                 response_time_ms = (time.time() - start_time) * 1000
                 if response_bytes and len(response_bytes) > 0:
@@ -146,7 +146,7 @@ class ModbusManagerNode(Node):
         self.get_logger().debug(f"[SEQ {seq_id}] [{now_str}] Received ModbusRequest: {request}")
         response.ack = 1  # Added: immediately return ack=1 upon receiving request
         
-        # 检查是否为原始Modbus命令 (非标准协议)
+        # Check if this is a raw Modbus command (non-standard protocol)
         if request.raw_message and len(request.raw_message) > 0:
             self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Detected raw_message, using custom handler")
             log_entry['raw_message'] = list(request.raw_message)
@@ -162,16 +162,16 @@ class ModbusManagerNode(Node):
                 log_entry['success'] = success
                 log_entry['response'] = response_data
                 log_entry['response_time_ms'] = response_time_ms
-                # 保存完整命令(包含设备ID和CRC)到 log_entry
+                # Save full command (including device ID and CRC) to log_entry
                 if success and len(response_data) > 0:
                     log_entry['full_command'] = list(response_data)
                 if self.dashboard:
                     self.dashboard.add_log(log_entry)
                 return response
         
-        # 原有的标准Modbus处理逻辑
+        # Standard Modbus processing logic
         with self.lock:
-            # 记录开始时间
+            # Record start time
             start_time = time.time()
             try:
                 fc = request.function_code
@@ -243,7 +243,7 @@ class ModbusManagerNode(Node):
                 response.response = []
                 self.get_logger().error(f"[SEQ {seq_id}] [{now_str}] Modbus error response: success={response.success}, response={response.response}")
             
-            # 计算响应时间
+            # Calculate response time
             response_time_ms = (time.time() - start_time) * 1000
 
         # Update log entry
