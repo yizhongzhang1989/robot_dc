@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modbus Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        h1 { color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .status-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .log-container { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #007bff; color: white; }
+        tr:hover { background-color: #f1f1f1; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .timestamp { color: #666; font-size: 0.9em; }
+        #connection-status { font-weight: bold; }
+        .connected { color: green; }
+        .disconnected { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Modbus Manager Dashboard</h1>
+        
+        <div class="status-card">
+            <h3>System Status</h3>
+            <p>Connection: <span id="connection-status" class="disconnected">Checking...</span></p>
+            <p>Total Requests: <span id="total-requests">0</span></p>
+        </div>
+
+        <div class="log-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Delta (ms)</th>
+                        <th>Seq ID</th>
+                        <th>Function</th>
+                        <th>Address</th>
+                        <th>Device ID</th>
+                        <th>Values/Count</th>
+                        <th>Status</th>
+                        <th>Response</th>
+                    </tr>
+                </thead>
+                <tbody id="log-table-body">
+                    <!-- Logs will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let lastLogId = -1;
+        let lastTimestamp = 0;
+
+        function updateDashboard() {
+            fetch(`/api/logs?after_id=${lastLogId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const statusSpan = document.getElementById('connection-status');
+                    statusSpan.textContent = "Connected";
+                    statusSpan.className = "connected";
+                    
+                    document.getElementById('total-requests').textContent = data.total_requests;
+
+                    const tbody = document.getElementById('log-table-body');
+                    
+                    // Append new logs
+                    data.logs.forEach(log => {
+                        if (log.id > lastLogId) {
+                            lastLogId = log.id;
+                            
+                            let delta = 0;
+                            if (lastTimestamp > 0 && log.timestamp_raw) {
+                                delta = (log.timestamp_raw - lastTimestamp) * 1000;
+                            }
+                            if (log.timestamp_raw) {
+                                lastTimestamp = log.timestamp_raw;
+                            }
+
+                            let deltaDisplay = delta.toFixed(1);
+                            if (delta > 1000) {
+                                deltaDisplay = ">1000";
+                            }
+
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td class="timestamp">${log.timestamp}</td>
+                                <td>${deltaDisplay}</td>
+                                <td>${log.seq_id || '-'}</td>
+                                <td>${log.function_code}</td>
+                                <td>${log.address}</td>
+                                <td>${log.slave_id}</td>
+                                <td>${log.values || log.count}</td>
+                                <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
+                                <td>${JSON.stringify(log.response)}</td>
+                            `;
+                            
+                            // Insert at top
+                            if (tbody.firstChild) {
+                                tbody.insertBefore(row, tbody.firstChild);
+                            } else {
+                                tbody.appendChild(row);
+                            }
+                        }
+                    });
+
+                    // Limit rows to 100
+                    while (tbody.children.length > 100) {
+                        tbody.removeChild(tbody.lastChild);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error fetching logs:', err);
+                    const statusSpan = document.getElementById('connection-status');
+                    statusSpan.textContent = "Disconnected";
+                    statusSpan.className = "disconnected";
+                });
+        }
+
+        // Update every 1 second
+        setInterval(updateDashboard, 1000);
+        updateDashboard();
+    </script>
+</body>
+</html>
