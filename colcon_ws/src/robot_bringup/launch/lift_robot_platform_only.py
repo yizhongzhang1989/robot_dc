@@ -56,25 +56,9 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(lift_robot_path))]
     )
 
-    # Start cable sensor after modbus driver is ready
-    cable_sensor_launch = TimerAction(
-        period=4.0,
-        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(cable_sensor_path), launch_arguments={'device_id': '51', 'read_interval': '0.02'}.items())]
-    )
 
-    # Start force sensor (device_id=52, topic=/force_sensor) after cable sensor
-    force_sensor_launch = TimerAction(
-        period=4.5,
-        actions=[IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(force_sensor_path),
-            launch_arguments={
-                'device_id': '52',
-                'topic_name': '/force_sensor',
-                'node_name_suffix': 'right'
-            }.items()
-        )]
-    )
 
+    
     # Start web after sensors (optional)
     web_launch = TimerAction(
         period=5.0,
@@ -93,7 +77,7 @@ def generate_launch_description():
         web_port_arg,
         modbus_launch,
         lift_robot_launch,
-        cable_sensor_launch,
-        force_sensor_launch,
+        
+        
         web_launch,
     ])

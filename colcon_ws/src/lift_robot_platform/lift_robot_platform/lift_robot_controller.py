@@ -186,6 +186,47 @@ class LiftRobotController(ModbusDevice):
         self.node.get_logger().info(f"[SEQ {seq_id}] Pushrod Down command (relay 4 pulse)")
         return self.start_flash_async(relay_address=self.RELAY_PUSHROD_DOWN, seq_id=seq_id, max_attempts=10)
 
+    # ═══════════════════════════════════════════════════════════════
+    # Relay Flash Open Command (Non-standard Modbus Protocol)
+    # ═══════════════════════════════════════════════════════════════
+    def flash_open_relay(self, relay_address, interval_100ms=7, seq_id=None):
+        """Send flash-open command using non-standard Modbus protocol.
+        
+        Flash-open: Relay opens first, then closes after interval.
+        Protocol format: [device_id] [0x05] [0x02] [relay_addr] [interval_high] [interval_low] [CRC16]
+        
+        Args:
+            relay_address: Relay address (0-15), for lift robot typically 0-5
+            interval_100ms: Interval time parameter (default 7, actual delay = interval_100ms * 100ms)
+            seq_id: Sequence ID for logging
+            
+        Example:
+            flash_open_relay(0, 7) -> Device flashes relay 0 open for 700ms
+        """
+        relay_name = self._get_relay_name(relay_address)
+        actual_delay_ms = interval_100ms * 100
+        self.node.get_logger().info(
+            f"[SEQ {seq_id}] Flash-open command: {relay_name} (interval={interval_100ms}, delay={actual_delay_ms}ms)"
+        )
+        
+        # Build raw_message: [function_code=0x05, operation_type=0x02, relay_addr, interval_high, interval_low]
+        function_code = 0x05
+        operation_type = 0x02  # Flash-open
+        interval_high = (interval_100ms >> 8) & 0xFF
+        interval_low = interval_100ms & 0xFF
+        
+        raw_message = [
+            function_code,
+            operation_type,
+            relay_address,
+            interval_high,
+            interval_low
+        ]
+        
+        # Send using raw_message field
+        self.send_raw(raw_message, seq_id=seq_id)
+            
+
     def open_relay(self, relay_address, seq_id=None):
         """Open relay.
 
@@ -252,45 +293,21 @@ class LiftRobotController(ModbusDevice):
         return True
     
     def _execute_simple_flash(self, relay_address, seq_id, relay_name):
-        """Execute simplified flash sequence in background thread.
+        """Execute flash sequence in background thread.
         
-        Each send() is individually wrapped in try-catch to ensure all 4 commands
-        are attempted even if some fail.
+        All relays (0-5): Use hardware flash-open (200ms)
         """
         start_time = time.time()
         
-        # Step 1: Send ON command twice (each with independent error handling)
-        self.node.get_logger().info(f"[SEQ {seq_id}] {relay_name} ON×2")
+        # All relays use hardware flash-open (200ms)
+        self.node.get_logger().info(f"[SEQ {seq_id}] {relay_name} hardware flash-open (200ms)")
         try:
-            self.send(5, relay_address, [0xFF00], seq_id=seq_id)
+            self.flash_open_relay(relay_address, interval_100ms=2, seq_id=seq_id)
+          
         except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] ON #1 send error: {e}")
+            self.node.get_logger().error(f"[SEQ {seq_id}] Hardware flash error: {e}")
         
-        time.sleep(0.01)  # 10ms between commands
-        
-        try:
-            self.send(5, relay_address, [0xFF00], seq_id=seq_id)
-        except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] ON #2 send error: {e}")
-        
-        # Step 2: Wait 100ms
-        time.sleep(0.1)
-        
-        # Step 3: Send OFF command twice (each with independent error handling)
-        self.node.get_logger().info(f"[SEQ {seq_id}] {relay_name} OFF×2")
-        try:
-            self.send(5, relay_address, [0x0000], seq_id=seq_id)
-        except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] OFF #1 send error: {e}")
-        
-        time.sleep(0.01)  # 10ms between commands
-        
-        try:
-            self.send(5, relay_address, [0x0000], seq_id=seq_id)
-        except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] OFF #2 send error: {e}")
-        
-        # Step 4: Assume complete (always execute callback regardless of errors)
+        #Assume complete (always execute callback regardless of errors)
         total_ms = (time.time() - start_time) * 1000
         self.node.get_logger().info(f"[SEQ {seq_id}] ✅ Flash complete: {relay_name} ({total_ms:.1f}ms)")
         

@@ -69,6 +69,7 @@
                         <th>Time</th>
                         <th>Delta (ms)</th>
                         <th>Seq ID</th>
+                        <th>Type</th>
                         <th>Function</th>
                         <th>Address</th>
                         <th>Device ID</th>
@@ -92,6 +93,50 @@
         let updateScheduled = false;
         let displayLimit = 100;
         let filteredDeviceIds = null; // null means show all, otherwise array of device IDs
+
+        // Helper function to decode raw_message (flash command)
+        function decodeRawMessage(rawMsg, fullCommand) {
+            if (!rawMsg || rawMsg.length === 0) {
+                return null;
+            }
+            
+            // Raw message format: [function_code, operation_type, relay_addr, interval_high, interval_low]
+            if (rawMsg.length >= 5) {
+                const funcCode = rawMsg[0];
+                const opType = rawMsg[1];
+                const relayAddr = rawMsg[2];
+                const intervalMs = (rawMsg[3] << 8) | rawMsg[4];
+                const actualDelayMs = intervalMs * 100;
+                
+                let opName = 'Unknown';
+                if (opType === 0x02) {
+                    opName = 'Flash-Open';
+                } else if (opType === 0x04) {
+                    opName = 'Flash-Close';
+                }
+                
+                // 生成完整命令的十六进制字符串 (如果有 full_command)
+                let hexDisplay = '';
+                if (fullCommand && fullCommand.length > 0) {
+                    hexDisplay = fullCommand.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+                }
+                
+                return {
+                    type: opName,
+                    relay: relayAddr,
+                    interval: intervalMs,
+                    delay: actualDelayMs,
+                    display: `${opName} R${relayAddr} (${actualDelayMs}ms)`,
+                    hexDisplay: hexDisplay
+                };
+            }
+            
+            return {
+                type: 'Raw',
+                display: `[${rawMsg.join(', ')}]`,
+                hexDisplay: ''
+            };
+        }
 
         // Helper function to check if log should be shown based on filter
         function shouldShowLog(log) {
@@ -162,15 +207,21 @@
                     deltaDisplay = ">1000";
                 }
 
+                // Decode raw_message if present
+                const rawInfo = decodeRawMessage(log.raw_message, log.full_command);
+                const typeCell = rawInfo ? `<span style="color: #ff6600; font-weight: bold;">${rawInfo.display}</span>` : 'Standard';
+                const valuesCell = rawInfo && rawInfo.hexDisplay ? rawInfo.hexDisplay : (log.values || log.count);
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="timestamp">${log.timestamp}</td>
                     <td>${deltaDisplay}</td>
                     <td>${log.seq_id || '-'}</td>
+                    <td>${typeCell}</td>
                     <td>${log.function_code}</td>
                     <td>${log.address}</td>
                     <td>${log.slave_id}</td>
-                    <td>${log.values || log.count}</td>
+                    <td>${valuesCell}</td>
                     <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
                     <td>${JSON.stringify(log.response)}</td>
                 `;
@@ -248,15 +299,21 @@
             for (let i = processedLogs.length - 1; i >= 0; i--) {
                 const {log, deltaDisplay} = processedLogs[i];
 
+                // Decode raw_message if present
+                const rawInfo = decodeRawMessage(log.raw_message, log.full_command);
+                const typeCell = rawInfo ? `<span style="color: #ff6600; font-weight: bold;">${rawInfo.display}</span>` : 'Standard';
+                const valuesCell = rawInfo && rawInfo.hexDisplay ? rawInfo.hexDisplay : (log.values || log.count);
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="timestamp">${log.timestamp}</td>
                     <td>${deltaDisplay}</td>
                     <td>${log.seq_id || '-'}</td>
+                    <td>${typeCell}</td>
                     <td>${log.function_code}</td>
                     <td>${log.address}</td>
                     <td>${log.slave_id}</td>
-                    <td>${log.values || log.count}</td>
+                    <td>${valuesCell}</td>
                     <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
                     <td>${JSON.stringify(log.response)}</td>
                 `;
@@ -331,15 +388,21 @@
                                 deltaDisplay = ">1000";
                             }
 
+                            // Decode raw_message if present
+                            const rawInfo = decodeRawMessage(log.raw_message, log.full_command);
+                            const typeCell = rawInfo ? `<span style="color: #ff6600; font-weight: bold;">${rawInfo.display}</span>` : 'Standard';
+                            const valuesCell = rawInfo && rawInfo.hexDisplay ? rawInfo.hexDisplay : (log.values || log.count);
+
                             const row = document.createElement('tr');
                             row.innerHTML = `
                                 <td class="timestamp">${log.timestamp}</td>
                                 <td>${deltaDisplay}</td>
                                 <td>${log.seq_id || '-'}</td>
+                                <td>${typeCell}</td>
                                 <td>${log.function_code}</td>
                                 <td>${log.address}</td>
                                 <td>${log.slave_id}</td>
-                                <td>${log.values || log.count}</td>
+                                <td>${valuesCell}</td>
                                 <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
                                 <td>${JSON.stringify(log.response)}</td>
                             `;
@@ -411,7 +474,7 @@
             let visibleCount = 0;
             
             rows.forEach(row => {
-                const deviceIdCell = row.children[5]; // Device ID is the 6th column (index 5)
+                const deviceIdCell = row.children[6]; // Device ID is now the 7th column (index 6) - shifted by 1 due to new Type column
                 const deviceId = deviceIdCell.textContent.trim();
                 
                 if (!filteredDeviceIds || filteredDeviceIds.length === 0 || filteredDeviceIds.includes(deviceId)) {
