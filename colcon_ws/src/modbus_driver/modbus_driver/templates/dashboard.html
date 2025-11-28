@@ -201,53 +201,72 @@
             const tbody = document.getElementById('log-table-body');
             const fragment = document.createDocumentFragment();
             
-            // Process all pending batches
+            // Collect all logs from all batches first
+            const allLogs = [];
             while (pendingBatches.length > 0) {
                 const batchData = pendingBatches.shift();
-                
-                batchData.logs.forEach(log => {
-                    if (log.id > lastLogId) {
-                        lastLogId = log.id;
-                        
-                        // Skip if filtered out
-                        if (!shouldShowLog(log)) {
-                            return;
-                        }
-                        
-                        let delta = 0;
-                        if (lastTimestamp > 0 && log.timestamp_raw) {
-                            delta = (log.timestamp_raw - lastTimestamp) * 1000;
-                        }
-                        if (log.timestamp_raw) {
-                            lastTimestamp = log.timestamp_raw;
-                        }
-
-                        let deltaDisplay = delta.toFixed(1);
-                        if (delta > 1000) {
-                            deltaDisplay = ">1000";
-                        }
-
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td class="timestamp">${log.timestamp}</td>
-                            <td>${deltaDisplay}</td>
-                            <td>${log.seq_id || '-'}</td>
-                            <td>${log.function_code}</td>
-                            <td>${log.address}</td>
-                            <td>${log.slave_id}</td>
-                            <td>${log.values || log.count}</td>
-                            <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
-                            <td>${JSON.stringify(log.response)}</td>
-                        `;
-                        fragment.appendChild(row);
-                    }
-                });
-                
-                // Update total requests
+                allLogs.push(...batchData.logs);
+                // Update total requests with the latest value
                 document.getElementById('total-requests').textContent = batchData.total_requests;
             }
             
-            // Insert all rows at once
+            // Filter out logs we've already seen and find the max ID
+            const newLogs = allLogs.filter(log => log.id > lastLogId);
+            if (newLogs.length === 0) return;
+            
+            // Update lastLogId to the maximum ID in this batch
+            const maxLogId = Math.max(...newLogs.map(log => log.id));
+            
+            // First pass: process logs in FORWARD order to calculate deltas correctly
+            const processedLogs = [];
+            for (let i = 0; i < newLogs.length; i++) {
+                const log = newLogs[i];
+                
+                // Calculate delta in chronological order
+                let delta = 0;
+                if (lastTimestamp > 0 && log.timestamp_raw) {
+                    delta = (log.timestamp_raw - lastTimestamp) * 1000;
+                }
+                if (log.timestamp_raw) {
+                    lastTimestamp = log.timestamp_raw;
+                }
+                
+                // Skip if filtered out
+                if (!shouldShowLog(log)) {
+                    continue;
+                }
+
+                let deltaDisplay = delta.toFixed(1);
+                if (delta > 1000) {
+                    deltaDisplay = ">1000";
+                }
+                
+                processedLogs.push({log, deltaDisplay});
+            }
+            
+            // Second pass: create DOM elements in REVERSE order (newest first)
+            for (let i = processedLogs.length - 1; i >= 0; i--) {
+                const {log, deltaDisplay} = processedLogs[i];
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="timestamp">${log.timestamp}</td>
+                    <td>${deltaDisplay}</td>
+                    <td>${log.seq_id || '-'}</td>
+                    <td>${log.function_code}</td>
+                    <td>${log.address}</td>
+                    <td>${log.slave_id}</td>
+                    <td>${log.values || log.count}</td>
+                    <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
+                    <td>${JSON.stringify(log.response)}</td>
+                `;
+                fragment.appendChild(row);
+            }
+            
+            // Update lastLogId after processing all logs
+            lastLogId = maxLogId;
+            
+            // Insert all rows at once at the top
             if (fragment.children.length > 0) {
                 if (tbody.firstChild) {
                     tbody.insertBefore(fragment, tbody.firstChild);
@@ -293,17 +312,18 @@
                         if (log.id > lastLogId) {
                             lastLogId = log.id;
                             
-                            // Skip if filtered out
-                            if (!shouldShowLog(log)) {
-                                return;
-                            }
-                            
+                            // Calculate delta BEFORE filtering
                             let delta = 0;
                             if (lastTimestamp > 0 && log.timestamp_raw) {
                                 delta = (log.timestamp_raw - lastTimestamp) * 1000;
                             }
                             if (log.timestamp_raw) {
                                 lastTimestamp = log.timestamp_raw;
+                            }
+                            
+                            // Skip rendering if filtered out
+                            if (!shouldShowLog(log)) {
+                                return;
                             }
 
                             let deltaDisplay = delta.toFixed(1);
@@ -377,22 +397,35 @@
                 filteredDeviceIds = value.split(',').map(id => id.trim()).filter(id => id !== '');
             }
             
-            // Re-filter existing rows
+            // Re-filter existing rows and rebuild table in correct order
             const tbody = document.getElementById('log-table-body');
             const rows = Array.from(tbody.children);
+            
+            // Remove all rows
+            while (tbody.firstChild) {
+                tbody.removeChild(tbody.firstChild);
+            }
+            
+            // Re-add only visible rows in correct order
+            const fragment = document.createDocumentFragment();
+            let visibleCount = 0;
             
             rows.forEach(row => {
                 const deviceIdCell = row.children[5]; // Device ID is the 6th column (index 5)
                 const deviceId = deviceIdCell.textContent.trim();
                 
                 if (!filteredDeviceIds || filteredDeviceIds.length === 0 || filteredDeviceIds.includes(deviceId)) {
-                    row.style.display = ''; // Show row
-                } else {
-                    row.style.display = 'none'; // Hide row
+                    if (visibleCount < displayLimit) {
+                        row.style.display = ''; // Ensure row is visible
+                        fragment.appendChild(row);
+                        visibleCount++;
+                    }
                 }
             });
             
-            console.log('Filter applied:', filteredDeviceIds || 'Show all');
+            tbody.appendChild(fragment);
+            
+            console.log('Filter applied:', filteredDeviceIds || 'Show all', '- Showing', visibleCount, 'rows');
         }
 
         // Change display limit
