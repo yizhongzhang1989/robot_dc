@@ -3,10 +3,15 @@ from modbus_driver_interfaces.srv import ModbusRequest
 
 
 class ModbusDevice(ABC):
-    def __init__(self, device_id, node, use_ack_patch=False):
+    def __init__(self, device_id, node, use_ack_patch=False, callback_group=None):
         self.device_id = device_id
         self.node = node
-        self.cli = node.create_client(ModbusRequest, '/modbus_request')
+        # Create client with dedicated callback group for high-priority ModBus responses
+        self.cli = node.create_client(
+            ModbusRequest, 
+            '/modbus_request',
+            callback_group=callback_group
+        )
         self.use_ack_patch = use_ack_patch
         if use_ack_patch:
             # Save the original send method so we can call it later

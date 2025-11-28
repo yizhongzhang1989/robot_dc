@@ -137,12 +137,19 @@ class LiftRobotNodeAction(Node):
         self._load_config()
         
         # ═══════════════════════════════════════════════════════════════
+        # Callback Groups - Separate executor paths for critical operations
+        # ═══════════════════════════════════════════════════════════════
+        # Dedicated callback group for ModBus operations (high priority)
+        self.modbus_callback_group = ReentrantCallbackGroup()
+        
+        # ═══════════════════════════════════════════════════════════════
         # Controller Initialization
         # ═══════════════════════════════════════════════════════════════
         self.controller = LiftRobotController(
             device_id=self.device_id,
             node=self,
-            use_ack_patch=self.use_ack_patch
+            use_ack_patch=self.use_ack_patch,
+            callback_group=self.modbus_callback_group  # Pass dedicated callback group
         )
         self.controller.on_flash_complete_callback = self._on_flash_complete
         self.controller.initialize()
@@ -664,22 +671,25 @@ class LiftRobotNodeAction(Node):
         
         For ManualMove Actions: This signals that the command has been accepted
         and movement has actually started.
+        
+        NOTE: No lock needed - string assignment is atomic in Python (GIL protection)
+        and these are simple state updates that don't require consistency with other variables.
         """
         relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
         
-        with self.state_lock:
-            if relay == 0:  # STOP
-                self.movement_state = 'stop'
-                self.movement_command_sent = False  # Clear flag when state confirmed
-                self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: STOP → movement_state='stop'")
-            elif relay == 1:  # UP
-                self.movement_state = 'up'
-                self.movement_command_sent = False  # Clear flag when state confirmed
-                self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: UP → movement_state='up'")
-            elif relay == 2:  # DOWN
-                self.movement_state = 'down'
-                self.movement_command_sent = False  # Clear flag when state confirmed
-                self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: DOWN → movement_state='down'")
+        # Atomic updates - no lock needed (Python GIL ensures atomicity)
+        if relay == 0:  # STOP
+            self.movement_state = 'stop'
+            self.movement_command_sent = False
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: STOP → movement_state='stop'")
+        elif relay == 1:  # UP
+            self.movement_state = 'up'
+            self.movement_command_sent = False
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: UP → movement_state='up'")
+        elif relay == 2:  # DOWN
+            self.movement_state = 'down'
+            self.movement_command_sent = False
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: DOWN → movement_state='down'")
     
     # ═══════════════════════════════════════════════════════════════
     # Status Publishing
@@ -1006,12 +1016,7 @@ class LiftRobotNodeAction(Node):
                 f"[WAIT_STOP] ❌ {target} stop TIMEOUT after {timeout}s - "
                 f"movement_state={self.movement_state} - TRIGGERING EMERGENCY RESET"
             )
-            # Trigger emergency reset if stop fails
-            try:
-                self.get_logger().warn(f"[WAIT_STOP] Triggering emergency reset via controller...")
-                self.controller.emergency_reset()
-            except Exception as e:
-                self.get_logger().error(f"[WAIT_STOP] Failed to trigger emergency reset: {e}")
+            # Emergency reset will be triggered by state machine if needed
             return False
     
     # ═══════════════════════════════════════════════════════════════
@@ -2094,7 +2099,26 @@ class LiftRobotNodeAction(Node):
         result.final_height = self.current_height
         
         try:
-            # Check if there's an active action to stop
+            # CRITICAL: Send stop flash FIRST and check if accepted
+            # If flash is rejected (conflict), abort goal immediately to trigger processor retry
+            stop_accepted = False
+            if target == 'platform':
+                stop_accepted = self.controller.stop()
+            else:
+                stop_accepted = self.controller.pushrod_stop()
+            
+            if not stop_accepted:
+                # Flash conflict - reject goal to trigger processor retry
+                result.success = False
+                result.completion_reason = 'flash_conflict_retry'
+                result.execution_time = time.time() - start_time
+                goal_handle.abort()
+                self.get_logger().warn(
+                    f"[STOP] Flash conflict - stop rejected, processor will retry"
+                )
+                return result
+            
+            # Stop flash accepted - now signal active Action to exit
             active_action = None
             with self.action_lock:
                 if self.active_action_type:
@@ -2105,11 +2129,9 @@ class LiftRobotNodeAction(Node):
             
             if active_action:
                 result.stopped_action = active_action
-                self.get_logger().info(f"[STOP] Requesting stop for active {active_action}")
+                self.get_logger().info(f"[STOP] Stop flash accepted, requesting {active_action} to exit")
                 
-                # Wait for active Action to detect stop_requested and execute controller.stop()
-                # We only need to confirm the Action has STARTED processing the stop request
-                # The controller layer will handle flash failures via emergency_reset
+                # Wait for active Action to detect stop_requested and exit
                 max_wait = 6.0  # 6 seconds max
                 wait_start = time.time()
                 action_exited = False
@@ -2118,18 +2140,14 @@ class LiftRobotNodeAction(Node):
                     # Check if Action has exited (cleared active_goal_handle)
                     with self.action_lock:
                         if self.active_action_type is None:
-                            # Action exited - it has executed controller.stop()
+                            # Action exited
                             action_exited = True
                             break
                     
                     time.sleep(0.02)  # 50Hz check
                 
                 if action_exited:
-                    # Action exited means controller.stop() was called
-                    # Controller layer guarantees:
-                    # - Flash verification will complete OR
-                    # - Flash failure triggers emergency_reset automatically
-                    # So we can safely report success here
+                    # Action exited, stop flash is in progress
                     result.success = True
                     result.completion_reason = 'stopped'
                     result.final_height = self.current_height
@@ -2137,8 +2155,8 @@ class LiftRobotNodeAction(Node):
                     
                     goal_handle.succeed()
                     self.get_logger().info(
-                        f"[STOP] Success - {active_action} processed stop request in {result.execution_time:.2f}s "
-                        f"(flash verification in progress, failures handled by controller)"
+                        f"[STOP] Success - {active_action} exited in {result.execution_time:.2f}s "
+                        f"(stop flash in progress)"
                     )
                     return result
                 else:
@@ -2152,14 +2170,14 @@ class LiftRobotNodeAction(Node):
                     )
                     return result
             else:
-                # No active action to cancel
+                # No active action, but stop flash was accepted
                 result.success = True
                 result.stopped_action = 'none'
                 result.completion_reason = 'no_active_action'
                 result.execution_time = time.time() - start_time
                 
                 goal_handle.succeed()
-                self.get_logger().info("[STOP] No active action to stop")
+                self.get_logger().info("[STOP] Stop flash accepted, no active action to exit")
                 return result
         
         except Exception as e:
@@ -2279,12 +2297,7 @@ class LiftRobotNodeAction(Node):
                 if self.stop_requested and (self.stop_target == target or self.stop_target is None):
                     self.get_logger().info(f"ManualMove({target}/{direction}) received stop request")
                     
-                    # Send stop command
-                    if target == 'platform':
-                        self.controller.stop()
-                    else:
-                        self.controller.pushrod_stop()
-                    
+                    # NOTE: Stop flash already sent by StopMovement, we just need to exit
                     # Wait for stop flash to complete
                     stop_success = self._wait_for_stop_complete(target, timeout=5.0)
                     

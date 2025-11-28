@@ -216,60 +216,64 @@ class CmdProcessorNode(Node):
                     self.retry_count = 0
                     self.goal_response = None
             else:
-                # ⚠️ Rejected - trigger retry
+                # ⚠️ Rejected - trigger retry (must hold lock for _handle_rejection)
                 with self.command_lock:
                     self.goal_response = 'rejected'
                     self.get_logger().warn('⚠️ Goal rejected')
-                self._handle_rejection()
+                    self._handle_rejection()
                 
         except Exception as e:
             self.get_logger().error(f'Goal response error: {e}')
             with self.command_lock:
                 self.goal_response = 'rejected'
-            self._handle_rejection()
+                self._handle_rejection()
     
     def _check_command_timeout(self):
-        """Check if command has been waiting too long (1 second) - force skip if stuck"""
-        with self.command_lock:
-            # If command already cleared, do nothing
-            if self.current_command is None:
-                return
-            
-            # Check if command has been waiting for 1 second
-            elapsed = time.time() - self.goal_send_time
-            if elapsed >= self.command_timeout:
-                # Force skip stuck command
-                self.get_logger().error(
-                    f'⏱️ Command TIMEOUT ({elapsed:.1f}s) - no callback received, skipping to next command'
-                )
-                self.current_command = None
-                self.retry_count = 0
-                self.goal_response = None
+        """Check if command has been waiting too long (1 second) - force skip if stuck
+        
+        NOTE: Caller must hold command_lock
+        """
+        # If command already cleared, do nothing
+        if self.current_command is None:
+            return
+        
+        # Check if command has been waiting for 1 second
+        elapsed = time.time() - self.goal_send_time
+        if elapsed >= self.command_timeout:
+            # Force skip stuck command
+            self.get_logger().error(
+                f'⏱️ Command TIMEOUT ({elapsed:.1f}s) - no callback received, skipping to next command'
+            )
+            self.current_command = None
+            self.retry_count = 0
+            self.goal_response = None
     
     def _handle_rejection(self):
-        """Handle goal rejection with retry logic (reject callback only)"""
-        with self.command_lock:
-            self.retry_count += 1
+        """Handle goal rejection with retry logic (reject callback only)
+        
+        NOTE: Caller must hold command_lock
+        """
+        self.retry_count += 1
+        
+        if self.retry_count > self.max_retries:
+            self.get_logger().error(
+                f'❌ Max retries ({self.max_retries}) exceeded - skipping command'
+            )
             
-            if self.retry_count > self.max_retries:
-                self.get_logger().error(
-                    f'❌ Max retries ({self.max_retries}) exceeded - skipping command'
-                )
-                
-                # Skip command without reset
-                self.current_command = None
-                self.retry_count = 0
-                self.current_goal_future = None
-                self.goal_response = None
-            else:
-                # Retry immediately on rejection
-                self.get_logger().warn(
-                    f'⚠️ Goal rejected - retrying ({self.retry_count}/{self.max_retries})'
-                )
-                command = self.current_command
-                
-                # Retry immediately
-                self._send_command(command, is_retry=True)
+            # Skip command without reset
+            self.current_command = None
+            self.retry_count = 0
+            self.current_goal_future = None
+            self.goal_response = None
+        else:
+            # Retry immediately on rejection
+            self.get_logger().warn(
+                f'⚠️ Goal rejected - retrying ({self.retry_count}/{self.max_retries})'
+            )
+            command = self.current_command
+            
+            # Retry immediately
+            self._send_command(command, is_retry=True)
 
 
 def main(args=None):

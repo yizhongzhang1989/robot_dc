@@ -28,8 +28,8 @@ class LiftRobotController(ModbusDevice):
     - Open relay (0xFF00) -> 100ms delay -> Close relay (0x0000)
     """
     
-    def __init__(self, device_id, node, use_ack_patch):
-        super().__init__(device_id, node, use_ack_patch)
+    def __init__(self, device_id, node, use_ack_patch, callback_group=None):
+        super().__init__(device_id, node, use_ack_patch, callback_group)
         
         # Relay address constants
         # Platform relays
@@ -52,20 +52,6 @@ class LiftRobotController(ModbusDevice):
         # Command queue for timed operations
         self.timed_cmd_queue = deque()
         self.waiting_for_timed_ack = False
-
-    @staticmethod
-    def _wrap_response_as_future(response):
-        """包装recv()回调响应为Future兼容对象,用于evaluate函数."""
-        class FakeFuture:
-            def __init__(self, resp):
-                self.resp = resp
-            def result(self):
-                class FakeResult:
-                    def __init__(self, r):
-                        self.success = r is not None and len(r) > 0
-                        self.response = r if r else []
-                return FakeResult(self.resp)
-        return FakeFuture(response)
 
     def _get_relay_name(self, relay_address):
         """Get human-readable name for relay address."""
@@ -233,15 +219,14 @@ class LiftRobotController(ModbusDevice):
         self.send(5, modbus_address, [close_value], seq_id=seq_id)
 
     # ─────────────────────────────────────────────────────────────
-    # Async flash (pulse) state machine WITHOUT blocking spin
-    # Uses service call futures + timers to chain ON/OFF attempts.
+    # Simplified flash (pulse) mechanism - no verification
+    # Send ON twice, wait 100ms, send OFF twice, assume complete
     # ─────────────────────────────────────────────────────────────
     def start_flash_async(self, relay_address, seq_id=None, max_attempts=3):
-        """Begin an asynchronous relay pulse with immediate verification & retry.
-
-        Non-blocking: scheduling is done via futures and threading.Timer so we never
-        spin or sleep inside a ROS callback thread. Only one flash is allowed at a time.
-        If another flash is active, the new request is ignored.
+        """Simplified relay pulse: 2×ON + 100ms + 2×OFF, no verification.
+        
+        Simple and deterministic: assumes relay always works.
+        Only one flash allowed at a time (mutual exclusion).
         
         Returns:
             bool: True if flash started, False if rejected due to conflict
@@ -250,413 +235,79 @@ class LiftRobotController(ModbusDevice):
             if getattr(self, 'flash_active', False):
                 self.node.get_logger().warn(f"[SEQ {seq_id}] Flash already active, ignore new request relay={relay_address}")
                 return False
-            # Initialize context
+            
             self.flash_active = True
             self.flash_context = {
                 'relay': relay_address,
                 'seq_id': seq_id,
-                'phase': 'ON',
-                'on_attempts': 0,
-                'off_attempts': 0,
-                'max': max_attempts,
-                'start_time': time.time(),
-                # Micro-timeout flags (ON phase)
-                'on_eval_done': False,
-                'on_inner_read_count': 0,  # number of extra micro-timeout reads issued (excluding primary)
-                # Micro-timeout flags (OFF phase)
-                'off_eval_done': False,
-                'off_inner_read_count': 0
+                'start_time': time.time()
             }
-        relay_name = {
-            0: 'PLATFORM_STOP', 
-            1: 'PLATFORM_UP', 
-            2: 'PLATFORM_DOWN',
-            3: 'PUSHROD_STOP',
-            4: 'PUSHROD_DOWN',
-            5: 'PUSHROD_UP'
-        }.get(relay_address, f'Relay{relay_address}')
-        self.node.get_logger().info(f"[SEQ {seq_id}] Async flash start: {relay_name} (max_attempts={max_attempts})")
-        self._try_on()
+        
+        relay_name = self._get_relay_name(relay_address)
+        self.node.get_logger().info(f"[SEQ {seq_id}] Flash start: {relay_name} (simplified mode)")
+        
+        # Schedule the flash sequence
+        threading.Thread(target=self._execute_simple_flash, args=(relay_address, seq_id, relay_name), daemon=True).start()
+        
         return True
-
-    def _try_on(self):
-        """尝试打开继电器: 发送ON命令 → 20ms后验证."""
-        ctx = self.flash_context
-        if ctx is None:
-            return
-        ctx['on_attempts'] += 1
-        attempt = ctx['on_attempts']
-        relay = ctx['relay']
-        seq_id = ctx['seq_id']
-        relay_name = self._get_relay_name(relay)
-        self.node.get_logger().info(f"[SEQ {seq_id}] ON attempt {attempt}/{ctx['max']} for {relay_name}")
-        # 重置验证标志
-        ctx['on_eval_done'] = False
-        ctx['on_inner_read_count'] = 0
-        # 发送ON命令,20ms后验证
-        try: 
-            self.send(5, relay, [0xFF00], seq_id=seq_id)
-        except Exception as e:
-            self.node.get_logger().error(f"[***SEQ {seq_id}] Exception during send ON: {e}")
-        threading.Timer(0.02, self._verify_on).start()
-
-    def _verify_on(self):
-        """验证ON状态: 主读取(100ms超时) + 补充读取(最多2次,每次100ms超时)."""
-        ctx = self.flash_context
-        if ctx is None or ctx.get('phase') != 'ON':
-            return
+    
+    def _execute_simple_flash(self, relay_address, seq_id, relay_name):
+        """Execute simplified flash sequence in background thread.
         
-        relay = ctx['relay']
-        seq_id = ctx['seq_id']
+        Each send() is individually wrapped in try-catch to ensure all 4 commands
+        are attempted even if some fail.
+        """
+        start_time = time.time()
         
-        def on_response(response):
-            if self.flash_context is None or self.flash_context.get('phase') != 'ON':
-                return
-            if self.flash_context['on_eval_done']:
-                return
-            self.flash_context['on_eval_done'] = True
-            self._check_on(self._wrap_response_as_future(response))
-        
-        # 主读取: FC01读取6个继电器
+        # Step 1: Send ON command twice (each with independent error handling)
+        self.node.get_logger().info(f"[SEQ {seq_id}] {relay_name} ON×2")
         try:
-            self.recv(1, 0x0000, 6, callback=on_response, seq_id=seq_id)
+            self.send(5, relay_address, [0xFF00], seq_id=seq_id)
         except Exception as e:
-            self.node.get_logger().error(f"[***SEQ {seq_id}] Exception during recv ON: {e}")
+            self.node.get_logger().error(f"[SEQ {seq_id}] ON #1 send error: {e}")
         
-        # 100ms超时后启动补充读取(不补发)
-        threading.Timer(0.1, self._supplementary_read_on).start()
-
-    def _supplementary_read_on(self):
-        """补充读取ON: 主读取未返回时发起补充读取,最多2次,每次100ms超时."""
-        ctx = self.flash_context
-        if ctx is None or ctx.get('phase') != 'ON':
-            return
-        if ctx['on_eval_done']:
-            return  # 主读取已返回
-        if ctx['on_inner_read_count'] >= 2:
-            # 超过2次补充读取,判定为失败
-            relay_name = self._get_relay_name(ctx['relay'])
-            self.node.get_logger().error(
-                f"[SEQ {ctx['seq_id']}] ❌ {relay_name} ON verification FAILED - "
-                f"no response after primary + {ctx['on_inner_read_count']} supplementary reads"
-            )
-            self.flash_context['on_eval_done'] = True
-            # 创建失败的future
-            class FailureFuture:
-                def result(self):
-                    class FailureResult:
-                        success = False
-                        response = []
-                    return FailureResult()
-            self._check_on(FailureFuture())
-            return
+        time.sleep(0.01)  # 10ms between commands
         
-        ctx['on_inner_read_count'] += 1
-        
-        def on_supplementary_response(response):
-            if self.flash_context is None or self.flash_context.get('phase') != 'ON':
-                return
-            if self.flash_context['on_eval_done']:
-                return
-            self.flash_context['on_eval_done'] = True
-            self._check_on(self._wrap_response_as_future(response))
-        
-        # 补充读取: FC01读取6个继电器
-        self.recv(1, 0x0000, 6, callback=on_supplementary_response, seq_id=ctx['seq_id'])
-        
-        # 100ms后递归检查是否需要下一次补充读取
-        if ctx['on_inner_read_count'] < 2:
-            threading.Timer(0.1, self._supplementary_read_on).start()
-
-    def _check_on(self, future):
-        """检查ON验证结果: 成功→进入OFF阶段, 失败→重试."""
-        ctx = self.flash_context
-        if ctx is None or ctx.get('phase') != 'ON':
-            return
-        relay = ctx['relay']
-        seq_id = ctx['seq_id']
-        relay_name = self._get_relay_name(relay)
         try:
-            resp = future.result()
-            ok = resp is not None and resp.success and len(resp.response) >= (relay+1)
-            status = None
-            if ok:
-                status = bool(resp.response[relay])
-            if ok and status:
-                elapsed_ms = (time.time() - ctx['start_time']) * 1000
-                self.node.get_logger().info(f"[SEQ {seq_id}] ✅ {relay_name} ON verified at attempt {ctx['on_attempts']} ({elapsed_ms:.1f}ms)")
-                # Move to OFF phase
-                ctx['phase'] = 'OFF'
-                # Reset OFF phase micro-timeout flags
-                ctx['off_eval_done'] = False
-                ctx['off_inner_read_count'] = 0
-                self._try_off()
-            else:
-                self.node.get_logger().warn(f"[SEQ {seq_id}] ⚠️ {relay_name} ON verify failed attempt {ctx['on_attempts']} (status={status})")
-                if ctx['on_attempts'] < ctx['max']:
-                    self._try_on()
-                else:
-                    self._flash_fail(f"{relay_name} ON phase failed after {ctx['max']} attempts")
+            self.send(5, relay_address, [0xFF00], seq_id=seq_id)
         except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] ON evaluate exception: {e}")
-            if ctx['on_attempts'] < ctx['max']:
-                self._try_on()
-            else:
-                self._flash_fail(f"{relay_name} ON exception: {e}")
-
-    def _try_off(self):
-        """尝试关闭继电器: 发送OFF命令 → 20ms后验证."""
-        ctx = self.flash_context
-        if ctx is None or ctx.get('phase') != 'OFF':
-            return
-        ctx['off_attempts'] += 1
-        attempt = ctx['off_attempts']
-        relay = ctx['relay']
-        seq_id = ctx['seq_id']
-        relay_name = self._get_relay_name(relay)
-        self.node.get_logger().info(f"[SEQ {seq_id}] OFF attempt {attempt}/{ctx['max']} for {relay_name}")
-        ctx['off_eval_done'] = False
-        ctx['off_inner_read_count'] = 0
-        self.send(5, relay, [0x0000], seq_id=seq_id)
-        threading.Timer(0.02, self._verify_off).start()
-
-    def _verify_off(self):
-        """验证OFF状态: 主读取(100ms超时) + 补充读取(最多2次,每次100ms超时)."""
-        ctx = self.flash_context
-        if ctx is None or ctx.get('phase') != 'OFF':
-            return
+            self.node.get_logger().error(f"[SEQ {seq_id}] ON #2 send error: {e}")
         
-        relay = ctx['relay']
-        seq_id = ctx['seq_id']
+        # Step 2: Wait 100ms
+        time.sleep(0.1)
         
-        def off_response(response):
-            if self.flash_context is None or self.flash_context.get('phase') != 'OFF':
-                return
-            if self.flash_context['off_eval_done']:
-                return
-            self.flash_context['off_eval_done'] = True
-            self._check_off(self._wrap_response_as_future(response))
-        
-        self.recv(1, 0x0000, 6, callback=off_response, seq_id=seq_id)
-        
-        # 100ms超时后启动补充读取
-        threading.Timer(0.1, self._supplementary_read_off).start()
-
-    def _supplementary_read_off(self):
-        """补充读取OFF: 主读取未返回时发起补充读取,最多2次,每次100ms超时."""
-        ctx = self.flash_context
-        if ctx is None or ctx.get('phase') != 'OFF':
-            return
-        if ctx['off_eval_done']:
-            return  # 主读取已返回
-        if ctx['off_inner_read_count'] >= 2:
-            # 超过2次补充读取,判定为失败
-            relay_name = self._get_relay_name(ctx['relay'])
-            self.node.get_logger().error(
-                f"[SEQ {ctx['seq_id']}] ❌ {relay_name} OFF verification FAILED - "
-                f"no response after primary + {ctx['off_inner_read_count']} supplementary reads"
-            )
-            self.flash_context['off_eval_done'] = True
-            # 创建失败的future
-            class FailureFuture:
-                def result(self):
-                    class FailureResult:
-                        success = False
-                        response = []
-                    return FailureResult()
-            self._check_off(FailureFuture())
-            return
-        
-        ctx['off_inner_read_count'] += 1
-        
-        def off_supplementary_response(response):
-            if self.flash_context is None or self.flash_context.get('phase') != 'OFF':
-                return
-            if self.flash_context['off_eval_done']:
-                return
-            self.flash_context['off_eval_done'] = True
-            self._check_off(self._wrap_response_as_future(response))
-        
-        # 补充读取: FC01读取6个继电器
-        self.recv(1, 0x0000, 6, callback=off_supplementary_response, seq_id=ctx['seq_id'])
-        
-        # 100ms后递归检查是否需要下一次补充读取
-        if ctx['off_inner_read_count'] < 2:
-            threading.Timer(0.1, self._supplementary_read_off).start()
-
-    def _check_off(self, future):
-        """检查OFF验证结果: 成功→完成, 失败→重试."""
-        ctx = self.flash_context
-        if ctx is None or ctx.get('phase') != 'OFF':
-            return
-        relay = ctx['relay']
-        seq_id = ctx['seq_id']
-        relay_name = self._get_relay_name(relay)
+        # Step 3: Send OFF command twice (each with independent error handling)
+        self.node.get_logger().info(f"[SEQ {seq_id}] {relay_name} OFF×2")
         try:
-            resp = future.result()
-            ok = resp is not None and resp.success and len(resp.response) >= (relay+1)
-            status = None
-            if ok:
-                status = bool(resp.response[relay])
-            if ok and (not status):
-                elapsed_ms = (time.time() - ctx['start_time']) * 1000
-                self.node.get_logger().info(f"[SEQ {seq_id}] ✅ {relay_name} OFF verified at attempt {ctx['off_attempts']} ({elapsed_ms:.1f}ms) total")
-                self._flash_complete()
-            else:
-                self.node.get_logger().warn(f"[SEQ {seq_id}] ⚠️ {relay_name} OFF verify failed attempt {ctx['off_attempts']} (status={status})")
-                if ctx['off_attempts'] < ctx['max']:
-                    self._try_off()
-                else:
-                    self._flash_fail(f"{relay_name} OFF phase failed after {ctx['max']} attempts")
+            self.send(5, relay_address, [0x0000], seq_id=seq_id)
         except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] OFF evaluate exception: {e}")
-            if ctx['off_attempts'] < ctx['max']:
-                self._try_off()
-            else:
-                self._flash_fail(f"{relay_name} OFF exception: {e}")
-
-    def _flash_complete(self):
-        ctx = self.flash_context
-        if ctx is None:
-            return
-        seq_id = ctx['seq_id']
-        relay = ctx['relay']
-        relay_name = self._get_relay_name(relay)
-        total_ms = (time.time() - ctx['start_time']) * 1000
-        self.node.get_logger().info(f"[SEQ {seq_id}] ✅ Async flash SUCCESS {relay_name} total={total_ms:.1f}ms")
+            self.node.get_logger().error(f"[SEQ {seq_id}] OFF #1 send error: {e}")
         
-        # Notify node that relay verification succeeded
+        time.sleep(0.01)  # 10ms between commands
+        
+        try:
+            self.send(5, relay_address, [0x0000], seq_id=seq_id)
+        except Exception as e:
+            self.node.get_logger().error(f"[SEQ {seq_id}] OFF #2 send error: {e}")
+        
+        # Step 4: Assume complete (always execute callback regardless of errors)
+        total_ms = (time.time() - start_time) * 1000
+        self.node.get_logger().info(f"[SEQ {seq_id}] ✅ Flash complete: {relay_name} ({total_ms:.1f}ms)")
+        
+        # Notify success
         if hasattr(self, 'on_flash_complete_callback') and self.on_flash_complete_callback:
             try:
-                self.on_flash_complete_callback(relay, seq_id)
+                self.on_flash_complete_callback(relay_address, seq_id)
             except Exception as e:
                 self.node.get_logger().error(f"[SEQ {seq_id}] Flash complete callback error: {e}")
         
+        # Clear flash state
         self.flash_context = None
         self.flash_active = False
 
-    def _flash_fail(self, reason):
-        ctx = self.flash_context
-        seq_id = ctx['seq_id'] if ctx else None
-        relay_addr = ctx['relay'] if ctx else -1
-        
-        # Check if we're already in emergency reset (to avoid infinite loop)
-        # Emergency reset uses relay 0 (platform stop) and relay 3 (pushrod stop)
-        is_reset_flash = relay_addr in [0, 3] and getattr(self.node, 'reset_in_progress', False)
-        
-        if is_reset_flash:
-            # Flash failure during emergency reset - do NOT trigger another reset
-            self.node.get_logger().error(
-                f"[SEQ {seq_id}] ❌ STOP flash FAILED during emergency reset: {reason} - "
-                f"Relay cleared by reset_all_relays, system will continue to idle state"
-            )
-        else:
-            # Normal flash failure - trigger emergency reset
-            self.node.get_logger().error(f"[SEQ {seq_id}] ❌ Async flash FAILED: {reason} -> EMERGENCY RESET")
-        
-        # Trigger emergency reset only if not already in reset
-        if not is_reset_flash:
-            try:
-                self._trigger_emergency_reset(seq_id, reason)
-            except Exception as e:
-                self.node.get_logger().error(f"[SEQ {seq_id}] Emergency reset invocation error: {e}")
-        
-        self.flash_context = None
-        self.flash_active = False
 
-    # Legacy sync method retained for compatibility (not used now)
-    def flash_relay(self, relay_address, duration_ms=100, seq_id=None):
-        self.node.get_logger().warn("flash_relay deprecated - using start_flash_async instead")
-        self.start_flash_async(relay_address=relay_address, seq_id=seq_id)
 
-    # write_relay_verified removed in async mode (verification handled by state machine)
-
-    def flash_relay(self, relay_address, duration_ms=100, seq_id=None):
-        """Pulse relay with immediate retry detection: ON -> verify -> OFF -> verify.
-        
-        Uses immediate detection with max 3 retries for both ON and OFF phases.
-        If all 3 attempts fail, triggers emergency reset.
-
-        Args:
-            relay_address: 0=stop,1=up,2=down
-            duration_ms: deprecated (kept for compatibility, not used)
-            seq_id: sequence id
-            
-        Returns:
-            bool: True if flash successful, False if failed and emergency reset triggered
-        """
-        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay_address, f'Relay{relay_address}')
-        
-        try:
-            self.node.get_logger().info(
-                f"[SEQ {seq_id}] {relay_name} relay flash with retry detection"
-            )
-            
-            start_time = time.time()
-            max_attempts = 3
-            
-            # ─────────────────────────────────────────────────────────
-            # Phase 1: Turn ON relay (with retry)
-            # ─────────────────────────────────────────────────────────
-            relay_turned_on = False
-            
-            for attempt in range(1, max_attempts + 1):
-                if self.write_relay_verified(relay_address, 0xFF00):
-                    elapsed_ms = (time.time() - start_time) * 1000
-                    self.node.get_logger().info(
-                        f"[SEQ {seq_id}] ✅ {relay_name} ON verified (attempt {attempt}/{max_attempts}, {elapsed_ms:.1f}ms)"
-                    )
-                    relay_turned_on = True
-                    break
-                else:
-                    self.node.get_logger().warn(
-                        f"[SEQ {seq_id}] ⚠️  {relay_name} ON failed (attempt {attempt}/{max_attempts}), retrying..."
-                    )
-            
-            if not relay_turned_on:
-                total_ms = (time.time() - start_time) * 1000
-                self.node.get_logger().error(
-                    f"[SEQ {seq_id}] ❌ {relay_name} failed to turn ON after {max_attempts} attempts ({total_ms:.1f}ms)"
-                )
-                self._trigger_emergency_reset(seq_id, f"{relay_name} relay ON failure")
-                return False
-            
-            # ─────────────────────────────────────────────────────────
-            # Phase 2: Turn OFF relay (with retry)
-            # ─────────────────────────────────────────────────────────
-            relay_turned_off = False
-            
-            for attempt in range(1, max_attempts + 1):
-                if self.write_relay_verified(relay_address, 0x0000):
-                    elapsed_ms = (time.time() - start_time) * 1000
-                    self.node.get_logger().info(
-                        f"[SEQ {seq_id}] ✅ {relay_name} OFF verified (attempt {attempt}/{max_attempts}, {elapsed_ms:.1f}ms)"
-                    )
-                    relay_turned_off = True
-                    break
-                else:
-                    self.node.get_logger().warn(
-                        f"[SEQ {seq_id}] ⚠️  {relay_name} OFF failed (attempt {attempt}/{max_attempts}), retrying..."
-                    )
-            
-            total_ms = (time.time() - start_time) * 1000
-            
-            if not relay_turned_off:
-                self.node.get_logger().error(
-                    f"[SEQ {seq_id}] ❌ {relay_name} failed to turn OFF after {max_attempts} attempts ({total_ms:.1f}ms)"
-                )
-                self._trigger_emergency_reset(seq_id, f"{relay_name} relay OFF failure")
-                return False
-            
-            self.node.get_logger().info(
-                f"[SEQ {seq_id}] ✅ {relay_name} flash completed successfully ({total_ms:.1f}ms)"
-            )
-            return True
-            
-        except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] ❌ Flash relay {relay_address} exception: {e}")
-            self._trigger_emergency_reset(seq_id, f"{relay_name} relay exception: {e}")
-            return False
+    # write_relay_verified removed - using simplified flash instead
 
     def _trigger_emergency_reset(self, seq_id, reason):
         """Trigger emergency reset - clear all states and recover to idle.
