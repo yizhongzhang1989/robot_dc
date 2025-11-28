@@ -16,7 +16,7 @@ setup(
         (f'share/{package_name}', ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
     ],
-    install_requires=['setuptools', 'pymodbus', 'flask'],
+    install_requires=['setuptools', 'pymodbus', 'flask', 'flask-socketio', 'python-socketio'],
     zip_safe=True,
     maintainer='Your Name',
     maintainer_email='you@example.com',

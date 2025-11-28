@@ -5,7 +5,14 @@ from modbus_driver_interfaces.srv import ModbusRequest
 import threading
 import datetime
 import time
+import os
 from .modbus_dashboard import ModbusDashboard
+
+try:
+    from common.workspace_utils import get_temp_directory
+    DEFAULT_LOG_DIR = os.path.join(get_temp_directory(), 'modbus_logs')
+except Exception:
+    DEFAULT_LOG_DIR = 'modbus_logs'
 
 
 class ModbusManagerNode(Node):
@@ -17,11 +24,13 @@ class ModbusManagerNode(Node):
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('enable_dashboard', True)
         self.declare_parameter('dashboard_port', 5000)
+        self.declare_parameter('log_dir', DEFAULT_LOG_DIR)
         
         port = self.get_parameter('port').value
         baudrate = self.get_parameter('baudrate').value
         enable_dashboard = self.get_parameter('enable_dashboard').value
         dashboard_port = self.get_parameter('dashboard_port').value
+        log_dir = self.get_parameter('log_dir').value
 
         # Initialize Modbus RTU client
         self.client = ModbusSerialClient(port=port, baudrate=baudrate, timeout=1)
@@ -34,9 +43,10 @@ class ModbusManagerNode(Node):
         # Initialize Dashboard
         self.dashboard = None
         if enable_dashboard:
-            self.dashboard = ModbusDashboard(port=dashboard_port)
+            self.dashboard = ModbusDashboard(port=dashboard_port, log_dir=log_dir)
             self.dashboard.start()
             self.get_logger().info(f"✅ Modbus Dashboard running at http://0.0.0.0:{dashboard_port}")
+            self.get_logger().info(f"✅ Logging to directory: {log_dir}")
 
         self.srv = self.create_service(ModbusRequest, '/modbus_request', self.handle_modbus_request)
         self.get_logger().info("✅ Modbus Manager is running")
