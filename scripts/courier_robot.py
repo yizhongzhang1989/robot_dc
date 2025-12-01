@@ -810,205 +810,15 @@ class CourierRobotWebAPI:
             self.background_task.start()
             return True
     
-    def interactive_mode(self):
-        """
-        Interactive command-line mode for manual control
-        
-        Available commands:
-        
-        Status & Info:
-          status, st        - Show current status
-          sensor, sn        - Show sensor data
-          help, h, ?        - Show this help
-          quit, exit, q     - Exit interactive mode
-        
-        Platform Height Control:
-          goto <height>     - Go to height (mm), e.g., 'goto 900' (runs in background, can be interrupted)
-          g <height>        - Short form of goto
-          goto! <height>    - Non-blocking goto (fire-and-forget)
-          g! <height>       - Non-blocking short form
-        
-        Platform Force Control:
-          fup <force>       - Force control up (N), e.g., 'fup 50' (background)
-          fdown <force>     - Force control down (N), e.g., 'fdown 30' (background)
-          fup! <force>      - Non-blocking force up
-          fdown! <force>    - Non-blocking force down
-          hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50' (background)
-          hybrid! <h> <f>   - Non-blocking hybrid control
-        
-        Platform Manual Control:
-          up                - Manual up (use 'stop' to stop)
-          down              - Manual down (use 'stop' to stop)
-          stop              - Stop platform (can interrupt any command!)
-        
-        Pushrod Control:
-          pup               - Pushrod manual up (use 'pstop' to stop)
-          pdown             - Pushrod manual down (use 'pstop' to stop)
-          pgoto <height>    - Pushrod goto height (mm, background)
-          pgoto! <height>   - Pushrod goto height (non-blocking)
-          pstop             - Stop pushrod (can interrupt any command!)
-        
-        Emergency:
-          reset, emergency  - Emergency reset (can interrupt any command!)
-        
-        Note: Commands without '!' run in background - you can type 'stop' anytime to interrupt!
-        """
-        print("\n" + "="*60)
-        print("🤖 CourierRobot Interactive Mode")
-        print("="*60)
-        print("Type 'help' for available commands, 'quit' to exit")
-        print("="*60 + "\n")
-        
-        while True:
-            try:
-                cmd = input("robot> ").strip().lower()
-                
-                if not cmd:
-                    continue
-                
-                parts = cmd.split()
-                command = parts[0]
-                
-                # Exit commands
-                if command in ['quit', 'exit', 'q']:
-                    print("👋 Exiting interactive mode")
-                    break
-                
-                # Help
-                elif command in ['help', 'h', '?']:
-                    print(self.interactive_mode.__doc__)
-                
-                # Status commands
-                elif command in ['status', 'st']:
-                    self.get_status()
-                
-                elif command in ['sensor', 'sn']:
-                    self.get_sensor_data()
-                
-                # Platform height control
-                elif command in ['goto', 'g', 'goto!', 'g!']:
-                    if len(parts) < 2:
-                        print("❌ Usage: goto <height> or goto! <height> (non-blocking)")
-                    else:
-                        try:
-                            height = float(parts[1])
-                            wait = not command.endswith('!')  # Non-blocking if ends with !
-                            if wait:
-                                # Blocking mode: execute in background thread
-                                self._execute_in_background(self.platform_goto_height, height, wait=True)
-                            else:
-                                # Non-blocking mode: execute directly
-                                self.platform_goto_height(height, wait=False)
-                        except ValueError:
-                            print("❌ Invalid height value")
-                
-                # Platform force control
-                elif command in ['fup', 'fup!']:
-                    if len(parts) < 2:
-                        print("❌ Usage: fup <force> or fup! <force> (non-blocking)")
-                    else:
-                        try:
-                            force = float(parts[1])
-                            wait = not command.endswith('!')
-                            if wait:
-                                # Blocking mode: execute in background thread
-                                self._execute_in_background(self.platform_force_up, force, wait=True)
-                            else:
-                                # Non-blocking mode: execute directly
-                                self.platform_force_up(force, wait=False)
-                        except ValueError:
-                            print("❌ Invalid force value")
-                
-                elif command in ['fdown', 'fdown!']:
-                    if len(parts) < 2:
-                        print("❌ Usage: fdown <force> or fdown! <force> (non-blocking)")
-                    else:
-                        try:
-                            force = float(parts[1])
-                            wait = not command.endswith('!')
-                            if wait:
-                                # Blocking mode: execute in background thread
-                                self._execute_in_background(self.platform_force_down, force, wait=True)
-                            else:
-                                # Non-blocking mode: execute directly
-                                self.platform_force_down(force, wait=False)
-                        except ValueError:
-                            print("❌ Invalid force value")
-                
-                elif command in ['hybrid', 'hybrid!']:
-                    if len(parts) < 3:
-                        print("❌ Usage: hybrid <height> <force> or hybrid! <height> <force> (non-blocking)")
-                    else:
-                        try:
-                            height = float(parts[1])
-                            force = float(parts[2])
-                            wait = not command.endswith('!')
-                            if wait:
-                                # Blocking mode: execute in background thread
-                                self._execute_in_background(self.platform_hybrid_control, height, force, wait=True)
-                            else:
-                                # Non-blocking mode: execute directly
-                                self.platform_hybrid_control(height, force, wait=False)
-                        except ValueError:
-                            print("❌ Invalid height or force value")
-                
-                # Platform manual control
-                elif command == 'up':
-                    self.platform_up()
-                
-                elif command == 'down':
-                    self.platform_down()
-                
-                elif command == 'stop':
-                    self.platform_stop()
-                
-                # Pushrod control
-                elif command == 'pup':
-                    self.pushrod_up()
-                
-                elif command == 'pdown':
-                    self.pushrod_down()
-                
-                elif command in ['pgoto', 'pgoto!']:
-                    if len(parts) < 2:
-                        print("❌ Usage: pgoto <height> or pgoto! <height> (non-blocking)")
-                    else:
-                        try:
-                            height = float(parts[1])
-                            wait = not command.endswith('!')
-                            if wait:
-                                # Blocking mode: execute in background thread
-                                self._execute_in_background(self.pushrod_goto_height, height, wait=True)
-                            else:
-                                # Non-blocking mode: execute directly
-                                self.pushrod_goto_height(height, wait=False)
-                        except ValueError:
-                            print("❌ Invalid height value")
-                
-                elif command == 'pstop':
-                    self.pushrod_stop()
-                
-                # Emergency
-                elif command in ['reset', 'emergency']:
-                    self.emergency_reset()
-                
-                else:
-                    print(f"❌ Unknown command: '{command}'. Type 'help' for available commands.")
-            
-            except KeyboardInterrupt:
-                print("\n👋 Exiting interactive mode (Ctrl+C)")
-                break
-            except Exception as e:
-                print(f"❌ Error: {e}")
     
-    def _wait_for_completion(self, target='platform', timeout=60, poll_interval=0.5):
+    def _wait_for_completion(self, target='platform', timeout=60, poll_interval=0.1):
         """
         Internal method: Wait for platform or pushrod task to complete
         
         Args:
             target: 'platform' or 'pushrod'
             timeout: Maximum wait time in seconds
-            poll_interval: Status polling interval in seconds
+            poll_interval: Status polling interval in seconds (default: 0.1s = 10Hz)
             
         Returns:
             dict with success status and completion info
@@ -1023,8 +833,13 @@ class CourierRobotWebAPI:
         
         try:
             # First, wait for task to start (state changes from idle/completed to running/executing)
+            # OR check if task already completed (target already reached)
             task_started = False
             initial_wait_timeout = 5.0  # Wait up to 5 seconds for task to start
+            
+            # Track 'completed' state to distinguish old state vs. already at target
+            completed_first_seen = None
+            completed_stable_threshold = 0.2  # Must stay 'completed' for 200ms to confirm already at target
             
             while time.time() - start_time < initial_wait_timeout:
                 # Check for reset flag
@@ -1035,15 +850,45 @@ class CourierRobotWebAPI:
                 status_result = self._get_status()
                 if status_result['success'] and target in status_result:
                     task_state = status_result[target].get('task_state', 'unknown')
+                    
+                    # Check if task is running - new task has started
                     if task_state in ['running', 'executing']:
                         task_started = True
                         if original_verbose:
                             print(f"🔄 Task started, waiting for completion...")
                         break
+                    
+                    # Check if task state is 'completed'
+                    elif task_state == 'completed':
+                        # Track how long it stays 'completed'
+                        if completed_first_seen is None:
+                            completed_first_seen = time.time()
+                        elif time.time() - completed_first_seen >= completed_stable_threshold:
+                            # Been 'completed' for >= 1s, likely already at target (not a new task)
+                            full_data = status_result.get('_full_data', {}).get(target, {})
+                            reason = full_data.get('completion_reason', 'unknown')
+                            
+                            if original_verbose:
+                                print(f"✅ Target already reached (no movement needed): {reason}")
+                            
+                            self.verbose = original_verbose
+                            final_status = self._get_status()
+                            
+                            return {
+                                "success": True,
+                                "task_state": "completed",
+                                "completion_reason": reason,
+                                "duration": 0.0,
+                                "final_status": final_status
+                            }
+                    else:
+                        # State is not 'completed', reset the tracker
+                        completed_first_seen = None
+                
                 time.sleep(poll_interval)
             
             if not task_started and original_verbose:
-                print(f"⚠️  Task did not start within {initial_wait_timeout}s, checking if already completed...")
+                print(f"⚠️  Task did not start within {initial_wait_timeout}s, may have already completed or failed...")
             
             # Now wait for completion
             while time.time() - start_time < timeout:
@@ -1121,7 +966,10 @@ if __name__ == "__main__":
     
     # Initialize robot
     robot = CourierRobotWebAPI()
-    robot.interactive_mode()
+    
+    # Import and run interactive mode
+    from courier_robot_terminal_test import interactive_mode
+    interactive_mode(robot)
     # ==================== Test Area ====================
 # Uncomment the commands you want to test
 
