@@ -18,15 +18,7 @@ logging.basicConfig(level=logging.INFO)
 
 class LiftRobotForceSensorNode(Node):
     def __init__(self):
-        # Pre-fetch node_name_suffix parameter to construct node name
-        # We need to do this before super().__init__() to set the correct node name
-        import rclpy
-        temp_args = rclpy.utilities.remove_ros_args()
-        node_name_suffix = ''
-        # Try to get suffix from ROS parameters if available
-        # This is a workaround since we can't declare parameters before super().__init__()
-        
-        # Create node with base name first, we'll use get_name() for logging
+        # Create node with base name (actual name set by launch file)
         super().__init__('lift_robot_force_sensor')
         
         # Parameters

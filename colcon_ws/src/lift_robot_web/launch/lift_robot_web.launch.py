@@ -42,12 +42,5 @@ def generate_launch_description():
             executable='cmd_processor',
             name='lift_robot_cmd_processor',
             output='screen'
-        ),
-        # Command processor node (polls queue at 50Hz, executes Actions)
-        Node(
-            package='lift_robot_web',
-            executable='cmd_processor',
-            name='lift_robot_cmd_processor',
-            output='screen'
         )
     ])

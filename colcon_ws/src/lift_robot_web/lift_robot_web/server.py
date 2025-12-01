@@ -151,13 +151,14 @@ class LiftRobotWeb(Node):
         self.command_queue_pub = self.create_publisher(String, '/lift_robot/command_queue', 10)
         self.get_logger().info("Created command queue publisher on /lift_robot/command_queue")
         
-        # Modbus publisher for direct commands (e.g., force sensor tare)
+        # Modbus service client for direct commands (e.g., force sensor tare)
+        # Use modbus_manager's service instead of direct /modbus_write topic
         try:
-            from modbus_driver_interfaces.msg import ModbusPacket
-            self.modbus_pub = self.create_publisher(ModbusPacket, '/modbus_write', 10)
-            self.get_logger().info("Created Modbus publisher on /modbus_write")
+            from modbus_driver_interfaces.srv import ModbusRequest
+            self.modbus_client = self.create_client(ModbusRequest, '/modbus_request')
+            self.get_logger().info("Created Modbus service client for /modbus_request")
         except Exception as e:
-            self.get_logger().warn(f"Failed to create Modbus publisher: {e}")
+            self.get_logger().warn(f"Failed to create Modbus service client: {e}")
 
         self.get_logger().info(f"Web server subscribing: {self.sensor_topic}")
         # Note: FastAPI server will be started separately in main()
@@ -1675,7 +1676,7 @@ def run_fastapi_server(port):
         @app.post('/api/force_calib/tare')
         async def tare_force_sensor(request: Request):
             """
-            Tare (zero) force sensor by publishing Modbus command to /modbus_write topic.
+            Tare (zero) force sensor by calling modbus_manager service.
             
             Request body:
             {
@@ -1683,10 +1684,10 @@ def run_fastapi_server(port):
                 "device_id": 52 or 53
             }
             
-            Publishes Modbus function code 06 (Write Single Register) to address 0x0011 with value 0x0001.
+            Calls ModbusRequest service with FC06 (Write Single Register) to address 0x0011 with value 0x0001.
             """
             try:
-                from modbus_driver_interfaces.msg import ModbusPacket
+                from modbus_driver_interfaces.srv import ModbusRequest
                 
                 body = await request.json()
                 channel = body.get('channel', 'right')
@@ -1711,28 +1712,59 @@ def run_fastapi_server(port):
                             'error': f'Could not determine device_id for channel "{channel}"'
                         })
                 
-                # Prepare tare command (FC06, register 0x0011, value 0x0001)
-                msg = ModbusPacket()
-                msg.function_code = 0x06  # Write Single Register
-                msg.slave_id = device_id
-                msg.address = 0x0011  # Tare command register
-                msg.count = 1  # Write 1 register
-                msg.values = [0x0001]  # Trigger tare
+                # Wait for service to be available (with timeout)
+                if not lift_robot_node.modbus_client.wait_for_service(timeout_sec=2.0):
+                    return JSONResponse({
+                        'success': False,
+                        'error': 'Modbus service not available'
+                    })
+                
+                # Prepare tare request (FC06, register 0x0011, value 0x0001)
+                req = ModbusRequest.Request()
+                req.function_code = 0x06  # Write Single Register
+                req.slave_id = device_id
+                req.address = 0x0011  # Tare command register
+                req.count = 1  # Write 1 register
+                req.values = [0x0001]  # Trigger tare
                 
                 lift_robot_node.get_logger().info(
-                    f'Publishing tare command: device_id={device_id} (0x{device_id:02X}), '
+                    f'Calling modbus service for tare: device_id={device_id} (0x{device_id:02X}), '
                     f'func=0x06, reg=0x0011, value=0x0001'
                 )
                 
-                # Publish to /modbus_write topic
-                lift_robot_node.modbus_pub.publish(msg)
+                # Call service synchronously (blocking in thread pool)
+                # ROS2 service calls must be done in executor context
+                import concurrent.futures
                 
-                return JSONResponse({
-                    'success': True,
-                    'message': f'Tare command sent to {channel} sensor (device_id={device_id}).',
-                    'device_id': device_id,
-                    'channel': channel
-                })
+                def call_service():
+                    """Execute service call in ROS2 executor context"""
+                    future = lift_robot_node.modbus_client.call_async(req)
+                    # Spin until service call completes
+                    rclpy.spin_until_future_complete(lift_robot_node, future, timeout_sec=2.0)
+                    if future.done():
+                        try:
+                            return future.result()
+                        except Exception as e:
+                            raise Exception(f"Service call failed: {e}")
+                    else:
+                        raise Exception("Service call timeout")
+                
+                # Run in thread pool to avoid blocking FastAPI event loop
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(None, call_service)
+                
+                if response.success:
+                    return JSONResponse({
+                        'success': True,
+                        'message': f'Tare command sent to {channel} sensor (device_id={device_id}).',
+                        'device_id': device_id,
+                        'channel': channel
+                    })
+                else:
+                    return JSONResponse({
+                        'success': False,
+                        'error': f'Modbus service returned failure: {response.error_message}'
+                    })
                     
             except Exception as e:
                 lift_robot_node.get_logger().error(f"Tare force sensor error: {e}")

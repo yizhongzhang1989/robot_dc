@@ -99,11 +99,16 @@ def launch_setup(context, *args, **kwargs):
             print(f"[force_sensor_{device_id}] Failed to create default calibration file: {e}")
         print(f"[force_sensor_{device_id}] Using default calibration values: scale={calib_scale:.6f}, offset={calib_offset:.6f}")
     
+    # Construct node name with suffix
+    node_name = 'lift_robot_force_sensor'
+    if node_name_suffix:
+        node_name = f'{node_name}_{node_name_suffix}'
+    
     return [
         Node(
             package='lift_robot_force_sensor',
             executable='force_sensor_node',
-            name='lift_robot_force_sensor',
+            name=node_name,  # Use dynamic node name with suffix
             output='screen',
             emulate_tty=True,
             parameters=[{
