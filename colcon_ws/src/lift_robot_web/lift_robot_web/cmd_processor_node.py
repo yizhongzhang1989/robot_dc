@@ -22,11 +22,9 @@ class CmdProcessorNode(Node):
         self.command_queue = deque()
         self.queue_lock = threading.Lock()
         
-        # Retry state for current command (reject-based retry only)
+        # Current command state
         self.current_command = None
         self.current_goal_future = None
-        self.retry_count = 0
-        self.max_retries = 3  # Only retry on explicit rejection
         self.command_lock = threading.Lock()
         
         # Goal response state (updated by async callback)
@@ -56,7 +54,7 @@ class CmdProcessorNode(Node):
         # Polling timer - 50Hz for queue processing
         self.poll_timer = self.create_timer(0.02, self._process_queue)
         
-        self.get_logger().info('🚀 Cmd Processor ready (retry-enabled, 50Hz)')
+        self.get_logger().info('🚀 Cmd Processor ready (no retry, 50Hz)')
     
     def _setup_action_clients(self):
         from lift_robot_interfaces.action import GotoHeight, ForceControl, HybridControl, ManualMove, StopMovement
@@ -93,12 +91,10 @@ class CmdProcessorNode(Node):
         
         self._send_command(command)
     
-    def _send_command(self, command, is_retry=False):
+    def _send_command(self, command):
         """Send command to platform with timeout detection"""
         with self.command_lock:
             self.current_command = command
-            if not is_retry:
-                self.retry_count = 0
             # Reset response state for new send
             self.goal_response = None
             self.goal_send_time = time.time()
@@ -106,8 +102,7 @@ class CmdProcessorNode(Node):
         cmd = command.get('command')
         target = command.get('target', 'platform')
         
-        retry_info = f" (retry {self.retry_count}/{self.max_retries})" if is_retry else ""
-        self.get_logger().info(f'→ {cmd}/{target}{retry_info}')
+        self.get_logger().info(f'→ {cmd}/{target}')
         
         # Route commands
         if cmd in ('up', 'down'):
@@ -164,7 +159,6 @@ class CmdProcessorNode(Node):
             self.command_queue.clear()
         with self.command_lock:
             self.current_command = None
-            self.retry_count = 0
     
     def _send_goto_height(self, command, target):
         from lift_robot_interfaces.action import GotoHeight
@@ -204,7 +198,7 @@ class CmdProcessorNode(Node):
             self.current_goal_future = future
     
     def _goal_response_callback(self, future):
-        """Handle goal acceptance/rejection - immediately clear on accept, retry on reject"""
+        """Handle goal acceptance/rejection - immediately clear on accept, skip or retry on reject"""
         try:
             goal_handle = future.result()
             
@@ -213,20 +207,26 @@ class CmdProcessorNode(Node):
                 with self.command_lock:
                     self.get_logger().info('✅ Goal accepted - clearing command state')
                     self.current_command = None
-                    self.retry_count = 0
                     self.goal_response = None
             else:
-                # ⚠️ Rejected - trigger retry (must hold lock for _handle_rejection)
+                # ⚠️ Rejected - check reason before retry
                 with self.command_lock:
                     self.goal_response = 'rejected'
-                    self.get_logger().warn('⚠️ Goal rejected')
-                    self._handle_rejection()
+                    cmd_name = self.current_command.get('command', 'unknown') if self.current_command else 'unknown'
+                    
+                    # Skip retry if rejected due to another Action already running
+                    # This is expected behavior, not a transient error
+                    self.get_logger().warn(f'⚠️ Goal rejected: {cmd_name} - another Action is running, skipping')
+                    self.current_command = None
+                    self.goal_response = None
                 
         except Exception as e:
             self.get_logger().error(f'Goal response error: {e}')
             with self.command_lock:
                 self.goal_response = 'rejected'
-                self._handle_rejection()
+                # Clear command on exception - don't retry
+                self.current_command = None
+                self.goal_response = None
     
     def _check_command_timeout(self):
         """Check if command has been waiting too long (1 second) - force skip if stuck
@@ -245,35 +245,7 @@ class CmdProcessorNode(Node):
                 f'⏱️ Command TIMEOUT ({elapsed:.1f}s) - no callback received, skipping to next command'
             )
             self.current_command = None
-            self.retry_count = 0
             self.goal_response = None
-    
-    def _handle_rejection(self):
-        """Handle goal rejection with retry logic (reject callback only)
-        
-        NOTE: Caller must hold command_lock
-        """
-        self.retry_count += 1
-        
-        if self.retry_count > self.max_retries:
-            self.get_logger().error(
-                f'❌ Max retries ({self.max_retries}) exceeded - skipping command'
-            )
-            
-            # Skip command without reset
-            self.current_command = None
-            self.retry_count = 0
-            self.current_goal_future = None
-            self.goal_response = None
-        else:
-            # Retry immediately on rejection
-            self.get_logger().warn(
-                f'⚠️ Goal rejected - retrying ({self.retry_count}/{self.max_retries})'
-            )
-            command = self.current_command
-            
-            # Retry immediately
-            self._send_command(command, is_retry=True)
 
 
 def main(args=None):

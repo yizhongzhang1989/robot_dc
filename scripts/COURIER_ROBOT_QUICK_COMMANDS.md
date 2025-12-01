@@ -21,11 +21,6 @@ python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=r.get_status(); print(f\"Task State:{s['data']['platform']['task_state']}, Movement State:{s['data']['platform']['movement_state']}\")"
 ```
 
-### View Pushrod Status
-```bash
-python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); s=r.get_status(); print(f\"Pushrod State:{s['data']['pushrod']['task_state']}, Movement:{s['data']['pushrod']['movement_state']}\")"
-```
-
 ## 2. Platform Manual Control Commands
 
 ### Platform Up
@@ -53,16 +48,6 @@ python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.
 ### Move to Height and Wait for Completion (850mm)
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_goto_height(850); r.wait_for_completion('platform', timeout=30)"
-```
-
-### Move to Lowest Position (700mm)
-```bash
-python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_goto_height(700)"
-```
-
-### Move to Highest Position (900mm)
-```bash
-python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_goto_height(900)"
 ```
 
 ## 4. Platform Force Control Commands
@@ -126,14 +111,31 @@ python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.pushrod_goto_height(-5, mode='relative')"
 ```
 
-## 7. Emergency Reset Command
+## 7. Force Sensor Calibration Commands
+
+### Tare Right Force Sensor (Zero Calibration)
+```bash
+python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.tare_force_sensor('right')"
+```
+
+### Tare Left Force Sensor
+```bash
+python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.tare_force_sensor('left')"
+```
+
+### Tare Both Force Sensors
+```bash
+python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.tare_both_force_sensors()"
+```
+
+## 8. Emergency Reset Command
 
 ### Emergency Stop and Reset All States
 ```bash
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.emergency_reset()"
 ```
 
-## 8. Combined Test Commands (Simplified)
+## 9. Combined Test Commands (Simplified)
 
 ### Complete Flow Test: Move to Target Height and Verify
 ```bash
@@ -180,7 +182,7 @@ r.platform_goto_height(900)  # Third command (success)
 "
 ```
 
-## 9. Silent Mode (No Auto-Output)
+## 10. Silent Mode (No Auto-Output)
 
 If you don't want to see automatic output, set `verbose=False`:
 
@@ -188,7 +190,7 @@ If you don't want to see automatic output, set `verbose=False`:
 python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(verbose=False); r.platform_goto_height(800)"
 ```
 
-## 10. Common Command Aliases
+## 11. Common Command Aliases
 
 You can add the following aliases to `~/.bashrc`:
 
@@ -203,6 +205,8 @@ alias robot_down='cd /home/robot/Desktop/robot_dc_test && python3 -c "from scrip
 alias robot_stop='cd /home/robot/Desktop/robot_dc_test && python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.platform_stop()"'
 
 alias robot_reset='cd /home/robot/Desktop/robot_dc_test && python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.emergency_reset()"'
+
+alias robot_tare='cd /home/robot/Desktop/robot_dc_test && python3 -c "from scripts.courier_robot import CourierRobot; r=CourierRobot(); r.tare_both_force_sensors()"'
 ```
 
 Then execute:
@@ -217,9 +221,10 @@ robot_up              # Platform up
 robot_down            # Platform down
 robot_stop            # Platform stop
 robot_reset           # Emergency reset
+robot_tare            # Tare both force sensors
 ```
 
-## 11. Interactive Python Usage
+## 12. Interactive Python Usage
 
 If you need multiple operations, it's recommended to enter Python interactive mode:
 

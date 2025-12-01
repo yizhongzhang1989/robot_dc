@@ -104,9 +104,8 @@ class LiftRobotNodeAction(Node):
         self.last_goto_direction = None   # 'up' or 'down'
         self.last_goto_timestamp = None   # Unix timestamp
         
-        # Stop request flag (for StopMovement to signal active Action)
+        # Stop request flag - set by StopMovement, checked by all Actions
         self.stop_requested = False
-        self.stop_target = None  # 'platform' or 'pushrod'
         
         # Pushrod Stall Detection state
         self.pushrod_stall_reference_height = None  # Reference height for stall detection
@@ -186,16 +185,16 @@ class LiftRobotNodeAction(Node):
         except Exception as e:
             self.get_logger().warn(f"Could not load force sensor topics from config: {e}")
         
-        from std_msgs.msg import Float32
+        # Subscribe to force sensor topics (String type with JSON data)
         self.force_subscription = self.create_subscription(
-            Float32,
+            String,
             force_topic_right,
             self._force_sensor_callback,
             10
         )
         
         self.force_subscription_2 = self.create_subscription(
-            Float32,
+            String,
             force_topic_left,
             self._force_sensor_2_callback,
             10
@@ -668,20 +667,28 @@ class LiftRobotNodeAction(Node):
             pass
     
     def _force_sensor_callback(self, msg):
-        """Force sensor 1 (right) callback"""
+        """Force sensor 1 (right) callback - now receives JSON String"""
         try:
-            with self.state_lock:
-                self.current_force_right = msg.data
-                self._update_force_combined()
+            import json
+            data = json.loads(msg.data)
+            force_value = data.get('force')
+            if force_value is not None:
+                with self.state_lock:
+                    self.current_force_right = float(force_value)
+                    self._update_force_combined()
         except Exception as e:
             self.get_logger().warn(f"Force right parse error: {e}")
     
     def _force_sensor_2_callback(self, msg):
-        """Force sensor 2 (left) callback"""
+        """Force sensor 2 (left) callback - now receives JSON String"""
         try:
-            with self.state_lock:
-                self.current_force_left = msg.data
-                self._update_force_combined()
+            import json
+            data = json.loads(msg.data)
+            force_value = data.get('force')
+            if force_value is not None:
+                with self.state_lock:
+                    self.current_force_left = float(force_value)
+                    self._update_force_combined()
         except Exception as e:
             self.get_logger().warn(f"Force left parse error: {e}")
     
@@ -943,8 +950,22 @@ class LiftRobotNodeAction(Node):
         - Different type Actions are rejected if another Action is running
         - Range scan blocks all Actions EXCEPT StopMovement
         """
+        # Determine incoming action type FIRST
+        # CRITICAL: Check more specific conditions FIRST (target_height+target_force before direction)
+        incoming_type = None
+        if hasattr(goal_request, 'target_height') and hasattr(goal_request, 'target_force'):  # HybridControl
+            incoming_type = 'hybrid_control'
+        elif hasattr(goal_request, 'target_force'):  # ForceControl (also has direction)
+            incoming_type = 'force_control'
+        elif hasattr(goal_request, 'target_height'):  # GotoHeight
+            incoming_type = 'goto_height'
+        elif hasattr(goal_request, 'direction'):  # ManualMove (has target + direction)
+            incoming_type = 'manual_move'
+        elif hasattr(goal_request, 'target'):  # StopMovement (ONLY has target, no other fields)
+            incoming_type = 'stop_movement'
+        
         # CRITICAL: StopMovement has highest priority - check FIRST
-        if hasattr(goal_request, 'target'):  # StopMovement (special case - not a real Action)
+        if incoming_type == 'stop_movement':
             # StopMovement bypasses ALL checks (range_scan, mutual exclusion, etc.)
             self.get_logger().info("[Action] Accepting StopMovement - bypassing all checks")
             return GoalResponse.ACCEPT
@@ -954,36 +975,23 @@ class LiftRobotNodeAction(Node):
             self.get_logger().warn("[Action] Rejecting goal - range scan is active")
             return GoalResponse.REJECT
         
-        # Accept all goals - Actions will abort in execute loop if emergency_reset is active
-        # Determine incoming action type
-        # CRITICAL: Check more specific conditions FIRST (target_height+target_force before direction)
-        incoming_type = None
-        if hasattr(goal_request, 'target_height') and hasattr(goal_request, 'target_force'):  # HybridControl
-            incoming_type = 'hybrid_control'
-        elif hasattr(goal_request, 'target_force'):  # ForceControl (also has direction)
-            incoming_type = 'force_control'
-        elif hasattr(goal_request, 'target_height'):  # GotoHeight
-            incoming_type = 'goto_height'
-        elif hasattr(goal_request, 'direction'):  # ManualMove (only direction, no target_*)
-            incoming_type = 'manual_move'
-        
         with self.action_lock:
             # If no active Action, accept
             if self.active_goal_handle is None:
                 self.get_logger().info(f"[Action] Accepting {incoming_type} - no active Action")
                 return GoalResponse.ACCEPT
             
-            # If same type Action, allow interruption
-            # Cancel old Action to trigger graceful exit (is_cancel_requested)
-            if self.active_action_type == incoming_type:
+            # ONLY manual_move can interrupt manual_move (for jog control)
+            # All other Actions (including same-type) cannot interrupt each other
+            if self.active_action_type == 'manual_move' and incoming_type == 'manual_move':
                 self.get_logger().info(
-                    f"[Action] Accepting {incoming_type} - cancelling previous {self.active_action_type}"
+                    f"[Action] Accepting manual_move - new direction will abort old manual_move"
                 )
-                # Request cancel on old Action - it will detect is_cancel_requested and exit
-                self.active_goal_handle.cancel()
+                # Don't cancel here - let the new ManualMove's direction change trigger old one to exit
+                # Old ManualMove will detect direction mismatch in its loop and abort
                 return GoalResponse.ACCEPT
             
-            # Different type Action while another is running - reject
+            # Any Action (including same type) while another is running - reject
             self.get_logger().warn(
                 f"[Action] Rejecting {incoming_type} - {self.active_action_type} is currently running"
             )
@@ -1297,7 +1305,30 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # Check for cancellation
+                # Check for stop request from StopMovement
+                stop_req = False
+                with self.state_lock:
+                    stop_req = self.stop_requested
+                
+                if stop_req:
+                    self.get_logger().info(f"[GotoHeight] Stop requested - exiting gracefully")
+                    # Stop command already sent by StopMovement, just exit
+                    result = GotoHeight.Result()
+                    result.success = False
+                    result.final_height = current_height
+                    result.execution_time = time.time() - start_time
+                    result.completion_reason = 'stopped_by_stop_movement'
+                    
+                    with self.state_lock:
+                        self.task_state = 'completed'
+                        self.task_end_time = time.time()
+                        self.completion_reason = 'stopped'
+                        self.stop_requested = False  # Clear flag
+                    
+                    goal_handle.abort()
+                    return result
+                
+                # Check for cancellation (triggered by StopMovement or manual cancel)
                 if goal_handle.is_cancel_requested:
                     # Send stop command based on target (retry until accepted)
                     accepted = False
@@ -1687,6 +1718,29 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
+                # Check for stop request from StopMovement
+                stop_req = False
+                with self.state_lock:
+                    stop_req = self.stop_requested
+                
+                if stop_req:
+                    self.get_logger().info(f"[ForceControl] Stop requested - exiting gracefully")
+                    # Stop command already sent by StopMovement, just exit
+                    result = ForceControl.Result()
+                    result.success = False
+                    result.final_force = self.current_force_combined or 0.0
+                    result.execution_time = time.time() - start_time
+                    result.completion_reason = 'stopped_by_stop_movement'
+                    
+                    with self.state_lock:
+                        self.task_state = 'completed'
+                        self.task_end_time = time.time()
+                        self.completion_reason = 'stopped'
+                        self.stop_requested = False  # Clear flag
+                    
+                    goal_handle.abort()
+                    return result
+                
                 # Check for cancellation
                 if goal_handle.is_cancel_requested:
                     # Send stop with retry
@@ -1902,6 +1956,30 @@ class LiftRobotNodeAction(Node):
                     result.final_force = self.current_force_combined or 0.0
                     result.execution_time = time.time() - start_time
                     result.completion_reason = 'emergency_reset'
+                    
+                    goal_handle.abort()
+                    return result
+                
+                # Check for stop request from StopMovement
+                stop_req = False
+                with self.state_lock:
+                    stop_req = self.stop_requested
+                
+                if stop_req:
+                    self.get_logger().info(f"[HybridControl] Stop requested - exiting gracefully")
+                    # Stop command already sent by StopMovement, just exit
+                    result = HybridControl.Result()
+                    result.success = False
+                    result.final_height = self.current_height
+                    result.final_force = self.current_force_combined or 0.0
+                    result.execution_time = time.time() - start_time
+                    result.completion_reason = 'stopped_by_stop_movement'
+                    
+                    with self.state_lock:
+                        self.task_state = 'completed'
+                        self.task_end_time = time.time()
+                        self.completion_reason = 'stopped'
+                        self.stop_requested = False  # Clear flag
                     
                     goal_handle.abort()
                     return result
@@ -2161,21 +2239,24 @@ class LiftRobotNodeAction(Node):
                 )
                 return result
             
-            # Stop flash accepted - now signal active Action to exit
+            # Stop flash accepted - now cancel active Action if exists
             active_action = None
+            active_goal = None
             with self.action_lock:
-                if self.active_action_type:
+                if self.active_action_type and self.active_goal_handle:
                     active_action = self.active_action_type
-                    # Set stop flag for active Action to detect
-                    self.stop_requested = True
-                    self.stop_target = target
+                    active_goal = self.active_goal_handle
             
-            if active_action:
+            if active_action and active_goal:
                 result.stopped_action = active_action
                 self.get_logger().info(f"[STOP] Stop flash accepted, requesting {active_action} to exit")
                 
-                # Wait for active Action to detect stop_requested and exit
-                max_wait = 6.0  # 6 seconds max
+                # Set stop_requested flag - Action will detect and exit gracefully
+                with self.action_lock:
+                    self.stop_requested = True
+                
+                # Wait for active Action to detect flag and exit
+                max_wait = 3.0  # 3 seconds max (Action checks at 50Hz)
                 wait_start = time.time()
                 action_exited = False
                 
@@ -2336,17 +2417,38 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # PRIORITY 1: Check stop request (from StopMovement)
-                if self.stop_requested and (self.stop_target == target or self.stop_target is None):
-                    self.get_logger().info(f"ManualMove({target}/{direction}) received stop request")
+                # Check for stop request from StopMovement
+                stop_req = False
+                with self.state_lock:
+                    stop_req = self.stop_requested
+                
+                if stop_req:
+                    self.get_logger().info(f"[ManualMove] Stop requested - exiting gracefully")
+                    # Stop command already sent by StopMovement, just exit
+                    result = ManualMove.Result()
+                    result.success = False
+                    result.final_height = self.current_height
+                    result.execution_time = time.time() - start_time
+                    result.completion_reason = 'stopped_by_stop_movement'
                     
-                    # NOTE: Stop flash already sent by StopMovement, we just need to exit
+                    with self.state_lock:
+                        self.task_state = 'completed'
+                        self.task_end_time = time.time()
+                        self.completion_reason = 'stopped'
+                        if self.current_manual_move_direction == direction:
+                            self.current_manual_move_direction = None
+                        self.stop_requested = False  # Clear flag
+                    
+                    goal_handle.abort()
+                    return result
+                
+                # Check for cancellation (triggered by StopMovement via cancel_goal_async)
+                if goal_handle.is_cancel_requested:
+                    self.get_logger().info(f"ManualMove({target}/{direction}) received cancel/stop request")
+                    
+                    # NOTE: Stop flash already sent by StopMovement, we just need to wait and exit
                     # Wait for stop flash to complete
                     stop_success = self._wait_for_stop_complete(target, timeout=5.0)
-                    
-                    # Clear stop request flag
-                    self.stop_requested = False
-                    self.stop_target = None
                     
                     # Update task state
                     with self.state_lock:

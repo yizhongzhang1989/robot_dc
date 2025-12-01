@@ -205,7 +205,7 @@ class LiftRobotController(ModbusDevice):
         """
         relay_name = self._get_relay_name(relay_address)
         actual_delay_ms = interval_100ms * 100
-        self.node.get_logger().info(
+        self.node.get_logger().debug(
             f"[SEQ {seq_id}] Flash-open command: {relay_name} (interval={interval_100ms}, delay={actual_delay_ms}ms)"
         )
         
@@ -285,7 +285,7 @@ class LiftRobotController(ModbusDevice):
             }
         
         relay_name = self._get_relay_name(relay_address)
-        self.node.get_logger().info(f"[SEQ {seq_id}] Flash start: {relay_name} (simplified mode)")
+        self.node.get_logger().debug(f"[SEQ {seq_id}] Flash start: {relay_name} (simplified mode)")
         
         # Schedule the flash sequence
         threading.Thread(target=self._execute_simple_flash, args=(relay_address, seq_id, relay_name), daemon=True).start()
@@ -300,7 +300,7 @@ class LiftRobotController(ModbusDevice):
         start_time = time.time()
         
         # All relays use hardware flash-open (200ms)
-        self.node.get_logger().info(f"[SEQ {seq_id}] {relay_name} hardware flash-open (200ms)")
+        self.node.get_logger().debug(f"[SEQ {seq_id}] {relay_name} hardware flash-open (200ms)")
         try:
             self.flash_open_relay(relay_address, interval_100ms=2, seq_id=seq_id)
           
@@ -309,7 +309,7 @@ class LiftRobotController(ModbusDevice):
         
         #Assume complete (always execute callback regardless of errors)
         total_ms = (time.time() - start_time) * 1000
-        self.node.get_logger().info(f"[SEQ {seq_id}] ✅ Flash complete: {relay_name} ({total_ms:.1f}ms)")
+        self.node.get_logger().debug(f"[SEQ {seq_id}] ✅ Flash complete: {relay_name} ({total_ms:.1f}ms)")
         
         # Notify success
         if hasattr(self, 'on_flash_complete_callback') and self.on_flash_complete_callback:

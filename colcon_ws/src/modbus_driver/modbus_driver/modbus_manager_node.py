@@ -143,7 +143,7 @@ class ModbusManagerNode(Node):
             
             # Log command to send
             command_hex = ' '.join([f'{b:02X}' for b in full_command])
-            self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Sending raw Modbus command: {command_hex}")
+            self.get_logger().debug(f"[SEQ {seq_id}] [{now_str}] Sending raw Modbus command: {command_hex}")
             
             # Record send time
             start_time = time.time()
@@ -157,14 +157,14 @@ class ModbusManagerNode(Node):
                 response_time_ms = (time.time() - start_time) * 1000
                 if response_bytes and len(response_bytes) > 0:
                     response_hex = ' '.join([f'{b:02X}' for b in response_bytes])
-                    self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Received response: {response_hex} ({response_time_ms:.2f}ms)")
+                    self.get_logger().debug(f"[SEQ {seq_id}] [{now_str}] Received response: {response_hex} ({response_time_ms:.2f}ms)")
                 else:
                     self.get_logger().warn(f"[SEQ {seq_id}] [{now_str}] No response received from device ({response_time_ms:.2f}ms)")
             except Exception as read_error:
                 response_time_ms = (time.time() - start_time) * 1000
                 self.get_logger().warn(f"[SEQ {seq_id}] [{now_str}] Failed to read response: {read_error} ({response_time_ms:.2f}ms)")
             
-            self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Raw Modbus command sent successfully")
+            self.get_logger().debug(f"[SEQ {seq_id}] [{now_str}] Raw Modbus command sent successfully")
             return True, full_command, response_time_ms
             
         except Exception as e:
@@ -198,7 +198,7 @@ class ModbusManagerNode(Node):
         
         # Check if this is a raw Modbus command (non-standard protocol)
         if request.raw_message and len(request.raw_message) > 0:
-            self.get_logger().info(f"[SEQ {seq_id}] [{now_str}] Detected raw_message, using custom handler")
+            self.get_logger().debug(f"[SEQ {seq_id}] [{now_str}] Detected raw_message, using custom handler")
             log_entry['raw_message'] = list(request.raw_message)
             with self.lock:
                 success, response_data, response_time_ms = self.handle_raw_modbus_command(

@@ -89,14 +89,64 @@ class CourierRobot:
                         'right_force': sensor_data.get('right_force_sensor'),
                         'left_force': sensor_data.get('left_force_sensor'),
                         'combined_force': sensor_data.get('combined_force_sensor'),
-                        'freq_hz': sensor_data.get('freq_hz')
+                        'freq_hz': sensor_data.get('freq_hz'),
+                        'right_force_freq_hz': sensor_data.get('right_force_freq_hz'),
+                        'left_force_freq_hz': sensor_data.get('left_force_freq_hz')
                     }
                 else:
                     result['sensors'] = {}
                 
+                # Print friendly status if verbose
+                if self.verbose:
+                    print("\n" + "="*60)
+                    print("📊 SYSTEM STATUS")
+                    print("="*60)
+                    
+                    # Platform status
+                    if 'platform' in result['data']:
+                        pf = result['data']['platform']
+                        print(f"\n🏗️  Platform:")
+                        print(f"   Task State: {pf.get('task_state', 'N/A')}")
+                        print(f"   Movement: {pf.get('movement_state', 'N/A')}")
+                        print(f"   Control Mode: {pf.get('control_mode', 'N/A')}")
+                        if pf.get('current_height') is not None:
+                            print(f"   Current Height: {pf['current_height']:.2f} mm")
+                        if pf.get('target_height') is not None:
+                            print(f"   Target Height: {pf['target_height']:.2f} mm")
+                    
+                    # Pushrod status
+                    if 'pushrod' in result['data']:
+                        pr = result['data']['pushrod']
+                        print(f"\n🔧 Pushrod:")
+                        print(f"   Task State: {pr.get('task_state', 'N/A')}")
+                        print(f"   Movement: {pr.get('movement_state', 'N/A')}")
+                        if pr.get('current_height') is not None:
+                            print(f"   Current Height: {pr['current_height']:.2f} mm")
+                    
+                    # Sensor data
+                    if result['sensors']:
+                        s = result['sensors']
+                        print(f"\n📡 Sensors:")
+                        if s.get('height') is not None:
+                            print(f"   Height: {s['height']:.2f} mm")
+                        if s.get('right_force') is not None:
+                            freq_r = s.get('right_force_freq_hz', 0)
+                            print(f"   Right Force: {s['right_force']:.2f} N ({freq_r:.1f} Hz)")
+                        if s.get('left_force') is not None:
+                            freq_l = s.get('left_force_freq_hz', 0)
+                            print(f"   Left Force: {s['left_force']:.2f} N ({freq_l:.1f} Hz)")
+                        if s.get('combined_force') is not None:
+                            print(f"   Combined Force: {s['combined_force']:.2f} N")
+                        if s.get('freq_hz') is not None:
+                            print(f"   Height Sensor Freq: {s['freq_hz']:.1f} Hz")
+                    
+                    print("="*60 + "\n")
+                
                 return result
             return {"success": False, "error": f"HTTP {status_response.status_code}"}
         except Exception as e:
+            if self.verbose:
+                print(f"❌ Failed to get status: {e}")
             return {"success": False, "error": str(e)}
     
     def get_sensor_data(self):
@@ -110,9 +160,30 @@ class CourierRobot:
             url = f"{self.base_url}/api/latest"
             response = requests.get(url, timeout=2)
             if response.status_code == 200:
-                return {"success": True, "data": response.json()}
+                result = {"success": True, "data": response.json()}
+                
+                # Print friendly sensor data if verbose
+                if self.verbose:
+                    data = result['data']
+                    print("\n📡 Sensor Data:")
+                    if data.get('height') is not None:
+                        print(f"   Height: {data['height']:.2f} mm")
+                    if data.get('right_force_sensor') is not None:
+                        freq_r = data.get('right_force_freq_hz', 0)
+                        print(f"   Right Force: {data['right_force_sensor']:.2f} N ({freq_r:.1f} Hz)")
+                    if data.get('left_force_sensor') is not None:
+                        freq_l = data.get('left_force_freq_hz', 0)
+                        print(f"   Left Force: {data['left_force_sensor']:.2f} N ({freq_l:.1f} Hz)")
+                    if data.get('combined_force_sensor') is not None:
+                        print(f"   Combined Force: {data['combined_force_sensor']:.2f} N")
+                    if data.get('freq_hz') is not None:
+                        print(f"   Height Sensor Freq: {data['freq_hz']:.1f} Hz\n")
+                
+                return result
             return {"success": False, "error": f"HTTP {response.status_code}"}
         except Exception as e:
+            if self.verbose:
+                print(f"❌ Failed to get sensor data: {e}")
             return {"success": False, "error": str(e)}
     
     # ==================== Platform Manual Control ====================
@@ -129,6 +200,8 @@ class CourierRobot:
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Platform is busy (state: {platform_state})',
@@ -162,6 +235,8 @@ class CourierRobot:
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Platform is busy (state: {platform_state})',
@@ -220,6 +295,8 @@ class CourierRobot:
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Platform is busy (state: {platform_state})',
@@ -258,6 +335,8 @@ class CourierRobot:
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Platform is busy (state: {platform_state})',
@@ -294,6 +373,8 @@ class CourierRobot:
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Platform is busy (state: {platform_state})',
@@ -333,6 +414,8 @@ class CourierRobot:
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Platform is busy (state: {platform_state})',
@@ -369,6 +452,8 @@ class CourierRobot:
         if status.get('success'):
             pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
             if pushrod_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Pushrod is busy (state: {pushrod_state})',
@@ -402,6 +487,8 @@ class CourierRobot:
         if status.get('success'):
             pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
             if pushrod_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Pushrod is busy (state: {pushrod_state})',
@@ -461,6 +548,8 @@ class CourierRobot:
         if status.get('success'):
             pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
             if pushrod_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
                 return {
                     'success': False,
                     'error': f'Pushrod is busy (state: {pushrod_state})',
@@ -526,42 +615,85 @@ class CourierRobot:
         if self.verbose:
             print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
         
-        while time.time() - start_time < timeout:
-            status_result = self.get_status()
-            
-            if status_result['success'] and target in status_result['data']:
-                task_state = status_result['data'][target].get('task_state', 'unknown')
-                
-                if task_state == 'completed':
-                    reason = status_result['data'][target].get('completion_reason', 'unknown')
-                    duration = status_result['data'][target].get('task_duration', 0)
-                    if self.verbose:
-                        print(f"✅ Task completed: {reason} (duration: {duration:.2f}s)")
-                    return {
-                        "success": True,
-                        "task_state": task_state,
-                        "completion_reason": reason,
-                        "duration": duration
-                    }
-                elif task_state == 'emergency_stop':
-                    reason = status_result['data'][target].get('completion_reason', 'unknown')
-                    if self.verbose:
-                        print(f"🚨 EMERGENCY STOP: {reason}")
-                    return {
-                        "success": False,
-                        "task_state": task_state,
-                        "error": f"Emergency stop: {reason}"
-                    }
-            
-            time.sleep(poll_interval)
+        # Temporarily disable verbose to avoid spamming status output during polling
+        original_verbose = self.verbose
+        self.verbose = False
         
-        # Timeout
-        if self.verbose:
-            print(f"⏱️  Timeout after {timeout}s")
-        return {
-            "success": False,
-            "error": f"Timeout after {timeout}s"
-        }
+        try:
+            # First, wait for task to start (state changes from idle/completed to running/executing)
+            task_started = False
+            initial_wait_timeout = 5.0  # Wait up to 5 seconds for task to start
+            
+            while time.time() - start_time < initial_wait_timeout:
+                status_result = self.get_status()
+                if status_result['success'] and target in status_result['data']:
+                    task_state = status_result['data'][target].get('task_state', 'unknown')
+                    if task_state in ['running', 'executing']:
+                        task_started = True
+                        if original_verbose:
+                            print(f"🔄 Task started, waiting for completion...")
+                        break
+                time.sleep(poll_interval)
+            
+            if not task_started and original_verbose:
+                print(f"⚠️  Task did not start within {initial_wait_timeout}s, checking if already completed...")
+            
+            # Now wait for completion
+            while time.time() - start_time < timeout:
+                status_result = self.get_status()
+                
+                if status_result['success'] and target in status_result['data']:
+                    task_state = status_result['data'][target].get('task_state', 'unknown')
+                    
+                    if task_state == 'completed':
+                        reason = status_result['data'][target].get('completion_reason', 'unknown')
+                        duration = status_result['data'][target].get('task_duration', 0)
+                        if original_verbose:
+                            duration_str = f"{duration:.2f}s" if duration is not None else "N/A"
+                            print(f"✅ Task completed: {reason} (duration: {duration_str})")
+                        
+                        # Restore verbose and get final status with full output
+                        self.verbose = original_verbose
+                        final_status = self.get_status()
+                        
+                        return {
+                            "success": True,
+                            "task_state": task_state,
+                            "completion_reason": reason,
+                            "duration": duration,
+                            "final_status": final_status
+                        }
+                    elif task_state == 'emergency_stop':
+                        reason = status_result['data'][target].get('completion_reason', 'unknown')
+                        if original_verbose:
+                            print(f"🚨 EMERGENCY STOP: {reason}")
+                        
+                        # Restore verbose and get final status with full output
+                        self.verbose = original_verbose
+                        final_status = self.get_status()
+                        
+                        return {
+                            "success": False,
+                            "task_state": task_state,
+                            "error": f"Emergency stop: {reason}",
+                            "final_status": final_status
+                        }
+                
+                time.sleep(poll_interval)
+            
+            # Timeout - restore verbose and get final status
+            self.verbose = original_verbose
+            if original_verbose:
+                print(f"⏱️  Timeout after {timeout}s")
+                self.get_status()  # Print final status on timeout
+            
+            return {
+                "success": False,
+                "error": f"Timeout after {timeout}s"
+            }
+        finally:
+            # Ensure verbose is always restored
+            self.verbose = original_verbose
 
 
 if __name__ == "__main__":
@@ -602,6 +734,9 @@ if __name__ == "__main__":
     print("  Manual: pushrod_up(), pushrod_down(), pushrod_stop()")
     print("  Height: pushrod_goto_height(target_height, mode='absolute')")
     print("          mode can be 'absolute' or 'relative'")
+    print("\n⚖️  Force Sensor Calibration:")
+    print("  - robot.tare_force_sensor(channel='right')  # channel: 'right' or 'left'")
+    print("  - robot.tare_both_force_sensors()           # Tare both sensors")
     print("\n🚨 Emergency:")
     print("  - robot.emergency_reset()")
     print("\n⏳ Wait for completion:")
