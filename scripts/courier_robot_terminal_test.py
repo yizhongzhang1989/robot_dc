@@ -4,7 +4,7 @@ Courier Robot Terminal Test Interface
 Provides interactive command-line interface for testing robot control
 """
 
-from courier_robot import CourierRobotWebAPI
+from courier_robot_webapi import CourierRobotWebAPI
 
 
 def interactive_mode(robot):
