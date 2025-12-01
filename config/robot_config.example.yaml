@@ -209,7 +209,17 @@ lift_robot:
     device_id: 50             # Modbus slave ID for platform controller
     calibration_file: "platform_overshoot_calibration.json"  # Overshoot calibration config in colcon_ws/config/
     range_file: "platform_range.json"  # Platform range limits config in colcon_ws/config/
+    max_force_limit: 500.0    # Maximum allowable combined force (N) before emergency stop (CRITICAL SAFETY PARAMETER)
     launch_delay: 3.0         # Launch delay after system start (seconds, allows modbus driver to initialize)
+    
+    # Control Action Timeouts (seconds) - Max execution time for each control mode
+    # If action exceeds timeout, it will abort with 'timeout' completion_reason
+    # Set to 0 or negative to disable timeout for that action
+    timeouts:
+      goto_height: 300.0       # GotoHeight action timeout (default: 60s, typical movement takes 5-20s)
+      force_control: 300.0     # ForceControl action timeout (default: 60s, force ramp takes 10-30s)
+      hybrid_control: 300.0    # HybridControl action timeout (default: 60s, combined control)
+      manual_move: 300.0      # ManualMove action timeout (default: 300s, longer for manual operation)
   
   # Draw Wire Sensor Node Configuration
   draw_wire_sensor:

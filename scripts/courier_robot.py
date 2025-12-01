@@ -127,7 +127,7 @@ class CourierRobotWebAPI:
     
     def get_status(self):
         """
-        Public API: Get current system status with optional verbose printing
+        Public API: Get current system status (pure data retrieval, no printing)
         
         Returns:
             dict with simplified status for external API users:
@@ -137,55 +137,6 @@ class CourierRobotWebAPI:
             - sensors: {height, forces, frequencies}
         """
         result = self._get_status()
-        
-        # Print friendly status if verbose
-        if self.verbose and result.get('success'):
-            # Use full data for printing if available
-            data_to_print = result.get('_full_data', {})
-            
-            print("\n" + "="*60)
-            print("📊 SYSTEM STATUS")
-            print("="*60)
-            
-            # Platform status
-            if 'platform' in data_to_print:
-                pf = data_to_print['platform']
-                print(f"\n🏗️  Platform:")
-                print(f"   Task State: {pf.get('task_state', 'N/A')}")
-                print(f"   Movement: {pf.get('movement_state', 'N/A')}")
-                print(f"   Control Mode: {pf.get('control_mode', 'N/A')}")
-                if pf.get('current_height') is not None:
-                    print(f"   Current Height: {pf['current_height']:.2f} mm")
-                if pf.get('target_height') is not None:
-                    print(f"   Target Height: {pf['target_height']:.2f} mm")
-            
-            # Pushrod status
-            if 'pushrod' in data_to_print:
-                pr = data_to_print['pushrod']
-                print(f"\n🔧 Pushrod:")
-                print(f"   Task State: {pr.get('task_state', 'N/A')}")
-                print(f"   Movement: {pr.get('movement_state', 'N/A')}")
-                if pr.get('current_height') is not None:
-                    print(f"   Current Height: {pr['current_height']:.2f} mm")
-            
-            # Sensor data
-            if result.get('sensors'):
-                s = result['sensors']
-                print(f"\n📡 Sensors:")
-                if s.get('height') is not None:
-                    print(f"   Height: {s['height']:.2f} mm")
-                if s.get('right_force') is not None:
-                    freq_r = s.get('right_force_freq_hz', 0)
-                    print(f"   Right Force: {s['right_force']:.2f} N ({freq_r:.1f} Hz)")
-                if s.get('left_force') is not None:
-                    freq_l = s.get('left_force_freq_hz', 0)
-                    print(f"   Left Force: {s['left_force']:.2f} N ({freq_l:.1f} Hz)")
-                if s.get('combined_force') is not None:
-                    print(f"   Combined Force: {s['combined_force']:.2f} N")
-                if s.get('freq_hz') is not None:
-                    print(f"   Height Sensor Freq: {s['freq_hz']:.1f} Hz")
-            
-            print("="*60 + "\n")
         
         # Remove _full_data from public API response
         if '_full_data' in result:
@@ -323,7 +274,7 @@ class CourierRobotWebAPI:
     
     # ==================== Platform Height Control ====================
     
-    def platform_goto_height(self, target_height, wait=True, timeout=60):
+    def platform_goto_height(self, target_height, wait=True, timeout=300):
         """
         Platform goto specific height (BLOCKING by default)
         
@@ -331,7 +282,7 @@ class CourierRobotWebAPI:
             target_height: Target height in mm
             wait: If True, wait for completion before returning (default: True)
                   If False (non-blocking), will auto-stop previous task if running
-            timeout: Maximum wait time in seconds (default: 60)
+            timeout: Maximum wait time in seconds (default: 300)
             
             Returns:
             dict with success status and complete state
@@ -389,7 +340,7 @@ class CourierRobotWebAPI:
     
     # ==================== Platform Force Control ====================
     
-    def platform_force_up(self, target_force, wait=True, timeout=60):
+    def platform_force_up(self, target_force, wait=True, timeout=300):
         """
         Platform force-controlled up movement (BLOCKING by default)
         
@@ -397,7 +348,7 @@ class CourierRobotWebAPI:
             target_force: Target force in Newtons
             wait: If True, wait for completion before returning (default: True)
                   If False (non-blocking), will auto-stop previous task if running
-            timeout: Maximum wait time in seconds (default: 60)
+            timeout: Maximum wait time in seconds (default: 300)
             
         Returns:
             dict with success status and complete state
@@ -451,7 +402,7 @@ class CourierRobotWebAPI:
                 print(f"✅ Force UP command sent (non-blocking)")
             return result
     
-    def platform_force_down(self, target_force, wait=True, timeout=60):
+    def platform_force_down(self, target_force, wait=True, timeout=300):
         """
         Platform force-controlled down movement (BLOCKING by default)
         
@@ -459,7 +410,7 @@ class CourierRobotWebAPI:
             target_force: Target force in Newtons
             wait: If True, wait for completion before returning (default: True)
                   If False (non-blocking), will auto-stop previous task if running
-            timeout: Maximum wait time in seconds (default: 60)
+            timeout: Maximum wait time in seconds (default: 300)
             
         Returns:
             dict with success status and complete state
@@ -515,7 +466,7 @@ class CourierRobotWebAPI:
     
     # ==================== Platform Hybrid Control ====================
     
-    def platform_hybrid_control(self, target_height, target_force, wait=True, timeout=60):
+    def platform_hybrid_control(self, target_height, target_force, wait=True, timeout=300):
         """
         Platform hybrid control (height OR force, whichever reached first) (BLOCKING by default)
         
@@ -524,7 +475,7 @@ class CourierRobotWebAPI:
             target_force: Target force in Newtons
             wait: If True, wait for completion before returning (default: True)
                   If False (non-blocking), will auto-stop previous task if running
-            timeout: Maximum wait time in seconds (default: 60)
+            timeout: Maximum wait time in seconds (default: 300)
             
         Returns:
             dict with success status and complete state
@@ -672,7 +623,7 @@ class CourierRobotWebAPI:
     
     # ==================== Pushrod Height Control ====================
     
-    def pushrod_goto_height(self, target_height, mode='absolute', wait=True, timeout=60):
+    def pushrod_goto_height(self, target_height, mode='absolute', wait=True, timeout=300):
         """
         Pushrod goto specific height (BLOCKING by default)
         
@@ -681,7 +632,7 @@ class CourierRobotWebAPI:
             mode: 'absolute' or 'relative' (default: 'absolute')
             wait: If True, wait for completion before returning (default: True)
                   If False (non-blocking), will auto-stop previous task if running
-            timeout: Maximum wait time in seconds (default: 60)
+            timeout: Maximum wait time in seconds (default: 300)
             
         Returns:
             dict with success status and complete state
@@ -815,7 +766,7 @@ class CourierRobotWebAPI:
             return True
     
     
-    def _wait_for_completion(self, target='platform', timeout=60, poll_interval=0.1):
+    def _wait_for_completion(self, target='platform', timeout=300, poll_interval=0.1):
         """
         Internal method: Wait for platform or pushrod task to complete
         
