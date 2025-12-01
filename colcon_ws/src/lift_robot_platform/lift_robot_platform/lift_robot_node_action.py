@@ -715,21 +715,38 @@ class LiftRobotNodeAction(Node):
         NOTE: No lock needed - string assignment is atomic in Python (GIL protection)
         and these are simple state updates that don't require consistency with other variables.
         """
-        relay_name = {0: 'STOP', 1: 'UP', 2: 'DOWN'}.get(relay, f'Relay{relay}')
+        relay_name = {
+            0: 'PLATFORM_STOP', 1: 'PLATFORM_UP', 2: 'PLATFORM_DOWN',
+            3: 'PUSHROD_STOP', 4: 'PUSHROD_DOWN', 5: 'PUSHROD_UP'
+        }.get(relay, f'Relay{relay}')
         
         # Atomic updates - no lock needed (Python GIL ensures atomicity)
-        if relay == 0:  # STOP
+        # Platform relays (0, 1, 2)
+        if relay == 0:  # PLATFORM STOP
             self.movement_state = 'stop'
             self.movement_command_sent = False
-            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: STOP → movement_state='stop'")
-        elif relay == 1:  # UP
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: PLATFORM_STOP → movement_state='stop'")
+        elif relay == 1:  # PLATFORM UP
             self.movement_state = 'up'
             self.movement_command_sent = False
-            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: UP → movement_state='up'")
-        elif relay == 2:  # DOWN
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: PLATFORM_UP → movement_state='up'")
+        elif relay == 2:  # PLATFORM DOWN
             self.movement_state = 'down'
             self.movement_command_sent = False
-            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: DOWN → movement_state='down'")
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: PLATFORM_DOWN → movement_state='down'")
+        # Pushrod relays (3, 4, 5)
+        elif relay == 3:  # PUSHROD STOP
+            self.movement_state = 'stop'
+            self.movement_command_sent = False
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: PUSHROD_STOP → movement_state='stop'")
+        elif relay == 4:  # PUSHROD DOWN
+            self.movement_state = 'down'
+            self.movement_command_sent = False
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: PUSHROD_DOWN → movement_state='down'")
+        elif relay == 5:  # PUSHROD UP
+            self.movement_state = 'up'
+            self.movement_command_sent = False
+            self.get_logger().debug(f"[SEQ {seq_id}] Flash complete: PUSHROD_UP → movement_state='up'")
     
     # ═══════════════════════════════════════════════════════════════
     # Status Publishing
@@ -1043,6 +1060,7 @@ class LiftRobotNodeAction(Node):
         self.get_logger().info(f"[WAIT_STOP] Waiting for {target} stop flash to complete (timeout={timeout}s)...")
         
         # Wait for movement_state to become 'stop' (confirmed by flash callback)
+        # Both platform and pushrod update movement_state via _on_flash_complete
         while (time.time() - start_wait) < timeout:
             with self.state_lock:
                 if self.movement_state == 'stop':

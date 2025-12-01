@@ -199,8 +199,7 @@ class LiftRobotWeb(Node):
                         
                         if self.platform_status is not None:
                             merged['platform_status'] = self.platform_status
-                        if self.pushrod_status is not None:
-                            merged['pushrod_status'] = self.pushrod_status
+                        # Note: pushrod shares same status as platform
                         outbound = json.dumps(merged)
                     except Exception as e:
                         self.get_logger().warn(f"Sensor data merge error: {e}")
@@ -377,11 +376,9 @@ def run_fastapi_server(port):
                     merged['force_sensor_status'] = 'ok'
                     merged['force_stale'] = False
                 
-                # Add platform/pushrod status if available
+                # Add platform status (pushrod shares same status)
                 if lift_robot_node.platform_status is not None:
                     merged['platform_status'] = lift_robot_node.platform_status
-                if lift_robot_node.pushrod_status is not None:
-                    merged['pushrod_status'] = lift_robot_node.pushrod_status
                 
                 return merged
             except Exception as e:
@@ -450,18 +447,20 @@ def run_fastapi_server(port):
                     'range_scan_low_height': lift_robot_node.platform_status.get('range_scan_low_height'),
                     'range_scan_high_height': lift_robot_node.platform_status.get('range_scan_high_height'),
                 }
-            if lift_robot_node.pushrod_status:
+            # Pushrod status: shares same task_state/movement_state as platform
+            # (both controlled by same lift_robot_node, use same state variables)
+            if lift_robot_node.platform_status:
                 response['pushrod'] = {
-                    'task_state': lift_robot_node.pushrod_status.get('task_state', 'unknown'),
-                    'task_type': lift_robot_node.pushrod_status.get('task_type'),
-                    'task_start_time': lift_robot_node.pushrod_status.get('task_start_time'),
-                    'task_end_time': lift_robot_node.pushrod_status.get('task_end_time'),
-                    'task_duration': lift_robot_node.pushrod_status.get('task_duration'),
-                    'completion_reason': lift_robot_node.pushrod_status.get('completion_reason'),
-                    'control_mode': lift_robot_node.pushrod_status.get('control_mode'),
-                    'movement_state': lift_robot_node.pushrod_status.get('movement_state'),
-                    'current_height': lift_robot_node.pushrod_status.get('current_height'),
-                    'target_height': lift_robot_node.pushrod_status.get('target_height'),
+                    'task_state': lift_robot_node.platform_status.get('task_state', 'unknown'),
+                    'task_type': lift_robot_node.platform_status.get('task_type'),
+                    'task_start_time': lift_robot_node.platform_status.get('task_start_time'),
+                    'task_end_time': lift_robot_node.platform_status.get('task_end_time'),
+                    'task_duration': lift_robot_node.platform_status.get('task_duration'),
+                    'completion_reason': lift_robot_node.platform_status.get('completion_reason'),
+                    'control_mode': lift_robot_node.platform_status.get('control_mode'),
+                    'movement_state': lift_robot_node.platform_status.get('movement_state'),
+                    'current_height': lift_robot_node.platform_status.get('current_height'),
+                    'target_height': lift_robot_node.platform_status.get('target_height'),
                 }
             if not response:
                 return JSONResponse({'error': 'no status data available'}, status_code=503)

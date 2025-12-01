@@ -9,7 +9,7 @@ import requests
 import time
 
 
-class CourierRobot:
+class CourierRobotWebAPI:
     """
     Courier robot controller for lift platform and pushrod via HTTP API
     Provides all control functions available in the web interface
@@ -331,9 +331,15 @@ class CourierRobot:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='platform', timeout=timeout)
+            
+            # Print completion message BEFORE final status
             if completion['success'] and self.verbose:
-                duration = completion.get('duration', 0) or 0
-                print(f"✅ Goto {target_height}mm completed ({duration:.2f}s)")
+                print(f"✅ Goto {target_height}mm completed")
+            
+            # Then get and print final status
+            if self.verbose:
+                self.get_status()
+            
             return completion
         else:
             # Non-blocking mode
@@ -393,9 +399,15 @@ class CourierRobot:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='platform', timeout=timeout)
+            
+            # Print completion message BEFORE final status
             if completion['success'] and self.verbose:
-                duration = completion.get('duration', 0) or 0
-                print(f"✅ Force UP {target_force}N completed ({duration:.2f}s)")
+                print(f"✅ Force UP {target_force}N completed")
+            
+            # Then get and print final status
+            if self.verbose:
+                self.get_status()
+            
             return completion
         else:
             final_status = self.get_status()
@@ -452,9 +464,15 @@ class CourierRobot:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='platform', timeout=timeout)
+            
+            # Print completion message BEFORE final status
             if completion['success'] and self.verbose:
-                duration = completion.get('duration', 0) or 0
-                print(f"✅ Force DOWN {target_force}N completed ({duration:.2f}s)")
+                print(f"✅ Force DOWN {target_force}N completed")
+            
+            # Then get and print final status
+            if self.verbose:
+                self.get_status()
+            
             return completion
         else:
             final_status = self.get_status()
@@ -515,9 +533,15 @@ class CourierRobot:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='platform', timeout=timeout)
+            
+            # Print completion message BEFORE final status
             if completion['success'] and self.verbose:
-                duration = completion.get('duration', 0) or 0
-                print(f"✅ Hybrid control completed ({duration:.2f}s)")
+                print(f"✅ Hybrid control completed")
+            
+            # Then get and print final status
+            if self.verbose:
+                self.get_status()
+            
             return completion
         else:
             final_status = self.get_status()
@@ -671,9 +695,15 @@ class CourierRobot:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='pushrod', timeout=timeout)
+            
+            # Print completion message BEFORE final status
             if completion['success'] and self.verbose:
-                duration = completion.get('duration', 0) or 0
-                print(f"✅ Pushrod goto {target_height}mm completed ({duration:.2f}s)")
+                print(f"✅ Pushrod goto {target_height}mm completed")
+            
+            # Then get and print final status
+            if self.verbose:
+                self.get_status()
+            
             return completion
         else:
             final_status = self.get_status()
@@ -707,6 +737,177 @@ class CourierRobot:
         return result
     
     # ==================== Convenience Methods ====================
+    
+    def interactive_mode(self):
+        """
+        Interactive command-line mode for manual control
+        
+        Available commands:
+        
+        Status & Info:
+          status, st        - Show current status
+          sensor, sn        - Show sensor data
+          help, h, ?        - Show this help
+          quit, exit, q     - Exit interactive mode
+        
+        Platform Height Control (Blocking by default):
+          goto <height>     - Go to height (mm), e.g., 'goto 900'
+          g <height>        - Short form of goto
+          goto! <height>    - Non-blocking goto (append ! for non-blocking)
+          g! <height>       - Non-blocking short form
+        
+        Platform Force Control (Blocking by default):
+          fup <force>       - Force control up (N), e.g., 'fup 50'
+          fdown <force>     - Force control down (N), e.g., 'fdown 30'
+          fup! <force>      - Non-blocking force up (append ! for non-blocking)
+          fdown! <force>    - Non-blocking force down
+          hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50'
+          hybrid! <h> <f>   - Non-blocking hybrid control
+        
+        Platform Manual Control:
+          up                - Manual up (use 'stop' to stop)
+          down              - Manual down (use 'stop' to stop)
+          stop              - Stop platform
+        
+        Pushrod Control:
+          pup               - Pushrod manual up (use 'pstop' to stop)
+          pdown             - Pushrod manual down (use 'pstop' to stop)
+          pgoto <height>    - Pushrod goto height (mm), blocking
+          pgoto! <height>   - Pushrod goto height (non-blocking)
+          pstop             - Stop pushrod
+        
+        Emergency:
+          reset, emergency  - Emergency reset
+        """
+        print("\n" + "="*60)
+        print("🤖 CourierRobot Interactive Mode")
+        print("="*60)
+        print("Type 'help' for available commands, 'quit' to exit")
+        print("="*60 + "\n")
+        
+        while True:
+            try:
+                cmd = input("robot> ").strip().lower()
+                
+                if not cmd:
+                    continue
+                
+                parts = cmd.split()
+                command = parts[0]
+                
+                # Exit commands
+                if command in ['quit', 'exit', 'q']:
+                    print("👋 Exiting interactive mode")
+                    break
+                
+                # Help
+                elif command in ['help', 'h', '?']:
+                    print(self.interactive_mode.__doc__)
+                
+                # Status commands
+                elif command in ['status', 'st']:
+                    self.get_status()
+                
+                elif command in ['sensor', 'sn']:
+                    self.get_sensor_data()
+                
+                # Platform height control
+                elif command in ['goto', 'g', 'goto!', 'g!']:
+                    if len(parts) < 2:
+                        print("❌ Usage: goto <height> or goto! <height> (non-blocking)")
+                    else:
+                        try:
+                            height = float(parts[1])
+                            wait = not command.endswith('!')  # Non-blocking if ends with !
+                            self.platform_goto_height(height, wait=wait)
+                        except ValueError:
+                            print("❌ Invalid height value")
+                
+                elif command == 'home':
+                    self.platform_goto_height(850)
+                
+                # Platform force control
+                elif command in ['fup', 'fup!']:
+                    if len(parts) < 2:
+                        print("❌ Usage: fup <force> or fup! <force> (non-blocking)")
+                    else:
+                        try:
+                            force = float(parts[1])
+                            wait = not command.endswith('!')
+                            self.platform_force_up(force, wait=wait)
+                        except ValueError:
+                            print("❌ Invalid force value")
+                
+                elif command in ['fdown', 'fdown!']:
+                    if len(parts) < 2:
+                        print("❌ Usage: fdown <force> or fdown! <force> (non-blocking)")
+                    else:
+                        try:
+                            force = float(parts[1])
+                            wait = not command.endswith('!')
+                            self.platform_force_down(force, wait=wait)
+                        except ValueError:
+                            print("❌ Invalid force value")
+                
+                elif command in ['hybrid', 'hybrid!']:
+                    if len(parts) < 3:
+                        print("❌ Usage: hybrid <height> <force> or hybrid! <height> <force> (non-blocking)")
+                    else:
+                        try:
+                            height = float(parts[1])
+                            force = float(parts[2])
+                            wait = not command.endswith('!')
+                            self.platform_hybrid_control(height, force, wait=wait)
+                        except ValueError:
+                            print("❌ Invalid height or force value")
+                
+                # Platform manual control
+                elif command == 'up':
+                    self.platform_up()
+                
+                elif command == 'down':
+                    self.platform_down()
+                
+                elif command == 'stop':
+                    self.platform_stop()
+                
+                # Pushrod control
+                elif command == 'pup':
+                    self.pushrod_up()
+                
+                elif command == 'pdown':
+                    self.pushrod_down()
+                
+                elif command in ['pgoto', 'pgoto!']:
+                    if len(parts) < 2:
+                        print("❌ Usage: pgoto <height> or pgoto! <height> (non-blocking)")
+                    else:
+                        try:
+                            height = float(parts[1])
+                            wait = not command.endswith('!')
+                            self.pushrod_goto_height(height, wait=wait)
+                        except ValueError:
+                            print("❌ Invalid height value")
+                
+                elif command == 'pstop':
+                    self.pushrod_stop()
+                
+                # Emergency
+                elif command in ['reset', 'emergency']:
+                    confirm = input("⚠️  Confirm emergency reset? (yes/no): ").strip().lower()
+                    if confirm in ['yes', 'y']:
+                        self.emergency_reset()
+                    else:
+                        print("❌ Reset cancelled")
+                
+                else:
+                    print(f"❌ Unknown command: '{command}'. Type 'help' for available commands.")
+            
+            except KeyboardInterrupt:
+                print("\n👋 Exiting interactive mode (Ctrl+C)")
+                break
+            except Exception as e:
+                print(f"❌ Error: {e}")
     
     def wait_for_completion(self, target='platform', timeout=60, poll_interval=0.5):
         """
@@ -761,9 +962,10 @@ class CourierRobot:
                             duration_str = f"{duration:.2f}s" if duration is not None else "N/A"
                             print(f"✅ Task completed: {reason} (duration: {duration_str})")
                         
-                        # Restore verbose and get final status with full output
+                        # Restore verbose but don't print final status here
+                        # (caller will print it after printing completion message)
                         self.verbose = original_verbose
-                        final_status = self.get_status()
+                        final_status = self.get_status(print_status=False)
                         
                         return {
                             "success": True,
@@ -777,9 +979,9 @@ class CourierRobot:
                         if original_verbose:
                             print(f"🚨 EMERGENCY STOP: {reason}")
                         
-                        # Restore verbose and get final status with full output
+                        # Restore verbose but don't print final status here
                         self.verbose = original_verbose
-                        final_status = self.get_status()
+                        final_status = self.get_status(print_status=False)
                         
                         return {
                             "success": False,
@@ -812,42 +1014,69 @@ if __name__ == "__main__":
     print("="*60)
     
     # Initialize robot
-    robot = CourierRobot()
-    
-    # Get current status
-    print("\n1. Getting current status...")
-    status = robot.get_status()
-    if status['success']:
-        print(f"   Platform state: {status['data']['platform']['task_state']}")
-        print(f"   Pushrod state: {status['data']['pushrod']['task_state']}")
-    
-    # Get sensor data
-    print("\n2. Getting sensor data...")
-    sensors = robot.get_sensor_data()
-    if sensors['success']:
-        print(f"   Height: {sensors['data'].get('height', 'N/A')} mm")
-        print(f"   Force: {sensors['data'].get('combined_force_sensor', 'N/A')} N")
-    
-    print("\n" + "="*60)
-    print("Available methods:")
-    print("="*60)
-    print("\n📊 Status & Sensors:")
-    print("  - robot.get_status()")
-    print("  - robot.get_sensor_data()")
-    print("\n🏗️ Platform Controls:")
-    print("  Manual: platform_up(), platform_down(), platform_stop()")
-    print("  Height: platform_goto_height(target_height)")
-    print("  Force:  platform_force_up(target_force), platform_force_down(target_force)")
-    print("  Hybrid: platform_hybrid_control(target_height, target_force)")
-    print("\n🔧 Pushrod Controls:")
-    print("  Manual: pushrod_up(), pushrod_down(), pushrod_stop()")
-    print("  Height: pushrod_goto_height(target_height, mode='absolute')")
-    print("          mode can be 'absolute' or 'relative'")
-    print("\n⚖️  Force Sensor Calibration:")
-    print("  - robot.tare_force_sensor(channel='right')  # channel: 'right' or 'left'")
-    print("  - robot.tare_both_force_sensors()           # Tare both sensors")
-    print("\n🚨 Emergency:")
-    print("  - robot.emergency_reset()")
-    print("\n⏳ Wait for completion:")
-    print("  - robot.wait_for_completion(target='platform', timeout=60)")
-    print("="*60)
+    robot = CourierRobotWebAPI()
+    robot.interactive_mode()
+    # ==================== Test Area ====================
+# Uncomment the commands you want to test
+
+# 1. Query status
+# robot.get_status()
+
+# 2. Query sensors
+# robot.get_sensor_data()
+
+# ========== Blocking Mode Tests (default wait=True) ==========
+
+# 3. goto 900mm (blocking, auto-wait for completion)
+# robot.platform_goto_height(900)
+
+# 4. goto 850mm (blocking, auto-wait for completion)
+# robot.platform_goto_height(850)
+
+# 5. Force control up to 50N (blocking)
+# robot.platform_force_up(50.0)
+
+# 6. Force control down to 30N (blocking)
+# robot.platform_force_down(30.0)
+
+# 7. Hybrid control (height 900mm, force 50N) (blocking)
+# robot.platform_hybrid_control(900, 50.0)
+
+# 8. Pushrod goto 100mm (blocking)
+# robot.pushrod_goto_height(100)
+
+# ========== Non-blocking Mode Tests (wait=False, auto-override) ==========
+
+# 9. Non-blocking goto 900, then immediately change to 850 (auto-stop old task)
+# robot.platform_goto_height(900, wait=False)
+# time.sleep(0.5)  # Let it start moving
+# robot.platform_goto_height(850, wait=False)  # ⚠️ Will auto-stop, then goto 850
+
+# 10. Non-blocking force control, then immediately change target force (auto-override)
+# robot.platform_force_up(50.0, wait=False)
+# time.sleep(0.5)
+# robot.platform_force_up(30.0, wait=False)  # ⚠️ Auto-stop, change to 30N
+
+# ========== Manual Control (always non-blocking) ==========
+
+# 11. Manual up (non-blocking, requires manual stop)
+# robot.platform_up()
+# time.sleep(2)
+# robot.platform_stop()
+
+# 12. Manual down (non-blocking, requires manual stop)
+# robot.platform_down()
+# time.sleep(2)
+# robot.platform_stop()
+
+# 13. Pushrod manual up (non-blocking)
+# robot.pushrod_up()
+# time.sleep(2)
+# robot.pushrod_stop()
+
+# ========== Emergency Stop ==========
+
+# 14. Emergency stop
+# robot.emergency_reset()
+
+print("\n✅ Script execution completed")
