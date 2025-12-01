@@ -74,12 +74,12 @@ class GenerateServerFrame:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
             
-            # Extract GB200_rack configuration
-            if 'ur15' not in config or 'GB200_rack' not in config['ur15']:
-                print("GB200_rack configuration not found in robot_config.yaml")
+            # Extract GB200_rack configuration from 'shared' section
+            if 'shared' not in config or 'GB200_rack' not in config['shared']:
+                print("GB200_rack configuration not found in robot_config.yaml under 'shared' section")
                 return False
             
-            rack_config = config['ur15']['GB200_rack']
+            rack_config = config['shared']['GB200_rack']
             
             # Load rack parameters
             self.rack_origin_to_unit_start_z = rack_config.get('rack_origin_to_unit_start_z', 0.03715)
