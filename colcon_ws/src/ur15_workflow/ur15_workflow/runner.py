@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import rclpy
 from rclpy.node import Node
+from common import get_temp_directory
+from datetime import datetime
 
 # Import workflow components
 from ur15_workflow.engine import WorkflowEngine
@@ -221,11 +223,16 @@ class RobotWorkflowRunner:
             # Execute workflow
             results = self.execute()
             
-            # Save results
-            output_path = os.path.join(
-                os.path.dirname(self.workflow_config_path),
-                'workflow_results.json'
-            )
+            # Save results to temp/workflow_result directory using common package
+           
+            base_temp_dir = get_temp_directory()
+            workflow_result_dir = os.path.join(base_temp_dir, 'workflow_results')
+            os.makedirs(workflow_result_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_path = os.path.join(workflow_result_dir, f'workflow_result_{timestamp}.json')
+            
             self.workflow_engine.save_results(output_path)
             
             # Check if all operations succeeded
