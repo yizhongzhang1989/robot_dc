@@ -144,12 +144,13 @@ class GenerateServerFrame:
                 'target_server_transformation_matrix_in_rack': target_server_transformation_matrix_in_rack
             }
             
-            print(f"Generated frame for server index {index} (in rack frame)")
-            print(f"Target server origin: {target_server_origin_in_rack}")
-            print(f"Target server X-axis: {target_server_x_axis_in_rack}")
-            print(f"Target server Y-axis: {target_server_y_axis_in_rack}")
-            print(f"Target server Z-axis: {target_server_z_axis_in_rack}")
-            print(f"Target server transformation matrix in rack:\n{target_server_transformation_matrix_in_rack}")
+            # Debug prints commented out to avoid spamming logs in video stream loop
+            # print(f"Generated frame for server index {index} (in rack frame)")
+            # print(f"Target server origin: {target_server_origin_in_rack}")
+            # print(f"Target server X-axis: {target_server_x_axis_in_rack}")
+            # print(f"Target server Y-axis: {target_server_y_axis_in_rack}")
+            # print(f"Target server Z-axis: {target_server_z_axis_in_rack}")
+            # print(f"Target server transformation matrix in rack:\n{target_server_transformation_matrix_in_rack}")
             
             return result
             
@@ -201,12 +202,13 @@ class GenerateServerFrame:
                 'target_server_transformation_matrix_in_base': target_server_transformation_matrix_in_base
             }
             
-            print(f"Generated frame for server index {index} (in base frame)")
-            print(f"Target server origin: {target_server_origin_in_base}")
-            print(f"Target server X-axis: {target_server_x_axis_in_base}")
-            print(f"Target server Y-axis: {target_server_y_axis_in_base}")
-            print(f"Target server Z-axis: {target_server_z_axis_in_base}")
-            print(f"Target server transformation matrix in base:\n{target_server_transformation_matrix_in_base}")
+            # Debug prints commented out to avoid spamming logs in video stream loop
+            # print(f"Generated frame for server index {index} (in base frame)")
+            # print(f"Target server origin: {target_server_origin_in_base}")
+            # print(f"Target server X-axis: {target_server_x_axis_in_base}")
+            # print(f"Target server Y-axis: {target_server_y_axis_in_base}")
+            # print(f"Target server Z-axis: {target_server_z_axis_in_base}")
+            # print(f"Target server transformation matrix in base:\n{target_server_transformation_matrix_in_base}")
             
             return result
             

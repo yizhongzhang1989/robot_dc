@@ -215,8 +215,18 @@ def serve_static(path):
 
 
 if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Workflow Config Center API Server')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='Host address')
+    parser.add_argument('--port', type=int, default=8008, help='Port number')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    
+    args = parser.parse_args()
+    
     print(f"Workflow API Server starting...")
     print(f"Workflow config directory: {WORKFLOW_CONFIG_DIR}")
-    print(f"Server running on http://localhost:8008")
-    print(f"Open browser: http://localhost:8008")
-    app.run(host='0.0.0.0', port=8008, debug=True)
+    print(f"Server running on http://{args.host}:{args.port}")
+    print(f"Open browser: http://localhost:{args.port}")
+    
+    app.run(host=args.host, port=args.port, debug=args.debug)

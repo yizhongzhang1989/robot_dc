@@ -53,8 +53,11 @@ class CaptureImageHandler(OperationHandler):
             image_name = self._resolve_parameter(operation.get('image_name'), context)
             timeout = operation.get('timeout', 5.0)
             
+            # Auto-generate image name if not specified
             if not image_name:
-                return {'status': 'error', 'error': 'No image_name specified'}
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                image_name = f"{timestamp}.jpg"
+                print(f"    Auto-generated image name: {image_name}")
             
             # Get ROS node
             node = context.get('ros_node')
@@ -92,6 +95,7 @@ class CaptureImageHandler(OperationHandler):
                 
                 return {
                     'status': 'success',
+                    'image_name': image_name,  # Return image name for next operation
                     'outputs': {
                         image_name: self.latest_image
                     }

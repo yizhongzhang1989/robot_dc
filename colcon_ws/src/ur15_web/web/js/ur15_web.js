@@ -406,16 +406,9 @@ function labelLastCapturedImage() {
     });
 }
 
-function captureTaskDataX3() {
+function captureRefImg1() {
     const operationName = document.getElementById('operationName').value;
     const calibrationDataDir = document.getElementById('calibrationDirPath').value;
-    
-    // Check if freedrive is active
-    if (freedriveActive) {
-        logToWeb(`Cannot execute Capture x3 while freedrive mode is active`, 'warning');
-        showMessage(`Please disable freedrive mode before using Capture x3`, 'warning');
-        return;
-    }
     
     if (!operationName || operationName === 'input operation name' || !currentOperationPath) {
         showMessage(`Please set an operation name before capturing`, 'warning');
@@ -428,10 +421,10 @@ function captureTaskDataX3() {
         return;
     }
     
-    logToWeb(`Starting Capture x3 (capturing at 3 different positions)...`, 'info');
+    logToWeb(`Capturing ref_img_1...`, 'info');
     
-    // Send capture x3 request to server
-    fetch('/capture_task_data_x3', {
+    // Send capture request to server
+    fetch('/capture_ref_img_1', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -445,15 +438,25 @@ function captureTaskDataX3() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            logToWeb(`Captured ${data.captured_count} images at different positions successfully`, 'success');
+            logToWeb(`Captured ref_img_1 successfully`, 'success');
         } else {
-            console.error(`Failed to capture data x3:`, data.message || 'Unknown error');
-            logToWeb(`Failed to capture data x3: ${data.message || 'Unknown error'}`, 'error');
+            console.error(`Failed to capture ref_img_1:`, data.message || 'Unknown error');
+            logToWeb(`Failed to capture ref_img_1: ${data.message || 'Unknown error'}`, 'error');
+            showMessage(
+                `Failed to capture ref_img_1: ${data.message || 'Unknown error'}`, 
+                'error', 
+                '❌ Capture Failed'
+            );
         }
     })
     .catch(error => {
-        console.error(`Failed to capture data x3:`, error);
-        logToWeb(`Failed to capture data x3: ${error}`, 'error');
+        console.error(`Failed to capture ref_img_1:`, error);
+        logToWeb(`Failed to capture ref_img_1: ${error}`, 'error');
+        showMessage(
+            `Failed to capture ref_img_1: ${error}`, 
+            'error', 
+            '❌ Capture Error'
+        );
     });
 }
 

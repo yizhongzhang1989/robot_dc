@@ -5,6 +5,7 @@ Record Data Handler
 
 import os
 import json
+import time
 import numpy as np
 from datetime import datetime
 from typing import Dict, Any
@@ -45,8 +46,26 @@ class RecordDataHandler(OperationHandler):
             record_type = operation.get('record_type', 'pose')
             pose_name = self._resolve_parameter(operation.get('pose_name'), context)
             
+            # Auto-generate pose name if not specified
             if not pose_name:
-                return {'status': 'error', 'error': 'No pose_name specified'}
+                # Try to get image name from previous operation (if it was a capture)
+                latest_image_name = None
+                for op_id, result in reversed(list(previous_results.items())):
+                    if result.get('status') == 'success' and 'image_name' in result:
+                        latest_image_name = result['image_name']
+                        break
+                
+                if latest_image_name:
+                    # Use same name as latest captured image, but change extension to .json
+                    import os
+                    base_name = os.path.splitext(latest_image_name)[0]  # Remove extension
+                    pose_name = f"{base_name}.json"
+                    print(f"    Using latest image name for pose: {pose_name}")
+                else:
+                    # Fall back to timestamp
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    pose_name = f"{timestamp}.json"
+                    print(f"    Auto-generated pose name: {pose_name}")
             
             print(f"    Recording {record_type} data as '{pose_name}'...")
             
@@ -102,6 +121,7 @@ class RecordDataHandler(OperationHandler):
             # Store data in context with numpy arrays for efficient access
             return {
                 'status': 'success',
+                'pose_name': pose_name,  # Return pose name for next operation
                 'outputs': {
                     pose_name: {
                         'joint_angles': np.array(data['joint_angles']),

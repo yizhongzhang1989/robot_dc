@@ -9,7 +9,7 @@
         "move_type": "movej",
         "velocity": 0.5,
         "acceleration": 0.5,
-        "wait_time": 1.0,
+        "wait_time": 2.0,
         "stop_on_failure": true
         },
         {
@@ -31,7 +31,7 @@
         "move_type": "move_tcp",
         "velocity": 0.1,
         "acceleration": 0.1,
-        "wait_time": 1.0
+        "wait_time": 2.0
         }
     ],
     "capture_image":
@@ -39,11 +39,20 @@
         {
         "id": "capture_at_current_pose",
         "type": "capture_image",
-        "description": "Capture image at current pose and store in memory",
+        "description": "Capture image at current pose and store in memory (image_name optional, auto-generates timestamp if not provided)",
+        "camera_topic": "/ur15_camera/image_raw",
+        "timeout": 3.0,
+        "wait_time": 0.5,
+        "stop_on_failure": true
+        },
+        {
+        "id": "capture_with_custom_name",
+        "type": "capture_image",
+        "description": "Capture image with custom name",
         "camera_topic": "/ur15_camera/image_raw",
         "image_name": "1.jpg",
         "timeout": 3.0,
-        "wait_time": 0.5,
+        "wait_time": 1.0,
         "stop_on_failure": true
         }
     ],
@@ -52,7 +61,15 @@
         {
         "id": "record_data_pose",
         "type": "record_data",
-        "description": "Record robot pose data and store in memory",
+        "description": "Record robot pose data and store in memory (pose_name optional, uses latest image_name or auto-generates timestamp)",
+        "record_type": "pose",
+        "wait_time": 0.5,
+        "stop_on_failure": true
+        },
+        {
+        "id": "record_with_custom_name",
+        "type": "record_data",
+        "description": "Record pose with custom name",
         "record_type": "pose",
         "pose_name": "1.json",
         "wait_time": 0.5,
@@ -80,7 +97,16 @@
         {
         "id": "upload_view",
         "type": "positioning",
-        "description": "Upload view data from memory to server (auto-saves to dataset after upload)",
+        "description": "Upload view data from memory to server (image_name and data_name optional, auto-detects from previous capture/record operations, auto-saves to dataset after upload)",
+        "positioning_type": "upload_view",
+        "reference_name": "rack_bottom_left",
+        "wait_time": 0.5,
+        "stop_on_failure": true
+        },
+        {
+        "id": "upload_view_manual",
+        "type": "positioning",
+        "description": "Upload view data with manually specified names",
         "positioning_type": "upload_view",
         "reference_name": "rack_bottom_left",
         "image_name": "1.jpg",
@@ -103,7 +129,7 @@
         "timeout": 10000,
         "status_namespace": "ur15",
         "status_key_name": "rack_points_3d",
-        "local2world_matrix_name": "rack_local2world",
+        "local2world_matrix_name": "rack2base_matrix",
         "wait_time": 1.0,
         "stop_on_failure": true
         },

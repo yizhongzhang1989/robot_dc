@@ -728,7 +728,7 @@
     {
       "description": "Get positioning result from server for rack location",
       "id": "get_positioning_result_from_server",
-      "local2world_matrix_name": "rack_local2world",
+      "local2world_matrix_name": "rack2base_matrix",
       "positioning_type": "get_result",
       "save_path": "../temp/rack_location/positioning_result.json",
       "status_key_name": "rack_points_3d",

@@ -87,14 +87,27 @@ class PositioningHandler(OperationHandler):
         if not reference_name:
             return {'status': 'error', 'error': 'reference_name is required for upload_view'}
         
-        # Get image and pose names from operation
+        # Get image and pose names from operation or auto-detect from previous results
         image_name = self._resolve_parameter(operation.get('image_name'), context)
         data_name = self._resolve_parameter(operation.get('data_name'), context)
         
+        # Auto-detect from previous results if not provided
+        if not image_name or not data_name:
+            for op_id, result in reversed(list(previous_results.items())):
+                if result.get('status') == 'success':
+                    if not image_name and 'image_name' in result:
+                        image_name = result['image_name']
+                        print(f"    Auto-detected image_name: {image_name}")
+                    if not data_name and 'pose_name' in result:
+                        data_name = result['pose_name']
+                        print(f"    Auto-detected data_name: {data_name}")
+                    if image_name and data_name:
+                        break
+        
         if not image_name:
-            return {'status': 'error', 'error': 'image_name is required for upload_view'}
+            return {'status': 'error', 'error': 'image_name not found (not provided and not in previous results)'}
         if not data_name:
-            return {'status': 'error', 'error': 'data_name is required for upload_view'}
+            return {'status': 'error', 'error': 'data_name not found (not provided and not in previous results)'}
         
         print(f"    Uploading view for {reference_name}...")
         
@@ -159,7 +172,7 @@ class PositioningHandler(OperationHandler):
         # Get robot_status save parameters
         status_namespace = operation.get('status_namespace')  # e.g., "ur15"
         status_key_name = operation.get('status_key_name')  # e.g., "rack_points_3d"
-        local2world_matrix_name = operation.get('local2world_matrix_name')  # e.g., "rack_local2world"
+        local2world_matrix_name = operation.get('local2world_matrix_name')  # e.g., "rack2base_matrix"
         
         # Determine positioning mode
         mode = self._determine_positioning_mode(template_points)
@@ -229,8 +242,11 @@ class PositioningHandler(OperationHandler):
                         # Save 3D points if key name is provided
                         if status_key_name:
                             if points_3d:
-                                if robot_status_client.set_status(status_namespace, status_key_name, points_3d):
-                                    print(f"    ✓ {status_key_name} saved to robot_status")
+                                # Convert to numpy array if not already
+                                points_3d_array = np.array(points_3d) if not isinstance(points_3d, np.ndarray) else points_3d
+                                
+                                if robot_status_client.set_status(status_namespace, status_key_name, points_3d_array):
+                                    print(f"    ✓ {status_key_name} saved to robot_status as numpy array {points_3d_array.shape}")
                                 else:
                                     print(f"    ✗ Failed to save {status_key_name}")
                             else:
@@ -240,12 +256,11 @@ class PositioningHandler(OperationHandler):
                         if mode == 'fitting' and local2world_matrix_name:
                             local2world = positioning_result.get('local2world')
                             if local2world is not None:
-                                # Convert to list if it's numpy array
-                                if hasattr(local2world, 'tolist'):
-                                    local2world = local2world.tolist()
+                                # Convert to numpy array if not already (keep as numpy array)
+                                local2world_array = np.array(local2world) if not isinstance(local2world, np.ndarray) else local2world
                                 
-                                if robot_status_client.set_status(status_namespace, local2world_matrix_name, local2world):
-                                    print(f"    ✓ {local2world_matrix_name} saved to robot_status (4x4 transformation matrix)")
+                                if robot_status_client.set_status(status_namespace, local2world_matrix_name, local2world_array):
+                                    print(f"    ✓ {local2world_matrix_name} saved to robot_status as numpy array {local2world_array.shape}")
                                 else:
                                     print(f"    ✗ Failed to save {local2world_matrix_name}")
                             else:
@@ -350,10 +365,10 @@ class PositioningHandler(OperationHandler):
                            image_name: str, data_name: str):
         """
         Save uploaded view (image and pose data) to dataset folder.
-        Path format: /home/a/Documents/robot_dc/dataset/{reference_name}/test/session_{session_id}/
+        Path format: /home/a/Documents/robot_dc/dataset/{reference_name}/test/{session_id}/
         """
         # Build save directory path - use absolute path to robot_dc
-        save_dir = os.path.join("/home/a/Documents/robot_dc", "dataset", reference_name, "test", f"session_{session_id}")
+        save_dir = os.path.join("/home/a/Documents/robot_dc", "dataset", reference_name, "test", f"{session_id}")
         os.makedirs(save_dir, exist_ok=True)
         
         # Save image
