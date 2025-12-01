@@ -13,23 +13,27 @@ class ForceSensorController(ModbusDevice):
     """
     REG_FORCE = 0x0000
 
-    def __init__(self, device_id, node, use_ack_patch=False):
+    def __init__(self, device_id, node, use_ack_patch=False, zero_drift_threshold=65336):
         super().__init__(device_id, node, use_ack_patch)
         self.last_force_value = None
         self.last_force_reg = None
         self.last_force_ts = None
+        self.zero_drift_threshold = zero_drift_threshold
 
     def initialize(self):
-        self.node.get_logger().info(f"Single force sensor controller initialized (device_id={self.device_id}) REG_FORCE@{self.REG_FORCE}")
+        self.node.get_logger().info(
+            f"Single force sensor controller initialized (device_id={self.device_id}) "
+            f"REG_FORCE@{self.REG_FORCE}, zero_drift_threshold={self.zero_drift_threshold}"
+        )
 
     def _parse_int16(self, regs):
         if not regs or len(regs) < 1:
             return None
         try:
             raw_value = int(regs[0]) & 0xFFFF
-            # Zero drift elimination: filter values > 65336 to 0
+            # Zero drift elimination: filter values > threshold to 0
             # This handles sensor noise/drift when no force is applied
-            if raw_value > 65336:
+            if raw_value > self.zero_drift_threshold:
                 return 0
             return raw_value
         except Exception:
