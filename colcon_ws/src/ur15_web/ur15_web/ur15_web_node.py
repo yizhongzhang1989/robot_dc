@@ -845,14 +845,10 @@ class UR15WebNode(Node):
                 # Build path to workflow_files directory
                 workflow_dir = os.path.join(workspace_root, 'temp', 'workflow_files')
                 
-                # Check if directory exists
+                # Create directory if it doesn't exist
                 if not os.path.exists(workflow_dir):
-                    self.get_logger().warning(f"Workflow directory not found: {workflow_dir}")
-                    return jsonify({
-                        'status': 'success',
-                        'message': 'Workflow directory not found',
-                        'files': []
-                    })
+                    self.get_logger().info(f"Creating workflow directory: {workflow_dir}")
+                    os.makedirs(workflow_dir, exist_ok=True)
                 
                 # Get all JSON files
                 json_files = glob.glob(os.path.join(workflow_dir, '*.json'))
@@ -903,7 +899,11 @@ class UR15WebNode(Node):
                     }), 500
                 
                 # Build full path to workflow file
-                workflow_path = os.path.join(workspace_root, 'temp', 'workflow_files', workflow_file)
+                workflow_dir = os.path.join(workspace_root, 'temp', 'workflow_files')
+                # Create directory if it doesn't exist
+                os.makedirs(workflow_dir, exist_ok=True)
+                
+                workflow_path = os.path.join(workflow_dir, workflow_file)
                 
                 # Check if file exists
                 if not os.path.exists(workflow_path):

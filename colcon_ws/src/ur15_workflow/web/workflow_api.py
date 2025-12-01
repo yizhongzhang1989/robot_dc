@@ -18,6 +18,8 @@ WORKFLOW_CONFIG_DIR = Path(__file__).parent.parent.parent / 'ur15_workflow' / 'e
 
 # Workflow files directory for new workflow creation
 WORKFLOW_FILES_PATH = Path(get_temp_directory()) / 'workflow_files'
+# Ensure directory exists at startup
+WORKFLOW_FILES_PATH.mkdir(parents=True, exist_ok=True)
 
 # Initialize RobotStatusClient for Redis access
 robot_status_client = None
@@ -156,8 +158,8 @@ def delete_workflow(filename):
 def list_workflows():
     """List all workflow files"""
     try:
-        if not WORKFLOW_FILES_PATH.exists():
-            return jsonify({'success': True, 'files': []})
+        # Ensure directory exists
+        WORKFLOW_FILES_PATH.mkdir(parents=True, exist_ok=True)
         
         files = [f.name for f in WORKFLOW_FILES_PATH.glob('*.json')]
         

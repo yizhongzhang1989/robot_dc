@@ -1,0 +1,542 @@
+import os
+import time
+import numpy as np
+import argparse
+from scipy.spatial.transform import Rotation as R
+from ur_operate_wobj import UROperateWobj
+
+
+class UROperateWobjUnlockKnob(UROperateWobj):
+    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, server_index=14):
+        """
+        Initialize UROperateWobjUnlockKnob instance
+        Args:
+            robot_ip: IP address of the UR15 robot
+            robot_port: Port number of the UR15 robot
+            server_index: Server index for target position (default: 14)
+        """
+        # Call parent class constructor
+        super().__init__(robot_ip=robot_ip, robot_port=robot_port, server_index=server_index)
+        
+        print(f"UROperateWobjUnlockKnob initialized for server index: {server_index}")
+
+
+    # ================================= Movement Functions ================================
+    def movel_to_right_knob(self):
+        """
+        Move robot to right knob position using linear movement based on rack coordinate system.
+        This method moves from target position (left knob) along rack X axis by 0.21m to reach right knob.
+        
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.rack_transformation_matrix_in_base is None:
+            print("Rack coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose to preserve orientation
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract rack coordinate system axes from transformation matrix
+        rack_rotation = self.rack_transformation_matrix_in_base[:3, :3]
+        rack_x = rack_rotation[:, 0] / np.linalg.norm(rack_rotation[:, 0])  # Rack X+ direction (normalized)
+        rack_y = rack_rotation[:, 1] / np.linalg.norm(rack_rotation[:, 1])  # Rack Y+ direction (normalized)
+        rack_z = rack_rotation[:, 2] / np.linalg.norm(rack_rotation[:, 2])  # Rack Z+ direction (normalized)
+        
+        # Calculate movement vector (0.21m along rack X axis)
+        movement_x = 0.21 * rack_x
+        
+        # Get current position
+        current_position = np.array(current_pose[:3])
+        
+        # Calculate target position
+        target_position = current_position + movement_x
+        
+        target_pose = [
+            target_position[0],  # x
+            target_position[1],  # y
+            target_position[2],  # z
+            current_pose[3],     # rx (keep current orientation)
+            current_pose[4],     # ry
+            current_pose[5]      # rz
+        ]
+        
+        print(f"\n[Right Knob] Moving along rack X axis by 0.21m...")
+        print(f"  Movement in rack frame: X=0.21m")
+        print(f"  Target pose: {target_pose}")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.1)
+        if res != 0:
+            print(f"Failed to move to right knob with error code: {res}")
+            return res
+        
+        time.sleep(0.5)
+        print("[INFO] Successfully moved to right knob position")
+        return 0
+
+    def force_task_touch_knob(self):
+        """
+        Execute force control task to touch the knob using TCP coordinate system.
+        The robot will apply a downward force (relative to TCP) to make contact with the knob.
+        Returns: result from force_control_task
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        # Get current TCP pose to use as task frame (for force control in TCP coordinate system)
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters
+        task_frame = tcp_pose  # set task frame to TCP pose
+        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in XYZ direction relative to task frame
+        wrench = [0, 0, 15, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force task: 'Touch Knob'...")
+        
+        # Execute force control task with force-based termination (end_type=2)
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.1,
+            end_type=2,
+            end_force=[15, 15, 20, 0, 0, 0]
+        )
+        time.sleep(0.5)
+        return result
+
+    def force_task_unlock_left_knob(self):
+        """
+        Execute force control task to unlock the left knob using TCP coordinate system.
+        Three-step process:
+        1. Rotate counter-clockwise around TCP Z-axis to unlock (stops at specified angle)
+        2. Release the spring in the knob
+        3. Rotate clockwise to return
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        # ==============Motion 1: Rotate around Z axis to unlock the knob=================
+        print("\n[Motion 1] Rotating counter-clockwise to unlock knob...")
+        
+        # Get current TCP pose to use as task frame
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters for unlocking
+        task_frame = tcp_pose
+        selection_vector = [0, 0, 0, 0, 0, 1]  # Enable torque control in Z direction only
+        wrench = [0, 0, 0, 0, 0, -1.0]
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - unlocking...")
+        
+        # Execute force control with angle-based termination
+        result1 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.01,
+            end_type=4,
+            end_angle=135.0  # Stop after rotating 135 degrees
+        )
+        
+        if result1 != 0:
+            print(f"[ERROR] Motion 1 failed with code: {result1}")
+            return result1
+        
+        print("[INFO] Motion 1 completed successfully")
+        time.sleep(0.5)
+
+        # ==============Motion 2: release the spring in the knob=================
+        print("\n[Motion 2] Releasing the spring in the knob...")
+
+        # Get current TCP pose to use as task frame
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters for releasing spring
+        task_frame = tcp_pose
+        selection_vector = [0, 1, 1, 0, 0, 0]  # Enable force control in Y and Z directions
+        wrench = [0, 0, -20.0, 0, 0, 0]
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - releasing spring...")
+        
+        # Execute force control with distance-based termination
+        result2 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.002,
+            end_type=3,
+            end_distance=[0, 0.01, 0.003, 0, 0, 0]
+        )
+        
+        if result2 != 0:
+            print(f"[ERROR] Motion 2 failed with code: {result2}")
+            return result2
+        
+        print("[INFO] Motion 2 completed successfully")
+        time.sleep(0.5)
+        
+        # ==============Motion 3: Rotate back around Z axis to leave the knob=================
+        print("\n[Motion 3] Rotating clockwise to return...")
+
+        # Get updated TCP pose after first motion
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Updated TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters for return motion
+        task_frame = tcp_pose
+        selection_vector = [0, 0, 0, 0, 0, 1]  # Enable torque control in Z direction only
+        wrench = [0, 0, 0, 0, 0, 1.0]  # Apply 1.0 Nm torque (clockwise)
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - returning...")
+        
+        # Execute force control with angle-based termination
+        result3 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.005,
+            end_type=4,
+            end_angle=15.0  # Stop after rotating 15 degrees
+        )
+        
+        if result3 != 0:
+            print(f"[ERROR] Motion 3 failed with code: {result3}")
+            return result3
+
+        print("[INFO] Motion 3 completed successfully")
+        time.sleep(0.5)
+
+        print("[INFO] Left knob unlock sequence completed successfully")
+        return 0
+    
+    def force_task_unlock_right_knob(self):
+        """
+        Execute force control task to unlock the right knob using TCP coordinate system.
+        Three-step process:
+        1. Rotate clockwise around TCP Z-axis to unlock (stops at specified angle)
+        2. Release the spring in the knob
+        3. Rotate counter-clockwise to return
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        # ==============Motion 1: Rotate around Z axis to unlock the knob=================
+        print("\n[Motion 1] Rotating clockwise to unlock knob...")
+        
+        # Get current TCP pose to use as task frame
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters for unlocking
+        task_frame = tcp_pose
+        selection_vector = [0, 0, 0, 0, 0, 1]  # Enable torque control in Z direction only
+        wrench = [0, 0, 0, 0, 0, 1.0]
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - unlocking...")
+        
+        # Execute force control with angle-based termination
+        result1 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.01,
+            end_type=4,
+            end_angle=145.0  # Stop after rotating 145 degrees
+        )
+        
+        if result1 != 0:
+            print(f"[ERROR] Motion 1 failed with code: {result1}")
+            return result1
+        
+        print("[INFO] Motion 1 completed successfully")
+        time.sleep(0.5)
+
+        # ==============Motion 2: release the spring in the knob=================
+        print("\n[Motion 2] Releasing the spring in the knob...")
+
+        # Get current TCP pose to use as task frame
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters for releasing spring
+        task_frame = tcp_pose
+        selection_vector = [0, 1, 1, 0, 0, 0]  # Enable force control in Y and Z directions
+        wrench = [0, 0, -25.0, 0, 0, 0]
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - releasing spring...")
+        
+        # Execute force control with distance-based termination
+        result2 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.002,
+            end_type=3,
+            end_distance=[0, 0.01, 0.003, 0, 0, 0]
+        )
+        
+        if result2 != 0:
+            print(f"[ERROR] Motion 2 failed with code: {result2}")
+            return result2
+        
+        print("[INFO] Motion 2 completed successfully")
+        time.sleep(0.5)
+        
+        # ==============Motion 3: Rotate back around Z axis to leave the knob=================
+        print("\n[Motion 3] Rotating counter-clockwise to return...")
+
+        # Get updated TCP pose after first motion
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Updated TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters for return motion
+        task_frame = tcp_pose
+        selection_vector = [0, 0, 0, 0, 0, 1]  # Enable torque control in Z direction only
+        wrench = [0, 0, 0, 0, 0, -1.0]  # Apply -1.0 Nm torque (counter-clockwise)
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - returning...")
+        
+        # Execute force control with angle-based termination
+        result3 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.005,
+            end_type=4,
+            end_angle=15.0  # Stop after rotating 15 degrees
+        )
+        
+        if result3 != 0:
+            print(f"[ERROR] Motion 3 failed with code: {result3}")
+            return result3
+
+        print("[INFO] Motion 3 completed successfully")
+        time.sleep(0.5)
+
+        print("[INFO] Right knob unlock sequence completed successfully")
+        return 0
+
+    # ================================ Task Execution Methods ================================
+    def execute_complete_unlock_sequence(self):
+        """
+        Execute complete unlock sequence for both knobs following the task flow
+        """
+        print("\n" + "="*70)
+        print("STARTING COMPLETE KNOB UNLOCK SEQUENCE")
+        print("="*70)
+        
+        # ===============Execute the knob unlocking task=================
+        # Step 1: Correct TCP pose to align with rack coordinate system
+        print("\n" + "="*50)
+        print("Step 1: Correcting TCP pose...")
+        print("="*50)
+        result = self.movel_to_correct_tcp_pose(
+            tcp_x_to_rack=[1, 0, 0],
+            tcp_y_to_rack=[0, 0, -1],
+            tcp_z_to_rack=[0, 1, 0],
+            angle_deg=31
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to correct TCP pose")
+            return result
+        time.sleep(0.5)
+        
+        # Step 2: Move to target position (left knob) using linear movement
+        print("\n" + "="*50)
+        print("Step 2: Moving to left knob position...")
+        print("="*50)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0, -0.60, 0]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to left knob position")
+            return result
+        time.sleep(0.5)
+
+        # ==============Unlock the left knob=================
+        # Step 3: Force control to touch the knob
+        print("\n" + "="*50)
+        print("Step 3: Touching left knob...")
+        print("="*50)
+        result = self.force_task_touch_knob()
+        if result != 0:
+            print(f"[ERROR] Failed to touch left knob")
+            return result
+        time.sleep(0.5)
+
+        # Step 4: Move away from the knob slightly
+        print("\n" + "="*50)
+        print("Step 4: Moving away from left knob slightly...")
+        print("="*50)
+        result = self.movel_in_rack_frame([0, -0.001, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from left knob")
+            return result
+        time.sleep(0.5)
+
+        # Step 5: Force control to unlock the left knob
+        print("\n" + "="*50)
+        print("Step 5: Unlocking left knob...")
+        print("="*50)
+        result = self.force_task_unlock_left_knob()
+        if result != 0:
+            print(f"[ERROR] Failed to unlock left knob")
+            return result
+        time.sleep(0.5)
+
+        # Step 6: Move away from the left knob
+        print("\n" + "="*50)
+        print("Step 6: Moving away from left knob...")
+        print("="*50)
+        result = self.movel_in_rack_frame([0, -0.2, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from left knob")
+            return result
+        time.sleep(0.5)
+
+        # ==============Unlock the right knob=================
+        # Step 7: Move to right knob position along rack X axis (offset 0.21m from left knob)
+        print("\n" + "="*50)
+        print("Step 7: Moving to right knob position...")
+        print("="*50)
+        result = self.movel_to_right_knob()
+        if result != 0:
+            print(f"[ERROR] Failed to move to right knob position")
+            return result
+        time.sleep(0.5)
+
+        # Step 8: Force control to touch the right knob
+        print("\n" + "="*50)
+        print("Step 8: Touching right knob...")
+        print("="*50)
+        result = self.force_task_touch_knob()
+        if result != 0:
+            print(f"[ERROR] Failed to touch right knob")
+            return result
+        time.sleep(0.5)
+
+        # Step 9: Move away from the right knob slightly
+        print("\n" + "="*50)
+        print("Step 9: Moving away from right knob slightly...")
+        print("="*50)
+        result = self.movel_in_rack_frame([0, -0.001, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from right knob")
+            return result
+        time.sleep(0.5)
+
+        # Step 10: Force control to unlock the right knob
+        print("\n" + "="*50)
+        print("Step 10: Unlocking right knob...")
+        print("="*50)
+        result = self.force_task_unlock_right_knob()
+        if result != 0:
+            print(f"[ERROR] Failed to unlock right knob")
+            return result
+        time.sleep(0.5)
+
+        # Step 11: Move away from the right knob
+        print("\n" + "="*50)
+        print("Step 11: Moving away from right knob...")
+        print("="*50)
+        result = self.movel_in_rack_frame([0, -0.2, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from right knob")
+            return result
+        time.sleep(0.5)
+        
+        print("\n" + "="*70)
+        print("COMPLETE KNOB UNLOCK SEQUENCE FINISHED SUCCESSFULLY")
+        print("="*70)
+        return 0
+
+
+if __name__ == "__main__":
+    try:
+        # Parse command line arguments
+        parser = argparse.ArgumentParser(description='UR Robot Operate Wobj - Unlock Knob')
+        parser.add_argument('--robot_ip', type=str, default='192.168.1.15',
+                            help='Robot IP address (default: 192.168.1.15)')
+        parser.add_argument('--robot_port', type=int, default=30002,
+                            help='Robot port (default: 30002)')
+        parser.add_argument('--server_index', type=int, default=14,
+                            help='Server index (default: 14)')
+        
+        args = parser.parse_args()
+        
+        # Create UROperateWobjUnlockKnob instance
+        ur_unlock_knob = UROperateWobjUnlockKnob(
+            robot_ip=args.robot_ip,
+            robot_port=args.robot_port,
+            server_index=args.server_index
+        )
+        print("UROperateWobjUnlockKnob initialized successfully")
+        
+        # ==============Display automatically loaded parameters=================
+        print("\n" + "="*70)
+        print("AUTOMATICALLY LOADED PARAMETERS")
+        print("="*70)
+        
+        if ur_unlock_knob.camera_matrix is not None:
+            print("\n✓ Camera Matrix loaded")
+            print(ur_unlock_knob.camera_matrix)
+            print("\n✓ Distortion Coefficients loaded")
+            print(ur_unlock_knob.distortion_coefficients)
+        
+        if ur_unlock_knob.cam2end_matrix is not None:
+            print("\n✓ Camera to End-effector Matrix loaded")
+            print(ur_unlock_knob.cam2end_matrix)
+        
+        if ur_unlock_knob.rack_transformation_matrix_in_base is not None:
+            print("\n✓ Rack Coordinate System loaded")
+            print(f"  Origin: x={ur_unlock_knob.rack_origin_in_base[0]:.6f}, "
+                  f"y={ur_unlock_knob.rack_origin_in_base[1]:.6f}, "
+                  f"z={ur_unlock_knob.rack_origin_in_base[2]:.6f}")
+
+        # ==============Execute the knob unlocking task=================
+        print("\n" + "="*70)
+        print("STARTING TASK EXECUTION")
+        print("="*70)
+        
+        result = ur_unlock_knob.execute_complete_unlock_sequence()
+        
+        if result == 0:
+            print("\n✓ Task completed successfully!")
+        else:
+            print(f"\n✗ Task failed with error code: {result}")
+            
+    except KeyboardInterrupt:
+        print("\n\n[INTERRUPTED] Task interrupted by user")
+    except Exception as e:
+        print(f"\n✗ Error during task execution: {e}")
+        import traceback
+        traceback.print_exc()

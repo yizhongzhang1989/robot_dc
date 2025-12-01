@@ -195,7 +195,93 @@ class UROperateWobj:
             print(f"Error loading rack to base coordinate system: {e}")
             return None
 
+    def _load_operating_unit_id_from_service(self):
+        """
+        Load the operating unit ID from robot status service and set as server_index
+        """
+        if self.robot_status_client is None:
+            print("Robot status client is not initialized, skipping operating unit ID loading")
+            return False
+        
+        try:
+            # Get rack_operating_unit_id
+            operating_unit_id = self.robot_status_client.get_status('ur15', 'rack_operating_unit_id')
+            if operating_unit_id is None:
+                print(f"Failed to get rack_operating_unit_id from robot status")
+                return False
+            
+            # Update server_index
+            self.server_index = operating_unit_id
+            
+            print(f"Operating unit ID loaded successfully from robot status: {operating_unit_id}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error loading operating unit ID: {e}")
+            return False
+
     # ============================= Robot Movement and Control Methods =============================
+    def movel_in_rack_frame(self, offset_in_rack=[0, 0, 0]):
+        """
+        Move robot in rack coordinate system by specified offset.
+        
+        Args:
+            offset_in_rack: List [x, y, z] offset in rack coordinate system (default: [0, 0, 0])
+        
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.rack_transformation_matrix_in_base is None:
+            print("Rack coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract rack coordinate system rotation
+        rack_rotation = self.rack_transformation_matrix_in_base[:3, :3]
+        rack_x = rack_rotation[:, 0] / np.linalg.norm(rack_rotation[:, 0])
+        rack_y = rack_rotation[:, 1] / np.linalg.norm(rack_rotation[:, 1])
+        rack_z = rack_rotation[:, 2] / np.linalg.norm(rack_rotation[:, 2])
+        
+        # Calculate movement vector in base frame
+        offset_array = np.array(offset_in_rack)
+        movement_vector = (offset_array[0] * rack_x + 
+                          offset_array[1] * rack_y + 
+                          offset_array[2] * rack_z)
+        
+        # Calculate target position
+        current_position = np.array(current_pose[:3])
+        target_position = current_position + movement_vector
+        
+        target_pose = [
+            target_position[0],  # x
+            target_position[1],  # y
+            target_position[2],  # z
+            current_pose[3],     # rx (keep current orientation)
+            current_pose[4],     # ry
+            current_pose[5]      # rz
+        ]
+        
+        print(f"\n[Movement in Rack Frame]")
+        print(f"  Offset: X={offset_array[0]:.6f}m, Y={offset_array[1]:.6f}m, Z={offset_array[2]:.6f}m")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.1)
+        if res != 0:
+            print(f"Failed to move in rack frame with error code: {res}")
+            return res
+        
+        time.sleep(0.5)
+        print("[INFO] Successfully moved in rack frame")
+        return 0
+
     def movel_to_correct_tcp_pose(self, tcp_x_to_rack=[1, 0, 0], tcp_y_to_rack=[0, 0, -1], tcp_z_to_rack=[0, 1, 0], angle_deg=0):
         """
         Correct tool TCP orientation based on rack coordinate system.
@@ -264,9 +350,9 @@ class UROperateWobj:
             return -1
         
         print("[INFO] Alignment vectors validated successfully")
-        print(f"       TCP X -> Rack: {tcp_x_align}")
-        print(f"       TCP Y -> Rack: {tcp_y_align}")
-        print(f"       TCP Z -> Rack: {tcp_z_align}")
+        # print(f"       TCP X -> Rack: {tcp_x_align}")
+        # print(f"       TCP Y -> Rack: {tcp_y_align}")
+        # print(f"       TCP Z -> Rack: {tcp_z_align}")
         
         # Get current TCP pose
         current_pose = self.robot.get_actual_tcp_pose()
