@@ -7,17 +7,22 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'common'))
 
 def generate_launch_description():
-    # Try to load from config file
-    device_id = 50  # Default
+    # Load defaults from config file
+    def get_config_value(key, fallback):
+        """Helper to safely get config value with fallback"""
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            if config.has(key):
+                return config.get(key)
+        except:
+            pass
+        return fallback
     
-    try:
-        from common.config_manager import ConfigManager
-        config = ConfigManager()
-        device_id = config.get('lift_robot.platform.device_id', 50)
-        print(f"[lift_robot_launch] Loaded device_id from config: {device_id}")
-    except Exception as e:
-        print(f"[lift_robot_launch] Could not load config: {e}")
-        print(f"[lift_robot_launch] Using default device_id: {device_id}")
+    device_id = get_config_value('lift_robot.platform.device_id', 50)
+    use_ack_patch = get_config_value('lift_robot.platform.use_ack_patch', True)
+    
+    print(f"[lift_robot_launch] Config: device_id={device_id}, use_ack_patch={use_ack_patch}")
     
     return LaunchDescription([
         Node(
@@ -28,7 +33,7 @@ def generate_launch_description():
             emulate_tty=True,
             parameters=[{
                 'device_id': device_id,
-                'use_ack_patch': True
+                'use_ack_patch': use_ack_patch
             }],
         ),
     ])

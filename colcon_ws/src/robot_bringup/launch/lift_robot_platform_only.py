@@ -13,35 +13,62 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'sr
 
 def generate_launch_description():
     # Load defaults from config file
-    modbus_ready_delay_default = '3.0'
-    web_port_default = '8090'
-    sensor_topic_default = '/draw_wire_sensor/data'
-    web_delay_default = '5.0'
+    def get_config_value(key, fallback):
+        """Helper to safely get config value with fallback"""
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            if config.has(key):
+                return str(config.get(key))
+        except:
+            pass
+        return fallback
     
-    try:
-        from common.config_manager import ConfigManager
-        config = ConfigManager()
-        if config.has('lift_robot.modbus_driver.ready_delay'):
-            modbus_ready_delay_default = str(config.get('lift_robot.modbus_driver.ready_delay'))
-        if config.has('lift_robot.web.port'):
-            web_port_default = str(config.get('lift_robot.web.port'))
-        if config.has('lift_robot.web.sensor_topic'):
-            sensor_topic_default = config.get('lift_robot.web.sensor_topic')
-        if config.has('lift_robot.web.launch_delay'):
-            web_delay_default = str(config.get('lift_robot.web.launch_delay'))
-        print(f"[lift_robot_platform_only] Loaded from config: ready_delay={modbus_ready_delay_default}, web_port={web_port_default}")
-    except Exception as e:
-        print(f"[lift_robot_platform_only] Could not load config: {e}, using defaults")
+    modbus_port_default = get_config_value('lift_robot.modbus_driver.port', 'auto')
+    modbus_baudrate_default = get_config_value('lift_robot.modbus_driver.baudrate', '115200')
+    platform_device_id_default = get_config_value('lift_robot.platform.device_id', '50')
+    platform_delay_default = get_config_value('lift_robot.platform.launch_delay', '3.0')
+    draw_wire_device_id_default = get_config_value('lift_robot.draw_wire_sensor.device_id', '51')
+    draw_wire_interval_default = get_config_value('lift_robot.draw_wire_sensor.read_interval', '0.06')
+    draw_wire_delay_default = get_config_value('lift_robot.draw_wire_sensor.launch_delay', '4.0')
+    web_enabled_default = get_config_value('lift_robot.web.enabled', 'true')
+    web_port_default = get_config_value('lift_robot.web.port', '8090')
+    sensor_topic_default = get_config_value('lift_robot.web.sensor_topic', '/draw_wire_sensor/data')
+    web_delay_default = get_config_value('lift_robot.web.launch_delay', '5.0')
     
-    # Launch arguments
+    print(f"[lift_robot_platform_only] Loaded config defaults:")
+    print(f"  Modbus: port={modbus_port_default}, baudrate={modbus_baudrate_default}")
+    print(f"  Platform: device_id={platform_device_id_default}, delay={platform_delay_default}")
+    print(f"  DrawWire: device_id={draw_wire_device_id_default}, interval={draw_wire_interval_default}, delay={draw_wire_delay_default}")
+    print(f"  Web: port={web_port_default}, enabled={web_enabled_default}, delay={web_delay_default}")
+    
+    # Launch arguments - Modbus Driver
+    modbus_port_arg = DeclareLaunchArgument(
+        'modbus_port', default_value=modbus_port_default, description='Modbus serial port (auto or /dev/ttyUSB0)')
+    modbus_baudrate_arg = DeclareLaunchArgument(
+        'modbus_baudrate', default_value=modbus_baudrate_default, description='Modbus baudrate')
+    
+    # Launch arguments - Platform
+    platform_device_id_arg = DeclareLaunchArgument(
+        'platform_device_id', default_value=platform_device_id_default, description='Platform controller Modbus slave ID')
+    platform_delay_arg = DeclareLaunchArgument(
+        'platform_delay', default_value=platform_delay_default, description='Platform node launch delay (s)')
+    
+    # Launch arguments - Draw Wire Sensor
+    draw_wire_device_id_arg = DeclareLaunchArgument(
+        'draw_wire_device_id', default_value=draw_wire_device_id_default, description='Draw wire sensor Modbus slave ID')
+    draw_wire_interval_arg = DeclareLaunchArgument(
+        'draw_wire_interval', default_value=draw_wire_interval_default, description='Draw wire sensor read interval (s)')
+    draw_wire_delay_arg = DeclareLaunchArgument(
+        'draw_wire_delay', default_value=draw_wire_delay_default, description='Draw wire sensor launch delay (s)')
+    
+    # Launch arguments - Web Interface
     start_web_arg = DeclareLaunchArgument(
-        'start_web', default_value='true', description='Start lift_robot_web server')
+        'start_web', default_value=web_enabled_default, description='Start lift_robot_web server')
     web_port_arg = DeclareLaunchArgument(
         'web_port', default_value=web_port_default, description='Port for lift_robot_web server')
     sensor_topic_arg = DeclareLaunchArgument(
         'sensor_topic', default_value=sensor_topic_default, description='Draw wire sensor topic')
-    modbus_ready_delay_arg = DeclareLaunchArgument(
-        'modbus_ready_delay', default_value=modbus_ready_delay_default, description='Modbus driver ready delay (s)')
     web_delay_arg = DeclareLaunchArgument(
         'web_delay', default_value=web_delay_default, description='Web interface launch delay (s)')
     
@@ -78,17 +105,36 @@ def generate_launch_description():
 
     # Launch descriptions
     modbus_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(modbus_path)
+        PythonLaunchDescriptionSource(modbus_path),
+        launch_arguments={
+            'modbus_port': LaunchConfiguration('modbus_port'),
+            'baudrate': LaunchConfiguration('modbus_baudrate')
+        }.items()
     )
 
     # Start lift robot platform after modbus driver is ready
     lift_robot_launch = TimerAction(
-        period=LaunchConfiguration('modbus_ready_delay'),
-        actions=[IncludeLaunchDescription(PythonLaunchDescriptionSource(lift_robot_path))]
+        period=LaunchConfiguration('platform_delay'),
+        actions=[IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(lift_robot_path),
+            launch_arguments={
+                'device_id': LaunchConfiguration('platform_device_id')
+            }.items()
+        )]
     )
 
-
-
+    # Start draw wire sensor after modbus driver is ready
+    draw_wire_sensor_launch = TimerAction(
+        period=LaunchConfiguration('draw_wire_delay'),
+        actions=[IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(cable_sensor_path),
+            launch_arguments={
+                'device_id': LaunchConfiguration('draw_wire_device_id'),
+                'read_interval': LaunchConfiguration('draw_wire_interval'),
+                'topic': LaunchConfiguration('sensor_topic')
+            }.items()
+        )]
+    )
     
     # Start web after sensors (optional)
     web_launch = TimerAction(
@@ -104,14 +150,24 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        # Modbus driver arguments
+        modbus_port_arg,
+        modbus_baudrate_arg,
+        # Platform arguments
+        platform_device_id_arg,
+        platform_delay_arg,
+        # Draw wire sensor arguments
+        draw_wire_device_id_arg,
+        draw_wire_interval_arg,
+        draw_wire_delay_arg,
+        # Web interface arguments
         start_web_arg,
         web_port_arg,
         sensor_topic_arg,
-        modbus_ready_delay_arg,
         web_delay_arg,
+        # Launch actions
         modbus_launch,
         lift_robot_launch,
-        
-        
+        draw_wire_sensor_launch,
         web_launch,
     ])

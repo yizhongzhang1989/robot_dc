@@ -16,23 +16,71 @@ except Exception:
 
 
 class ModbusManagerNode(Node):
+    @staticmethod
+    def auto_detect_serial_port(requested_port):
+        """
+        Auto-detect RS485 serial port
+        Priority: 1) User specified port 2) Port with '485'/'RS485' in description 
+                  3) First /dev/ttyUSB* device 4) Fallback to /dev/ttyUSB0
+        
+        Args:
+            requested_port: User requested port ('auto' triggers detection, otherwise use as-is)
+        
+        Returns:
+            str: Detected or specified serial port path
+        """
+        if requested_port and requested_port != 'auto':
+            print(f"[ModbusManagerNode] Using user specified port: {requested_port}")
+            return requested_port
+        
+        try:
+            import serial.tools.list_ports as lp
+            ports = list(lp.comports())
+            
+            # Filter USB serial-type devices
+            usb_ports = [p for p in ports if 'USB' in (p.description or '') or p.device.startswith('/dev/ttyUSB')]
+            
+            # Match by keyword 485 / rs485
+            for p in usb_ports:
+                desc_low = (p.description or '').lower()
+                if '485' in desc_low or 'rs485' in desc_low:
+                    print(f"[ModbusManagerNode] Auto-detected RS485 device: {p.device} ({p.description})")
+                    return p.device
+            
+            # If no keyword match, pick first USB serial
+            if usb_ports:
+                print(f"[ModbusManagerNode] No 485 keyword found, using first USB serial: {usb_ports[0].device} ({usb_ports[0].description})")
+                return usb_ports[0].device
+            
+            # Fallback when nothing found
+            print("[ModbusManagerNode] No USB serial ports found, fallback to /dev/ttyUSB0")
+            return '/dev/ttyUSB0'
+            
+        except Exception as e:
+            print(f"[ModbusManagerNode] Auto-detect port error: {e}; fallback to /dev/ttyUSB0")
+            return '/dev/ttyUSB0'
+    
     def __init__(self):
         super().__init__('modbus_manager')
 
         # Declare and get parameters
-        self.declare_parameter('port', '/dev/ttyUSB0')
+        self.declare_parameter('port', 'auto')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('enable_dashboard', False)
         self.declare_parameter('dashboard_host', '0.0.0.0')
         self.declare_parameter('dashboard_port', 5000)
         self.declare_parameter('log_dir', DEFAULT_LOG_DIR)
         
-        port = self.get_parameter('port').value
+        requested_port = self.get_parameter('port').value
         baudrate = self.get_parameter('baudrate').value
         enable_dashboard = self.get_parameter('enable_dashboard').value
         dashboard_host = self.get_parameter('dashboard_host').value
         dashboard_port = self.get_parameter('dashboard_port').value
         log_dir = self.get_parameter('log_dir').value
+        
+        # Auto-detect serial port if needed
+        port = self.auto_detect_serial_port(requested_port)
+        self.get_logger().info(f"Using serial port: {port} (baudrate: {baudrate})")
 
         # Initialize Modbus RTU client
         self.client = ModbusSerialClient(port=port, baudrate=baudrate, timeout=1)

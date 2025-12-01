@@ -10,26 +10,30 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'common'))
 
 def generate_launch_description():
-    # Try to load from config file
-    default_device_id = '51'
-    default_read_interval = '0.06'
-    calib_filename = 'draw_wire_calibration.json'
+    # Load defaults from config file
+    def get_config_value(key, fallback):
+        """Helper to safely get config value with fallback"""
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            if config.has(key):
+                return config.get(key)
+        except:
+            pass
+        return fallback
     
-    try:
-        from common.config_manager import ConfigManager
-        config = ConfigManager()
-        default_device_id = str(config.get('lift_robot.draw_wire_sensor.device_id', 51))
-        default_read_interval = str(config.get('lift_robot.draw_wire_sensor.read_interval', 0.06))
-        if config.has('lift_robot.draw_wire_sensor.calibration_file'):
-            calib_filename = config.get('lift_robot.draw_wire_sensor.calibration_file')
-        print(f"[draw_wire_sensor] Loaded from config: device_id={default_device_id}, interval={default_read_interval}")
-    except Exception as e:
-        print(f"[draw_wire_sensor] Could not load config: {e}")
-        print(f"[draw_wire_sensor] Using defaults: device_id={default_device_id}, interval={default_read_interval}")
+    default_device_id = str(get_config_value('lift_robot.draw_wire_sensor.device_id', 51))
+    default_read_interval = str(get_config_value('lift_robot.draw_wire_sensor.read_interval', 0.06))
+    default_topic = get_config_value('lift_robot.draw_wire_sensor.topic', '/draw_wire_sensor/data')
+    calib_filename = get_config_value('lift_robot.draw_wire_sensor.calibration_file', 'draw_wire_calibration.json')
+    use_ack_patch = get_config_value('lift_robot.draw_wire_sensor.use_ack_patch', True)
+    publish_compact = get_config_value('lift_robot.draw_wire_sensor.publish_compact', False)
+    
+    print(f"[draw_wire_sensor] Config: device_id={default_device_id}, interval={default_read_interval}, topic={default_topic}")
     
     device_id_arg = DeclareLaunchArgument('device_id', default_value=default_device_id, description='Modbus device ID')
-    # Default changed to 0.06s (~17Hz) for system-wide consistency
     read_interval_arg = DeclareLaunchArgument('read_interval', default_value=default_read_interval, description='Sensor read interval (s, 0.06=~17Hz)')
+    topic_arg = DeclareLaunchArgument('topic', default_value=default_topic, description='Topic name for sensor data')
     
     # Portable config path resolution (ENV -> colcon_ws -> CWD)
     env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
@@ -89,6 +93,7 @@ def generate_launch_description():
     return LaunchDescription([
         device_id_arg,
         read_interval_arg,
+        topic_arg,
         Node(
             package='draw_wire_sensor',
             executable='draw_wire_sensor_node',
@@ -97,9 +102,9 @@ def generate_launch_description():
             emulate_tty=True,
             parameters=[{
                 'device_id': LaunchConfiguration('device_id'),
-                'use_ack_patch': True,
+                'use_ack_patch': use_ack_patch,
                 'read_interval': LaunchConfiguration('read_interval'),
-                'publish_compact': False,  # Disable compact mode to get register_1 for calibration
+                'publish_compact': publish_compact,
                 'calibration.scale': calib_scale,
                 'calibration.offset': calib_offset,
                 'calibration.enable': calib_enable

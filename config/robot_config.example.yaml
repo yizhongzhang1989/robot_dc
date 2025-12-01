@@ -198,23 +198,18 @@ lift_robot:
   modbus_driver:
     port: "auto"              # Serial port (auto-detect RS485 device, or specify like /dev/ttyUSB0)
     baudrate: 115200          # Serial baudrate
-    ready_delay: 3.0          # Wait time for modbus driver initialization (seconds)
     dashboard:
       enabled: true          # Enable Modbus dashboard web interface
       host: "0.0.0.0"         # Dashboard host address
       port: 5000              # Dashboard port
       log_dir: null           # Log directory (null = auto to temp/modbus_logs)
   
-  # Modbus Devices Node Configuration
-  modbus_devices:
-    launch_delay: 0.0         # Launch immediately after modbus driver ready
-  
   # Lift Platform Node Configuration
   platform:
     device_id: 50             # Modbus slave ID for platform controller
     calibration_file: "platform_overshoot_calibration.json"  # Overshoot calibration config in colcon_ws/config/
     range_file: "platform_range.json"  # Platform range limits config in colcon_ws/config/
-    launch_delay: 3.0         # Delay after modbus driver ready (seconds)
+    launch_delay: 3.0         # Launch delay after system start (seconds, allows modbus driver to initialize)
   
   # Draw Wire Sensor Node Configuration
   draw_wire_sensor:

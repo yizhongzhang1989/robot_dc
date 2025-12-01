@@ -8,34 +8,6 @@ import os
 # Add common package to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'common'))
 
-# Auto-detect serial port: prefer description containing 485/RS485; else first /dev/ttyUSB*; else fallback /dev/ttyUSB0
-def _auto_select_port(context):
-    requested = LaunchConfiguration('modbus_port').perform(context)
-    if requested and requested != 'auto':
-        print(f"[modbus_manager_launch] Using user specified port: {requested}")
-        return requested
-    try:
-        import serial.tools.list_ports as lp
-        ports = list(lp.comports())
-        # Filter USB serial-type devices
-        usb_ports = [p for p in ports if 'USB' in (p.description or '') or p.device.startswith('/dev/ttyUSB')]
-        # Match by keyword 485 / rs485
-        for p in usb_ports:
-            desc_low = (p.description or '').lower()
-            if '485' in desc_low or 'rs485' in desc_low:
-                print(f"[modbus_manager_launch] Detected RS485 device: {p.device} ({p.description})")
-                return p.device
-        # If no keyword match, pick first USB serial
-        if usb_ports:
-            print(f"[modbus_manager_launch] No 485 keyword found, using first USB serial: {usb_ports[0].device} ({usb_ports[0].description})")
-            return usb_ports[0].device
-        # Fallback when nothing found
-        print("[modbus_manager_launch] No USB serial ports found, fallback to /dev/ttyUSB0")
-        return '/dev/ttyUSB0'
-    except Exception as e:
-        print(f"[modbus_manager_launch] Auto-detect port error: {e}; fallback /dev/ttyUSB0")
-        return '/dev/ttyUSB0'
-
 def _launch_setup(context, *args, **kwargs):
     # Try to load from config file
     port = None
@@ -72,11 +44,10 @@ def _launch_setup(context, *args, **kwargs):
     if dashboard_port is None:
         dashboard_port = LaunchConfiguration('dashboard_port').perform(context)
     
-    # Auto-detect port if needed
-    if port == 'auto':
-        port = _auto_select_port(context)
+    # Note: Auto-detection logic is now handled inside modbus_manager_node.py
+    # Just pass 'auto' or specific port to the node, it will handle detection
     
-    # Create node with resolved port / baudrate
+    # Create node with resolved parameters
     node_params = [
         {'port': port},
         {'baudrate': int(baudrate)},
@@ -96,7 +67,7 @@ def _launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('modbus_port', default_value='auto', description='Modbus serial device name; auto enables detection'),
+        DeclareLaunchArgument('modbus_port', default_value='auto', description='Modbus serial device name; "auto" enables auto-detection'),
         DeclareLaunchArgument('baudrate', default_value='115200', description='Modbus serial baudrate'),
         DeclareLaunchArgument('enable_dashboard', default_value='false', description='Enable Modbus dashboard web interface'),
         DeclareLaunchArgument('dashboard_host', default_value='0.0.0.0', description='Dashboard host address'),

@@ -37,6 +37,7 @@ source install/setup.bash
 Copy example configuration and modify as needed:
 
 ```bash
+cd ..
 cp config/robot_config.example.yaml config/robot_config.yaml
 # Edit robot_config.yaml with your device settings
 ```
@@ -127,7 +128,7 @@ lift_robot_system
 Launch all nodes (platform + sensors + web):
 
 ```bash
-cd ~/Documents/robot_dc/colcon_ws
+cd colcon_ws
 source install/setup.bash
 ros2 launch robot_bringup lift_robot_bringup.py
 ```

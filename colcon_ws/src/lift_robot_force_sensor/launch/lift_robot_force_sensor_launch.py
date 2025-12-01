@@ -141,22 +141,25 @@ def generate_launch_description():
             3. CWD/config
     """
     
-    # Try to load defaults from config file (like other nodes do)
-    default_device_id = '52'
-    default_topic = '/force_sensor_right'
-    default_read_interval = '0.06'
+    # Load defaults from config file
+    def get_config_value(key, fallback):
+        """Helper to safely get config value with fallback"""
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            if config.has(key):
+                return config.get(key)
+        except:
+            pass
+        return fallback
     
-    try:
-        from common.config_manager import ConfigManager
-        config = ConfigManager()
-        # For right sensor by default
-        default_device_id = str(config.get('lift_robot.force_sensor_right.device_id', 52))
-        default_topic = config.get('lift_robot.force_sensor_right.topic', '/force_sensor_right')
-        default_read_interval = str(config.get('lift_robot.force_sensor_right.read_interval', 0.06))
-        print(f"[force_sensor_launch] Loaded from config: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
-    except Exception as e:
-        print(f"[force_sensor_launch] Could not load config: {e}")
-        print(f"[force_sensor_launch] Using defaults: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
+    # For right sensor by default
+    default_device_id = str(get_config_value('lift_robot.force_sensor_right.device_id', 52))
+    default_topic = get_config_value('lift_robot.force_sensor_right.topic', '/force_sensor_right')
+    default_read_interval = str(get_config_value('lift_robot.force_sensor_right.read_interval', 0.06))
+    default_node_suffix = get_config_value('lift_robot.force_sensor_right.node_name_suffix', '')
+    
+    print(f"[force_sensor_launch] Config: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
     
     # Declare launch arguments
     device_id_arg = DeclareLaunchArgument(
@@ -173,7 +176,7 @@ def generate_launch_description():
     
     node_name_suffix_arg = DeclareLaunchArgument(
         'node_name_suffix',
-        default_value='',
+        default_value=default_node_suffix,
         description='Suffix for node name (e.g., "right", "left")'
     )
     
