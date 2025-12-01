@@ -84,7 +84,7 @@ def create_workflow():
         
         return jsonify({
             'success': True,
-            'message': f'Workflow file created: {filename}',
+            'message': f'Workflow created at: {filepath}',
             'filepath': str(filepath)
         })
         
@@ -119,7 +119,7 @@ def save_workflow():
         
         return jsonify({
             'success': True,
-            'message': f'Workflow file saved: {filename}',
+            'message': f'Workflow saved to: {filepath}',
             'filepath': str(filepath)
         })
         

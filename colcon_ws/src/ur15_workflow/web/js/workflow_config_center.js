@@ -333,9 +333,11 @@ function saveWorkflowToFile() {
         })
         .then(response => response.json())
         .then(data => {
+            console.log('Save workflow response:', data);
             if (data.success) {
                 console.log('Workflow saved:', data.message);
-                showSuccessModal('Workflow saved: ' + filename);
+                console.log('Filepath:', data.filepath);
+                showSuccessModal(`Workflow saved successfully!\n\nFile path: ${data.filepath}`);
             } else {
                 showErrorModal('Save failed: ' + data.error);
             }
