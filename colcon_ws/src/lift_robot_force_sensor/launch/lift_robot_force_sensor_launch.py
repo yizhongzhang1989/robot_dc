@@ -20,6 +20,7 @@ def launch_setup(context, *args, **kwargs):
     topic_name = LaunchConfiguration('topic_name').perform(context)
     node_name_suffix = LaunchConfiguration('node_name_suffix').perform(context)
     read_interval = float(LaunchConfiguration('read_interval').perform(context))
+    zero_drift_threshold = int(LaunchConfiguration('zero_drift_threshold').perform(context))
     
     # Try to load calibration file name from config
     calib_filename = None
@@ -118,7 +119,8 @@ def launch_setup(context, *args, **kwargs):
                 'use_ack_patch': True,
                 'read_interval': read_interval,
                 'calibration_scale': calib_scale,
-                'calibration_offset': calib_offset
+                'calibration_offset': calib_offset,
+                'zero_drift_threshold': zero_drift_threshold
             }]
         ),
     ]
@@ -163,6 +165,7 @@ def generate_launch_description():
     default_topic = get_config_value('lift_robot.force_sensor_right.topic', '/force_sensor_right')
     default_read_interval = str(get_config_value('lift_robot.force_sensor_right.read_interval', 0.06))
     default_node_suffix = get_config_value('lift_robot.force_sensor_right.node_name_suffix', '')
+    default_zero_drift = str(get_config_value('lift_robot.force_sensor_right.zero_drift_threshold', 65336))
     
     print(f"[force_sensor_launch] Config: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
     
@@ -191,11 +194,18 @@ def generate_launch_description():
         description='Sensor read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz, 0.01 = 100Hz)'
     )
     
+    zero_drift_threshold_arg = DeclareLaunchArgument(
+        'zero_drift_threshold',
+        default_value=default_zero_drift,
+        description='Raw values > this threshold are filtered to 0 (zero drift elimination)'
+    )
+    
     return LaunchDescription([
         device_id_arg,
         topic_name_arg,
         node_name_suffix_arg,
         read_interval_arg,
+        zero_drift_threshold_arg,
         OpaqueFunction(function=launch_setup)
     ])
 
