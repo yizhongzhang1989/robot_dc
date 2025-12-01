@@ -21,8 +21,8 @@ install(PROGRAMS
 
 # Install config files
 install(DIRECTORY
-  config/
-  DESTINATION share/${PROJECT_NAME}/config
+  examples/
+  DESTINATION share/${PROJECT_NAME}/examples
 )
 
 # Install launch files

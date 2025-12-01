@@ -23,15 +23,15 @@ source ~/Documents/robot_dc/colcon_ws/install/setup.bash
 ```bash
 # Simple workflow
 ros2 run ur15_workflow run_workflow.py \
-  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml
+  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml
 
 # Example workflow (full rack positioning)
 ros2 run ur15_workflow run_workflow.py \
-  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_example.yaml
+  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_example.yaml
 
 # Dry run (validate only)
 ros2 run ur15_workflow run_workflow.py \
-  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml \
+  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml \
   --dry-run
 ```
 
@@ -45,7 +45,7 @@ ros2 run ur15_workflow run_workflow.py --config /path/to/my_workflow.yaml
 
 ```bash
 # Set once
-export UR15_WF_CONFIG=$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config
+export UR15_WF_CONFIG=$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples
 
 # Then use
 ros2 run ur15_workflow run_workflow.py --config $UR15_WF_CONFIG/workflow_simple.yaml
@@ -102,17 +102,17 @@ install/ur15_workflow/
 
 ```bash
 # Get config directory
-$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/
+$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/
 
 # List configs
-ls $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/
+ls $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/
 ```
 
 ## Creating Custom Workflows
 
 1. Copy an example config:
 ```bash
-cp $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml my_workflow.yaml
+cp $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml my_workflow.yaml
 ```
 
 2. Edit the workflow operations
@@ -144,7 +144,7 @@ source ~/Documents/robot_dc/colcon_ws/install/setup.bash
 ### Config file not found
 ```bash
 # Verify config files are installed
-ls $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/
+ls $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/
 ```
 
 ### Python import errors
@@ -181,7 +181,7 @@ Add to `~/.bashrc` for convenience:
 ```bash
 # UR15 Workflow
 source ~/Documents/robot_dc/colcon_ws/install/setup.bash
-export UR15_WF_CONFIG=$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config
+export UR15_WF_CONFIG=$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples
 ```
 
 Then use:

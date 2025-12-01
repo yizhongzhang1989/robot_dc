@@ -148,4 +148,4 @@ dataset/
 /config/*.backup
 /config/*~
 /config/.secrets*
-colcon_ws/src/ur15_workflow/config/workflow_results.json
+colcon_ws/src/ur15_workflow/examples/workflow_results.json

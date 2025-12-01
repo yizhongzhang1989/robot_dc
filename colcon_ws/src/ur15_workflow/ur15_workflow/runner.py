@@ -9,7 +9,7 @@ This script demonstrates the modular architecture where:
 4. Shared context allows data flow between operations
 
 Usage:
-    python3 -m ur15_workflow.runner --config ur15_workflow/config/workflow_example.yaml
+    python3 -m ur15_workflow.runner --config ur15_workflow/examples/workflow_example.yaml
     python3 -m ur15_workflow.runner --config workflow.yaml --dry-run
 """
 
@@ -262,10 +262,10 @@ def main():
         epilog="""
 Examples:
   # Run with example workflow
-  python3 -m ur15_workflow.runner --config ur15_workflow/config/workflow_example.yaml
+  python3 -m ur15_workflow.runner --config ur15_workflow/examples/workflow_example.yaml
   
   # Run with simple workflow
-  python3 -m ur15_workflow.runner --config ur15_workflow/config/workflow_simple.yaml
+  python3 -m ur15_workflow.runner --config ur15_workflow/examples/workflow_simple.yaml
   
   # Dry run (validate workflow without execution)
   python3 -m ur15_workflow.runner --config workflow.yaml --dry-run

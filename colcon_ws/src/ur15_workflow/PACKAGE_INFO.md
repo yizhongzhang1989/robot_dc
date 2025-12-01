@@ -76,11 +76,11 @@ source ~/Documents/robot_dc/colcon_ws/install/setup.bash
 
 # Run simple workflow
 ros2 run ur15_workflow run_workflow.py \
-  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml
+  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml
 
 # Run with dry-run validation
 ros2 run ur15_workflow run_workflow.py \
-  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml \
+  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml \
   --dry-run
 ```
 
@@ -90,7 +90,7 @@ ros2 run ur15_workflow run_workflow.py \
 
 ```bash
 # Set config path variable (add to ~/.bashrc for persistence)
-export UR15_WF_CONFIG=$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config
+export UR15_WF_CONFIG=$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples
 
 # Then use
 ros2 run ur15_workflow run_workflow.py --config $UR15_WF_CONFIG/workflow_simple.yaml
@@ -274,7 +274,7 @@ ros2 pkg prefix ur15_workflow
 ros2 pkg executables ur15_workflow
 
 # List configs
-ls $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/
+ls $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/
 ```
 
 ---

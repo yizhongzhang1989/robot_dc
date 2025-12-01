@@ -291,45 +291,145 @@ class WorkflowEngine:
         
         print("="*70)
     
-    def save_results(self, output_path: str):
+    def save_results(self, output_path: str, save_images: bool = False):
         """
-        Save workflow results to JSON file
+        Save workflow results to JSON file as a clean log report
         
         Args:
             output_path: Path to save results
+            save_images: If True, save images separately and include paths; if False (default), exclude image data
         """
         try:
             import numpy as np
+            import cv2
             
-            # Helper function to convert non-serializable objects
-            def make_serializable(obj):
+            # Helper function to convert non-serializable objects and filter large data
+            def make_serializable(obj, path="", is_output=False):
+                """
+                Convert objects to JSON-serializable format, filtering out large image data
+                
+                Args:
+                    obj: Object to convert
+                    path: Current path in the object tree (for debugging)
+                    is_output: Whether this is inside an 'outputs' dict
+                """
                 if isinstance(obj, np.ndarray):
-                    return obj.tolist()
+                    # Check if this is likely image data (large array with image-like shape)
+                    if len(obj.shape) >= 2 and obj.size > 1000:
+                        # This is likely an image - return metadata instead
+                        return {
+                            "_type": "image_data",
+                            "shape": list(obj.shape),
+                            "dtype": str(obj.dtype),
+                            "size_mb": round(obj.nbytes / (1024 * 1024), 2),
+                            "_note": "Image data excluded from log. Set save_images=True to save separately."
+                        }
+                    else:
+                        # Small arrays (like coordinates) can be included
+                        return obj.tolist()
                 elif isinstance(obj, dict):
-                    return {k: make_serializable(v) for k, v in obj.items()}
+                    result = {}
+                    for k, v in obj.items():
+                        # Skip image data keys in outputs
+                        if is_output and isinstance(v, np.ndarray) and len(v.shape) >= 2 and v.size > 1000:
+                            result[k] = {
+                                "_type": "image_data",
+                                "shape": list(v.shape),
+                                "dtype": str(v.dtype),
+                                "size_mb": round(v.nbytes / (1024 * 1024), 2),
+                                "_note": "Image data excluded from log"
+                            }
+                        else:
+                            result[k] = make_serializable(v, f"{path}.{k}", k == "outputs")
+                    return result
                 elif isinstance(obj, list):
-                    return [make_serializable(item) for item in obj]
+                    return [make_serializable(item, f"{path}[{i}]", is_output) for i, item in enumerate(obj)]
                 elif isinstance(obj, (str, int, float, bool, type(None))):
                     return obj
                 else:
-                    return f"<{type(obj).__name__} object>"
+                    # Handle other types
+                    return f"<{type(obj).__name__}>"
             
-            # Filter context to remove non-serializable objects
+            # Filter context to remove non-serializable and large objects
             serializable_context = {}
             for k, v in self.context.items():
-                serializable_context[k] = make_serializable(v)
+                # Skip image data in context (typically ends with .jpg, .png, etc.)
+                if isinstance(v, np.ndarray) and len(v.shape) >= 2 and v.size > 1000:
+                    serializable_context[k] = {
+                        "_type": "image_data",
+                        "shape": list(v.shape),
+                        "dtype": str(v.dtype),
+                        "_note": "Image data excluded from context"
+                    }
+                else:
+                    serializable_context[k] = make_serializable(v, f"context.{k}")
 
             output_data = {
                 'timestamp': datetime.now().isoformat(),
                 'workflow': self.workflow,
                 'results': make_serializable(self.results),
-                'context': serializable_context
+                'context': serializable_context,
+                '_metadata': {
+                    'total_operations': len(self.workflow),
+                    'successful': sum(1 for r in self.results.values() if r.get('status') == 'success'),
+                    'failed': sum(1 for r in self.results.values() if r.get('status') == 'error'),
+                    'skipped': sum(1 for r in self.results.values() if r.get('status') == 'skipped'),
+                    'note': 'This is a workflow execution log. Large image data has been excluded to keep file size manageable.'
+                }
             }
             
             with open(output_path, 'w') as f:
                 json.dump(output_data, f, indent=2)
             
-            print(f"\n💾 Workflow results saved to: {output_path}")
+            # Get file size
+            file_size = Path(output_path).stat().st_size
+            if file_size < 1024:
+                size_str = f"{file_size} B"
+            elif file_size < 1024 * 1024:
+                size_str = f"{file_size / 1024:.2f} KB"
+            else:
+                size_str = f"{file_size / (1024 * 1024):.2f} MB"
+            
+            print(f"\n💾 Workflow results saved to: {output_path} ({size_str})")
+            
+            # Optionally save images separately
+            if save_images:
+                self._save_images_separately(output_path)
             
         except Exception as e:
             print(f"\n✗ Failed to save results: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _save_images_separately(self, output_path: str):
+        """
+        Save captured images to separate files
+        
+        Args:
+            output_path: Base path for the results file
+        """
+        try:
+            import numpy as np
+            import cv2
+            
+            # Create images directory next to results file
+            output_dir = Path(output_path).parent
+            images_dir = output_dir / "workflow_images"
+            images_dir.mkdir(exist_ok=True)
+            
+            saved_count = 0
+            
+            # Save images from context
+            for key, value in self.context.items():
+                if isinstance(value, np.ndarray) and len(value.shape) >= 2:
+                    # This is an image
+                    image_filename = key if key.endswith(('.jpg', '.png', '.jpeg')) else f"{key}.jpg"
+                    image_path = images_dir / image_filename
+                    cv2.imwrite(str(image_path), value)
+                    saved_count += 1
+            
+            if saved_count > 0:
+                print(f"    ✓ Saved {saved_count} images to {images_dir}/")
+            
+        except Exception as e:
+            print(f"    ⚠ Warning: Failed to save images separately: {e}")

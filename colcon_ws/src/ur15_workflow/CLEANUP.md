@@ -90,7 +90,7 @@ source ~/Documents/robot_dc/colcon_ws/install/setup.bash
 
 # Run workflows
 ros2 run ur15_workflow run_workflow.py \
-  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml
+  --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml
 ```
 
 ## Documentation

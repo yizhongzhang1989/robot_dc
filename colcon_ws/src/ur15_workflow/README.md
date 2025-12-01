@@ -70,7 +70,7 @@ source ~/Documents/robot_dc/colcon_ws/install/setup.bash
 source ~/Documents/robot_dc/colcon_ws/install/setup.bash
 
 # Run with package config files
-ros2 run ur15_workflow run_workflow.py --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml
+ros2 run ur15_workflow run_workflow.py --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml
 
 # Run with custom config
 ros2 run ur15_workflow run_workflow.py --config /path/to/my_workflow.yaml
@@ -83,7 +83,7 @@ ros2 run ur15_workflow run_workflow.py --config workflow.yaml --dry-run
 
 ```bash
 # After building and sourcing
-run_workflow --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml
+run_workflow --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml
 ```
 
 ### Method 3: Direct Python import
@@ -106,7 +106,7 @@ The package includes example workflow configurations in the `config/` directory:
 - **workflow_simple.yaml**: Simple single-position capture workflow
 - **workflow_example.yaml**: Complete rack positioning workflow
 
-Installed location: `$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/`
+Installed location: `$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/`
 
 ## Quick Start
 
@@ -120,14 +120,14 @@ Installed location: `$(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config
 2. **Test with dry-run**:
    ```bash
    ros2 run ur15_workflow run_workflow.py \
-     --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml \
+     --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml \
      --dry-run
    ```
 
 3. **Run a workflow**:
    ```bash
    ros2 run ur15_workflow run_workflow.py \
-     --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml
+     --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml
    ```
 
 ## Creating Custom Workflows

@@ -13,7 +13,7 @@ app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)  # Enable CORS
 
 # Workflow configuration directory
-WORKFLOW_CONFIG_DIR = Path(__file__).parent.parent.parent / 'ur15_workflow' / 'config'
+WORKFLOW_CONFIG_DIR = Path(__file__).parent.parent.parent / 'ur15_workflow' / 'examples'
 
 # Initialize RobotStatusClient for Redis access
 robot_status_client = None

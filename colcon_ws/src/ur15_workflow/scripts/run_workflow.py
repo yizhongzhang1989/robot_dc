@@ -7,8 +7,8 @@ This script runs workflows from the ur15_workflow ROS package.
 Usage:
     ros2 run ur15_workflow run_workflow.py --config <path_to_config>
     
-    # Using package config files
-    ros2 run ur15_workflow run_workflow.py --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/config/workflow_simple.yaml
+    # Using package example files
+    ros2 run ur15_workflow run_workflow.py --config $(ros2 pkg prefix ur15_workflow)/share/ur15_workflow/examples/workflow_simple.yaml
 """
 
 import sys
