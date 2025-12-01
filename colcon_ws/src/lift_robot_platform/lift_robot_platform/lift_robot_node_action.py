@@ -1299,8 +1299,64 @@ class LiftRobotNodeAction(Node):
             # Get overshoot calibration (only for platform)
             if target == 'platform':
                 overshoot_up, overshoot_down = self._get_overshoot(target_height)
+                
+                # Safety check: If initial error is smaller than overshoot, skip movement
+                # This prevents unnecessary micro-movements that could overshoot
+                initial_error = target_height - initial_height
+                initial_abs_error = abs(initial_error)
+                applicable_overshoot = overshoot_up if initial_error > 0 else overshoot_down
+                
+                self.get_logger().info(
+                    f"[GotoHeight] Safety check: error={initial_abs_error:.2f}mm, overshoot={applicable_overshoot:.2f}mm, "
+                    f"tolerance={POSITION_TOLERANCE}mm"
+                )
+                
+                if initial_abs_error < applicable_overshoot and initial_abs_error > POSITION_TOLERANCE:
+                    # Too close to move safely - would likely overshoot
+                    self.get_logger().warn(
+                        f"[GotoHeight] Target too close ({initial_abs_error:.2f}mm < overshoot {applicable_overshoot:.2f}mm) - "
+                        f"skipping movement to avoid overshoot. Current: {initial_height:.2f}mm, Target: {target_height:.2f}mm"
+                    )
+                    
+                    result = GotoHeight.Result()
+                    result.success = True
+                    result.final_height = initial_height
+                    result.execution_time = time.time() - start_time
+                    result.completion_reason = 'too_close_to_move'
+                    
+                    with self.state_lock:
+                        self.task_state = 'completed'
+                        self.task_end_time = time.time()
+                        self.completion_reason = 'too_close_to_move'
+                    
+                    goal_handle.succeed()
+                    return result
+                elif initial_abs_error <= POSITION_TOLERANCE:
+                    # Already at target
+                    self.get_logger().info(
+                        f"[GotoHeight] Already at target ({initial_abs_error:.2f}mm <= {POSITION_TOLERANCE}mm). "
+                        f"Current: {initial_height:.2f}mm, Target: {target_height:.2f}mm"
+                    )
+                    
+                    result = GotoHeight.Result()
+                    result.success = True
+                    result.final_height = initial_height
+                    result.execution_time = time.time() - start_time
+                    result.completion_reason = 'already_at_target'
+                    
+                    with self.state_lock:
+                        self.task_state = 'completed'
+                        self.task_end_time = time.time()
+                        self.completion_reason = 'already_at_target'
+                    
+                    goal_handle.succeed()
+                    return result
             else:  # pushrod - uses simple real-time control (no overshoot)
                 overshoot_up, overshoot_down = None, None  # Flag to skip early stop logic
+            
+            # Track when platform actually starts moving (for early stop delay)
+            movement_confirmed_time = None
+            MOVEMENT_STABILIZATION_TIME = 0.15  # Wait 150ms after movement confirmed before allowing early stop
             
             # Feedback preparation
             feedback_msg = GotoHeight.Feedback()
@@ -1515,7 +1571,9 @@ class LiftRobotNodeAction(Node):
                 # Pushrod: Skip early stop logic - uses simple real-time control below
                 if target == 'platform' and error > 0:  # Moving up
                     early_stop_height = target_height - max(overshoot_up - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
-                    if current_height >= early_stop_height and movement_state == 'up':
+                    # Only check early stop if platform is actually moving (not just command sent)
+                    # This prevents immediate stop when starting from a position already in early-stop zone
+                    if current_height >= early_stop_height and movement_state == 'up' and not self.movement_command_sent:
                         stop_height = current_height  # Record height when stop command issued
                         # Send stop command and wait for completion
                         if target == 'platform':
@@ -1566,7 +1624,9 @@ class LiftRobotNodeAction(Node):
                         
                 elif target == 'platform' and error < 0:  # Moving down
                     early_stop_height = target_height + max(overshoot_down - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
-                    if current_height <= early_stop_height and movement_state == 'down':
+                    # Only check early stop if platform is actually moving (not just command sent)
+                    # This prevents immediate stop when starting from a position already in early-stop zone
+                    if current_height <= early_stop_height and movement_state == 'down' and not self.movement_command_sent:
                         stop_height = current_height  # Record height when stop command issued
                         # Send stop command and wait for completion
                         if target == 'platform':
