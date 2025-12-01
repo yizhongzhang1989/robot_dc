@@ -69,6 +69,8 @@ class LiftRobotWeb(Node):
         self.left_force_sensor = None   # calibrated
         self.right_force_raw = None     # raw for calibration
         self.left_force_raw = None      # raw for calibration
+        self.right_force_freq_hz = 0.0  # publish frequency
+        self.left_force_freq_hz = 0.0   # publish frequency
         self.combined_force_sensor = None  # Combined force (sum of two sensors, falls back to single sensor if one missing)
         self.last_force_update = None  # Latest force sensor update timestamp (either sensor)
         self.platform_status = None
@@ -130,13 +132,12 @@ class LiftRobotWeb(Node):
         self.force_device_id_left = force_device_id_left
         
         try:
-            from std_msgs.msg import Float32
-            # Subscribe to calibrated force sensor topics (for control)
-            self.force_sub_right = self.create_subscription(Float32, force_topic_right, self.force_cb_right, 10)
-            self.force_sub_left = self.create_subscription(Float32, force_topic_left, self.force_cb_left, 10)
-            # Subscribe to raw force sensor topics (for calibration display)
-            self.force_raw_sub_right = self.create_subscription(Float32, f'{force_topic_right}/raw', self.force_raw_cb_right, 10)
-            self.force_raw_sub_left = self.create_subscription(Float32, f'{force_topic_left}/raw', self.force_raw_cb_left, 10)
+            # Subscribe to calibrated force sensor topics (for control) - now JSON with freq_hz
+            self.force_sub_right = self.create_subscription(String, force_topic_right, self.force_cb_right, 10)
+            self.force_sub_left = self.create_subscription(String, force_topic_left, self.force_cb_left, 10)
+            # Subscribe to raw force sensor topics (for calibration display) - also JSON
+            self.force_raw_sub_right = self.create_subscription(String, f'{force_topic_right}/raw', self.force_raw_cb_right, 10)
+            self.force_raw_sub_left = self.create_subscription(String, f'{force_topic_left}/raw', self.force_raw_cb_left, 10)
             self.get_logger().info(f"Subscribed to {force_topic_right} (right) and {force_topic_left} (left)")
             self.get_logger().info(f"Subscribed to {force_topic_right}/raw and {force_topic_left}/raw (for calibration)")
         except Exception as e:
@@ -177,6 +178,8 @@ class LiftRobotWeb(Node):
                         # Add dual-channel force values (always add, value can be None → JSON null)
                         merged['right_force_sensor'] = self.right_force_sensor
                         merged['left_force_sensor'] = self.left_force_sensor
+                        merged['right_force_freq_hz'] = self.right_force_freq_hz
+                        merged['left_force_freq_hz'] = self.left_force_freq_hz
                         merged['combined_force_sensor'] = self.combined_force_sensor
                         
                         # Force sensor status detection
@@ -207,52 +210,68 @@ class LiftRobotWeb(Node):
             # Continue operation
 
     def force_cb_right(self, msg):
-        """Right force sensor callback (device_id=52) - calibrated value"""
+        """Right force sensor callback (device_id=52) - calibrated value with freq_hz"""
         try:
             import math
-            value = msg.data
+            # Parse JSON message
+            data = json.loads(msg.data)
+            value = data.get('force', None)
+            freq_hz = data.get('freq_hz', 0.0)
+            
             # Check for overflow (inf/nan) - set to None if invalid
-            if math.isinf(value) or math.isnan(value):
+            if value is not None and (math.isinf(value) or math.isnan(value)):
                 self.get_logger().warn(f"Right force sensor overflow detected: {value}")
                 self.right_force_sensor = None
+                self.right_force_freq_hz = 0.0
             else:
                 self.right_force_sensor = value
+                self.right_force_freq_hz = freq_hz
             self.last_force_update = time.time()
             self._update_combined_force()
         except Exception as e:
             self.get_logger().error(f"Right force callback error: {e}")
             self.right_force_sensor = None  # Set to None on exception
+            self.right_force_freq_hz = 0.0
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_cb_left(self, msg):
-        """Left force sensor callback (device_id=53) - calibrated value"""
+        """Left force sensor callback (device_id=53) - calibrated value with freq_hz"""
         try:
             import math
-            value = msg.data
+            # Parse JSON message
+            data = json.loads(msg.data)
+            value = data.get('force', None)
+            freq_hz = data.get('freq_hz', 0.0)
+            
             # Check for overflow (inf/nan) - set to None if invalid
-            if math.isinf(value) or math.isnan(value):
+            if value is not None and (math.isinf(value) or math.isnan(value)):
                 self.get_logger().warn(f"Left force sensor overflow detected: {value}")
                 self.left_force_sensor = None
+                self.left_force_freq_hz = 0.0
             else:
                 self.left_force_sensor = value
+                self.left_force_freq_hz = freq_hz
             self.last_force_update = time.time()
             self._update_combined_force()
         except Exception as e:
             self.get_logger().error(f"Left force callback error: {e}")
             self.left_force_sensor = None  # Set to None on exception
+            self.left_force_freq_hz = 0.0
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_raw_cb_right(self, msg):
         """Right force sensor raw callback (device_id=52) - raw value for calibration"""
         try:
-            self.right_force_raw = msg.data
+            data = json.loads(msg.data)
+            self.right_force_raw = data.get('force', None)
         except Exception as e:
             self.get_logger().warn(f"Right force raw callback error: {e}")
     
     def force_raw_cb_left(self, msg):
         """Left force sensor raw callback (device_id=53) - raw value for calibration"""
         try:
-            self.left_force_raw = msg.data
+            data = json.loads(msg.data)
+            self.left_force_raw = data.get('force', None)
         except Exception as e:
             self.get_logger().warn(f"Left force raw callback error: {e}")
 
@@ -339,6 +358,8 @@ def run_fastapi_server(port):
                 # Add dual-channel force values (always add, value can be None → JSON null)
                 merged['right_force_sensor'] = lift_robot_node.right_force_sensor
                 merged['left_force_sensor'] = lift_robot_node.left_force_sensor
+                merged['right_force_freq_hz'] = lift_robot_node.right_force_freq_hz
+                merged['left_force_freq_hz'] = lift_robot_node.left_force_freq_hz
                 merged['combined_force_sensor'] = lift_robot_node.combined_force_sensor
                 
                 # Force sensor status detection

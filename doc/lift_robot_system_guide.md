@@ -133,12 +133,83 @@ source install/setup.bash
 ros2 launch robot_bringup lift_robot_bringup.py
 ```
 
+**Launch with Parameters** (override config file):
+
+```bash
+# Specify serial port
+ros2 launch robot_bringup lift_robot_bringup.py modbus_port:=/dev/ttyUSB1
+
+# Enable Modbus dashboard
+ros2 launch robot_bringup lift_robot_bringup.py enable_dashboard:=true
+
+# Change force sensor device IDs (swap left/right)
+ros2 launch robot_bringup lift_robot_bringup.py \
+  force_right_device_id:=53 force_left_device_id:=52
+
+# Change sampling rate to 50Hz
+ros2 launch robot_bringup lift_robot_bringup.py \
+  draw_wire_interval:=0.02 \
+  force_right_interval:=0.02 \
+  force_left_interval:=0.02
+
+# Change web server port
+ros2 launch robot_bringup lift_robot_bringup.py web_port:=8091
+
+# Disable web interface
+ros2 launch robot_bringup lift_robot_bringup.py web_enabled:=false
+
+# Combined parameters example
+ros2 launch robot_bringup lift_robot_bringup.py \
+  modbus_port:=/dev/ttyUSB0 \
+  enable_dashboard:=true \
+  web_port:=8091
+```
+
 ### Method 2: Platform Only Launch (Without Force Sensors)
 
 Launch only platform and draw wire sensor:
 
 ```bash
 ros2 launch robot_bringup lift_robot_platform_only.py
+```
+
+### Method 3: Launch Individual Nodes
+
+Launch nodes separately for testing or debugging:
+
+**Modbus Driver Only**:
+```bash
+ros2 launch modbus_driver modbus_manager_launch.py
+ros2 launch modbus_driver modbus_manager_launch.py enable_dashboard:=true
+```
+
+**Platform Only**:
+```bash
+ros2 launch lift_robot_platform lift_robot_launch.py
+ros2 launch lift_robot_platform lift_robot_launch.py device_id:=50
+```
+
+**Draw Wire Sensor Only**:
+```bash
+ros2 launch draw_wire_sensor draw_wire_sensor.launch.py
+ros2 launch draw_wire_sensor draw_wire_sensor.launch.py device_id:=51 read_interval:=0.02
+```
+
+**Force Sensor Only**:
+```bash
+# Right sensor
+ros2 launch lift_robot_force_sensor lift_robot_force_sensor_launch.py \
+  device_id:=52 topic_name:=/force_sensor_right node_name_suffix:=right
+
+# Left sensor
+ros2 launch lift_robot_force_sensor lift_robot_force_sensor_launch.py \
+  device_id:=53 topic_name:=/force_sensor_left node_name_suffix:=left
+```
+
+**Web Interface Only**:
+```bash
+ros2 launch lift_robot_web lift_robot_web.launch.py
+ros2 launch lift_robot_web lift_robot_web.launch.py port:=8091
 ```
 
 ## Parameter Modification Guide

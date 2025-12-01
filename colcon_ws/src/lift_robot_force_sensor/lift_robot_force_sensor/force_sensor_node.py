@@ -5,6 +5,8 @@ from .force_sensor_controller import ForceSensorController
 import logging
 import uuid
 import time
+import json
+from collections import deque
 try:
     import cv2
     import numpy as np
@@ -73,13 +75,17 @@ class LiftRobotForceSensorNode(Node):
 
         # Sequence id generator
         self.seq_id = 0
+        
+        # Frequency tracking (like draw_wire_sensor)
+        self.last_publish_time = None
+        self.publish_intervals = deque(maxlen=10)
 
-        # Single channel force value publishing (Float32)
-        from std_msgs.msg import Float32
-        # Calibrated force (for control)
-        self.force_pub = self.create_publisher(Float32, self.topic_name, 10)
-        # Raw force (for calibration and debugging)
-        self.force_raw_pub = self.create_publisher(Float32, f"{self.topic_name}/raw", 10)
+        # Single channel force value publishing (JSON String with freq_hz)
+        from std_msgs.msg import String
+        # Calibrated force (for control) - now JSON with freq_hz
+        self.force_pub = self.create_publisher(String, self.topic_name, 10)
+        # Raw force (for calibration and debugging) - also JSON
+        self.force_raw_pub = self.create_publisher(String, f"{self.topic_name}/raw", 10)
 
         # Periodic read timer
         self.timer = self.create_timer(self.read_interval, self.periodic_read)
@@ -116,27 +122,53 @@ class LiftRobotForceSensorNode(Node):
                 # Continue to next cycle without crashing
                 return
             
+            # Calculate frequency (same logic as draw_wire_sensor)
+            now = time.time()
+            if self.last_publish_time is not None:
+                dt = now - self.last_publish_time
+                if 0 < dt < 2.0:  # sanity range
+                    self.publish_intervals.append(dt)
+            self.last_publish_time = now
+            
+            freq_hz = 0.0
+            if self.publish_intervals:
+                avg_dt = sum(self.publish_intervals) / len(self.publish_intervals)
+                if avg_dt > 0:
+                    freq_hz = 1.0 / avg_dt
+            
             # After asynchronous callbacks complete, publish last known values (race acceptable for simple UI display)
             try:
                 last = self.controller.get_last()
-                from std_msgs.msg import Float32
+                from std_msgs.msg import String
                 if last['right_value'] is not None:  # Compatible with controller return structure
                     # Apply calibration: actual_force = sensor_reading × scale + offset
                     raw_value = float(last['right_value'])
                     calibrated_force = raw_value * self.calibration_scale + self.calibration_offset
                     
-                    # Publish raw value (for calibration) - wrap to prevent publish errors
+                    # Publish raw value JSON (for calibration) - wrap to prevent publish errors
                     try:
-                        msg_raw = Float32()
-                        msg_raw.data = raw_value
+                        msg_raw_obj = {
+                            'force': raw_value,
+                            'seq_id': seq,
+                            'freq_hz': freq_hz,
+                            'timestamp': now
+                        }
+                        msg_raw = String()
+                        msg_raw.data = json.dumps(msg_raw_obj)
                         self.force_raw_pub.publish(msg_raw)
                     except Exception as e:
                         self.get_logger().warn(f"[SEQ {seq}] Failed to publish raw force: {e}")
                     
-                    # Publish calibrated value (for control) - wrap to prevent publish errors
+                    # Publish calibrated value JSON (for control) - wrap to prevent publish errors
                     try:
-                        msg_force = Float32()
-                        msg_force.data = calibrated_force
+                        msg_force_obj = {
+                            'force': calibrated_force,
+                            'seq_id': seq,
+                            'freq_hz': freq_hz,
+                            'timestamp': now
+                        }
+                        msg_force = String()
+                        msg_force.data = json.dumps(msg_force_obj)
                         self.force_pub.publish(msg_force)
                     except Exception as e:
                         self.get_logger().warn(f"[SEQ {seq}] Failed to publish calibrated force: {e}")
@@ -146,7 +178,6 @@ class LiftRobotForceSensorNode(Node):
             # Append to history for visualization (use calibrated values)
             try:
                 if self.enable_visualization and last['right_value'] is not None and last['left_value'] is not None:
-                    now = time.time()
                     # Store calibrated values for visualization
                     raw_right = float(last['right_value'])
                     raw_left = float(last['left_value'])

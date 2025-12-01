@@ -93,6 +93,14 @@
               <div class="text-xs text-gray-600">N</div>
             </div>
           </div>
+          <div class="text-xs text-gray-600 mt-1 flex justify-between">
+            <div>
+              <span>R Freq:</span> <span id="rightForceFreq" class="font-mono">—</span>
+            </div>
+            <div>
+              <span>L Freq:</span> <span id="leftForceFreq" class="font-mono">—</span>
+            </div>
+          </div>
         </div>
 
       </div>
@@ -606,6 +614,11 @@ function update(d){
       elem.classList.remove('text-red-600', 'font-bold');
     }
   }
+  if(d.right_force_freq_hz!==undefined) {
+    const freqElem = $('rightForceFreq');
+    if(freqElem) freqElem.textContent = (d.right_force_freq_hz && d.right_force_freq_hz.toFixed? d.right_force_freq_hz.toFixed(2): d.right_force_freq_hz);
+  }
+  
   if(d.left_force_sensor!==undefined) {
     const elem = $('leftForceVal');
     if(d.left_force_sensor===null) {
@@ -615,6 +628,10 @@ function update(d){
       elem.textContent = d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(2):d.left_force_sensor;
       elem.classList.remove('text-red-600', 'font-bold');
     }
+  }
+  if(d.left_force_freq_hz!==undefined) {
+    const freqElem = $('leftForceFreq');
+    if(freqElem) freqElem.textContent = (d.left_force_freq_hz && d.left_force_freq_hz.toFixed? d.left_force_freq_hz.toFixed(2): d.left_force_freq_hz);
   }
   if(d.combined_force_sensor!==undefined) {
     const elem = $('combinedForceVal');
