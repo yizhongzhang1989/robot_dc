@@ -1,5 +1,11 @@
 // Workflow Config Center JavaScript Functions
 
+// Get API base URL - dynamically adapt to current hostname
+function getApiBaseUrl() {
+    const hostname = window.location.hostname;
+    return `http://${hostname}:8008`;
+}
+
 // Load workflow templates
 let workflowTemplates = null;
 
@@ -50,7 +56,15 @@ function checkWorkflowLoaded() {
 async function loadWorkflowTemplates() {
     try {
         console.log('Loading workflow templates from: template/workflow_template.json');
-        const response = await fetch('template/workflow_template.json');
+        
+        // Add timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        
+        const response = await fetch('template/workflow_template.json', {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -58,11 +72,10 @@ async function loadWorkflowTemplates() {
         
         const data = await response.json();
         workflowTemplates = data;
-        console.log('Workflow templates loaded successfully:', workflowTemplates);
+        console.log('✓ Workflow templates loaded successfully');
         console.log('Available template types:', Object.keys(workflowTemplates));
     } catch (error) {
-        console.error('Failed to load workflow templates:', error);
-        console.error('Error details:', error.message);
+        console.error('✗ Failed to load workflow templates:', error.message);
         // Fallback to empty templates
         workflowTemplates = {
             robot_move: [],
@@ -70,7 +83,7 @@ async function loadWorkflowTemplates() {
             record_data: [],
             positioning: []
         };
-        console.warn('Using empty fallback templates');
+        console.warn('⚠ Using empty fallback templates');
     }
 }
 
@@ -108,7 +121,7 @@ function getHandlerTemplate(handlerType, handlerId) {
 
 function showLoadWorkflowModal() {
     // 获取工作流文件列表
-    fetch('http://localhost:8008/api/workflows')
+    fetch(`${getApiBaseUrl()}/api/workflows`)
         .then(response => response.json())
         .then(data => {
             const select = document.getElementById('workflowFileList');
@@ -144,7 +157,7 @@ function loadSelectedWorkflow() {
     }
     
     // 从服务器加载工作流文件
-    fetch(`http://localhost:8008/api/workflow/${filename}`)
+    fetch(`${getApiBaseUrl()}/api/workflow/${filename}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -261,7 +274,7 @@ function confirmDeleteWorkflow() {
     closeDeleteWorkflowModal();
     
     // 调用API删除文件
-    fetch(`http://localhost:8008/api/workflow/${currentFilename}`, {
+    fetch(`${getApiBaseUrl()}/api/workflow/${currentFilename}`, {
         method: 'DELETE'
     })
     .then(response => response.json())
@@ -313,7 +326,7 @@ function saveWorkflowToFile() {
         }
         
         // 调用API保存文件
-        fetch('http://localhost:8008/api/workflow', {
+        fetch(`${getApiBaseUrl()}/api/workflow`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fileName: filename, content: jsonData })
@@ -339,7 +352,7 @@ function saveWorkflowToFile() {
 
 function showLoadTemplateModal() {
     // 从模板目录获取文件列表
-    fetch('http://localhost:8008/api/templates')
+    fetch(`${getApiBaseUrl()}/api/templates`)
         .then(response => response.json())
         .then(data => {
             const select = document.getElementById('templateFileList');
@@ -378,7 +391,7 @@ function generateUniqueFilename(baseFilename, counter = 1) {
 
 // 辅助函数：尝试创建文件，如果已存在则自动重试
 function tryCreateWorkflowFile(fileName, content, originalName, counter = 1) {
-    return fetch('http://localhost:8008/api/workflow', {
+    return fetch(`${getApiBaseUrl()}/api/workflow`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fileName: fileName, content: content })
@@ -425,7 +438,7 @@ function loadSelectedTemplate() {
     }
     
     // 从服务器加载模板文件
-    fetch(`http://localhost:8008/api/template/${templateFilename}`)
+    fetch(`${getApiBaseUrl()}/api/template/${templateFilename}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -555,8 +568,14 @@ function closeInfoModal() {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async function() {
-    // Load workflow templates first
-    await loadWorkflowTemplates();
+    console.log('🚀 Initializing Workflow Config Center...');
+    
+    // Load workflow templates first (non-blocking if it fails)
+    try {
+        await loadWorkflowTemplates();
+    } catch (error) {
+        console.error('Template loading error:', error);
+    }
     
     // Get all handler items
     const handlerItems = document.querySelectorAll('.handler-item');
@@ -588,6 +607,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Initialize workflow state
     checkWorkflowLoaded();
+    
+    console.log('✓ Workflow Config Center initialized successfully');
 });
 
 function handleDragStart(e) {
@@ -1179,7 +1200,7 @@ function closeEditParamsModal() {
 async function loadJointAngles() {
     try {
         // Get actual joint positions directly from UR15 robot
-        const response = await fetch('http://localhost:8008/api/ur15/actual_joint_positions', {
+        const response = await fetch(`${getApiBaseUrl()}/api/ur15/actual_joint_positions`, {
             method: 'GET'
         });
         

@@ -965,9 +965,11 @@ class UR15WebNode(Node):
         @self.app.route('/workflow_config_center_url', methods=['GET'])
         def workflow_config_center_url():
             """Return the URL for workflow configuration center."""
-            from flask import jsonify
+            from flask import jsonify, request
             
-            workflow_url = 'http://localhost:8008'
+            # Use the same hostname as the request to build workflow config center URL
+            host = request.host.split(':')[0]  # Extract hostname without port
+            workflow_url = f'http://{host}:8008'
             
             self.get_logger().info(f"Redirecting to workflow config center: {workflow_url}")
             

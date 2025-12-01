@@ -48,6 +48,10 @@ ur15:
       launch_file: "image_labeling_launch.py"
       delay: 0.0
       enabled: true
+    - package: "camcalib_web_service"
+      launch_file: "camcalib_web_launch.py"
+      delay: 0.0
+      enabled: true
     - package: "ur15_workflow"
       launch_file: "workflow_config_center_launch.py"
       delay: 0.0

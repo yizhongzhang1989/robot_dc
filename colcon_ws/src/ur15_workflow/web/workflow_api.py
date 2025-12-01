@@ -314,13 +314,23 @@ def get_actual_joint_positions():
 @app.route('/')
 def index():
     """Serve the main HTML page"""
-    return send_from_directory('.', 'workflow_index.html')
+    response = send_from_directory('.', 'workflow_index.html')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @app.route('/<path:path>')
 def serve_static(path):
     """Serve static files (HTML, JS, CSS, etc.)"""
-    return send_from_directory('.', path)
+    response = send_from_directory('.', path)
+    # Disable cache for JS and CSS files
+    if path.endswith('.js') or path.endswith('.css') or path.endswith('.json'):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 
 if __name__ == '__main__':
