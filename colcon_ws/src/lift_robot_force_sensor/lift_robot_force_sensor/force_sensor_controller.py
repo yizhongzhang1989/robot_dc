@@ -26,7 +26,12 @@ class ForceSensorController(ModbusDevice):
         if not regs or len(regs) < 1:
             return None
         try:
-            return int(regs[0]) & 0xFFFF
+            raw_value = int(regs[0]) & 0xFFFF
+            # Zero drift elimination: filter values > 65336 to 0
+            # This handles sensor noise/drift when no force is applied
+            if raw_value > 65336:
+                return 0
+            return raw_value
         except Exception:
             return None
 

@@ -91,6 +91,16 @@ class LiftRobotNodeAction(Node):
         self.platform_range_max = None
         self.platform_range_enabled = False
         
+        # Platform force limit (loaded from config)
+        self.max_force_limit = 500.0  # Default: 500N
+        self.force_limit_enabled = True  # Always enabled for safety
+        
+        # Control action timeouts (loaded from config)
+        self.timeout_goto_height = 60.0    # Default: 60s
+        self.timeout_force_control = 60.0  # Default: 60s
+        self.timeout_hybrid_control = 60.0 # Default: 60s
+        self.timeout_manual_move = 300.0   # Default: 300s (longer for manual)
+        
         # Overshoot calibration
         self.avg_overshoot_up = OVERSHOOT_INIT_UP
         self.avg_overshoot_down = OVERSHOOT_INIT_DOWN
@@ -445,6 +455,69 @@ class LiftRobotNodeAction(Node):
                 self.get_logger().warn(f"Failed to load platform range config: {e} - range limits DISABLED")
         else:
             self.get_logger().info(f"No platform range config found - range limits DISABLED")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Load Platform Force Limit from robot_config.yaml
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            from common.config_manager import ConfigManager
+            config_mgr = ConfigManager()
+            if config_mgr.has('lift_robot.platform.max_force_limit'):
+                max_force = config_mgr.get('lift_robot.platform.max_force_limit')
+                if max_force is not None and max_force > 0:
+                    self.max_force_limit = float(max_force)
+                    self.force_limit_enabled = True
+                    self.get_logger().info(
+                        f"⚠️  SAFETY: Maximum force limit loaded: {self.max_force_limit:.1f}N "
+                        f"(emergency stop will trigger if exceeded)"
+                    )
+                else:
+                    self.get_logger().warn(
+                        f"Invalid force limit value in config ({max_force}) - using default 500.0N"
+                    )
+            else:
+                self.get_logger().info(f"No force limit in config - using default 500.0N")
+        except Exception as e:
+            self.get_logger().warn(f"Failed to load force limit from config: {e} - using default 500.0N")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Load Control Action Timeouts from robot_config.yaml
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            from common.config_manager import ConfigManager
+            config_mgr = ConfigManager()
+            
+            # Load GotoHeight timeout
+            if config_mgr.has('lift_robot.platform.timeouts.goto_height'):
+                timeout_val = config_mgr.get('lift_robot.platform.timeouts.goto_height')
+                if timeout_val is not None and timeout_val > 0:
+                    self.timeout_goto_height = float(timeout_val)
+            
+            # Load ForceControl timeout
+            if config_mgr.has('lift_robot.platform.timeouts.force_control'):
+                timeout_val = config_mgr.get('lift_robot.platform.timeouts.force_control')
+                if timeout_val is not None and timeout_val > 0:
+                    self.timeout_force_control = float(timeout_val)
+            
+            # Load HybridControl timeout
+            if config_mgr.has('lift_robot.platform.timeouts.hybrid_control'):
+                timeout_val = config_mgr.get('lift_robot.platform.timeouts.hybrid_control')
+                if timeout_val is not None and timeout_val > 0:
+                    self.timeout_hybrid_control = float(timeout_val)
+            
+            # Load ManualMove timeout
+            if config_mgr.has('lift_robot.platform.timeouts.manual_move'):
+                timeout_val = config_mgr.get('lift_robot.platform.timeouts.manual_move')
+                if timeout_val is not None and timeout_val > 0:
+                    self.timeout_manual_move = float(timeout_val)
+            
+            self.get_logger().info(
+                f"⏱️  Action timeouts loaded: GotoHeight={self.timeout_goto_height}s, "
+                f"ForceControl={self.timeout_force_control}s, HybridControl={self.timeout_hybrid_control}s, "
+                f"ManualMove={self.timeout_manual_move}s"
+            )
+        except Exception as e:
+            self.get_logger().warn(f"Failed to load action timeouts from config: {e} - using defaults")
     
     # ═══════════════════════════════════════════════════════════════
     # Sensor Callbacks (read-only data acquisition)
@@ -1115,6 +1188,65 @@ class LiftRobotNodeAction(Node):
         # Fall back to default
         return self.avg_overshoot_up, self.avg_overshoot_down
     
+    def _check_force_limit(self, current_force):
+        """Check if current force exceeds maximum allowed limit (HIGHEST PRIORITY SAFETY CHECK after emergency_reset).
+        
+        This is a critical safety check that should be called in ALL control loops.
+        If force exceeds limit, triggers emergency_reset immediately.
+        
+        Args:
+            current_force: Current combined force reading (N), can be None
+        
+        Returns:
+            True if force limit exceeded (emergency_reset triggered)
+        """
+        if not self.force_limit_enabled:
+            return False
+        
+        if current_force is None:
+            return False
+        
+        # Check if force exceeds maximum limit
+        if current_force > self.max_force_limit:
+            self.get_logger().error(
+                f"🚨 FORCE LIMIT EXCEEDED: {current_force:.1f}N > {self.max_force_limit:.1f}N - TRIGGERING EMERGENCY RESET!"
+            )
+            
+            # Trigger emergency reset immediately (same as reset command)
+            with self.state_lock:
+                self.task_state = 'emergency_reset'
+                self.reset_in_progress = True
+            
+            # Cancel all timers
+            try:
+                self.controller.cancel_all_timers()
+            except Exception as e:
+                self.get_logger().error(f"[FORCE_LIMIT] Timer cancel failed: {e}")
+            
+            # Reset all relays
+            try:
+                self.controller.reset_all_relays()
+            except Exception as e:
+                self.get_logger().error(f"[FORCE_LIMIT] Relay reset failed: {e}")
+            
+            # Abort any active flash
+            try:
+                self.controller.abort_active_flash()
+            except Exception as e:
+                self.get_logger().error(f"[FORCE_LIMIT] Flash abort failed: {e}")
+            
+            # Send 3x STOP pulses
+            try:
+                for i in range(3):
+                    self.controller.stop()
+                    time.sleep(0.05)
+            except Exception as e:
+                self.get_logger().error(f"[FORCE_LIMIT] Stop pulse failed: {e}")
+            
+            return True
+        
+        return False
+    
     def _check_range_limits(self, current_height, direction):
         """Check if platform has reached range limits.
         
@@ -1299,8 +1431,64 @@ class LiftRobotNodeAction(Node):
             # Get overshoot calibration (only for platform)
             if target == 'platform':
                 overshoot_up, overshoot_down = self._get_overshoot(target_height)
+                
+                # Safety check: If initial error is smaller than overshoot, skip movement
+                # This prevents unnecessary micro-movements that could overshoot
+                initial_error = target_height - initial_height
+                initial_abs_error = abs(initial_error)
+                applicable_overshoot = overshoot_up if initial_error > 0 else overshoot_down
+                
+                self.get_logger().info(
+                    f"[GotoHeight] Safety check: error={initial_abs_error:.2f}mm, overshoot={applicable_overshoot:.2f}mm, "
+                    f"tolerance={POSITION_TOLERANCE}mm"
+                )
+                
+                if initial_abs_error < applicable_overshoot and initial_abs_error > POSITION_TOLERANCE:
+                    # Too close to move safely - would likely overshoot
+                    self.get_logger().warn(
+                        f"[GotoHeight] Target too close ({initial_abs_error:.2f}mm < overshoot {applicable_overshoot:.2f}mm) - "
+                        f"skipping movement to avoid overshoot. Current: {initial_height:.2f}mm, Target: {target_height:.2f}mm"
+                    )
+                    
+                    result = GotoHeight.Result()
+                    result.success = True
+                    result.final_height = initial_height
+                    result.execution_time = time.time() - start_time
+                    result.completion_reason = 'too_close_to_move'
+                    
+                    with self.state_lock:
+                        self.task_state = 'completed'
+                        self.task_end_time = time.time()
+                        self.completion_reason = 'too_close_to_move'
+                    
+                    goal_handle.succeed()
+                    return result
+                elif initial_abs_error <= POSITION_TOLERANCE:
+                    # Already at target
+                    self.get_logger().info(
+                        f"[GotoHeight] Already at target ({initial_abs_error:.2f}mm <= {POSITION_TOLERANCE}mm). "
+                        f"Current: {initial_height:.2f}mm, Target: {target_height:.2f}mm"
+                    )
+                    
+                    result = GotoHeight.Result()
+                    result.success = True
+                    result.final_height = initial_height
+                    result.execution_time = time.time() - start_time
+                    result.completion_reason = 'already_at_target'
+                    
+                    with self.state_lock:
+                        self.task_state = 'completed'
+                        self.task_end_time = time.time()
+                        self.completion_reason = 'already_at_target'
+                    
+                    goal_handle.succeed()
+                    return result
             else:  # pushrod - uses simple real-time control (no overshoot)
                 overshoot_up, overshoot_down = None, None  # Flag to skip early stop logic
+            
+            # Track when platform actually starts moving (for early stop delay)
+            movement_confirmed_time = None
+            MOVEMENT_STABILIZATION_TIME = 0.15  # Wait 150ms after movement confirmed before allowing early stop
             
             # Feedback preparation
             feedback_msg = GotoHeight.Feedback()
@@ -1323,7 +1511,57 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # Check for stop request from StopMovement
+                # PRIORITY 1: Check force limit (triggers emergency_reset if exceeded)
+                with self.state_lock:
+                    current_force = self.current_force_combined
+                
+                # _check_force_limit() triggers emergency_reset internally if limit exceeded
+                # Next loop iteration will catch emergency_reset at PRIORITY 0 and abort
+                self._check_force_limit(current_force)
+                
+                # PRIORITY 2: Check action timeout (triggers emergency_reset if exceeded)
+                elapsed_time = time.time() - start_time
+                if self.timeout_goto_height > 0 and elapsed_time > self.timeout_goto_height:
+                    self.get_logger().error(
+                        f"🚨 GotoHeight TIMEOUT after {elapsed_time:.1f}s (limit: {self.timeout_goto_height}s) - TRIGGERING EMERGENCY RESET!"
+                    )
+                    
+                    # Trigger emergency reset (same as force_limit and manual reset command)
+                    with self.state_lock:
+                        self.task_state = 'emergency_reset'
+                        self.reset_in_progress = True
+                    
+                    # Cancel all timers
+                    try:
+                        self.controller.cancel_all_timers()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Timer cancel failed: {e}")
+                    
+                    # Reset all relays
+                    try:
+                        self.controller.reset_all_relays()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Relay reset failed: {e}")
+                    
+                    # Abort any active flash
+                    try:
+                        self.controller.abort_active_flash()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Flash abort failed: {e}")
+                    
+                    # Send 3x STOP pulses
+                    try:
+                        for i in range(3):
+                            self.controller.stop()
+                            time.sleep(0.05)
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Stop pulse failed: {e}")
+                    
+                    # Emergency reset triggered, next loop will catch it at PRIORITY 0 and abort
+                    # Continue to next iteration to let PRIORITY 0 handle the abort
+                    continue
+                
+                # PRIORITY 3: Check for stop request from StopMovement
                 stop_req = False
                 with self.state_lock:
                     stop_req = self.stop_requested
@@ -1515,7 +1753,9 @@ class LiftRobotNodeAction(Node):
                 # Pushrod: Skip early stop logic - uses simple real-time control below
                 if target == 'platform' and error > 0:  # Moving up
                     early_stop_height = target_height - max(overshoot_up - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
-                    if current_height >= early_stop_height and movement_state == 'up':
+                    # Only check early stop if platform is actually moving (not just command sent)
+                    # This prevents immediate stop when starting from a position already in early-stop zone
+                    if current_height >= early_stop_height and movement_state == 'up' and not self.movement_command_sent:
                         stop_height = current_height  # Record height when stop command issued
                         # Send stop command and wait for completion
                         if target == 'platform':
@@ -1566,7 +1806,9 @@ class LiftRobotNodeAction(Node):
                         
                 elif target == 'platform' and error < 0:  # Moving down
                     early_stop_height = target_height + max(overshoot_down - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
-                    if current_height <= early_stop_height and movement_state == 'down':
+                    # Only check early stop if platform is actually moving (not just command sent)
+                    # This prevents immediate stop when starting from a position already in early-stop zone
+                    if current_height <= early_stop_height and movement_state == 'down' and not self.movement_command_sent:
                         stop_height = current_height  # Record height when stop command issued
                         # Send stop command and wait for completion
                         if target == 'platform':
@@ -1736,7 +1978,57 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # Check for stop request from StopMovement
+                # PRIORITY 1: Check force limit (triggers emergency_reset if exceeded)
+                with self.state_lock:
+                    current_force = self.current_force_combined
+                
+                # _check_force_limit() triggers emergency_reset internally if limit exceeded
+                # Next loop iteration will catch emergency_reset at PRIORITY 0 and abort
+                self._check_force_limit(current_force)
+                
+                # PRIORITY 2: Check action timeout (triggers emergency_reset if exceeded)
+                elapsed_time = time.time() - start_time
+                if self.timeout_force_control > 0 and elapsed_time > self.timeout_force_control:
+                    self.get_logger().error(
+                        f"🚨 ForceControl TIMEOUT after {elapsed_time:.1f}s (limit: {self.timeout_force_control}s) - TRIGGERING EMERGENCY RESET!"
+                    )
+                    
+                    # Trigger emergency reset (same as force_limit and manual reset command)
+                    with self.state_lock:
+                        self.task_state = 'emergency_reset'
+                        self.reset_in_progress = True
+                    
+                    # Cancel all timers
+                    try:
+                        self.controller.cancel_all_timers()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Timer cancel failed: {e}")
+                    
+                    # Reset all relays
+                    try:
+                        self.controller.reset_all_relays()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Relay reset failed: {e}")
+                    
+                    # Abort any active flash
+                    try:
+                        self.controller.abort_active_flash()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Flash abort failed: {e}")
+                    
+                    # Send 3x STOP pulses
+                    try:
+                        for i in range(3):
+                            self.controller.stop()
+                            time.sleep(0.05)
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Stop pulse failed: {e}")
+                    
+                    # Emergency reset triggered, next loop will catch it at PRIORITY 0 and abort
+                    # Continue to next iteration to let PRIORITY 0 handle the abort
+                    continue
+                
+                # PRIORITY 3: Check for stop request from StopMovement
                 stop_req = False
                 with self.state_lock:
                     stop_req = self.stop_requested
@@ -1978,7 +2270,57 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # Check for stop request from StopMovement
+                # PRIORITY 1: Check force limit (triggers emergency_reset if exceeded)
+                with self.state_lock:
+                    current_force = self.current_force_combined
+                
+                # _check_force_limit() triggers emergency_reset internally if limit exceeded
+                # Next loop iteration will catch emergency_reset at PRIORITY 0 and abort
+                self._check_force_limit(current_force)
+                
+                # PRIORITY 2: Check action timeout (triggers emergency_reset if exceeded)
+                elapsed_time = time.time() - start_time
+                if self.timeout_hybrid_control > 0 and elapsed_time > self.timeout_hybrid_control:
+                    self.get_logger().error(
+                        f"🚨 HybridControl TIMEOUT after {elapsed_time:.1f}s (limit: {self.timeout_hybrid_control}s) - TRIGGERING EMERGENCY RESET!"
+                    )
+                    
+                    # Trigger emergency reset (same as force_limit and manual reset command)
+                    with self.state_lock:
+                        self.task_state = 'emergency_reset'
+                        self.reset_in_progress = True
+                    
+                    # Cancel all timers
+                    try:
+                        self.controller.cancel_all_timers()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Timer cancel failed: {e}")
+                    
+                    # Reset all relays
+                    try:
+                        self.controller.reset_all_relays()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Relay reset failed: {e}")
+                    
+                    # Abort any active flash
+                    try:
+                        self.controller.abort_active_flash()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Flash abort failed: {e}")
+                    
+                    # Send 3x STOP pulses
+                    try:
+                        for i in range(3):
+                            self.controller.stop()
+                            time.sleep(0.05)
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Stop pulse failed: {e}")
+                    
+                    # Emergency reset triggered, next loop will catch it at PRIORITY 0 and abort
+                    # Continue to next iteration to let PRIORITY 0 handle the abort
+                    continue
+                
+                # PRIORITY 3: Check for stop request from StopMovement
                 stop_req = False
                 with self.state_lock:
                     stop_req = self.stop_requested
@@ -2435,7 +2777,57 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # Check for stop request from StopMovement
+                # PRIORITY 1: Check force limit (triggers emergency_reset if exceeded)
+                with self.state_lock:
+                    current_force = self.current_force_combined
+                
+                # _check_force_limit() triggers emergency_reset internally if limit exceeded
+                # Next loop iteration will catch emergency_reset at PRIORITY 0 and abort
+                self._check_force_limit(current_force)
+                
+                # PRIORITY 2: Check action timeout (triggers emergency_reset if exceeded)
+                elapsed_time = time.time() - start_time
+                if self.timeout_manual_move > 0 and elapsed_time > self.timeout_manual_move:
+                    self.get_logger().error(
+                        f"🚨 ManualMove({direction}) TIMEOUT after {elapsed_time:.1f}s (limit: {self.timeout_manual_move}s) - TRIGGERING EMERGENCY RESET!"
+                    )
+                    
+                    # Trigger emergency reset (same as force_limit and manual reset command)
+                    with self.state_lock:
+                        self.task_state = 'emergency_reset'
+                        self.reset_in_progress = True
+                    
+                    # Cancel all timers
+                    try:
+                        self.controller.cancel_all_timers()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Timer cancel failed: {e}")
+                    
+                    # Reset all relays
+                    try:
+                        self.controller.reset_all_relays()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Relay reset failed: {e}")
+                    
+                    # Abort any active flash
+                    try:
+                        self.controller.abort_active_flash()
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Flash abort failed: {e}")
+                    
+                    # Send 3x STOP pulses
+                    try:
+                        for i in range(3):
+                            self.controller.stop()
+                            time.sleep(0.05)
+                    except Exception as e:
+                        self.get_logger().error(f"[TIMEOUT] Stop pulse failed: {e}")
+                    
+                    # Emergency reset triggered, next loop will catch it at PRIORITY 0 and abort
+                    # Continue to next iteration to let PRIORITY 0 handle the abort
+                    continue
+                
+                # PRIORITY 3: Check for stop request from StopMovement
                 stop_req = False
                 with self.state_lock:
                     stop_req = self.stop_requested
