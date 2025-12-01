@@ -9,7 +9,7 @@
         "move_type": "movej",
         "velocity": 0.5,
         "acceleration": 0.5,
-        "wait_time": 2.0,
+        "wait_time": 1.0,
         "stop_on_failure": true
         },
         {
@@ -31,7 +31,7 @@
         "move_type": "move_tcp",
         "velocity": 0.1,
         "acceleration": 0.1,
-        "wait_time": 2.0
+        "wait_time": 1.0
         }
     ],
     "capture_image":
@@ -125,7 +125,7 @@
             {"name": "GB200_Rack_Top_Left_Corner", "x": 0, "y": 0, "z": 2.145},
             {"name": "GB200_Rack_Top_Right_Corner", "x": 0.55, "y": 0, "z": 2.145}
         ],
-        "save_path": "../temp/rack_location/positioning_result.json",
+        "save_path": "../temp/rack_location/positioning_result_fitting.json",
         "timeout": 10000,
         "status_namespace": "ur15",
         "status_key_name": "rack_points_3d",
@@ -138,7 +138,6 @@
         "type": "positioning",
         "description": "Get positioning result by standard triangulation mode",
         "positioning_type": "get_result",
-        "template_points": [],
         "save_path": "../temp/positioning_result_standard.json",
         "status_namespace": "ur15",
         "status_key_name": "last_points_3d",

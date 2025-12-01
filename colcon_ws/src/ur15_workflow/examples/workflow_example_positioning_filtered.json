@@ -38,7 +38,7 @@
       "stop_on_failure": true,
       "type": "robot_move",
       "velocity": 0.5,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "camera_topic": "/ur15_camera/image_raw",
@@ -124,7 +124,7 @@
       "move_type": "movej",
       "velocity": 0.5,
       "acceleration": 0.5,
-      "wait_time": 2,
+      "wait_time": 1.0,
       "stop_on_failure": true
     },
     {
@@ -143,7 +143,7 @@
       "stop_on_failure": true,
       "type": "robot_move",
       "velocity": 0.5,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "camera_topic": "/ur15_camera/image_raw",

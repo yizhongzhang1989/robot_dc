@@ -38,7 +38,7 @@
       "stop_on_failure": true,
       "type": "robot_move",
       "velocity": 0.5,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "camera_topic": "/ur15_camera/image_raw",
@@ -82,7 +82,7 @@
       "stop_on_failure": true,
       "type": "robot_move",
       "velocity": 0.5,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "camera_topic": "/ur15_camera/image_raw",
@@ -144,7 +144,7 @@
       "stop_on_failure": true,
       "type": "robot_move",
       "velocity": 0.5,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "camera_topic": "/ur15_camera/image_raw",
@@ -188,7 +188,7 @@
       "stop_on_failure": true,
       "type": "robot_move",
       "velocity": 0.5,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "camera_topic": "/ur15_camera/image_raw",
@@ -249,7 +249,6 @@
       ],
       "timeout": 10000,
       "type": "positioning",
-      "save_path": "../temp/rack_location/positioning_result.json",
       "status_namespace": "ur15",
       "status_key_name": "rack_points_3d",
       "local2world_matrix_name": "rack2base_matrix",

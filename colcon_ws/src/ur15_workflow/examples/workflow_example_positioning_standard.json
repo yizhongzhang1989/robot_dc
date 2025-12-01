@@ -37,7 +37,7 @@
       "move_type": "movej",
       "velocity": 0.5,
       "acceleration": 0.5,
-      "wait_time": 2,
+      "wait_time": 1.0,
       "stop_on_failure": true
     },
     {
@@ -81,7 +81,7 @@
       "move_type": "move_tcp",
       "velocity": 0.1,
       "acceleration": 0.1,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "id": "capture_at_current_pose",
@@ -124,7 +124,7 @@
       "move_type": "move_tcp",
       "velocity": 0.1,
       "acceleration": 0.1,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "id": "move_tcp_to_offset",
@@ -141,7 +141,7 @@
       "move_type": "move_tcp",
       "velocity": 0.1,
       "acceleration": 0.1,
-      "wait_time": 2
+      "wait_time": 1.0
     },
     {
       "id": "capture_at_current_pose",
