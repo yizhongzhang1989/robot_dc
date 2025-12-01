@@ -547,7 +547,7 @@ class CourierRobotWebAPI:
         
         if self.verbose:
             print(f"🎯⚡ [Platform] Hybrid: {target_height}mm OR {target_force}N")
-        result = self._send_command('platform', 'hybrid_control', 
+        result = self._send_command('platform', 'height_force_hybrid', 
                                 target_height=target_height, target_force=target_force)
         
         if not result['success']:

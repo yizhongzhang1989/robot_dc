@@ -44,8 +44,10 @@ def interactive_mode(robot):
     Pushrod Control:
       pup               - Pushrod manual up (use 'pstop' to stop)
       pdown             - Pushrod manual down (use 'pstop' to stop)
-      pgoto <height>    - Pushrod goto height (mm, background)
-      pgoto! <height>   - Pushrod goto height (non-blocking)
+      pgoto <height>    - Pushrod goto absolute height (mm, background)
+      pgoto! <height>   - Pushrod goto absolute height (non-blocking)
+      prel <offset>     - Pushrod relative move (mm, background), e.g., 'prel 10' or 'prel -5'
+      prel! <offset>    - Pushrod relative move (non-blocking)
       pstop             - Stop pushrod (can interrupt any command!)
     
     Emergency:
@@ -178,12 +180,28 @@ def interactive_mode(robot):
                         wait = not command.endswith('!')
                         if wait:
                             # Blocking mode: execute in background thread
-                            robot._execute_in_background(robot.pushrod_goto_height, height, wait=True)
+                            robot._execute_in_background(robot.pushrod_goto_height, height, mode='absolute', wait=True)
                         else:
                             # Non-blocking mode: execute directly
-                            robot.pushrod_goto_height(height, wait=False)
+                            robot.pushrod_goto_height(height, mode='absolute', wait=False)
                     except ValueError:
                         print("❌ Invalid height value")
+            
+            elif command in ['prel', 'prel!']:
+                if len(parts) < 2:
+                    print("❌ Usage: prel <offset> or prel! <offset> (non-blocking)")
+                else:
+                    try:
+                        offset = float(parts[1])
+                        wait = not command.endswith('!')
+                        if wait:
+                            # Blocking mode: execute in background thread
+                            robot._execute_in_background(robot.pushrod_goto_height, offset, mode='relative', wait=True)
+                        else:
+                            # Non-blocking mode: execute directly
+                            robot.pushrod_goto_height(offset, mode='relative', wait=False)
+                    except ValueError:
+                        print("❌ Invalid offset value")
             
             elif command == 'pstop':
                 robot.pushrod_stop()
