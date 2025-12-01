@@ -28,15 +28,19 @@ import subprocess
 import signal
 import atexit
 from flask import Flask, render_template_string, Response
+from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from common.workspace_utils import get_scripts_directory
 from ur15_web import draw_utils
-from robot_status import get_from_status, set_to_status
+# Use robot_status_redis for better performance in Flask threads (no ROS2 service dependency)
+from robot_status_redis import get_from_status, set_to_status
 
 # Add scripts directory to path for camera calibration toolkit
 scripts_dir = get_scripts_directory()
 if scripts_dir and scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
+
+from generate_server_frame import GenerateServerFrame
 
 # Import camera calibration toolkit
 try:
@@ -178,9 +182,10 @@ class UR15WebNode(Node):
         self.target2base_matrix = None
         self.calibration_lock = threading.Lock()
         
-        # Generate 3D curves for visualization
-        self.ur15_base_curve = draw_utils.generate_ur15_base_curve(ray_length=3)
-        self.gb200rack_curve = draw_utils.generate_gb200rack_curve()
+        # Generate 3D models for visualization
+        self.ur15_base_model = draw_utils.generate_ur15_base_curve(ray_length=3)
+        self.gb200rack_model = draw_utils.generate_gb200rack_curve()
+        self.gb200server_model = draw_utils.generate_gb200server_wire()
         
         # Robot state data
         self.joint_positions = []
@@ -214,6 +219,24 @@ class UR15WebNode(Node):
         # auto_spin=False because this node is already spinning via launch file
         self.status_client = RobotStatusClient(self)
         self.get_logger().info("Status service client created")
+        
+        # Create Dashboard client for freedrive control (doesn't interrupt External Control)
+        from ur_dashboard_msgs.srv import RawRequest
+        self.dashboard_client = self.create_client(RawRequest, '/dashboard_client/raw_request')
+        self.get_logger().info("Dashboard client created for freedrive control")
+        
+        # Initialize GenerateServerFrame for server coordinate calculations
+        import sys
+        scripts_dir = get_scripts_directory()
+        if scripts_dir and scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        try:
+            from generate_server_frame import GenerateServerFrame
+            self.server_frame_generator = GenerateServerFrame()
+            self.get_logger().info("Server frame generator initialized")
+        except Exception as e:
+            self.get_logger().warning(f"Failed to initialize server frame generator: {e}")
+            self.server_frame_generator = None
         
         # Register cleanup handlers
         atexit.register(self.cleanup)
@@ -288,7 +311,12 @@ class UR15WebNode(Node):
             loaded_count = 0
             pending_count = 0
             for param_name, attr_name in params_to_load:
-                value = self.status_client.get_status('ur15', param_name, timeout_sec=2.0)
+                try:
+                    value = self.status_client.get_status('ur15', param_name, timeout_sec=2.0)
+                except Exception as e:
+                    self.get_logger().debug(f"Failed to get {param_name}: {e}")
+                    value = None
+                
                 if value is not None:
                     try:
                         with self.calibration_lock:
@@ -365,29 +393,33 @@ class UR15WebNode(Node):
             
             self.child_processes.clear()
         
+        # Exit freedrive mode if active
+        if self.freedrive_active and self.ur15_robot:
+            try:
+                with self.ur15_lock:
+                    self.ur15_robot.end_freedrive_mode()
+                    self.get_logger().info("Exited freedrive mode during cleanup")
+                    self.freedrive_active = False
+            except Exception as e:
+                self.get_logger().error(f"Error exiting freedrive mode: {e}")
+        
         # Disconnect from robot
         if self.ur15_robot is not None:
             try:
-                if self.freedrive_active:
-                    self.ur15_robot.freedrive_mode(False)
                 self.ur15_robot.close()
                 self.get_logger().info("Disconnected from UR15 robot")
             except Exception as e:
                 self.get_logger().error(f"Error disconnecting from robot: {e}")
     
     def _simplify_path(self, path):
-        """Simplify path by replacing home directory with ~ and removing /home/a/Documents/."""
+        """Simplify path by replacing home directory with ~."""
         if not path:
             return path
         
-        # First try to replace with ~
+        # Replace home directory with ~
         home_dir = os.path.expanduser('~')
         if path.startswith(home_dir):
             return path.replace(home_dir, '~', 1)
-        
-        # Also handle /home/a/Documents/ specifically
-        if path.startswith('/home/a/Documents/'):
-            return path.replace('/home/a/Documents/', '~/', 1)
         
         return path
     
@@ -789,38 +821,206 @@ class UR15WebNode(Node):
                     'message': str(e)
                 })
         
-        @self.app.route('/prepare_last_captured_image', methods=['GET'])
-        def prepare_last_captured_image():
-            """Prepare last captured image URL for automatic upload to image labeling service."""
-            from flask import request, jsonify, url_for
-            from urllib.parse import quote
+        @self.app.route('/get_workflow_files', methods=['GET'])
+        def get_workflow_files():
+            """Get list of JSON files from temp/workflow_files directory."""
+            from flask import jsonify
+            from common.workspace_utils import get_workspace_root
+            import glob
             
             try:
-                # Get last_picture path from robot_status service
-                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
-                
-                if image_path is None:
+                # Get workspace root
+                workspace_root = get_workspace_root()
+                if not workspace_root:
                     return jsonify({
                         'status': 'error',
-                        'message': 'No image has been captured yet. Please capture an image first.'
+                        'message': 'Could not find workspace root',
+                        'files': []
+                    }), 500
+                
+                # Build path to workflow_files directory
+                workflow_dir = os.path.join(workspace_root, 'temp', 'workflow_files')
+                
+                # Create directory if it doesn't exist
+                if not os.path.exists(workflow_dir):
+                    self.get_logger().info(f"Creating workflow directory: {workflow_dir}")
+                    os.makedirs(workflow_dir, exist_ok=True)
+                
+                # Get all JSON files
+                json_files = glob.glob(os.path.join(workflow_dir, '*.json'))
+                # Extract just the filenames
+                file_names = [os.path.basename(f) for f in json_files]
+                file_names.sort()  # Sort alphabetically
+                
+                self.get_logger().info(f"Found {len(file_names)} workflow files in {workflow_dir}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'files': file_names,
+                    'directory': workflow_dir
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error getting workflow files: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'files': []
+                }), 500
+        
+        @self.app.route('/run_workflow', methods=['POST'])
+        def run_workflow():
+            """Run a workflow using ros2 run ur15_workflow run_workflow.py."""
+            from flask import request, jsonify
+            from common.workspace_utils import get_workspace_root
+            import subprocess
+            import threading
+            
+            try:
+                data = request.get_json()
+                workflow_file = data.get('workflow_file')
+                
+                if not workflow_file:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'No workflow file specified'
+                    }), 400
+                
+                # Get workspace root
+                workspace_root = get_workspace_root()
+                if not workspace_root:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Could not find workspace root'
+                    }), 500
+                
+                # Build full path to workflow file
+                workflow_dir = os.path.join(workspace_root, 'temp', 'workflow_files')
+                # Create directory if it doesn't exist
+                os.makedirs(workflow_dir, exist_ok=True)
+                
+                workflow_path = os.path.join(workflow_dir, workflow_file)
+                
+                # Check if file exists
+                if not os.path.exists(workflow_path):
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Workflow file not found: {workflow_file}'
                     }), 404
+                
+                # Build ros2 run command
+                command = ['ros2', 'run', 'ur15_workflow', 'run_workflow.py', '--config', workflow_path]
+                
+                self.get_logger().info(f"Running workflow command: {' '.join(command)}")
+                
+                # Run command in background thread to avoid blocking
+                def run_command():
+                    try:
+                        process = subprocess.Popen(
+                            command,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True
+                        )
+                        self.get_logger().info(f"Workflow process started with PID: {process.pid}")
+                        
+                        # Wait for process to complete
+                        stdout, stderr = process.communicate()
+                        return_code = process.returncode
+                        
+                        # Log completion to web
+                        if return_code == 0:
+                            self.push_web_log(f"Workflow completed successfully: {workflow_file}", 'success')
+                            self.get_logger().info(f"Workflow completed successfully: {workflow_file}")
+                        else:
+                            self.push_web_log(f"Workflow failed with exit code {return_code}: {workflow_file}", 'error')
+                            self.get_logger().error(f"Workflow failed with exit code {return_code}: {workflow_file}")
+                            if stderr:
+                                self.get_logger().error(f"Workflow stderr: {stderr}")
+                    except Exception as e:
+                        self.get_logger().error(f"Error running workflow process: {e}")
+                        self.push_web_log(f"Error running workflow: {str(e)}", 'error')
+                
+                thread = threading.Thread(target=run_command, daemon=True)
+                thread.start()
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': f'Workflow started: {workflow_file}',
+                    'workflow_file': workflow_file,
+                    'workflow_path': workflow_path
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error running workflow: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                }), 500
+        
+        @self.app.route('/workflow_config_center_url', methods=['GET'])
+        def workflow_config_center_url():
+            """Return the URL for workflow configuration center."""
+            from flask import jsonify, request
+            
+            # Use the same hostname as the request to build workflow config center URL
+            host = request.host.split(':')[0]  # Extract hostname without port
+            workflow_url = f'http://{host}:8008'
+            
+            self.get_logger().info(f"Redirecting to workflow config center: {workflow_url}")
+            
+            return jsonify({
+                'status': 'success',
+                'url': workflow_url
+            })
+        
+        @self.app.route('/prepare_ref_img_1', methods=['POST'])
+        def prepare_ref_img_1():
+            """Prepare ref_img_1.jpg for labeling based on current operation name."""
+            from flask import request, jsonify, url_for
+            from urllib.parse import quote
+            from common.workspace_utils import get_workspace_root
+            
+            try:
+                data = request.get_json()
+                operation_name = data.get('operation_name')
+                
+                if not operation_name:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Operation name is required'
+                    }), 400
+                
+                # Get workspace root (robot_dc directory)
+                workspace_root = get_workspace_root()
+                if workspace_root is None:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Could not determine workspace root directory'
+                    }), 500
+                
+                # Construct ref_img_1 path: workspace_root/dataset/operation_name/ref_img_1.jpg
+                operation_dir = os.path.join(workspace_root, 'dataset', operation_name)
+                image_filename = 'ref_img_1.jpg'
+                image_path = os.path.join(operation_dir, image_filename)
                 
                 # Check if image exists
                 if not os.path.exists(image_path):
                     return jsonify({
                         'status': 'error',
-                        'message': f'Image file not found: {image_path}'
+                        'message': f'ref_img_1.jpg not found in {operation_dir}'
                     }), 404
                 
-                # Build the image URL that can be accessed from browser
-                image_url = url_for('serve_last_captured_image', _external=True)
+                # Temporarily store the ref_img_1 path in robot_status for serving
+                if not self.status_client.set_status('ur15', 'temp_label_image', image_path):
+                    self.get_logger().warning("Failed to set temp_label_image in robot_status")
                 
-                # Check for corresponding ref_img_*.json file
-                # Extract base name and construct json filename
-                image_dir = os.path.dirname(image_path)
-                image_filename = os.path.basename(image_path)
-                json_filename = os.path.splitext(image_filename)[0] + '.json'
-                json_path = os.path.join(image_dir, json_filename)
+                # Build the image URL that can be accessed from browser
+                image_url = url_for('serve_temp_label_image', _external=True)
+                
+                # Check for corresponding ref_img_1.json file
+                json_filename = 'ref_img_1.json'
+                json_path = os.path.join(operation_dir, json_filename)
                 
                 # Use the same hostname as the request to build labeling URL
                 host = request.host.split(':')[0]  # Extract hostname without port
@@ -831,14 +1031,14 @@ class UR15WebNode(Node):
                 
                 # If JSON file exists, add labelsUrl parameter
                 if os.path.exists(json_path):
-                    labels_url = url_for('serve_labels_json', _external=True)
+                    labels_url = url_for('serve_temp_labels_json', _external=True)
                     labeling_url += f'&labelsUrl={labels_url}'
                     self.get_logger().info(f"Found existing labels file: {json_path}")
                     self.get_logger().info(f"Labels URL: {labels_url}")
                 else:
                     self.get_logger().info(f"No existing labels file found at: {json_path}")
                 
-                self.get_logger().info(f"Preparing last captured image: {image_path}")
+                self.get_logger().info(f"Preparing ref_img_1 for operation '{operation_name}': {image_path}")
                 self.get_logger().info(f"Image URL: {image_url}")
                 self.get_logger().info(f"Labeling URL: {labeling_url}")
                 
@@ -851,28 +1051,32 @@ class UR15WebNode(Node):
                 })
                 
             except Exception as e:
-                self.get_logger().error(f"Error preparing last captured image: {e}")
+                self.get_logger().error(f"Error preparing ref_img_1: {e}")
                 return jsonify({
                     'status': 'error',
                     'message': str(e)
                 }), 500
         
-        @self.app.route('/serve_last_captured_image', methods=['GET'])
-        def serve_last_captured_image():
-            """Serve the last captured image file."""
+        @self.app.route('/serve_temp_label_image', methods=['GET'])
+        def serve_temp_label_image():
+            """Serve the temporary label image (ref_img_1)."""
             from flask import send_file, jsonify, make_response
             
             try:
-                # Get last_picture path from robot_status service
-                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                # Get temp_label_image path from robot_status service
+                try:
+                    image_path = self.status_client.get_status('ur15', 'temp_label_image', timeout_sec=2.0)
+                except Exception as e:
+                    self.get_logger().debug(f"Failed to get temp_label_image: {e}")
+                    image_path = None
                 
                 if image_path is None:
-                    return jsonify({'error': 'No image has been captured yet'}), 404
+                    return jsonify({'error': 'No temp label image available'}), 404
                 
                 if not os.path.exists(image_path):
                     return jsonify({'error': 'Image file not found'}), 404
                 
-                self.get_logger().info(f"Serving last captured image: {image_path}")
+                self.get_logger().info(f"Serving temp label image: {image_path}")
                 
                 # Send the file with CORS headers to allow cross-origin access
                 response = make_response(send_file(image_path, mimetype='image/jpeg'))
@@ -882,20 +1086,24 @@ class UR15WebNode(Node):
                 return response
                 
             except Exception as e:
-                self.get_logger().error(f"Error serving last captured image: {e}")
+                self.get_logger().error(f"Error serving temp label image: {e}")
                 return jsonify({'error': str(e)}), 500
         
-        @self.app.route('/serve_labels_json', methods=['GET'])
-        def serve_labels_json():
-            """Serve the JSON labels file corresponding to the last captured image."""
+        @self.app.route('/serve_temp_labels_json', methods=['GET'])
+        def serve_temp_labels_json():
+            """Serve the JSON labels file corresponding to the temp label image (ref_img_1.json)."""
             from flask import send_file, jsonify, make_response
             
             try:
-                # Get last_picture path from robot_status service
-                image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                # Get temp_label_image path from robot_status service
+                try:
+                    image_path = self.status_client.get_status('ur15', 'temp_label_image', timeout_sec=2.0)
+                except Exception as e:
+                    self.get_logger().debug(f"Failed to get temp_label_image: {e}")
+                    image_path = None
                 
                 if image_path is None:
-                    return jsonify({'error': 'No image has been captured yet'}), 404
+                    return jsonify({'error': 'No temp label image available'}), 404
                 
                 # Construct JSON file path
                 image_dir = os.path.dirname(image_path)
@@ -906,7 +1114,7 @@ class UR15WebNode(Node):
                 if not os.path.exists(json_path):
                     return jsonify({'error': 'Labels file not found'}), 404
                 
-                self.get_logger().info(f"Serving labels JSON: {json_path}")
+                self.get_logger().info(f"Serving temp labels JSON: {json_path}")
                 
                 # Send the file with CORS headers to allow cross-origin access
                 response = make_response(send_file(json_path, mimetype='application/json'))
@@ -916,7 +1124,7 @@ class UR15WebNode(Node):
                 return response
                 
             except Exception as e:
-                self.get_logger().error(f"Error serving labels JSON: {e}")
+                self.get_logger().error(f"Error serving temp labels JSON: {e}")
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/save_labels', methods=['POST', 'OPTIONS'])
@@ -1202,17 +1410,23 @@ class UR15WebNode(Node):
                 config_path = os.path.expanduser(config_path)
                 
                 if not os.path.exists(config_path):
+                    error_msg = f'Config file not found: {config_path}'
+                    self.push_web_log(error_msg, 'error')
                     return jsonify({
                         'success': False,
-                        'message': f'Config file not found: {config_path}'
+                        'message': error_msg
                     })
                 
                 # Read and parse the config file
                 with open(config_path, 'r') as f:
                     config_data = json.load(f)
                 
+                pattern_id = config_data.get('pattern_id', 'Unknown')
                 self.get_logger().info(f"Loaded chessboard config from: {config_path}")
-                self.get_logger().info(f"Pattern ID: {config_data.get('pattern_id')}")
+                self.get_logger().info(f"Pattern ID: {pattern_id}")
+                
+                # Push success message to web log
+                self.push_web_log(f'Chessboard config loaded successfully (Pattern: {pattern_id})', 'success')
                 
                 return jsonify({
                     'success': True,
@@ -1221,16 +1435,20 @@ class UR15WebNode(Node):
                 })
                 
             except json.JSONDecodeError as e:
+                error_msg = f'Invalid JSON format: {str(e)}'
                 self.get_logger().error(f"Invalid JSON in config file: {e}")
+                self.push_web_log(error_msg, 'error')
                 return jsonify({
                     'success': False,
-                    'message': f'Invalid JSON format: {str(e)}'
+                    'message': error_msg
                 })
             except Exception as e:
-                self.get_logger().error(f"Error loading chessboard config: {e}")
+                error_msg = f'Error loading chessboard config: {str(e)}'
+                self.get_logger().error(error_msg)
+                self.push_web_log(error_msg, 'error')
                 return jsonify({
                     'success': False,
-                    'message': str(e)
+                    'message': error_msg
                 })
         
         @self.app.route('/change_operation_path', methods=['POST'])
@@ -1264,7 +1482,8 @@ class UR15WebNode(Node):
                     
                     # Set operation name to robot_status (only if operation_name is valid)
                     if operation_name and operation_name != 'input operation name':
-                        if set_to_status(self, 'ur15', 'last_operation_name', operation_name):
+                        # robot_status_redis doesn't need node parameter
+                        if set_to_status('ur15', 'last_operation_name', operation_name):
                             self.get_logger().info(f"Successfully set last_operation_name to robot_status: {operation_name}")
                         else:
                             self.get_logger().warning(f"Failed to set last_operation_name to robot_status")
@@ -1285,6 +1504,101 @@ class UR15WebNode(Node):
                 
             except Exception as e:
                 self.get_logger().error(f"Error changing operation path: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/set_operating_unit', methods=['POST'])
+        def set_operating_unit():
+            """Set operating unit to robot_status."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data or 'operating_unit' not in data:
+                    return jsonify({'success': False, 'message': 'No operating_unit provided'})
+                
+                operating_unit = data['operating_unit']
+                
+                # Validate the operating unit value
+                if not isinstance(operating_unit, int) or operating_unit < 1:
+                    return jsonify({'success': False, 'message': 'Operating unit must be an integer >= 1'})
+                
+                self.get_logger().info(f"Setting operating unit to: {operating_unit}")
+                
+                # Set to robot_status (robot_status_redis doesn't need node parameter)
+                if set_to_status('ur15', 'rack_operating_unit_id', operating_unit):
+                    self.get_logger().info(f"Successfully set rack_operating_unit_id to robot_status: {operating_unit}")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Operating unit set successfully',
+                        'operating_unit': operating_unit
+                    })
+                else:
+                    self.get_logger().warning("Failed to set rack_operating_unit_id to robot_status")
+                    return jsonify({
+                        'success': False,
+                        'message': 'Failed to set operating unit to robot_status'
+                    })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error setting operating unit: {e}")
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/update_robot_state', methods=['POST'])
+        def update_robot_state():
+            """Update joint positions and TCP pose to robot_status."""
+            from flask import request, jsonify
+            
+            try:
+                data = request.get_json()
+                if not data:
+                    return jsonify({'success': False, 'message': 'No data provided'})
+                
+                success_count = 0
+                failed_items = []
+                
+                # Update joint positions if provided
+                if 'joint_positions' in data:
+                    joint_positions = data['joint_positions']
+                    if isinstance(joint_positions, list) and len(joint_positions) == 6:
+                        # Convert to numpy array
+                        joint_positions_array = np.array(joint_positions, dtype=np.float64)
+                        # robot_status_redis doesn't need node parameter
+                        if set_to_status('ur15', 'joint_positions', joint_positions_array):
+                            success_count += 1
+                            self.get_logger().debug(f"Updated joint_positions to robot_status as numpy array")
+                        else:
+                            failed_items.append('joint_positions')
+                            self.get_logger().warning("Failed to set joint_positions to robot_status")
+                
+                # Update TCP pose if provided
+                if 'tcp_pose' in data:
+                    tcp_pose = data['tcp_pose']
+                    if isinstance(tcp_pose, list) and len(tcp_pose) == 6:
+                        # Convert to numpy array in order [x, y, z, rx, ry, rz]
+                        tcp_pose_array = np.array(tcp_pose, dtype=np.float64)
+                        # robot_status_redis doesn't need node parameter
+                        if set_to_status('ur15', 'tcp_pose', tcp_pose_array):
+                            success_count += 1
+                            self.get_logger().debug(f"Updated tcp_pose to robot_status as numpy array [x, y, z, rx, ry, rz]")
+                        else:
+                            failed_items.append('tcp_pose')
+                            self.get_logger().warning("Failed to set tcp_pose to robot_status")
+                
+                if success_count > 0:
+                    return jsonify({
+                        'success': True,
+                        'message': f'Successfully updated {success_count} item(s)',
+                        'failed_items': failed_items
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No valid data to update or all updates failed',
+                        'failed_items': failed_items
+                    })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error updating robot state: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
         @self.app.route('/get_pose_count', methods=['GET'])
@@ -2249,20 +2563,6 @@ class UR15WebNode(Node):
                     json.dump(combined_data, f, indent=2)                # Add web log message
                 self.push_web_log(f'Captured image and pose data: {image_filename}, {pose_filename}', 'success')
                 
-                # Upload the absolute path of ref_img_1.jpg to robot_status
-                try:
-                    ref_img_1_path = os.path.join(expanded_task_path, 'ref_img_1.jpg')
-                    abs_ref_img_1_path = os.path.abspath(ref_img_1_path)
-                    if self.status_client.set_status('ur15', 'last_picture', abs_ref_img_1_path):
-                        self.get_logger().info(f"✅ Uploaded last_picture path to robot_status: {abs_ref_img_1_path}")
-                        self.push_web_log(f"✅ Saved last_picture path: {abs_ref_img_1_path}", 'success')
-                    else:
-                        self.get_logger().warning("⚠️ Failed to upload last_picture path to robot_status")
-                        self.push_web_log("⚠️ Failed to save last_picture path", 'warning')
-                except Exception as e:
-                    self.get_logger().error(f"❌ Error uploading last_picture to robot_status: {e}")
-                    self.push_web_log(f"⚠️ Error saving last_picture: {e}", 'warning')
-                
                 return jsonify({
                     'success': True,
                     'message': f'Successfully captured image and pose data',
@@ -2279,9 +2579,9 @@ class UR15WebNode(Node):
                 self.push_web_log(error_msg, 'error')
                 return jsonify({'success': False, 'message': error_msg})
         
-        @self.app.route('/capture_task_data_x3', methods=['POST'])
-        def capture_task_data_x3():
-            """Capture images at 3 different positions using move_tcp to offset along x and y axes."""
+        @self.app.route('/capture_ref_img_1', methods=['POST'])
+        def capture_ref_img_1():
+            """Capture current image and robot pose, always saving as ref_img_1.jpg and ref_img_1_pose.json."""
             from flask import jsonify, request
             import time
             import json
@@ -2308,173 +2608,112 @@ class UR15WebNode(Node):
                 expanded_task_path = os.path.expanduser(task_path)
                 os.makedirs(expanded_task_path, exist_ok=True)
                 
-                # Check if robot is connected
+                # Fixed filenames
+                image_filename = 'ref_img_1.jpg'
+                pose_filename = 'ref_img_1_pose.json'
+                
+                # 1. Capture current image as ref_img_1.jpg
+                with self.image_lock:
+                    if self.current_image is None:
+                        return jsonify({
+                            'success': False, 
+                            'message': 'No camera image available'
+                        })
+                    
+                    image_path = os.path.join(expanded_task_path, image_filename)
+                    cv2.imwrite(image_path, self.current_image)
+                
+                # 2. Get current robot pose
+                current_tcp_pose = None
                 with self.ur15_lock:
                     if self.ur15_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
                         })
-                
-                # Check if freedrive mode is active
-                if self.freedrive_active:
-                    error_msg = 'Cannot execute Capture x3 while freedrive mode is active. Please disable freedrive mode first.'
-                    self.push_web_log(error_msg, 'warning')
-                    return jsonify({
-                        'success': False,
-                        'message': error_msg
-                    })
-                
-                # Define offsets: current position, +1cm in x, +1cm in y (in TCP coordinate frame)
-                # offset format: [x, y, z, rx, ry, rz]
-                offsets = [
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],     # Current position
-                    [0.01, 0.0, 0.0, 0.0, 0.0, 0.0],    # +1cm in x
-                    [0.0, 0.01, 0.0, 0.0, 0.0, 0.0]     # +1cm in y
-                ]
-                
-                captured_files = []
-                initial_pose = None
-                
-                # Save initial pose to return to it later
-                with self.ur15_lock:
-                    initial_pose = self.ur15_robot.get_actual_tcp_pose()
-                    if initial_pose is None:
+                    
+                    try:
+                        # Read both joint positions and TCP pose
+                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        if joint_positions is None:
+                            return jsonify({
+                                'success': False,
+                                'message': 'Failed to read joint positions'
+                            })
+                        
+                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        if tcp_pose is None:
+                            return jsonify({
+                                'success': False,
+                                'message': 'Failed to read TCP pose'
+                            })
+                        
+                        # Calculate end2base transformation matrix
+                        end2base = self._pose_to_matrix(tcp_pose)
+                        
+                        # Format pose data
+                        from datetime import datetime
+                        current_tcp_pose = {
+                            "joint_angles": list(joint_positions),
+                            "end_xyzrpy": {
+                                "x": tcp_pose[0],
+                                "y": tcp_pose[1],
+                                "z": tcp_pose[2],
+                                "rx": tcp_pose[3],
+                                "ry": tcp_pose[4],
+                                "rz": tcp_pose[5]
+                            },
+                            "end2base": end2base.tolist(),
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    except Exception as e:
                         return jsonify({
                             'success': False,
-                            'message': 'Failed to get initial robot pose'
+                            'message': f'Failed to read robot pose: {str(e)}'
                         })
                 
-                self.push_web_log('Starting Capture x3: capturing at 3 positions...', 'info')
-                
-                # Capture at each offset position
-                for i, offset in enumerate(offsets):
-                    try:
-                        # Move to offset position
-                        if i == 0:
-                            # First position: current position, just wait for stability
-                            self.push_web_log(f'Position {i+1}/3: Current position', 'info')
-                            time.sleep(0.5)
-                        else:
-                            # Return to initial position first (except for first iteration)
-                            self.push_web_log(f'Returning to initial position before moving to position {i+1}/3...', 'info')
-                            with self.ur15_lock:
-                                result = self.ur15_robot.movel(initial_pose, a=0.5, v=0.5)
-                                if result == -1:
-                                    raise Exception(f'Failed to return to initial position before position {i+1}')
-                            time.sleep(0.5)
-                            
-                            # Now move to the offset position from initial pose
-                            self.push_web_log(f'Moving to position {i+1}/3 (offset: {offset[:3]})...', 'info')
-                            with self.ur15_lock:
-                                result = self.ur15_robot.move_tcp(offset, a=0.5, v=0.5)
-                                if result == -1:
-                                    raise Exception(f'Failed to move to offset position {i+1}')
-                            
-                            # Wait for robot to settle and stabilize
-                            self.push_web_log(f'Waiting for robot to stabilize...', 'info')
-                            time.sleep(2.0)
-                        
-                        # Get next available file number
-                        capture_number = self._get_next_capture_file_number(expanded_task_path)
-                        
-                        # Capture current image
-                        with self.image_lock:
-                            if self.current_image is None:
-                                raise Exception('No camera image available')
-                            
-                            image_filename = f'ref_img_{capture_number}.jpg'
-                            image_path = os.path.join(expanded_task_path, image_filename)
-                            cv2.imwrite(image_path, self.current_image)
-                        
-                        # Get current robot pose
-                        with self.ur15_lock:
-                            joint_positions = self.ur15_robot.get_actual_joint_positions()
-                            if joint_positions is None:
-                                raise Exception('Failed to read joint positions')
-                            
-                            tcp_pose = self.ur15_robot.get_actual_tcp_pose()
-                            if tcp_pose is None:
-                                raise Exception('Failed to read TCP pose')
-                            
-                            # Calculate end2base transformation matrix
-                            end2base = self._pose_to_matrix(tcp_pose)
-                            
-                            # Format pose data
-                            from datetime import datetime
-                            current_tcp_pose = {
-                                "joint_angles": list(joint_positions),
-                                "end_xyzrpy": {
-                                    "x": tcp_pose[0],
-                                    "y": tcp_pose[1],
-                                    "z": tcp_pose[2],
-                                    "rx": tcp_pose[3],
-                                    "ry": tcp_pose[4],
-                                    "rz": tcp_pose[5]
-                                },
-                                "end2base": end2base.tolist(),
-                                "timestamp": datetime.now().isoformat()
-                            }
-                        
-                        # Get camera parameters
-                        camera_params = self._get_camera_parameters_from_status(calibration_data_dir)
-                        if not camera_params['success']:
-                            raise Exception(camera_params['message'])
-                        
-                        # Merge all data and save
-                        combined_data = {}
-                        pose_data_without_timestamp = {k: v for k, v in current_tcp_pose.items() if k != 'timestamp'}
-                        combined_data.update(pose_data_without_timestamp)
-                        
-                        camera_data = camera_params['data']
-                        if 'intrinsics' in camera_data:
-                            combined_data.update(camera_data['intrinsics'])
-                        if 'extrinsics' in camera_data:
-                            combined_data.update(camera_data['extrinsics'])
-                        
-                        if 'timestamp' in current_tcp_pose:
-                            combined_data['timestamp'] = current_tcp_pose['timestamp']
-                        
-                        pose_filename = f'ref_img_{capture_number}_pose.json'
-                        pose_path = os.path.join(expanded_task_path, pose_filename)
-                        with open(pose_path, 'w') as f:
-                            json.dump(combined_data, f, indent=2)
-                        
-                        captured_files.append({
-                            'image': image_filename,
-                            'pose': pose_filename
-                        })
-                        
-                        self.push_web_log(f'Captured position {i+1}/3: {image_filename}, {pose_filename}', 'success')
-                        
-                    except Exception as e:
-                        error_msg = f'Failed to capture at position {i+1}: {str(e)}'
-                        self.push_web_log(error_msg, 'error')
-                        # Continue with next position even if one fails
-                        continue
-                
-                # Return to initial position
-                try:
-                    self.push_web_log('Returning to initial position...', 'info')
-                    with self.ur15_lock:
-                        result = self.ur15_robot.movel(initial_pose, a=0.5, v=0.5)
-                        if result == -1:
-                            self.push_web_log('Warning: Failed to return to initial position', 'warning')
-                except Exception as e:
-                    self.push_web_log(f'Warning: Error returning to initial position: {str(e)}', 'warning')
-                
-                if len(captured_files) == 0:
+                if current_tcp_pose is None:
                     return jsonify({
-                        'success': False,
-                        'message': 'Failed to capture any images'
+                        'success': False, 
+                        'message': 'No robot pose data available'
                     })
+
+                # 3. Get camera parameters from calibration results
+                camera_params = self._get_camera_parameters_from_status(calibration_data_dir)
+                if not camera_params['success']:
+                    return jsonify({
+                        'success': False, 
+                        'message': camera_params['message']
+                    })
+
+                # Merge all data into flat structure and save as ref_img_1_pose.json
+                combined_data = {}
                 
-                self.push_web_log(f'Capture x3 completed: {len(captured_files)} images captured', 'success')
+                # Add pose data directly to top level (excluding timestamp first)
+                pose_data_without_timestamp = {k: v for k, v in current_tcp_pose.items() if k != 'timestamp'}
+                combined_data.update(pose_data_without_timestamp)
+                
+                # Add camera parameters directly to top level (flattened)
+                camera_data = camera_params['data']
+                if 'intrinsics' in camera_data:
+                    combined_data.update(camera_data['intrinsics'])
+                if 'extrinsics' in camera_data:
+                    combined_data.update(camera_data['extrinsics'])
+                
+                # Add timestamp at the end
+                if 'timestamp' in current_tcp_pose:
+                    combined_data['timestamp'] = current_tcp_pose['timestamp']
+                
+                pose_path = os.path.join(expanded_task_path, pose_filename)
+                with open(pose_path, 'w') as f:
+                    json.dump(combined_data, f, indent=2)
+                
+                # Add web log message
+                self.push_web_log(f'Captured ref_img_1: {image_filename}, {pose_filename}', 'success')
                 
                 # Upload the absolute path of ref_img_1.jpg to robot_status
                 try:
-                    ref_img_1_path = os.path.join(expanded_task_path, 'ref_img_1.jpg')
-                    abs_ref_img_1_path = os.path.abspath(ref_img_1_path)
+                    abs_ref_img_1_path = os.path.abspath(image_path)
                     if self.status_client.set_status('ur15', 'last_picture', abs_ref_img_1_path):
                         self.get_logger().info(f"✅ Uploaded last_picture path to robot_status: {abs_ref_img_1_path}")
                         self.push_web_log(f"✅ Saved last_picture path: {abs_ref_img_1_path}", 'success')
@@ -2487,13 +2726,16 @@ class UR15WebNode(Node):
                 
                 return jsonify({
                     'success': True,
-                    'message': f'Successfully captured {len(captured_files)} images at different positions',
-                    'captured_count': len(captured_files),
-                    'captured_files': captured_files
+                    'message': f'Successfully captured ref_img_1',
+                    'image_path': image_path,
+                    'pose_path': pose_path,
+                    'image_file': image_filename,
+                    'pose_file': pose_filename,
+                    'calibration_source': camera_params.get('source', 'Unknown')
                 })
                 
             except Exception as e:
-                error_msg = f'Failed to capture task data x3: {str(e)}'
+                error_msg = f'Failed to capture ref_img_1: {str(e)}'
                 self.get_logger().error(error_msg)
                 self.push_web_log(error_msg, 'error')
                 return jsonify({'success': False, 'message': error_msg})
@@ -2760,90 +3002,6 @@ class UR15WebNode(Node):
                     'message': str(e)
                 })
         
-        @self.app.route('/locate_rack', methods=['POST'])
-        def locate_rack():
-            """Execute locate rack script (ur_locate_rack.py)."""
-            from flask import jsonify
-            import subprocess
-            import threading
-            
-            try:
-                # Get the scripts directory
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Could not find scripts directory'
-                    })
-                
-                script_path = os.path.join(scripts_dir, 'ur_locate_rack.py')
-                
-                # Check if script exists
-                if not os.path.exists(script_path):
-                    return jsonify({
-                        'success': False,
-                        'message': f'Script not found: {script_path}'
-                    })
-                
-                # Prepare command
-                cmd = ['python3', script_path]
-                
-                self.get_logger().info(f"Locate rack command: {' '.join(cmd)}")
-                
-                # Define a function to monitor the process
-                def monitor_locate_rack():
-                    """Monitor locate rack process and report completion status."""
-                    try:
-                        process = subprocess.Popen(
-                            cmd,
-                            cwd=os.path.dirname(script_path),
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            text=True
-                        )
-                        
-                        # Track this process for cleanup
-                        with self.process_lock:
-                            self.child_processes.append(process)
-                        
-                        self.get_logger().info(f"Started locate rack script with PID: {process.pid}")
-                        
-                        # Wait for the process to complete
-                        return_code = process.wait()
-                        
-                        self.get_logger().info(f"Locate rack script finished with return code: {return_code}")
-                        
-                        # Push completion message to web log
-                        if return_code == 0:
-                            self.push_web_log("✅ Locate rack completed successfully!", 'success')
-                        else:
-                            self.push_web_log(f"❌ Locate rack failed with return code: {return_code}", 'error')
-                    except Exception as e:
-                        self.get_logger().error(f"Error in locate rack monitor thread: {e}")
-                        self.push_web_log(f"❌ Locate rack error: {str(e)}", 'error')
-                
-                # Start monitoring thread
-                monitor_thread = threading.Thread(target=monitor_locate_rack, daemon=True)
-                monitor_thread.start()
-                
-                self.get_logger().info(f"Started locate rack monitoring thread")
-                
-                # Push start message to web log
-                self.push_web_log("🗄️ Starting locate rack process...", 'info')
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'Locate rack script started'
-                })
-                
-            except Exception as e:
-                self.get_logger().error(f"Error starting locate rack script: {e}")
-                self.push_web_log(f"❌ Failed to start locate rack: {str(e)}", 'error')
-                return jsonify({
-                    'success': False,
-                    'message': str(e)
-                })
-        
         @self.app.route('/locate_last_operation', methods=['POST'])
         def locate_last_operation():
             """Execute locate last operation script (ur_3d_positioning.py)."""
@@ -2852,8 +3010,8 @@ class UR15WebNode(Node):
             import threading
             
             try:
-                # Get last_operation_name from robot_status
-                operation_name = get_from_status(self, 'ur15', 'last_operation_name')
+                # Get last_operation_name from robot_status (robot_status_redis doesn't need node parameter)
+                operation_name = get_from_status('ur15', 'last_operation_name')
                 
                 if not operation_name:
                     return jsonify({
@@ -3343,188 +3501,6 @@ class UR15WebNode(Node):
                 self.push_web_log(f"❌ Failed to start execute close right: {str(e)}", 'error')
                 return jsonify({'success': False, 'message': str(e)})
         
-        @self.app.route('/save_rack_positions', methods=['POST'])
-        def save_rack_positions():
-            """Save rack positions to JSON file."""
-            from flask import request, jsonify
-            import json
-            
-            try:
-                data = request.get_json()
-                rack_number = data.get('rack_number')
-                positions = data.get('positions')
-                rack_key = data.get('rack_key')  # Now accept custom key name
-                
-                if rack_number is None or positions is None:
-                    return jsonify({'success': False, 'message': 'Missing rack_number or positions'})
-                
-                if len(positions) != 6:
-                    return jsonify({'success': False, 'message': 'Positions must contain 6 values'})
-                
-                # Get the JSON file path
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
-                
-                # Default rack key mapping if not provided
-                if rack_key is None:
-                    rack_key_map = {
-                        1: 'lower_left',
-                        2: 'lower_right',
-                        3: 'top_left',
-                        4: 'top_right'
-                    }
-                    rack_key = rack_key_map.get(rack_number)
-                    if rack_key is None:
-                        return jsonify({'success': False, 'message': 'Invalid rack number'})
-                
-                # Read existing data or create new
-                if os.path.exists(json_path):
-                    with open(json_path, 'r') as f:
-                        rack_data = json.load(f)
-                else:
-                    rack_data = {
-                        'lower_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'lower_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'top_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                    }
-                
-                # Update the specific rack with the custom key name
-                rack_data[rack_key] = positions
-                
-                # Save to file
-                os.makedirs(os.path.dirname(json_path), exist_ok=True)
-                with open(json_path, 'w') as f:
-                    json.dump(rack_data, f, indent=4)
-                
-                self.get_logger().info(f"Saved rack {rack_number} (key: {rack_key}) positions to {json_path}")
-                
-                return jsonify({'success': True, 'message': f'Rack {rack_number} positions saved'})
-                
-            except Exception as e:
-                self.get_logger().error(f"Error saving rack positions: {e}")
-                return jsonify({'success': False, 'message': str(e)})
-        
-        @self.app.route('/rename_rack_key', methods=['POST'])
-        def rename_rack_key():
-            """Rename a rack key in the JSON file while preserving order."""
-            from flask import request, jsonify
-            import json
-            from collections import OrderedDict
-            
-            try:
-                data = request.get_json()
-                rack_number = data.get('rack_number')
-                old_key = data.get('old_key')
-                new_key = data.get('new_key')
-                position = data.get('position')  # 0-indexed position
-                
-                if not old_key or not new_key:
-                    return jsonify({'success': False, 'message': 'Missing old_key or new_key'})
-                
-                if position is None:
-                    position = rack_number - 1 if rack_number else 0
-                
-                # Get the JSON file path
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
-                
-                # Read existing data
-                if os.path.exists(json_path):
-                    with open(json_path, 'r') as f:
-                        # Load as regular dict first
-                        rack_data = json.load(f)
-                else:
-                    # If file doesn't exist, create with new key
-                    rack_data = OrderedDict()
-                    rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                    os.makedirs(os.path.dirname(json_path), exist_ok=True)
-                    with open(json_path, 'w') as f:
-                        json.dump(rack_data, f, indent=4)
-                    return jsonify({'success': True, 'message': f'Created new key: {new_key}'})
-                
-                # Get keys in order
-                keys = list(rack_data.keys())
-                
-                # Find the position of old_key
-                old_position = keys.index(old_key) if old_key in keys else -1
-                
-                # Create new ordered dict
-                new_rack_data = OrderedDict()
-                
-                if old_position >= 0:
-                    # Rename the key at the specific position
-                    for i, key in enumerate(keys):
-                        if i == old_position:
-                            # Replace old key with new key at this position
-                            new_rack_data[new_key] = rack_data[old_key]
-                        else:
-                            new_rack_data[key] = rack_data[key]
-                else:
-                    # Old key doesn't exist, insert at specified position
-                    inserted = False
-                    for i, key in enumerate(keys):
-                        if i == position and not inserted:
-                            new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                            inserted = True
-                        new_rack_data[key] = rack_data[key]
-                    
-                    # If position is at the end or beyond
-                    if not inserted:
-                        new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                
-                # Save to file (regular dict will maintain insertion order in Python 3.7+)
-                with open(json_path, 'w') as f:
-                    json.dump(dict(new_rack_data), f, indent=4)
-                
-                self.get_logger().info(f"Renamed rack key from '{old_key}' to '{new_key}' at position {position}")
-                return jsonify({'success': True, 'message': f'Renamed key from {old_key} to {new_key}'})
-                
-            except Exception as e:
-                self.get_logger().error(f"Error renaming rack key: {e}")
-                return jsonify({'success': False, 'message': str(e)})
-        
-        @self.app.route('/load_rack_positions', methods=['GET'])
-        def load_rack_positions():
-            """Load rack positions from JSON file."""
-            from flask import jsonify
-            import json
-            
-            try:
-                # Get the JSON file path
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                json_path = os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
-                
-                # Read data
-                if os.path.exists(json_path):
-                    with open(json_path, 'r') as f:
-                        rack_data = json.load(f)
-                    
-                    self.get_logger().info(f"Loaded rack positions from {json_path}")
-                    return jsonify({'success': True, 'data': rack_data})
-                else:
-                    # Return default values if file doesn't exist
-                    default_data = {
-                        'lower_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'lower_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'top_left': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                        'top_right': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                    }
-                    return jsonify({'success': True, 'data': default_data})
-                
-            except Exception as e:
-                self.get_logger().error(f"Error loading rack positions: {e}")
-                return jsonify({'success': False, 'message': str(e)})
-        
         # Asset route must come BEFORE the main report route to avoid conflicts
         @self.app.route('/calibration_report/<report_type>/<path:filename>')
         def serve_calibration_assets(report_type, filename):
@@ -3660,14 +3636,13 @@ class UR15WebNode(Node):
             if params is None:
                 return frame
             
-            # Draw UR15 base curve
-            frame = draw_utils.draw_curves_on_image(
+            # Draw UR15 base model
+            frame = draw_utils.draw_model_on_image(
                 frame,
                 intrinsic=params['intrinsic'],
                 extrinsic=params['extrinsic'],
-                point3d=self.ur15_base_curve['curves'],
+                model=self.ur15_base_model,
                 distortion=params['distortion'],
-                color=self.ur15_base_curve['colors'],
                 thickness=2
             )
             
@@ -3686,52 +3661,72 @@ class UR15WebNode(Node):
                 return frame
             
             # Get rack work object parameters - client handles caching internally
-            wobj_origin = self.status_client.get_status('wobj', 'wobj_origin')
-            wobj_x = self.status_client.get_status('wobj', 'wobj_x')
-            wobj_y = self.status_client.get_status('wobj', 'wobj_y')
-            wobj_z = self.status_client.get_status('wobj', 'wobj_z')
-            
-            # Check if all work object parameters are available
-            if wobj_origin is None or wobj_x is None or wobj_y is None or wobj_z is None:
-                self.get_logger().warn(f"Wobj parameters not available - origin: {wobj_origin is not None}, x: {wobj_x is not None}, y: {wobj_y is not None}, z: {wobj_z is not None}", throttle_duration_sec=5.0)
+            try:
+                rack2base_matrix = self.status_client.get_status('ur15', 'rack2base_matrix')
+            except Exception as e:
+                self.get_logger().debug(f"Failed to get rack2base_matrix: {e}")
                 return frame
             
-            # Convert to numpy arrays
-            wobj_origin = np.array(wobj_origin, dtype=np.float64)
-            wobj_x = np.array(wobj_x, dtype=np.float64)
-            wobj_y = np.array(wobj_y, dtype=np.float64)
-            wobj_z = np.array(wobj_z, dtype=np.float64)
-            
-            # Normalize the axes to ensure they are unit vectors
-            wobj_x = wobj_x / np.linalg.norm(wobj_x)
-            wobj_y = wobj_y / np.linalg.norm(wobj_y)
-            wobj_z = wobj_z / np.linalg.norm(wobj_z)
-            
-            # Build rack2base transformation matrix
-            # The rotation matrix is formed by the three axes as columns
-            rack2base_matrix = np.eye(4)
-            rack2base_matrix[:3, 0] = wobj_x  # X axis
-            rack2base_matrix[:3, 1] = wobj_y  # Y axis
-            rack2base_matrix[:3, 2] = wobj_z  # Z axis
-            rack2base_matrix[:3, 3] = wobj_origin  # Origin position
-            
+            if rack2base_matrix is None:
+                self.get_logger().debug("rack2base_matrix is None, skipping rack drawing")
+                return frame
+                        
             # Calculate rack2camera transformation
             # base2camera = params['extrinsic']
             # rack2camera = base2camera @ rack2base
             base2camera = params['extrinsic']
             rack2camera = base2camera @ rack2base_matrix
             
-            # Draw GB200 rack curve with rack2camera extrinsic
-            frame = draw_utils.draw_curves_on_image(
+            # Draw GB200 rack model with rack2camera extrinsic
+            frame = draw_utils.draw_model_on_image(
                 frame,
                 intrinsic=params['intrinsic'],
                 extrinsic=rack2camera,
-                point3d=self.gb200rack_curve['curves'],
+                model=self.gb200rack_model,
                 distortion=params['distortion'],
-                color=self.gb200rack_curve['colors'],
                 thickness=2
             )
+
+            # Calculate server2camera transformation for GB200 server
+            # Get Operating Unit value from robot_status
+            try:
+                operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+            except Exception as e:
+                self.get_logger().debug(f"Failed to get rack_operating_unit_id: {e}")
+                operating_unit_id = None
             
+            if operating_unit_id is None:
+                operating_unit_id = 14  # Default to 14 if not set
+                self.get_logger().debug(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+            
+            # Generate server frame in rack coordinate system using class instance
+            if self.server_frame_generator is None:
+                self.get_logger().warn("Server frame generator not initialized")
+                return frame
+            
+            result = self.server_frame_generator.generate_server_frame_in_rack(index=operating_unit_id)
+            
+            if result is not None:
+                # Get server2rack transformation matrix
+                server2rack_matrix = result['target_server_transformation_matrix_in_rack']
+                
+                # Calculate server2camera transformation
+                # server2camera = base2camera @ rack2base @ server2rack
+                server2camera = base2camera @ rack2base_matrix @ server2rack_matrix
+                
+                # Draw GB200 server model with server2camera extrinsic
+                frame = draw_utils.draw_model_on_image(
+                    frame,
+                    intrinsic=params['intrinsic'],
+                    extrinsic=server2camera,
+                    model=self.gb200server_model,
+                    distortion=params['distortion'],
+                    thickness=2
+                )
+            else:
+                self.get_logger().warn(f"Failed to generate server frame for unit {operating_unit_id}")
+
+
         except Exception as e:
             self.get_logger().error(f"Error projecting rack to image: {e}")
         
@@ -3746,7 +3741,11 @@ class UR15WebNode(Node):
                 return frame
             
             # Get 3D points from robot_status - client handles caching internally
-            points_3d = self.status_client.get_status('ur15', 'last_points_3d')
+            try:
+                points_3d = self.status_client.get_status('ur15', 'last_points_3d')
+            except Exception as e:
+                self.get_logger().debug(f"Failed to get last_points_3d: {e}")
+                return frame
             
             # Check if points are available
             if points_3d is None:
@@ -3961,9 +3960,23 @@ class UR15WebNode(Node):
         """Get camera parameters from robot_status (ur15 namespace)."""
         try:
             # Read camera parameters from robot_status
-            camera_matrix = self.status_client.get_status('ur15', 'camera_matrix')
-            distortion_coefficients = self.status_client.get_status('ur15', 'distortion_coefficients')
-            cam2end_matrix = self.status_client.get_status('ur15', 'cam2end_matrix')
+            try:
+                camera_matrix = self.status_client.get_status('ur15', 'camera_matrix')
+            except Exception as e:
+                self.get_logger().debug(f"Failed to get camera_matrix: {e}")
+                camera_matrix = None
+            
+            try:
+                distortion_coefficients = self.status_client.get_status('ur15', 'distortion_coefficients')
+            except Exception as e:
+                self.get_logger().debug(f"Failed to get distortion_coefficients: {e}")
+                distortion_coefficients = None
+            
+            try:
+                cam2end_matrix = self.status_client.get_status('ur15', 'cam2end_matrix')
+            except Exception as e:
+                self.get_logger().debug(f"Failed to get cam2end_matrix: {e}")
+                cam2end_matrix = None
             
             self.get_logger().info(f"Reading calibration parameters from robot_status (ur15 namespace)")
             

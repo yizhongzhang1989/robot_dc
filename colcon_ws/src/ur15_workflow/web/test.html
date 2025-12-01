@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Connection Test</title>
+</head>
+<body>
+    <h1>Connection Test</h1>
+    <p>If you can see this, the server is accessible.</p>
+    <div id="hostname"></div>
+    <div id="api-test"></div>
+    <script>
+        document.getElementById('hostname').innerHTML = '<p>Your hostname: ' + window.location.hostname + '</p>';
+        
+        // Test API
+        fetch('/api/workflows')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('api-test').innerHTML = '<p style="color: green;">API Test: SUCCESS - ' + JSON.stringify(data) + '</p>';
+            })
+            .catch(error => {
+                document.getElementById('api-test').innerHTML = '<p style="color: red;">API Test: FAILED - ' + error.message + '</p>';
+            });
+    </script>
+</body>
+</html>

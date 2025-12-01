@@ -48,6 +48,14 @@ ur15:
       launch_file: "image_labeling_launch.py"
       delay: 0.0
       enabled: true
+    - package: "camcalib_web_service"
+      launch_file: "camcalib_web_launch.py"
+      delay: 0.0
+      enabled: true
+    - package: "ur15_workflow"
+      launch_file: "workflow_config_center_launch.py"
+      delay: 0.0
+      enabled: true
     - package: "ur15_robot_arm"
       launch_file: "ur15_control_launch.py"
       delay: 0.0
@@ -146,6 +154,11 @@ services:
     host: "0.0.0.0"
     port: 8006
   
+  # Workflow Config Center Service
+  workflow_config_center:
+    host: "0.0.0.0"
+    port: 8008
+  
   # Robot Status Service (Redis-based status management and web dashboard)
   robot_status_redis:
     redis:
@@ -182,6 +195,13 @@ shared:
   paths:
     temp: "temp"
     scripts: "scripts"
+
+  GB200_rack:
+    rack_inner_width: 0.550
+    rack_inner_height: 2.141
+    rack_origin_to_unit_start_y: 0.190
+    rack_origin_to_unit_start_z: 0.03715
+    unit_length: 0.04445
 
 # ============================================================================
 # Environment Variables Reference

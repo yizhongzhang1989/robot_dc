@@ -12,7 +12,14 @@ import socket
 import subprocess
 
 # AMR
-script_dir = os.path.dirname(os.path.abspath(__file__))
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
+    from common.workspace_utils import get_workspace_root, get_scripts_directory
+    repo_root_path = get_workspace_root()
+    script_dir = get_scripts_directory()
+except ImportError:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root_path = os.path.abspath(os.path.join(script_dir, '..'))
 third_party_dir = os.path.join(script_dir, 'ThirdParty')
 sys.path.insert(0, third_party_dir)
 

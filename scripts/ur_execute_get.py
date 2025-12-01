@@ -7,16 +7,23 @@ from scipy.spatial.transform import Rotation as R
 
 class URExecuteGet(URExecuteBase):
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002, rs485_port=54321):
+        # Get workspace root
+        try:
+            from common.workspace_utils import get_workspace_root
+            workspace_root = get_workspace_root()
+        except:
+            workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         # Initialize parent class first
         # We need to temporarily store the custom paths
         self._custom_data_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            workspace_root,
             "temp",
             "ur_locate_get_data"
         )
         
         self._custom_result_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            workspace_root,
             "temp",
             "ur_locate_get_result"
         )

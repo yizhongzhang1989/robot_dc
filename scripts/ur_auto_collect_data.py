@@ -76,7 +76,11 @@ class URAutoCollectData(Node):
         self.ur_robot = None
         
         # File paths - handle relative paths relative to script directory
-        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            from common.workspace_utils import get_scripts_directory
+            self.script_dir = get_scripts_directory() if get_scripts_directory() else os.path.dirname(os.path.abspath(__file__))
+        except ImportError:
+            self.script_dir = os.path.dirname(os.path.abspath(__file__))
         
         # Handle data save directory
         if not os.path.isabs(data_save_dir):

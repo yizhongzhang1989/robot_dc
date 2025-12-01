@@ -8,8 +8,13 @@ import sys
 import os
 
 # Add the ur15_robot_arm module to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-repo_root = os.path.abspath(os.path.join(current_dir, '..'))
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
+    from common.workspace_utils import get_workspace_root
+    repo_root = get_workspace_root()
+except ImportError:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.abspath(os.path.join(current_dir, '..'))
 ur15_path = os.path.join(repo_root, 'colcon_ws/src/ur15_robot_arm/ur15_robot_arm')
 sys.path.append(ur15_path)
 

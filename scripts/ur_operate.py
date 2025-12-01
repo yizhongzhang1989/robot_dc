@@ -66,7 +66,12 @@ class UROperate:
     def _setup_paths(self):
         """Setup directory paths for script, dataset, data and results"""
         # Get the script directory for relative paths
-        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            from common.workspace_utils import get_workspace_root, get_scripts_directory
+            workspace_root = get_workspace_root()
+            self.script_dir = get_scripts_directory() if get_scripts_directory() else os.path.dirname(os.path.abspath(__file__))
+        except ImportError:
+            self.script_dir = os.path.dirname(os.path.abspath(__file__))
         
         # Dataset directory path
         self.dataset_dir = os.path.join(self.script_dir, '..', 'dataset', self.operation_name)

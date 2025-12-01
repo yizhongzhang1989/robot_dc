@@ -1,0 +1,192 @@
+{
+  "context": {
+    "robot_ip": "192.168.1.15",
+    "robot_port": 30002,
+    "camera_topic": "/ur15_camera/image_raw",
+    "positioning_service_url": "http://localhost:8004"
+  },
+  "workflow": [
+    {
+      "id": "upload_reference_data",
+      "type": "positioning",
+      "description": "Upload reference data to server",
+      "positioning_type": "upload_references",
+      "wait_time": 1,
+      "stop_on_failure": true
+    },
+    {
+      "id": "init_session",
+      "type": "positioning",
+      "description": "Initialize session on server",
+      "positioning_type": "init_session",
+      "wait_time": 1,
+      "stop_on_failure": true
+    },
+    {
+      "id": "movej_to_pose",
+      "type": "robot_move",
+      "description": "Move robot to pose using movej",
+      "robot_pose": [
+        1.2745,
+        -0.6904,
+        2.2714,
+        -2.9944,
+        -0.731,
+        -1.6306
+      ],
+      "move_type": "movej",
+      "velocity": 0.5,
+      "acceleration": 0.5,
+      "wait_time": 1.0,
+      "stop_on_failure": true
+    },
+    {
+      "id": "capture_at_current_pose",
+      "type": "capture_image",
+      "description": "Capture image at current pose and store in memory (image_name optional, auto-generates timestamp if not provided)",
+      "camera_topic": "/ur15_camera/image_raw",
+      "timeout": 3,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_data_pose",
+      "type": "record_data",
+      "description": "Record robot pose data and store in memory (pose_name optional, uses latest image_name or auto-generates timestamp)",
+      "record_type": "pose",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view",
+      "type": "positioning",
+      "description": "Upload view data from memory to server (image_name and data_name optional, auto-detects from previous capture/record operations, auto-saves to dataset after upload)",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_tcp_to_offset",
+      "type": "robot_move",
+      "description": "Move robot to offset using move_tcp",
+      "robot_pose": [
+        0.02,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0
+    },
+    {
+      "id": "capture_at_current_pose",
+      "type": "capture_image",
+      "description": "Capture image at current pose and store in memory (image_name optional, auto-generates timestamp if not provided)",
+      "camera_topic": "/ur15_camera/image_raw",
+      "timeout": 3,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_data_pose",
+      "type": "record_data",
+      "description": "Record robot pose data and store in memory (pose_name optional, uses latest image_name or auto-generates timestamp)",
+      "record_type": "pose",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view",
+      "type": "positioning",
+      "description": "Upload view data from memory to server (image_name and data_name optional, auto-detects from previous capture/record operations, auto-saves to dataset after upload)",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_tcp_to_offset",
+      "type": "robot_move",
+      "description": "Move robot to offset using move_tcp",
+      "robot_pose": [
+        -0.02,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0
+    },
+    {
+      "id": "move_tcp_to_offset",
+      "type": "robot_move",
+      "description": "Move robot to offset using move_tcp",
+      "robot_pose": [
+        0,
+        0.02,
+        0,
+        0,
+        0,
+        0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 1.0
+    },
+    {
+      "id": "capture_at_current_pose",
+      "type": "capture_image",
+      "description": "Capture image at current pose and store in memory (image_name optional, auto-generates timestamp if not provided)",
+      "camera_topic": "/ur15_camera/image_raw",
+      "timeout": 3,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_data_pose",
+      "type": "record_data",
+      "description": "Record robot pose data and store in memory (pose_name optional, uses latest image_name or auto-generates timestamp)",
+      "record_type": "pose",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view",
+      "type": "positioning",
+      "description": "Upload view data from memory to server (image_name and data_name optional, auto-detects from previous capture/record operations, auto-saves to dataset after upload)",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "get_result_standard",
+      "type": "positioning",
+      "description": "Get positioning result by standard mode",
+      "positioning_type": "get_result",
+      "timeout": 10000,
+      "status_namespace": "ur15",
+      "status_key_name": "last_points_3d",
+      "wait_time": 1,
+      "stop_on_failure": true
+    },
+    {
+      "id": "terminate_session",
+      "type": "positioning",
+      "description": "Terminate session on server",
+      "positioning_type": "terminate_session",
+      "wait_time": 0.5,
+      "stop_on_failure": false
+    }
+  ]
+}

@@ -219,14 +219,14 @@ def main():
         # if joints:
         #     print(f"Target joint positions (rad): {joints}")
 
-        # # 5. get actual TCP pose and joint positions
-        # actual_pose = robot.get_actual_tcp_pose()
-        # actual_joints = robot.get_actual_joint_positions()
-        # if actual_pose:
-        #     print(f"Actual tcp pose (m, rad): {actual_pose}")
-        # if actual_joints:
-        #     print(f"Actual joint positions (rad): {actual_joints}")
-        #     print(f"Actual joint positions (deg): {[j*180/3.1415926 for j in actual_joints]}")
+        # 5. get actual TCP pose and joint positions
+        actual_pose = robot.get_actual_tcp_pose()
+        actual_joints = robot.get_actual_joint_positions()
+        if actual_pose:
+            print(f"Actual tcp pose (m, rad): {actual_pose}")
+        if actual_joints:
+            # print(f"Actual joint positions (rad): {actual_joints}")
+            print(f"Actual joint positions (deg): {[j*180/3.1415926 for j in actual_joints]}")
 
         # # # 5.1 Test movel function
         # actual_pose = robot.get_actual_tcp_pose()
