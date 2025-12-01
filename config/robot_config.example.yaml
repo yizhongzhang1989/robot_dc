@@ -194,45 +194,64 @@ shared:
 # Lift Robot (Courier Platform) Configuration
 # ============================================================================
 lift_robot:
-  # Modbus communication settings
-  modbus:
+  # Modbus Driver Node Configuration
+  modbus_driver:
     port: "auto"              # Serial port (auto-detect RS485 device, or specify like /dev/ttyUSB0)
     baudrate: 115200          # Serial baudrate
-    
-  # Device IDs for each component
-  device_ids:
-    platform: 50              # Lift platform device ID
-    draw_wire_sensor: 51      # Draw wire height sensor device ID
-    force_sensor_right: 52    # Right force sensor device ID
-    force_sensor_left: 53     # Left force sensor device ID
+    ready_delay: 3.0          # Wait time for modbus driver initialization (seconds)
+    dashboard:
+      enabled: true          # Enable Modbus dashboard web interface
+      host: "0.0.0.0"         # Dashboard host address
+      port: 5000              # Dashboard port
+      log_dir: null           # Log directory (null = auto to temp/modbus_logs)
   
-  # Sensor configuration
-  sensors:
-    draw_wire:
-      read_interval: 0.06     # Read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz)
-      topic: "/draw_wire_sensor/data"
-    force_sensor:
-      read_interval: 0.06     # Read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz)
-      topics:
-        right: "/force_sensor"
-        left: "/force_sensor_2"
+  # Modbus Devices Node Configuration
+  modbus_devices:
+    launch_delay: 0.0         # Launch immediately after modbus driver ready
   
-  # Web interface configuration
+  # Lift Platform Node Configuration
+  platform:
+    device_id: 50             # Modbus slave ID for platform controller
+    calibration_file: "platform_overshoot_calibration.json"  # Overshoot calibration config in colcon_ws/config/
+    range_file: "platform_range.json"  # Platform range limits config in colcon_ws/config/
+    launch_delay: 3.0         # Delay after modbus driver ready (seconds)
+  
+  # Draw Wire Sensor Node Configuration
+  draw_wire_sensor:
+    device_id: 51             # Modbus slave ID for draw wire sensor
+    read_interval: 0.06       # Read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz)
+    topic: "/draw_wire_sensor/data"
+    calibration_file: "draw_wire_calibration.json"  # Calibration config in colcon_ws/config/
+    launch_delay: 4.0         # Delay after modbus driver ready (seconds)
+  
+  # Force Sensor Node Configuration (Right Sensor)
+  force_sensor_right:
+    device_id: 52             # Modbus slave ID for right force sensor
+    read_interval: 0.06       # Read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz)
+    topic: "/force_sensor_right"
+    node_name_suffix: "right"
+    calibration_file: "force_sensor_calibration_right.json"  # Calibration config in colcon_ws/config/
+    launch_delay: 4.5         # Delay after modbus driver ready (seconds)
+  
+  # Force Sensor Node Configuration (Left Sensor)
+  force_sensor_left:
+    device_id: 53             # Modbus slave ID for left force sensor
+    read_interval: 0.06       # Read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz)
+    topic: "/force_sensor_left"
+    node_name_suffix: "left"
+    calibration_file: "force_sensor_calibration_left.json"  # Calibration config in colcon_ws/config/
+    launch_delay: 5.0         # Delay after modbus driver ready (seconds)
+  
+  # Web Interface Node Configuration
   web:
     host: "localhost"         # Web server host address (localhost or IP like 192.168.1.3)
     port: 8090                # Web server port
     listen_host: "0.0.0.0"    # Listen on all interfaces (for server binding)
     sensor_topic: "/draw_wire_sensor/data"
-  
-  # Launch sequence timing (delays in seconds)
-  launch_timing:
-    modbus_ready: 3.0         # Wait for modbus driver initialization
-    platform_delay: 3.0       # Platform node launch delay
-    draw_wire_delay: 4.0      # Draw wire sensor launch delay
-    force_sensor_delay: 4.5   # Force sensor launch delay
-    force_sensor_2_delay: 5.0 # Second force sensor launch delay
-    web_delay: 5.5            # Web interface launch delay
-  
-  # Optional launch flags
-  launch_flags:
-    start_web: true           # Launch web interface
+    force_topics:
+      right: "/force_sensor_right"
+      right_raw: "/force_sensor_right/raw"
+      left: "/force_sensor_left"
+      left_raw: "/force_sensor_left/raw"
+    launch_delay: 5.5         # Delay after modbus driver ready (seconds)
+    enabled: true             # Launch web interface

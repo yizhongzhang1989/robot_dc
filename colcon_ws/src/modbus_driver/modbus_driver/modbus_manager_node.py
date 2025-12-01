@@ -22,13 +22,15 @@ class ModbusManagerNode(Node):
         # Declare and get parameters
         self.declare_parameter('port', '/dev/ttyUSB0')
         self.declare_parameter('baudrate', 115200)
-        self.declare_parameter('enable_dashboard', True)
+        self.declare_parameter('enable_dashboard', False)
+        self.declare_parameter('dashboard_host', '0.0.0.0')
         self.declare_parameter('dashboard_port', 5000)
         self.declare_parameter('log_dir', DEFAULT_LOG_DIR)
         
         port = self.get_parameter('port').value
         baudrate = self.get_parameter('baudrate').value
         enable_dashboard = self.get_parameter('enable_dashboard').value
+        dashboard_host = self.get_parameter('dashboard_host').value
         dashboard_port = self.get_parameter('dashboard_port').value
         log_dir = self.get_parameter('log_dir').value
 
@@ -43,9 +45,9 @@ class ModbusManagerNode(Node):
         # Initialize Dashboard
         self.dashboard = None
         if enable_dashboard:
-            self.dashboard = ModbusDashboard(port=dashboard_port, log_dir=log_dir)
+            self.dashboard = ModbusDashboard(host=dashboard_host, port=dashboard_port, log_dir=log_dir)
             self.dashboard.start()
-            self.get_logger().info(f"✅ Modbus Dashboard running at http://0.0.0.0:{dashboard_port}")
+            self.get_logger().info(f"✅ Modbus Dashboard running at http://{dashboard_host}:{dashboard_port}")
             self.get_logger().info(f"✅ Logging to directory: {log_dir}")
 
         self.srv = self.create_service(ModbusRequest, '/modbus_request', self.handle_modbus_request)

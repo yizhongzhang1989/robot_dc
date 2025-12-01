@@ -173,21 +173,34 @@ class LiftRobotNodeAction(Node):
         )
         
         # Subscribe force sensors (Float32 type, same as Topic mode)
+        # Load topic names from config
+        force_topic_right = '/force_sensor_right'
+        force_topic_left = '/force_sensor_left'
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            if config.has('lift_robot.force_sensor_right.topic'):
+                force_topic_right = config.get('lift_robot.force_sensor_right.topic')
+            if config.has('lift_robot.force_sensor_left.topic'):
+                force_topic_left = config.get('lift_robot.force_sensor_left.topic')
+        except Exception as e:
+            self.get_logger().warn(f"Could not load force sensor topics from config: {e}")
+        
         from std_msgs.msg import Float32
         self.force_subscription = self.create_subscription(
             Float32,
-            '/force_sensor',
+            force_topic_right,
             self._force_sensor_callback,
             10
         )
         
         self.force_subscription_2 = self.create_subscription(
             Float32,
-            '/force_sensor_2',
+            force_topic_left,
             self._force_sensor_2_callback,
             10
         )
-        self.get_logger().info("Subscribed to /force_sensor and /force_sensor_2")
+        self.get_logger().info(f"Subscribed to {force_topic_right} and {force_topic_left}")
         
         # ═══════════════════════════════════════════════════════════════
         # Status Publisher (10Hz for web monitoring)
@@ -287,10 +300,20 @@ class LiftRobotNodeAction(Node):
         def _cfg(name):
             return os.path.join(self.config_dir, name)
         
+        # Load overshoot calibration file name from config
+        overshoot_filename = 'platform_overshoot_calibration.json'
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            if config.has('lift_robot.platform.calibration_file'):
+                overshoot_filename = config.get('lift_robot.platform.calibration_file')
+        except Exception:
+            pass
+        
         # ═══════════════════════════════════════════════════════════════
         # Load Overshoot Calibration Config
         # ═══════════════════════════════════════════════════════════════
-        overshoot_path = _cfg('platform_overshoot_calibration.json')
+        overshoot_path = _cfg(overshoot_filename)
         self.get_logger().info(f"Overshoot config path resolved: {overshoot_path}")
         
         # Create default overshoot config if it doesn't exist
@@ -368,7 +391,17 @@ class LiftRobotNodeAction(Node):
         # ═══════════════════════════════════════════════════════════════
         # Load Platform Range Config
         # ═══════════════════════════════════════════════════════════════
-        range_path = _cfg('platform_range.json')
+        # Load range file name from config
+        range_filename = 'platform_range.json'
+        try:
+            from common.config_manager import ConfigManager
+            config_mgr = ConfigManager()
+            if config_mgr.has('lift_robot.platform.range_file'):
+                range_filename = config_mgr.get('lift_robot.platform.range_file')
+        except Exception:
+            pass
+        
+        range_path = _cfg(range_filename)
         
         # Create default range config if it doesn't exist
         if not os.path.exists(range_path):
@@ -857,7 +890,17 @@ class LiftRobotNodeAction(Node):
     def _save_range_config(self):
         """Save detected range to config file"""
         try:
-            range_path = os.path.join(self.config_dir, 'platform_range.json')
+            # Load range file name from config
+            range_filename = 'platform_range.json'
+            try:
+                from common.config_manager import ConfigManager
+                config_mgr = ConfigManager()
+                if config_mgr.has('lift_robot.platform.range_file'):
+                    range_filename = config_mgr.get('lift_robot.platform.range_file')
+            except Exception:
+                pass
+            
+            range_path = os.path.join(self.config_dir, range_filename)
             
             # Calculate safe range (50mm margin from actual limits)
             safe_min = self.range_scan_low_height + 50.0

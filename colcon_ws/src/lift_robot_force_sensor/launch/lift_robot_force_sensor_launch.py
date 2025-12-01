@@ -21,6 +21,25 @@ def launch_setup(context, *args, **kwargs):
     node_name_suffix = LaunchConfiguration('node_name_suffix').perform(context)
     read_interval = float(LaunchConfiguration('read_interval').perform(context))
     
+    # Try to load calibration file name from config
+    calib_filename = None
+    try:
+        from common.config_manager import ConfigManager
+        config = ConfigManager()
+        # Dynamically find which sensor (right/left) matches this device_id
+        for sensor_name in ['force_sensor_right', 'force_sensor_left']:
+            config_path = f'lift_robot.{sensor_name}'
+            if config.has(f'{config_path}.device_id') and config.get(f'{config_path}.device_id') == device_id:
+                if config.has(f'{config_path}.calibration_file'):
+                    calib_filename = config.get(f'{config_path}.calibration_file')
+                    break
+    except Exception:
+        pass
+    
+    # Fallback: Use generic device_id-based naming
+    if calib_filename is None:
+        calib_filename = f'force_sensor_calibration_{device_id}.json'
+    
     # Portable config path resolution (ENV -> colcon_ws -> CWD)
     env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
     def resolve_config_dir():
@@ -44,18 +63,13 @@ def launch_setup(context, *args, **kwargs):
     
     config_dir = resolve_config_dir()
     os.makedirs(config_dir, exist_ok=True)
-    config_path = os.path.join(config_dir, f'force_sensor_calibration_{device_id}.json')
+    
+    config_path = os.path.join(config_dir, calib_filename)
     
     # Default calibration values (fallback when config file doesn't exist)
-    if device_id == 52:
-        calib_scale = 0.116125
-        calib_offset = 0.0
-    elif device_id == 53:
-        calib_scale = 0.023614
-        calib_offset = 0.0
-    else:
-        calib_scale = 0.116125
-        calib_offset = 0.0
+    # Use neutral defaults - actual calibration should be done via web interface
+    calib_scale = 0.1
+    calib_offset = 0.0
     
     # Load from JSON if exists (overrides defaults)
     if os.path.exists(config_path):
@@ -113,12 +127,12 @@ def generate_launch_description():
     It accepts parameters for device_id, topic_name, and node_name_suffix.
     
     Usage:
-      # Single instance (default device_id=52, topic=/force_sensor)
+      # Single instance (default device_id=52, topic=/force_sensor_right)
       ros2 launch lift_robot_force_sensor lift_robot_force_sensor_launch.py
       
       # Custom instance
       ros2 launch lift_robot_force_sensor lift_robot_force_sensor_launch.py \
-          device_id:=53 topic_name:=/force_sensor_2 node_name_suffix:=left
+          device_id:=53 topic_name:=/force_sensor_left node_name_suffix:=left
     
     Config file paths (resolved dynamically):
         Base directory priority:
@@ -129,16 +143,16 @@ def generate_launch_description():
     
     # Try to load defaults from config file (like other nodes do)
     default_device_id = '52'
-    default_topic = '/force_sensor'
+    default_topic = '/force_sensor_right'
     default_read_interval = '0.06'
     
     try:
         from common.config_manager import ConfigManager
         config = ConfigManager()
         # For right sensor by default
-        default_device_id = str(config.get('lift_robot.device_ids.force_sensor_right', 52))
-        default_topic = config.get('lift_robot.sensors.force_sensor.topics.right', '/force_sensor')
-        default_read_interval = str(config.get('lift_robot.sensors.force_sensor.read_interval', 0.06))
+        default_device_id = str(config.get('lift_robot.force_sensor_right.device_id', 52))
+        default_topic = config.get('lift_robot.force_sensor_right.topic', '/force_sensor_right')
+        default_read_interval = str(config.get('lift_robot.force_sensor_right.read_interval', 0.06))
         print(f"[force_sensor_launch] Loaded from config: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
     except Exception as e:
         print(f"[force_sensor_launch] Could not load config: {e}")

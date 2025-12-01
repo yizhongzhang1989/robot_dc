@@ -13,7 +13,7 @@ def generate_launch_description():
     try:
         from common.config_manager import ConfigManager
         config = ConfigManager()
-        device_id = config.get('lift_robot.device_ids.platform', 50)
+        device_id = config.get('lift_robot.platform.device_id', 50)
         print(f"[lift_robot_launch] Loaded device_id from config: {device_id}")
     except Exception as e:
         print(f"[lift_robot_launch] Could not load config: {e}")

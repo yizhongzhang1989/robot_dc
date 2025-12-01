@@ -37,14 +37,14 @@ class LiftRobotForceSensorNode(Node):
         # Visualization enable flag (can also be overridden via CLI args)
         self.declare_parameter('enable_visualization', False)
         # Topic name parameter (allows running multiple instances with different topics)
-        self.declare_parameter('topic_name', '/force_sensor')
+        self.declare_parameter('topic_name', '/force_sensor_right')
         # Node name suffix (for distinguishing multiple instances in logs)
         self.declare_parameter('node_name_suffix', '')
         # Calibration parameters (from calibration: actual_force = sensor_reading × scale)
         # Default values used when launch file doesn't load from JSON config
         # Device-specific defaults:
-        #   - device_id=52 (right sensor, /force_sensor): scale=0.116125
-        #   - device_id=53 (left sensor, /force_sensor_2): scale=0.116125
+        #   - device_id=52 (right sensor, /force_sensor_right): scale=0.116125
+        #   - device_id=53 (left sensor, /force_sensor_left): scale=0.116125
         # Note: These are initial calibration results. For best accuracy, perform
         # web-based calibration and save to JSON config file.
         self.declare_parameter('calibration_scale', 0.116125)

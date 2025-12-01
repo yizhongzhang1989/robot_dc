@@ -13,12 +13,15 @@ def generate_launch_description():
     # Try to load from config file
     default_device_id = '51'
     default_read_interval = '0.06'
+    calib_filename = 'draw_wire_calibration.json'
     
     try:
         from common.config_manager import ConfigManager
         config = ConfigManager()
-        default_device_id = str(config.get('lift_robot.device_ids.draw_wire_sensor', 51))
-        default_read_interval = str(config.get('lift_robot.sensors.draw_wire.read_interval', 0.06))
+        default_device_id = str(config.get('lift_robot.draw_wire_sensor.device_id', 51))
+        default_read_interval = str(config.get('lift_robot.draw_wire_sensor.read_interval', 0.06))
+        if config.has('lift_robot.draw_wire_sensor.calibration_file'):
+            calib_filename = config.get('lift_robot.draw_wire_sensor.calibration_file')
         print(f"[draw_wire_sensor] Loaded from config: device_id={default_device_id}, interval={default_read_interval}")
     except Exception as e:
         print(f"[draw_wire_sensor] Could not load config: {e}")
@@ -50,7 +53,7 @@ def generate_launch_description():
         return os.path.join(os.getcwd(), 'config')
     config_dir = resolve_config_dir()
     os.makedirs(config_dir, exist_ok=True)
-    config_path = os.path.join(config_dir, 'draw_wire_calibration.json')
+    config_path = os.path.join(config_dir, calib_filename)
     calib_scale = 0.024537  # Default values
     calib_offset = 681.837575
     calib_enable = True

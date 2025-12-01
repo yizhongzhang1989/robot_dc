@@ -56,11 +56,19 @@ class LiftRobotWeb(Node):
         self.latest_obj = None
         self.connections = []
         self.loop = None
+        
+        # Force sensor topic names (will be loaded from config)
+        self.force_topic_right = '/force_sensor_right'
+        self.force_topic_left = '/force_sensor_left'
+        # Force sensor device IDs (will be loaded from config)
+        self.force_device_id_right = 52  # Default
+        self.force_device_id_left = 53   # Default
+        
         # Dual-channel force values: right force sensor (device_id=52) and left force sensor (device_id=53)
-        self.right_force_sensor = None  # /force_sensor (device_id=52) - calibrated
-        self.left_force_sensor = None   # /force_sensor_2 (device_id=53) - calibrated
-        self.right_force_raw = None     # /force_sensor/raw (device_id=52) - raw for calibration
-        self.left_force_raw = None      # /force_sensor_2/raw (device_id=53) - raw for calibration
+        self.right_force_sensor = None  # calibrated
+        self.left_force_sensor = None   # calibrated
+        self.right_force_raw = None     # raw for calibration
+        self.left_force_raw = None      # raw for calibration
         self.combined_force_sensor = None  # Combined force (sum of two sensors, falls back to single sensor if one missing)
         self.last_force_update = None  # Latest force sensor update timestamp (either sensor)
         self.platform_status = None
@@ -96,16 +104,41 @@ class LiftRobotWeb(Node):
         # ROS interfaces
         self.sub = self.create_subscription(String, self.sensor_topic, self.sensor_cb, 10)
         # Force sensor subscriptions (Float32)
+        # Load topic names from config
+        force_topic_right = '/force_sensor_right'
+        force_topic_left = '/force_sensor_left'
+        force_device_id_right = 52
+        force_device_id_left = 53
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            if config.has('lift_robot.web.force_topics.right'):
+                force_topic_right = config.get('lift_robot.web.force_topics.right')
+            if config.has('lift_robot.web.force_topics.left'):
+                force_topic_left = config.get('lift_robot.web.force_topics.left')
+            if config.has('lift_robot.force_sensor_right.device_id'):
+                force_device_id_right = config.get('lift_robot.force_sensor_right.device_id')
+            if config.has('lift_robot.force_sensor_left.device_id'):
+                force_device_id_left = config.get('lift_robot.force_sensor_left.device_id')
+        except Exception as e:
+            self.get_logger().warn(f"Could not load force sensor topics from config: {e}")
+        
+        # Store topic names for later use
+        self.force_topic_right = force_topic_right
+        self.force_topic_left = force_topic_left
+        self.force_device_id_right = force_device_id_right
+        self.force_device_id_left = force_device_id_left
+        
         try:
             from std_msgs.msg import Float32
             # Subscribe to calibrated force sensor topics (for control)
-            self.force_sub_right = self.create_subscription(Float32, '/force_sensor', self.force_cb_right, 10)
-            self.force_sub_left = self.create_subscription(Float32, '/force_sensor_2', self.force_cb_left, 10)
+            self.force_sub_right = self.create_subscription(Float32, force_topic_right, self.force_cb_right, 10)
+            self.force_sub_left = self.create_subscription(Float32, force_topic_left, self.force_cb_left, 10)
             # Subscribe to raw force sensor topics (for calibration display)
-            self.force_raw_sub_right = self.create_subscription(Float32, '/force_sensor/raw', self.force_raw_cb_right, 10)
-            self.force_raw_sub_left = self.create_subscription(Float32, '/force_sensor_2/raw', self.force_raw_cb_left, 10)
-            self.get_logger().info("Subscribed to /force_sensor (right) and /force_sensor_2 (left)")
-            self.get_logger().info("Subscribed to /force_sensor/raw and /force_sensor_2/raw (for calibration)")
+            self.force_raw_sub_right = self.create_subscription(Float32, f'{force_topic_right}/raw', self.force_raw_cb_right, 10)
+            self.force_raw_sub_left = self.create_subscription(Float32, f'{force_topic_left}/raw', self.force_raw_cb_left, 10)
+            self.get_logger().info(f"Subscribed to {force_topic_right} (right) and {force_topic_left} (left)")
+            self.get_logger().info(f"Subscribed to {force_topic_right}/raw and {force_topic_left}/raw (for calibration)")
         except Exception as e:
             self.get_logger().warn(f"Failed to create force sensor subscriptions: {e}")
         # Status subscriptions
@@ -174,7 +207,7 @@ class LiftRobotWeb(Node):
             # Continue operation
 
     def force_cb_right(self, msg):
-        """Right force sensor callback (device_id=52, /force_sensor) - calibrated value"""
+        """Right force sensor callback (device_id=52) - calibrated value"""
         try:
             import math
             value = msg.data
@@ -192,7 +225,7 @@ class LiftRobotWeb(Node):
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_cb_left(self, msg):
-        """Left force sensor callback (device_id=53, /force_sensor_2) - calibrated value"""
+        """Left force sensor callback (device_id=53) - calibrated value"""
         try:
             import math
             value = msg.data
@@ -210,14 +243,14 @@ class LiftRobotWeb(Node):
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_raw_cb_right(self, msg):
-        """Right force sensor raw callback (device_id=52, /force_sensor/raw) - raw value for calibration"""
+        """Right force sensor raw callback (device_id=52) - raw value for calibration"""
         try:
             self.right_force_raw = msg.data
         except Exception as e:
             self.get_logger().warn(f"Right force raw callback error: {e}")
     
     def force_raw_cb_left(self, msg):
-        """Left force sensor raw callback (device_id=53, /force_sensor_2/raw) - raw value for calibration"""
+        """Left force sensor raw callback (device_id=53) - raw value for calibration"""
         try:
             self.left_force_raw = msg.data
         except Exception as e:
@@ -1518,8 +1551,8 @@ def run_fastapi_server(port):
                     
                     # Load timestamp from config files if exist
                     config_dir = lift_robot_node.config_dir
-                    config_path_right = os.path.join(config_dir, 'force_sensor_calibration_52.json')
-                    config_path_left = os.path.join(config_dir, 'force_sensor_calibration_53.json')
+                    config_path_right = os.path.join(config_dir, 'force_sensor_calibration_right.json')
+                    config_path_left = os.path.join(config_dir, 'force_sensor_calibration_left.json')
                     
                     # Load right channel timestamp
                     if os.path.exists(config_path_right):
@@ -1560,12 +1593,12 @@ def run_fastapi_server(port):
                 config_dir = lift_robot_node.config_dir
                 saved_files = []
                 
-                # Save right channel (device_id=52)
+                # Save right channel
                 if scale_right is not None:
-                    config_path_right = os.path.join(config_dir, 'force_sensor_calibration_52.json')
+                    config_path_right = os.path.join(config_dir, 'force_sensor_calibration_right.json')
                     config_data_right = {
-                        'device_id': 52,
-                        'topic': '/force_sensor',
+                        'device_id': lift_robot_node.force_device_id_right,
+                        'topic': lift_robot_node.force_topic_right,
                         'scale': scale_right,
                         'offset': 0.0,  # Zero-intercept
                         'formula': f'actual_force = sensor_reading × {scale_right}',
@@ -1582,12 +1615,12 @@ def run_fastapi_server(port):
                     saved_files.append(config_path_right)
                     lift_robot_node.get_logger().info(f"Saved right force calibration: scale={scale_right}")
                 
-                # Save left channel (device_id=53)
+                # Save left channel
                 if scale_left is not None:
-                    config_path_left = os.path.join(config_dir, 'force_sensor_calibration_53.json')
+                    config_path_left = os.path.join(config_dir, 'force_sensor_calibration_left.json')
                     config_data_left = {
-                        'device_id': 53,
-                        'topic': '/force_sensor_2',
+                        'device_id': lift_robot_node.force_device_id_left,
+                        'topic': lift_robot_node.force_topic_left,
                         'scale': scale_left,
                         'offset': 0.0,
                         'formula': f'actual_force = sensor_reading × {scale_left}',
@@ -1636,19 +1669,26 @@ def run_fastapi_server(port):
                 
                 body = await request.json()
                 channel = body.get('channel', 'right')
-                device_id = body.get('device_id', 52)
                 
-                # Validate device_id matches channel
-                if channel == 'right' and device_id != 52:
-                    return JSONResponse({
-                        'success': False,
-                        'error': f'Channel "right" requires device_id=52, got {device_id}'
-                    })
-                if channel == 'left' and device_id != 53:
-                    return JSONResponse({
-                        'success': False,
-                        'error': f'Channel "left" requires device_id=53, got {device_id}'
-                    })
+                # Get device_id from config based on channel
+                device_id = None
+                try:
+                    from common.config_manager import ConfigManager
+                    config = ConfigManager()
+                    config_key = f'lift_robot.force_sensor_{channel}.device_id'
+                    if config.has(config_key):
+                        device_id = config.get(config_key)
+                except Exception:
+                    pass
+                
+                # Fallback to body parameter or error
+                if device_id is None:
+                    device_id = body.get('device_id')
+                    if device_id is None:
+                        return JSONResponse({
+                            'success': False,
+                            'error': f'Could not determine device_id for channel "{channel}"'
+                        })
                 
                 # Prepare tare command (FC06, register 0x0011, value 0x0001)
                 msg = ModbusPacket()
