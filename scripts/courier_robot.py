@@ -187,6 +187,10 @@ class CourierRobotWebAPI:
             
             print("="*60 + "\n")
         
+        # Remove _full_data from public API response
+        if '_full_data' in result:
+            del result['_full_data']
+        
         return result
     
     def get_sensor_data(self):
@@ -253,7 +257,7 @@ class CourierRobotWebAPI:
         result = self._send_command('platform', 'up')
         
         # Get final status after command
-        final_status = self._get_status()
+        final_status = self.get_status()
         result['final_status'] = final_status
         
         if self.verbose:
@@ -288,7 +292,7 @@ class CourierRobotWebAPI:
         result = self._send_command('platform', 'down')
         
         # Get final status after command
-        final_status = self._get_status()
+        final_status = self.get_status()
         result['final_status'] = final_status
         
         if self.verbose:
@@ -310,7 +314,7 @@ class CourierRobotWebAPI:
         result = self._send_command('platform', 'stop')
         
         # Get final status after command
-        final_status = self._get_status()
+        final_status = self.get_status()
         result['final_status'] = final_status
         
         if self.verbose:
@@ -377,7 +381,7 @@ class CourierRobotWebAPI:
             return completion
         else:
             # Non-blocking mode
-            final_status = self._get_status()
+            final_status = self.get_status()
             result['final_status'] = final_status
             if self.verbose:
                 print(f"✅ Goto height command sent (non-blocking)")
@@ -441,7 +445,7 @@ class CourierRobotWebAPI:
             
             return completion
         else:
-            final_status = self._get_status()
+            final_status = self.get_status()
             result['final_status'] = final_status
             if self.verbose:
                 print(f"✅ Force UP command sent (non-blocking)")
@@ -503,7 +507,7 @@ class CourierRobotWebAPI:
             
             return completion
         else:
-            final_status = self._get_status()
+            final_status = self.get_status()
             result['final_status'] = final_status
             if self.verbose:
                 print(f"✅ Force DOWN command sent (non-blocking)")
@@ -569,7 +573,7 @@ class CourierRobotWebAPI:
             
             return completion
         else:
-            final_status = self._get_status()
+            final_status = self.get_status()
             result['final_status'] = final_status
             if self.verbose:
                 print(f"✅ Hybrid control command sent (non-blocking)")
@@ -602,7 +606,7 @@ class CourierRobotWebAPI:
         result = self._send_command('pushrod', 'up')
         
         # Get final status after command
-        final_status = self._get_status()
+        final_status = self.get_status()
         result['final_status'] = final_status
         
         if self.verbose:
@@ -637,7 +641,7 @@ class CourierRobotWebAPI:
         result = self._send_command('pushrod', 'down')
         
         # Get final status after command
-        final_status = self._get_status()
+        final_status = self.get_status()
         result['final_status'] = final_status
         
         if self.verbose:
@@ -659,7 +663,7 @@ class CourierRobotWebAPI:
         result = self._send_command('pushrod', 'stop')
         
         # Get final status after command
-        final_status = self._get_status()
+        final_status = self.get_status()
         result['final_status'] = final_status
         
         if self.verbose:
@@ -727,7 +731,7 @@ class CourierRobotWebAPI:
             
             return completion
         else:
-            final_status = self._get_status()
+            final_status = self.get_status()
             result['final_status'] = final_status
             if self.verbose:
                 print(f"✅ Goto height command sent (non-blocking)")
@@ -764,7 +768,7 @@ class CourierRobotWebAPI:
         self.reset_flag = False
         
         # Get final status after reset
-        final_status = self._get_status()
+        final_status = self.get_status()
         result['final_status'] = final_status
         
         if self.verbose:
@@ -872,7 +876,7 @@ class CourierRobotWebAPI:
                                 print(f"✅ Target already reached (no movement needed): {reason}")
                             
                             self.verbose = original_verbose
-                            final_status = self._get_status()
+                            final_status = self.get_status()
                             
                             return {
                                 "success": True,
@@ -914,7 +918,7 @@ class CourierRobotWebAPI:
                         # Restore verbose but don't print final status here
                         # (caller will print it after printing completion message)
                         self.verbose = original_verbose
-                        final_status = self._get_status()
+                        final_status = self.get_status()
                         
                         return {
                             "success": True,
@@ -932,7 +936,7 @@ class CourierRobotWebAPI:
                         
                         # Restore verbose but don't print final status here
                         self.verbose = original_verbose
-                        final_status = self._get_status()
+                        final_status = self.get_status()
                         
                         return {
                             "success": False,
@@ -1032,5 +1036,3 @@ if __name__ == "__main__":
 
 # 14. Emergency stop
 # robot.emergency_reset()
-
-print("\n✅ Script execution completed")
