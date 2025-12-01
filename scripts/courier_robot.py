@@ -60,9 +60,12 @@ class CourierRobot:
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    def get_status(self):
+    def get_status(self, print_status=True):
         """
         Get current status of platform and pushrod with sensor data
+        
+        Args:
+            print_status: If True and verbose=True, print formatted status (default: True)
         
         Returns:
             dict with complete system status including:
@@ -96,8 +99,8 @@ class CourierRobot:
                 else:
                     result['sensors'] = {}
                 
-                # Print friendly status if verbose
-                if self.verbose:
+                # Print friendly status if verbose and print_status=True
+                if self.verbose and print_status:
                     print("\n" + "="*60)
                     print("📊 SYSTEM STATUS")
                     print("="*60)
@@ -196,7 +199,7 @@ class CourierRobot:
             dict with success status and complete state
         """
         # Check if platform is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
@@ -231,7 +234,7 @@ class CourierRobot:
             dict with success status and complete state
         """
         # Check if platform is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
@@ -280,163 +283,248 @@ class CourierRobot:
     
     # ==================== Platform Height Control ====================
     
-    def platform_goto_height(self, target_height):
+    def platform_goto_height(self, target_height, wait=True, timeout=60):
         """
-        Platform goto specific height
+        Platform goto specific height (BLOCKING by default)
         
         Args:
             target_height: Target height in mm
+            wait: If True, wait for completion before returning (default: True)
+                  If False (non-blocking), will auto-stop previous task if running
+            timeout: Maximum wait time in seconds (default: 60)
             
-        Returns:
+            Returns:
             dict with success status and complete state
         """
         # Check if platform is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
-                return {
-                    'success': False,
-                    'error': f'Platform is busy (state: {platform_state})',
-                    'status': status
-                }
+                if wait:
+                    # Blocking mode: reject if busy
+                    if self.verbose:
+                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                    return {
+                        'success': False,
+                        'error': f'Platform is busy (state: {platform_state})',
+                        'status': status
+                    }
+                else:
+                    # Non-blocking mode: auto-stop previous task
+                    if self.verbose:
+                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                    self.platform_stop()
+                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"🎯 [Platform] Goto height: {target_height}mm")
         result = self._send_command('platform', 'goto_height', target_height=target_height)
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Goto height command sent successfully")
-            else:
+        if not result['success']:
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
-        return result
+            return result
+        
+        # Wait for completion if requested
+        if wait:
+            if self.verbose:
+                print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
+            completion = self.wait_for_completion(target='platform', timeout=timeout)
+            if completion['success'] and self.verbose:
+                duration = completion.get('duration', 0) or 0
+                print(f"✅ Goto {target_height}mm completed ({duration:.2f}s)")
+            return completion
+        else:
+            # Non-blocking mode
+            final_status = self.get_status()
+            result['status'] = final_status
+            if self.verbose:
+                print(f"✅ Goto height command sent (non-blocking)")
+            return result
     
     # ==================== Platform Force Control ====================
     
-    def platform_force_up(self, target_force):
+    def platform_force_up(self, target_force, wait=True, timeout=60):
         """
-        Platform force-controlled up movement
+        Platform force-controlled up movement (BLOCKING by default)
         
         Args:
             target_force: Target force in Newtons
+            wait: If True, wait for completion before returning (default: True)
+                  If False (non-blocking), will auto-stop previous task if running
+            timeout: Maximum wait time in seconds (default: 60)
             
         Returns:
             dict with success status and complete state
         """
         # Check if platform is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
-                return {
-                    'success': False,
-                    'error': f'Platform is busy (state: {platform_state})',
-                    'status': status
-                }
+                if wait:
+                    # Blocking mode: reject if busy
+                    if self.verbose:
+                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                    return {
+                        'success': False,
+                        'error': f'Platform is busy (state: {platform_state})',
+                        'status': status
+                    }
+                else:
+                    # Non-blocking mode: auto-stop previous task
+                    if self.verbose:
+                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                    self.platform_stop()
+                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"⚡⬆️  [Platform] Force UP to {target_force}N")
         result = self._send_command('platform', 'force_up', target_force=target_force)
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Force UP command sent successfully")
-            else:
+        if not result['success']:
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
-        return result
+            return result
+        
+        # Wait for completion if requested
+        if wait:
+            if self.verbose:
+                print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
+            completion = self.wait_for_completion(target='platform', timeout=timeout)
+            if completion['success'] and self.verbose:
+                duration = completion.get('duration', 0) or 0
+                print(f"✅ Force UP {target_force}N completed ({duration:.2f}s)")
+            return completion
+        else:
+            final_status = self.get_status()
+            result['status'] = final_status
+            if self.verbose:
+                print(f"✅ Force UP command sent (non-blocking)")
+            return result
     
-    def platform_force_down(self, target_force):
+    def platform_force_down(self, target_force, wait=True, timeout=60):
         """
-        Platform force-controlled down movement
+        Platform force-controlled down movement (BLOCKING by default)
         
         Args:
             target_force: Target force in Newtons
+            wait: If True, wait for completion before returning (default: True)
+                  If False (non-blocking), will auto-stop previous task if running
+            timeout: Maximum wait time in seconds (default: 60)
             
         Returns:
             dict with success status and complete state
         """
         # Check if platform is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
-                return {
-                    'success': False,
-                    'error': f'Platform is busy (state: {platform_state})',
-                    'status': status
-                }
+                if wait:
+                    # Blocking mode: reject if busy
+                    if self.verbose:
+                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                    return {
+                        'success': False,
+                        'error': f'Platform is busy (state: {platform_state})',
+                        'status': status
+                    }
+                else:
+                    # Non-blocking mode: auto-stop previous task
+                    if self.verbose:
+                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                    self.platform_stop()
+                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"⚡⬇️  [Platform] Force DOWN to {target_force}N")
         result = self._send_command('platform', 'force_down', target_force=target_force)
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Force DOWN command sent successfully")
-            else:
+        if not result['success']:
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
-        return result
+            return result
+        
+        # Wait for completion if requested
+        if wait:
+            if self.verbose:
+                print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
+            completion = self.wait_for_completion(target='platform', timeout=timeout)
+            if completion['success'] and self.verbose:
+                duration = completion.get('duration', 0) or 0
+                print(f"✅ Force DOWN {target_force}N completed ({duration:.2f}s)")
+            return completion
+        else:
+            final_status = self.get_status()
+            result['status'] = final_status
+            if self.verbose:
+                print(f"✅ Force DOWN command sent (non-blocking)")
+            return result
     
     # ==================== Platform Hybrid Control ====================
     
-    def platform_hybrid_control(self, target_height, target_force):
+    def platform_hybrid_control(self, target_height, target_force, wait=True, timeout=60):
         """
-        Platform hybrid control (height OR force, whichever reached first)
+        Platform hybrid control (height OR force, whichever reached first) (BLOCKING by default)
         
         Args:
             target_height: Target height in mm
             target_force: Target force in Newtons
+            wait: If True, wait for completion before returning (default: True)
+                  If False (non-blocking), will auto-stop previous task if running
+            timeout: Maximum wait time in seconds (default: 60)
             
         Returns:
             dict with success status and complete state
         """
         # Check if platform is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             platform_state = status.get('data', {}).get('platform', {}).get('task_state', 'unknown')
             if platform_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
-                return {
-                    'success': False,
-                    'error': f'Platform is busy (state: {platform_state})',
-                    'status': status
-                }
+                if wait:
+                    # Blocking mode: reject if busy
+                    if self.verbose:
+                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                    return {
+                        'success': False,
+                        'error': f'Platform is busy (state: {platform_state})',
+                        'status': status
+                    }
+                else:
+                    # Non-blocking mode: auto-stop previous task
+                    if self.verbose:
+                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                    self.platform_stop()
+                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"🎯⚡ [Platform] Hybrid: {target_height}mm OR {target_force}N")
         result = self._send_command('platform', 'hybrid_control', 
                                 target_height=target_height, target_force=target_force)
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Hybrid control command sent successfully")
-            else:
+        if not result['success']:
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
-        return result
+            return result
+        
+        # Wait for completion if requested
+        if wait:
+            if self.verbose:
+                print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
+            completion = self.wait_for_completion(target='platform', timeout=timeout)
+            if completion['success'] and self.verbose:
+                duration = completion.get('duration', 0) or 0
+                print(f"✅ Hybrid control completed ({duration:.2f}s)")
+            return completion
+        else:
+            final_status = self.get_status()
+            result['status'] = final_status
+            if self.verbose:
+                print(f"✅ Hybrid control command sent (non-blocking)")
+            return result
     
     # ==================== Pushrod Manual Control ====================
     
@@ -448,7 +536,7 @@ class CourierRobot:
             dict with success status and complete state
         """
         # Check if pushrod is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
             if pushrod_state not in ['idle', 'completed']:
@@ -483,7 +571,7 @@ class CourierRobot:
             dict with success status and complete state
         """
         # Check if pushrod is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
             if pushrod_state not in ['idle', 'completed']:
@@ -532,29 +620,40 @@ class CourierRobot:
     
     # ==================== Pushrod Height Control ====================
     
-    def pushrod_goto_height(self, target_height, mode='absolute'):
+    def pushrod_goto_height(self, target_height, mode='absolute', wait=True, timeout=60):
         """
-        Pushrod goto specific height
+        Pushrod goto specific height (BLOCKING by default)
         
         Args:
             target_height: Target height in mm (absolute) or offset in mm (relative)
             mode: 'absolute' or 'relative' (default: 'absolute')
+            wait: If True, wait for completion before returning (default: True)
+                  If False (non-blocking), will auto-stop previous task if running
+            timeout: Maximum wait time in seconds (default: 60)
             
         Returns:
             dict with success status and complete state
         """
         # Check if pushrod is idle or completed before sending command
-        status = self.get_status()
+        status = self.get_status(print_status=False)
         if status.get('success'):
             pushrod_state = status.get('data', {}).get('pushrod', {}).get('task_state', 'unknown')
             if pushrod_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
-                return {
-                    'success': False,
-                    'error': f'Pushrod is busy (state: {pushrod_state})',
-                    'status': status
-                }
+                if wait:
+                    # Blocking mode: reject if busy
+                    if self.verbose:
+                        print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
+                    return {
+                        'success': False,
+                        'error': f'Pushrod is busy (state: {pushrod_state})',
+                        'status': status
+                    }
+                else:
+                    # Non-blocking mode: auto-stop previous task
+                    if self.verbose:
+                        print(f"⚠️  Pushrod is busy (state: {pushrod_state}), auto-stopping...")
+                    self.pushrod_stop()
+                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"🎯 [Pushrod] Goto height: {target_height}mm (mode: {mode})")
@@ -562,16 +661,26 @@ class CourierRobot:
                                  target_height=target_height, 
                                  mode=mode)
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Goto height command sent successfully")
-            else:
+        if not result['success']:
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
-        return result
+            return result
+        
+        # Wait for completion if requested
+        if wait:
+            if self.verbose:
+                print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
+            completion = self.wait_for_completion(target='pushrod', timeout=timeout)
+            if completion['success'] and self.verbose:
+                duration = completion.get('duration', 0) or 0
+                print(f"✅ Pushrod goto {target_height}mm completed ({duration:.2f}s)")
+            return completion
+        else:
+            final_status = self.get_status()
+            result['status'] = final_status
+            if self.verbose:
+                print(f"✅ Goto height command sent (non-blocking)")
+            return result
     
     # ==================== Emergency Reset ====================
     
