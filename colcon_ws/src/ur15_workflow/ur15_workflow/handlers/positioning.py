@@ -10,6 +10,7 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, Any, Tuple
 from ur15_workflow.base import OperationHandler
+from common.workspace_utils import get_workspace_root
 
 
 class PositioningHandler(OperationHandler):
@@ -365,10 +366,13 @@ class PositioningHandler(OperationHandler):
                            image_name: str, data_name: str):
         """
         Save uploaded view (image and pose data) to dataset folder.
-        Path format: /home/a/Documents/robot_dc/dataset/{reference_name}/test/{session_id}/
+        Path format: {workspace_root}/dataset/{reference_name}/test/{session_id}/
         """
-        # Build save directory path - use absolute path to robot_dc
-        save_dir = os.path.join("/home/a/Documents/robot_dc", "dataset", reference_name, "test", f"{session_id}")
+        # Build save directory path - use workspace root
+        workspace_root = get_workspace_root()
+        if workspace_root is None:
+            raise RuntimeError("Could not determine workspace root directory")
+        save_dir = os.path.join(workspace_root, "dataset", reference_name, "test", f"{session_id}")
         os.makedirs(save_dir, exist_ok=True)
         
         # Save image

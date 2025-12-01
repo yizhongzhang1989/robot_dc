@@ -165,9 +165,8 @@ def ensure_auto_collect_dir():
         temp_dir = get_temp_directory()
         auto_collect_dir = os.path.join(temp_dir, "camera_calibration_data")
     except Exception as e:
-        print(f"Warning: Could not get temp directory from common package: {e}")
-        # Fallback to hardcoded path
-        auto_collect_dir = "/home/a/Documents/robot_dc/temp/camera_calibration_data"
+        print(f"Error: Could not get temp directory from common package: {e}")
+        raise RuntimeError("Failed to initialize workspace utilities. Please ensure the common package is installed.")
     
     if not os.path.exists(auto_collect_dir):
         os.makedirs(auto_collect_dir)
@@ -308,9 +307,8 @@ def collect_joint_angles_from_temp():
         temp_dir = get_temp_directory()
         temp_folder = os.path.join(temp_dir, "auto_collect_points")
     except Exception as e:
-        print(f"Warning: Could not get temp directory from common package: {e}")
-        # Fallback to hardcoded path
-        temp_folder = "/home/a/Documents/robot_dc/temp/auto_collect_points"
+        print(f"Error: Could not get temp directory from common package: {e}")
+        raise RuntimeError("Failed to initialize workspace utilities. Please ensure the common package is installed.")
     
     output_file = os.path.join(temp_folder, "collect_points.json")
     
@@ -405,9 +403,8 @@ def load_collect_points():
         temp_dir = get_temp_directory()
         temp_folder = os.path.join(temp_dir, "auto_collect_points")
     except Exception as e:
-        print(f"Warning: Could not get temp directory from common package: {e}")
-        # Fallback to hardcoded path
-        temp_folder = "/home/a/Documents/robot_dc/temp/auto_collect_points"
+        print(f"Error: Could not get temp directory from common package: {e}")
+        raise RuntimeError("Failed to initialize workspace utilities. Please ensure the common package is installed.")
     
     json_file = os.path.join(temp_folder, "collect_points.json")
     

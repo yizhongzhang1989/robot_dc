@@ -30,14 +30,12 @@ from ur15_workflow.engine import WorkflowEngine
 from ur15_workflow.handlers import register_all_handlers
 
 # Import positioning and status utilities
-# Try to find scripts directory
-scripts_dir = None
-# 1. Try absolute path (dev env)
-if os.path.exists("/home/a/Documents/robot_dc/scripts"):
-    scripts_dir = Path("/home/a/Documents/robot_dc/scripts")
-# 2. Try relative to source (if running from source)
-elif (Path(__file__).parents[4] / 'scripts').exists():
-    scripts_dir = Path(__file__).parents[4] / 'scripts'
+# Try to find scripts directory using workspace utilities
+from common.workspace_utils import get_scripts_directory
+
+scripts_dir = get_scripts_directory()
+if scripts_dir:
+    scripts_dir = Path(scripts_dir)
 
 if scripts_dir:
     # Positioning3DWebAPIClient

@@ -67,14 +67,18 @@ class KeypointTracker:
                 self.visualization_dir = os.path.join(temp_dir, "keypoints_track_results")
                 logger.info(f"Using workspace utilities - temp directory: {temp_dir}")
             except Exception as e:
-                logger.warning(f"Could not use workspace utilities: {e}")
-                # Fallback to hardcoded paths
-                self.positioning_data_path = "/home/a/Documents/robot_dc/temp/positioning_data"
-                self.visualization_dir = "/home/a/Documents/robot_dc/temp/keypoints_track_results"
+                logger.error(f"Could not use workspace utilities: {e}")
+                raise RuntimeError("Failed to initialize workspace utilities. Please ensure the common package is installed.")
         else:
-            # Fallback to hardcoded paths
-            self.positioning_data_path = "/home/a/Documents/robot_dc/temp/positioning_data"
-            self.visualization_dir = "/home/a/Documents/robot_dc/temp/keypoints_track_results"
+            try:
+                from common.workspace_utils import get_temp_directory
+                temp_dir = get_temp_directory()
+                self.positioning_data_path = os.path.join(temp_dir, "positioning_data")
+                self.visualization_dir = os.path.join(temp_dir, "keypoints_track_results")
+                logger.info(f"Using workspace utilities - temp directory: {temp_dir}")
+            except Exception as e:
+                logger.error(f"Could not use workspace utilities: {e}")
+                raise RuntimeError("Failed to initialize workspace utilities. Please ensure the common package is installed.")
         
         # Setup file paths
         self.ref_img_path = os.path.join(self.positioning_data_path, "ref_img.jpg")

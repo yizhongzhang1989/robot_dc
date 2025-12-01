@@ -412,18 +412,14 @@ class UR15WebNode(Node):
                 self.get_logger().error(f"Error disconnecting from robot: {e}")
     
     def _simplify_path(self, path):
-        """Simplify path by replacing home directory with ~ and removing /home/a/Documents/."""
+        """Simplify path by replacing home directory with ~."""
         if not path:
             return path
         
-        # First try to replace with ~
+        # Replace home directory with ~
         home_dir = os.path.expanduser('~')
         if path.startswith(home_dir):
             return path.replace(home_dir, '~', 1)
-        
-        # Also handle /home/a/Documents/ specifically
-        if path.startswith('/home/a/Documents/'):
-            return path.replace('/home/a/Documents/', '~/', 1)
         
         return path
     
