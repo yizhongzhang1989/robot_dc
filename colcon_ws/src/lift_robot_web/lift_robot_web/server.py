@@ -1677,6 +1677,7 @@ def run_fastapi_server(port):
         async def tare_force_sensor(request: Request):
             """
             Tare (zero) force sensor by calling modbus_manager service.
+            Fire-and-forget mode: sends command without waiting for response.
             
             Request body:
             {
@@ -1712,8 +1713,8 @@ def run_fastapi_server(port):
                             'error': f'Could not determine device_id for channel "{channel}"'
                         })
                 
-                # Wait for service to be available (with timeout)
-                if not lift_robot_node.modbus_client.wait_for_service(timeout_sec=2.0):
+                # Check service availability (quick check, no wait)
+                if not lift_robot_node.modbus_client.service_is_ready():
                     return JSONResponse({
                         'success': False,
                         'error': 'Modbus service not available'
@@ -1728,43 +1729,38 @@ def run_fastapi_server(port):
                 req.values = [0x0001]  # Trigger tare
                 
                 lift_robot_node.get_logger().info(
-                    f'Calling modbus service for tare: device_id={device_id} (0x{device_id:02X}), '
+                    f'Sending tare command (fire-and-forget): device_id={device_id} (0x{device_id:02X}), '
                     f'func=0x06, reg=0x0011, value=0x0001'
                 )
                 
-                # Call service synchronously (blocking in thread pool)
-                # ROS2 service calls must be done in executor context
-                import concurrent.futures
+                # Fire-and-forget: call service without waiting for response
+                # This avoids blocking and prevents deadlock
+                future = lift_robot_node.modbus_client.call_async(req)
                 
-                def call_service():
-                    """Execute service call in ROS2 executor context"""
-                    future = lift_robot_node.modbus_client.call_async(req)
-                    # Spin until service call completes
-                    rclpy.spin_until_future_complete(lift_robot_node, future, timeout_sec=2.0)
-                    if future.done():
-                        try:
-                            return future.result()
-                        except Exception as e:
-                            raise Exception(f"Service call failed: {e}")
-                    else:
-                        raise Exception("Service call timeout")
+                # Optional: Add a lightweight callback to log result (non-blocking)
+                def log_result(f):
+                    try:
+                        result = f.result()
+                        if result.success:
+                            lift_robot_node.get_logger().info(
+                                f'Tare command completed: device_id={device_id}, channel={channel}'
+                            )
+                        else:
+                            lift_robot_node.get_logger().warn(
+                                f'Tare command failed: device_id={device_id}, error={result.error_message}'
+                            )
+                    except Exception as e:
+                        lift_robot_node.get_logger().error(f'Tare callback error: {e}')
                 
-                # Run in thread pool to avoid blocking FastAPI event loop
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(None, call_service)
+                future.add_done_callback(log_result)
                 
-                if response.success:
-                    return JSONResponse({
-                        'success': True,
-                        'message': f'Tare command sent to {channel} sensor (device_id={device_id}).',
-                        'device_id': device_id,
-                        'channel': channel
-                    })
-                else:
-                    return JSONResponse({
-                        'success': False,
-                        'error': f'Modbus service returned failure: {response.error_message}'
-                    })
+                # Return immediately without waiting
+                return JSONResponse({
+                    'success': True,
+                    'message': f'Tare command sent to {channel} sensor (device_id={device_id}). Processing in background.',
+                    'device_id': device_id,
+                    'channel': channel
+                })
                     
             except Exception as e:
                 lift_robot_node.get_logger().error(f"Tare force sensor error: {e}")
