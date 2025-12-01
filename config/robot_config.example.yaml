@@ -196,6 +196,13 @@ shared:
     temp: "temp"
     scripts: "scripts"
 
+  GB200_rack:
+    rack_inner_width: 0.550
+    rack_inner_height: 2.141
+    rack_origin_to_unit_start_y: 0.190
+    rack_origin_to_unit_start_z: 0.03715
+    unit_length: 0.04445
+
 # ============================================================================
 # Environment Variables Reference
 # ============================================================================

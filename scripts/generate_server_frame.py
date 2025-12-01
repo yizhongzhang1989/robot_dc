@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import yaml
 from robot_status_redis.client_utils import RobotStatusClient
+from common.workspace_utils import get_workspace_root
 
 
 class GenerateServerFrame:
@@ -12,15 +14,15 @@ class GenerateServerFrame:
 
         # ======================= Configuration =======================
         # variables to configure rack position offsets
-        self.rack_origin_to_unit_start_z = 0.03715
-        self.rack_origin_to_unit_start_y = 0.190
+        self.rack_origin_to_unit_start_z = None
+        self.rack_origin_to_unit_start_y = None
 
         # variables to store rack dimensions
-        self.rack_inner_width = 0.550
-        self.rack_inner_height = 2.145
+        self.rack_inner_width = None
+        self.rack_inner_height = None
 
         # variables to store information related to units
-        self.unit_length= 0.04445
+        self.unit_length = None
 
         # ======================= Instance Variables =======================
         self.robot_status_client = None
@@ -41,9 +43,69 @@ class GenerateServerFrame:
         self.wobj_z_axis_in_rack = None
 
         # ======================= Initialization =======================
+        self._load_rack_config()
         self._initialize_robot_status_client()
         self._init_wobj_in_rack()
         self._load_rack2base_from_service()
+    
+    def _load_rack_config(self):
+        """Load rack configuration from robot_config.yaml file.
+        
+        Returns:
+            bool: True if successfully loaded, False otherwise
+        """
+        try:
+            # Get the project root directory using common workspace utilities
+            project_root = get_workspace_root()
+            if project_root is None:
+                print("Could not find workspace root directory")
+                return False
+            
+            # Build config file path
+            import os
+            config_path = os.path.join(project_root, 'config', 'robot_config.yaml')
+            
+            # Check if config file exists
+            if not os.path.exists(config_path):
+                print(f"Config file not found: {config_path}")
+                return False
+            
+            # Load YAML configuration
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            # Extract GB200_rack configuration
+            if 'ur15' not in config or 'GB200_rack' not in config['ur15']:
+                print("GB200_rack configuration not found in robot_config.yaml")
+                return False
+            
+            rack_config = config['ur15']['GB200_rack']
+            
+            # Load rack parameters
+            self.rack_origin_to_unit_start_z = rack_config.get('rack_origin_to_unit_start_z', 0.03715)
+            self.rack_origin_to_unit_start_y = rack_config.get('rack_origin_to_unit_start_y', 0.190)
+            self.rack_inner_width = rack_config.get('rack_inner_width', 0.550)
+            self.rack_inner_height = rack_config.get('rack_inner_height', 2.141)
+            self.unit_length = rack_config.get('unit_length', 0.04445)
+            
+            print("Successfully loaded rack configuration from robot_config.yaml")
+            print(f"  rack_origin_to_unit_start_z: {self.rack_origin_to_unit_start_z}")
+            print(f"  rack_origin_to_unit_start_y: {self.rack_origin_to_unit_start_y}")
+            print(f"  rack_inner_width: {self.rack_inner_width}")
+            print(f"  rack_inner_height: {self.rack_inner_height}")
+            print(f"  unit_length: {self.unit_length}")
+            return True
+            
+        except Exception as e:
+            print(f"Error loading rack configuration: {e}")
+            # Set default values if loading fails
+            self.rack_origin_to_unit_start_z = 0.03715
+            self.rack_origin_to_unit_start_y = 0.190
+            self.rack_inner_width = 0.550
+            self.rack_inner_height = 2.141
+            self.unit_length = 0.04445
+            print("Using default rack configuration values")
+            return False
     
     def _initialize_robot_status_client(self):
         """Initialize robot status client."""
