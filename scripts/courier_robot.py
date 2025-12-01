@@ -7,6 +7,7 @@ All functions correspond to web interface controls
 
 import requests
 import time
+import threading
 
 
 class CourierRobotWebAPI:
@@ -25,6 +26,8 @@ class CourierRobotWebAPI:
         """
         self.base_url = base_url
         self.verbose = verbose
+        self.background_task = None  # Track background task thread
+        self.background_task_lock = threading.Lock()
         if verbose:
             print(f"📡 CourierRobot initialized with base URL: {base_url}")
     
@@ -263,18 +266,17 @@ class CourierRobotWebAPI:
     
     def platform_stop(self):
         """
-        Platform stop
+        Platform stop - ALWAYS allowed, can interrupt any command including blocking ones
         
         Returns:
             dict with success status and complete state
         """
-        # Stop command should always be allowed (no state check)
         if self.verbose:
             print(f"🛑 [Platform] STOP")
         result = self._send_command('platform', 'stop')
         
-        # Get final status after command
-        final_status = self.get_status()
+        # Brief status check (non-verbose to avoid spam)
+        final_status = self.get_status(print_status=False)
         result['status'] = final_status
         
         if self.verbose:
@@ -624,18 +626,17 @@ class CourierRobotWebAPI:
     
     def pushrod_stop(self):
         """
-        Pushrod stop
+        Pushrod stop - ALWAYS allowed, can interrupt any command including blocking ones
         
         Returns:
             dict with success status and complete state
         """
-        # Stop command should always be allowed (no state check)
         if self.verbose:
             print(f"🛑 [Pushrod] STOP")
         result = self._send_command('pushrod', 'stop')
         
-        # Get final status after command
-        final_status = self.get_status()
+        # Brief status check (non-verbose to avoid spam)
+        final_status = self.get_status(print_status=False)
         result['status'] = final_status
         
         if self.verbose:
@@ -716,20 +717,19 @@ class CourierRobotWebAPI:
     
     def emergency_reset(self):
         """
-        Emergency reset - stops all movements and clears all states
+        Emergency reset - ALWAYS allowed, stops all movements and clears all states
+        Can interrupt any command including blocking ones
         
         Returns:
             dict with success status and complete state
         """
-        # Emergency reset should always be allowed (no state check)
         if self.verbose:
             print("🚨 EMERGENCY RESET")
         result = self._send_command('platform', 'reset')
         
-        # Get final status after command
-        import time
-        time.sleep(0.5)  # Wait a bit for reset to complete
-        final_status = self.get_status()
+        # Wait for reset to complete, then get status
+        time.sleep(0.5)
+        final_status = self.get_status(print_status=False)
         result['status'] = final_status
         
         if self.verbose:
@@ -737,6 +737,42 @@ class CourierRobotWebAPI:
         return result
     
     # ==================== Convenience Methods ====================
+    
+    def _execute_in_background(self, func, *args, **kwargs):
+        """
+        Execute a function in background thread (for interactive mode)
+        
+        Args:
+            func: Function to execute
+            *args, **kwargs: Arguments to pass to function
+        """
+        def wrapper():
+            try:
+                result = func(*args, **kwargs)
+                # Don't print result here - function already prints if verbose
+            except Exception as e:
+                print(f"\n❌ Background task error: {e}")
+            finally:
+                with self.background_task_lock:
+                    self.background_task = None
+        
+        with self.background_task_lock:
+            # Wait for previous background task to complete if exists
+            if self.background_task is not None and self.background_task.is_alive():
+                if self.verbose:
+                    print("⚠️  Previous command still running, waiting for completion...")
+                old_task = self.background_task
+                # Release lock to allow old task to finish
+                self.background_task = None
+        
+        # Wait for old task outside of lock (don't interrupt, just wait)
+        if 'old_task' in locals():
+            old_task.join()  # Wait indefinitely for old task to complete
+        
+        with self.background_task_lock:
+            # Start new background task
+            self.background_task = threading.Thread(target=wrapper, daemon=True)
+            self.background_task.start()
     
     def interactive_mode(self):
         """
@@ -750,34 +786,36 @@ class CourierRobotWebAPI:
           help, h, ?        - Show this help
           quit, exit, q     - Exit interactive mode
         
-        Platform Height Control (Blocking by default):
-          goto <height>     - Go to height (mm), e.g., 'goto 900'
+        Platform Height Control:
+          goto <height>     - Go to height (mm), e.g., 'goto 900' (runs in background, can be interrupted)
           g <height>        - Short form of goto
-          goto! <height>    - Non-blocking goto (append ! for non-blocking)
+          goto! <height>    - Non-blocking goto (fire-and-forget)
           g! <height>       - Non-blocking short form
         
-        Platform Force Control (Blocking by default):
-          fup <force>       - Force control up (N), e.g., 'fup 50'
-          fdown <force>     - Force control down (N), e.g., 'fdown 30'
-          fup! <force>      - Non-blocking force up (append ! for non-blocking)
+        Platform Force Control:
+          fup <force>       - Force control up (N), e.g., 'fup 50' (background)
+          fdown <force>     - Force control down (N), e.g., 'fdown 30' (background)
+          fup! <force>      - Non-blocking force up
           fdown! <force>    - Non-blocking force down
-          hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50'
+          hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50' (background)
           hybrid! <h> <f>   - Non-blocking hybrid control
         
         Platform Manual Control:
           up                - Manual up (use 'stop' to stop)
           down              - Manual down (use 'stop' to stop)
-          stop              - Stop platform
+          stop              - Stop platform (can interrupt any command!)
         
         Pushrod Control:
           pup               - Pushrod manual up (use 'pstop' to stop)
           pdown             - Pushrod manual down (use 'pstop' to stop)
-          pgoto <height>    - Pushrod goto height (mm), blocking
+          pgoto <height>    - Pushrod goto height (mm, background)
           pgoto! <height>   - Pushrod goto height (non-blocking)
-          pstop             - Stop pushrod
+          pstop             - Stop pushrod (can interrupt any command!)
         
         Emergency:
-          reset, emergency  - Emergency reset
+          reset, emergency  - Emergency reset (requires confirmation, can interrupt any command!)
+        
+        Note: Commands without '!' run in background - you can type 'stop' anytime to interrupt!
         """
         print("\n" + "="*60)
         print("🤖 CourierRobot Interactive Mode")
@@ -819,12 +857,14 @@ class CourierRobotWebAPI:
                         try:
                             height = float(parts[1])
                             wait = not command.endswith('!')  # Non-blocking if ends with !
-                            self.platform_goto_height(height, wait=wait)
+                            if wait:
+                                # Blocking mode: execute in background thread
+                                self._execute_in_background(self.platform_goto_height, height, wait=True)
+                            else:
+                                # Non-blocking mode: execute directly
+                                self.platform_goto_height(height, wait=False)
                         except ValueError:
                             print("❌ Invalid height value")
-                
-                elif command == 'home':
-                    self.platform_goto_height(850)
                 
                 # Platform force control
                 elif command in ['fup', 'fup!']:
@@ -834,7 +874,12 @@ class CourierRobotWebAPI:
                         try:
                             force = float(parts[1])
                             wait = not command.endswith('!')
-                            self.platform_force_up(force, wait=wait)
+                            if wait:
+                                # Blocking mode: execute in background thread
+                                self._execute_in_background(self.platform_force_up, force, wait=True)
+                            else:
+                                # Non-blocking mode: execute directly
+                                self.platform_force_up(force, wait=False)
                         except ValueError:
                             print("❌ Invalid force value")
                 
@@ -845,7 +890,12 @@ class CourierRobotWebAPI:
                         try:
                             force = float(parts[1])
                             wait = not command.endswith('!')
-                            self.platform_force_down(force, wait=wait)
+                            if wait:
+                                # Blocking mode: execute in background thread
+                                self._execute_in_background(self.platform_force_down, force, wait=True)
+                            else:
+                                # Non-blocking mode: execute directly
+                                self.platform_force_down(force, wait=False)
                         except ValueError:
                             print("❌ Invalid force value")
                 
@@ -857,7 +907,12 @@ class CourierRobotWebAPI:
                             height = float(parts[1])
                             force = float(parts[2])
                             wait = not command.endswith('!')
-                            self.platform_hybrid_control(height, force, wait=wait)
+                            if wait:
+                                # Blocking mode: execute in background thread
+                                self._execute_in_background(self.platform_hybrid_control, height, force, wait=True)
+                            else:
+                                # Non-blocking mode: execute directly
+                                self.platform_hybrid_control(height, force, wait=False)
                         except ValueError:
                             print("❌ Invalid height or force value")
                 
@@ -885,7 +940,12 @@ class CourierRobotWebAPI:
                         try:
                             height = float(parts[1])
                             wait = not command.endswith('!')
-                            self.pushrod_goto_height(height, wait=wait)
+                            if wait:
+                                # Blocking mode: execute in background thread
+                                self._execute_in_background(self.pushrod_goto_height, height, wait=True)
+                            else:
+                                # Non-blocking mode: execute directly
+                                self.pushrod_goto_height(height, wait=False)
                         except ValueError:
                             print("❌ Invalid height value")
                 
