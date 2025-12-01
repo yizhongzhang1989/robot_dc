@@ -974,42 +974,53 @@ class UR15WebNode(Node):
                 'url': workflow_url
             })
         
-        @self.app.route('/prepare_last_captured_image', methods=['GET'])
-        def prepare_last_captured_image():
-            """Prepare last captured image URL for automatic upload to image labeling service."""
+        @self.app.route('/prepare_ref_img_1', methods=['POST'])
+        def prepare_ref_img_1():
+            """Prepare ref_img_1.jpg for labeling based on current operation name."""
             from flask import request, jsonify, url_for
             from urllib.parse import quote
+            from common.workspace_utils import get_workspace_root
             
             try:
-                # Get last_picture path from robot_status service
-                try:
-                    image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
-                except Exception as e:
-                    self.get_logger().debug(f"Failed to get last_picture: {e}")
-                    image_path = None
+                data = request.get_json()
+                operation_name = data.get('operation_name')
                 
-                if image_path is None:
+                if not operation_name:
                     return jsonify({
                         'status': 'error',
-                        'message': 'No image has been captured yet. Please capture an image first.'
-                    }), 404
+                        'message': 'Operation name is required'
+                    }), 400
+                
+                # Get workspace root (robot_dc directory)
+                workspace_root = get_workspace_root()
+                if workspace_root is None:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Could not determine workspace root directory'
+                    }), 500
+                
+                # Construct ref_img_1 path: workspace_root/dataset/operation_name/ref_img_1.jpg
+                operation_dir = os.path.join(workspace_root, 'dataset', operation_name)
+                image_filename = 'ref_img_1.jpg'
+                image_path = os.path.join(operation_dir, image_filename)
                 
                 # Check if image exists
                 if not os.path.exists(image_path):
                     return jsonify({
                         'status': 'error',
-                        'message': f'Image file not found: {image_path}'
+                        'message': f'ref_img_1.jpg not found in {operation_dir}'
                     }), 404
                 
-                # Build the image URL that can be accessed from browser
-                image_url = url_for('serve_last_captured_image', _external=True)
+                # Temporarily store the ref_img_1 path in robot_status for serving
+                if not self.status_client.set_status('ur15', 'temp_label_image', image_path):
+                    self.get_logger().warning("Failed to set temp_label_image in robot_status")
                 
-                # Check for corresponding ref_img_*.json file
-                # Extract base name and construct json filename
-                image_dir = os.path.dirname(image_path)
-                image_filename = os.path.basename(image_path)
-                json_filename = os.path.splitext(image_filename)[0] + '.json'
-                json_path = os.path.join(image_dir, json_filename)
+                # Build the image URL that can be accessed from browser
+                image_url = url_for('serve_temp_label_image', _external=True)
+                
+                # Check for corresponding ref_img_1.json file
+                json_filename = 'ref_img_1.json'
+                json_path = os.path.join(operation_dir, json_filename)
                 
                 # Use the same hostname as the request to build labeling URL
                 host = request.host.split(':')[0]  # Extract hostname without port
@@ -1020,14 +1031,14 @@ class UR15WebNode(Node):
                 
                 # If JSON file exists, add labelsUrl parameter
                 if os.path.exists(json_path):
-                    labels_url = url_for('serve_labels_json', _external=True)
+                    labels_url = url_for('serve_temp_labels_json', _external=True)
                     labeling_url += f'&labelsUrl={labels_url}'
                     self.get_logger().info(f"Found existing labels file: {json_path}")
                     self.get_logger().info(f"Labels URL: {labels_url}")
                 else:
                     self.get_logger().info(f"No existing labels file found at: {json_path}")
                 
-                self.get_logger().info(f"Preparing last captured image: {image_path}")
+                self.get_logger().info(f"Preparing ref_img_1 for operation '{operation_name}': {image_path}")
                 self.get_logger().info(f"Image URL: {image_url}")
                 self.get_logger().info(f"Labeling URL: {labeling_url}")
                 
@@ -1040,32 +1051,32 @@ class UR15WebNode(Node):
                 })
                 
             except Exception as e:
-                self.get_logger().error(f"Error preparing last captured image: {e}")
+                self.get_logger().error(f"Error preparing ref_img_1: {e}")
                 return jsonify({
                     'status': 'error',
                     'message': str(e)
                 }), 500
         
-        @self.app.route('/serve_last_captured_image', methods=['GET'])
-        def serve_last_captured_image():
-            """Serve the last captured image file."""
+        @self.app.route('/serve_temp_label_image', methods=['GET'])
+        def serve_temp_label_image():
+            """Serve the temporary label image (ref_img_1)."""
             from flask import send_file, jsonify, make_response
             
             try:
-                # Get last_picture path from robot_status service
+                # Get temp_label_image path from robot_status service
                 try:
-                    image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                    image_path = self.status_client.get_status('ur15', 'temp_label_image', timeout_sec=2.0)
                 except Exception as e:
-                    self.get_logger().debug(f"Failed to get last_picture: {e}")
+                    self.get_logger().debug(f"Failed to get temp_label_image: {e}")
                     image_path = None
                 
                 if image_path is None:
-                    return jsonify({'error': 'No image has been captured yet'}), 404
+                    return jsonify({'error': 'No temp label image available'}), 404
                 
                 if not os.path.exists(image_path):
                     return jsonify({'error': 'Image file not found'}), 404
                 
-                self.get_logger().info(f"Serving last captured image: {image_path}")
+                self.get_logger().info(f"Serving temp label image: {image_path}")
                 
                 # Send the file with CORS headers to allow cross-origin access
                 response = make_response(send_file(image_path, mimetype='image/jpeg'))
@@ -1075,24 +1086,24 @@ class UR15WebNode(Node):
                 return response
                 
             except Exception as e:
-                self.get_logger().error(f"Error serving last captured image: {e}")
+                self.get_logger().error(f"Error serving temp label image: {e}")
                 return jsonify({'error': str(e)}), 500
         
-        @self.app.route('/serve_labels_json', methods=['GET'])
-        def serve_labels_json():
-            """Serve the JSON labels file corresponding to the last captured image."""
+        @self.app.route('/serve_temp_labels_json', methods=['GET'])
+        def serve_temp_labels_json():
+            """Serve the JSON labels file corresponding to the temp label image (ref_img_1.json)."""
             from flask import send_file, jsonify, make_response
             
             try:
-                # Get last_picture path from robot_status service
+                # Get temp_label_image path from robot_status service
                 try:
-                    image_path = self.status_client.get_status('ur15', 'last_picture', timeout_sec=2.0)
+                    image_path = self.status_client.get_status('ur15', 'temp_label_image', timeout_sec=2.0)
                 except Exception as e:
-                    self.get_logger().debug(f"Failed to get last_picture: {e}")
+                    self.get_logger().debug(f"Failed to get temp_label_image: {e}")
                     image_path = None
                 
                 if image_path is None:
-                    return jsonify({'error': 'No image has been captured yet'}), 404
+                    return jsonify({'error': 'No temp label image available'}), 404
                 
                 # Construct JSON file path
                 image_dir = os.path.dirname(image_path)
@@ -1103,7 +1114,7 @@ class UR15WebNode(Node):
                 if not os.path.exists(json_path):
                     return jsonify({'error': 'Labels file not found'}), 404
                 
-                self.get_logger().info(f"Serving labels JSON: {json_path}")
+                self.get_logger().info(f"Serving temp labels JSON: {json_path}")
                 
                 # Send the file with CORS headers to allow cross-origin access
                 response = make_response(send_file(json_path, mimetype='application/json'))
@@ -1113,7 +1124,7 @@ class UR15WebNode(Node):
                 return response
                 
             except Exception as e:
-                self.get_logger().error(f"Error serving labels JSON: {e}")
+                self.get_logger().error(f"Error serving temp labels JSON: {e}")
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/save_labels', methods=['POST', 'OPTIONS'])

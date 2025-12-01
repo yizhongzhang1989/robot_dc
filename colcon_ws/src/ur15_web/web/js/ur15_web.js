@@ -483,25 +483,40 @@ function goToWorkflowConfigCenter() {
 }
 
 function labelLastCapturedImage() {
-    logToWeb('Preparing last captured image for labeling...', 'info');
+    logToWeb('Preparing ref_img_1 for labeling...', 'info');
     
-    fetch('/prepare_last_captured_image', {
-        method: 'GET',
+    // Get current operation name
+    const operationName = document.getElementById('operationName').value;
+    
+    if (!operationName || operationName.trim() === '' || operationName === 'input operation name') {
+        logToWeb('Error: Please select an operation name first', 'error');
+        showMessage('Error: Please select an operation name first', 'error');
+        return;
+    }
+    
+    fetch('/prepare_ref_img_1', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            operation_name: operationName
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
             // Open image labeling web in new tab with image URL
             window.open(data.labeling_url, '_blank');
-            logToWeb('Image labeling service opened in new tab', 'success');
+            logToWeb('Image labeling service opened for ref_img_1 in new tab', 'success');
         } else {
             logToWeb(`Error: ${data.message}`, 'error');
             showMessage(`Error: ${data.message}`, 'error');
         }
     })
     .catch(error => {
-        logToWeb(`Failed to prepare image: ${error}`, 'error');
-        showMessage(`Failed to prepare image: ${error}`, 'error');
+        logToWeb(`Failed to prepare ref_img_1: ${error}`, 'error');
+        showMessage(`Failed to prepare ref_img_1: ${error}`, 'error');
     });
 }
 
