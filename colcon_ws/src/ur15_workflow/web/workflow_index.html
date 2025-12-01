@@ -592,8 +592,8 @@
         <h1 class="title">Workflow Config Center</h1>
         <div class="button-section">
             <button class="btn" onclick="showNewWorkflowModal()">📄 New Workflow</button>
+            <button class="btn" onclick="showLoadTemplateModal()">📋 Load Template</button>
             <button class="btn" onclick="showLoadWorkflowModal()">📂 Load Workflow</button>
-            <button class="btn" onclick="clearWorkflow()">🧹 Clear Workflow</button>
             <button class="btn" onclick="deleteWorkflow()">🗑️ Delete Workflow</button>
             <button class="btn" onclick="closeWorkflow()">🚫 Close Workflow</button>
             <button class="btn" onclick="saveWorkflowToFile()">💾 Save Workflow</button>
@@ -653,20 +653,21 @@
             </div>
         </div>
         
-        <!-- Clear Workflow Confirmation Modal -->
-        <div id="clearWorkflowModal" class="modal">
+        <!-- Load Template Modal -->
+        <div id="loadTemplateModal" class="modal">
             <div class="modal-content">
-                <div class="modal-header">Clear Workflow</div>
+                <div class="modal-header">Load Template</div>
                 <div class="modal-body">
-                    <p style="color: #4a5568; line-height: 1.6;">
-                        Are you sure you want to clear the workflow section?
-                        <br><br>
-                        This will clear the workflow array but keep the context configuration.
-                    </p>
+                    <label class="modal-label">Select template file:</label>
+                    <select id="templateFileList" class="modal-input" size="8">
+                        <option value="">Loading...</option>
+                    </select>
+                    <label class="modal-label" for="newWorkflowFileName" style="margin-top: 15px;">New workflow file name:</label>
+                    <input type="text" id="newWorkflowFileName" class="modal-input" value="default_name.json" placeholder="Enter new workflow name (optional)">
                 </div>
                 <div class="modal-footer">
-                    <button class="btn-cancel" onclick="closeClearWorkflowModal()">Cancel</button>
-                    <button class="btn-confirm" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);" onclick="confirmClearWorkflow()">Clear</button>
+                    <button class="btn-cancel" onclick="closeLoadTemplateModal()">Cancel</button>
+                    <button class="btn-confirm" onclick="loadSelectedTemplate()">Load</button>
                 </div>
             </div>
         </div>
@@ -754,13 +755,6 @@
                     <div style="font-size: 0.9rem; opacity: 0.95;">Configure parameters for: <strong id="editParamsHandlerName" style="font-size: 1.05rem;"></strong></div>
                 </div>
                 <div class="modal-body" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; padding-top: 1.5rem;">
-                    <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%); border-left: 4px solid #8b5cf6; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1rem;">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; color: #5b21b6; font-weight: 600; margin-bottom: 0.25rem;">
-                            <span style="font-size: 1.1rem;">💡</span>
-                            <span>Parameters (JSON format)</span>
-                        </div>
-                        <div style="font-size: 0.85rem; color: #6b7280;">Edit the handler parameters below. Make sure the JSON syntax is valid.</div>
-                    </div>
                     <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
                         <textarea id="paramsEditor" style="flex: 1; font-family: 'Courier New', monospace; font-size: 0.9rem; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 8px; background: #1e1e1e; color: #d4d4d4; resize: none; box-sizing: border-box; min-height: 350px; line-height: 1.6;" spellcheck="false" placeholder="Enter parameters in JSON format..."></textarea>
                     </div>

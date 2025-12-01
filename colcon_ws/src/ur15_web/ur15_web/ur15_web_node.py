@@ -205,12 +205,6 @@ class UR15WebNode(Node):
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
         
-        # GB200 rack positions file path and data
-        self.rack_positions_file_path = self._get_rack_positions_file_path()
-        self.rack_positions_data = None
-        self.rack_positions_lock = threading.Lock()
-        self._load_rack_positions_from_file()
-        
         # Child process management
         self.child_processes = []
         self.process_lock = threading.Lock()
@@ -225,6 +219,11 @@ class UR15WebNode(Node):
         # auto_spin=False because this node is already spinning via launch file
         self.status_client = RobotStatusClient(self)
         self.get_logger().info("Status service client created")
+        
+        # Create Dashboard client for freedrive control (doesn't interrupt External Control)
+        from ur_dashboard_msgs.srv import RawRequest
+        self.dashboard_client = self.create_client(RawRequest, '/dashboard_client/raw_request')
+        self.get_logger().info("Dashboard client created for freedrive control")
         
         # Initialize GenerateServerFrame for server coordinate calculations
         import sys
@@ -297,76 +296,6 @@ class UR15WebNode(Node):
         # Create a timer to load calibration parameters after async cache is populated
         self._load_calib_retry_count = 0
         self._load_calib_timer = self.create_timer(0.5, self._load_calibration_from_status)
-    
-    def _get_rack_positions_file_path(self):
-        """Get the file path for recorded GB200 locate positions."""
-        try:
-            scripts_dir = get_scripts_directory()
-            if scripts_dir:
-                return os.path.join(os.path.dirname(scripts_dir), 'temp', 'recorded_GB200_locate_positions.json')
-            else:
-                self.get_logger().warn("Could not find scripts directory, using fallback path")
-                return 'recorded_GB200_locate_positions.json'
-        except Exception as e:
-            self.get_logger().warn(f"Failed to determine rack positions file path: {e}")
-            return 'recorded_GB200_locate_positions.json'
-    
-    def _load_rack_positions_from_file(self):
-        """Load rack positions from JSON file if it exists."""
-        if not os.path.exists(self.rack_positions_file_path):
-            self.get_logger().info(f"Rack positions file not found: {self.rack_positions_file_path}")
-            self.get_logger().info("Creating file with default values")
-            # Initialize with default data
-            with self.rack_positions_lock:
-                self.rack_positions_data = {
-                    'position1': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    'position2': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    'position3': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    'position4': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                }
-            # Create the file immediately
-            self._save_rack_positions_to_file()
-            return
-        
-        try:
-            with open(self.rack_positions_file_path, 'r') as f:
-                data = json.load(f)
-            
-            with self.rack_positions_lock:
-                self.rack_positions_data = data
-            
-            self.get_logger().info(f"Loaded rack positions from {self.rack_positions_file_path}")
-            self.get_logger().info(f"Found {len(data)} rack positions")
-            
-        except Exception as e:
-            self.get_logger().error(f"Failed to load rack positions file: {e}")
-            # Initialize with default data on error
-            with self.rack_positions_lock:
-                self.rack_positions_data = {
-                    'position1': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    'position2': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    'position3': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    'position4': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                }
-    
-    def _save_rack_positions_to_file(self):
-        """Save rack positions to JSON file."""
-        try:
-            # Ensure the directory exists
-            file_path = Path(self.rack_positions_file_path)
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Write to file
-            with self.rack_positions_lock:
-                data_to_save = self.rack_positions_data.copy()
-            
-            with open(self.rack_positions_file_path, 'w') as f:
-                json.dump(data_to_save, f, indent=4)
-            
-            self.get_logger().info(f"Saved rack positions to {self.rack_positions_file_path}")
-            
-        except Exception as e:
-            self.get_logger().error(f"Failed to save rack positions file: {e}")
     
     def _load_calibration_from_status(self):
         """Load calibration parameters from robot_status service."""
@@ -464,11 +393,19 @@ class UR15WebNode(Node):
             
             self.child_processes.clear()
         
+        # Exit freedrive mode if active
+        if self.freedrive_active and self.ur15_robot:
+            try:
+                with self.ur15_lock:
+                    self.ur15_robot.end_freedrive_mode()
+                    self.get_logger().info("Exited freedrive mode during cleanup")
+                    self.freedrive_active = False
+            except Exception as e:
+                self.get_logger().error(f"Error exiting freedrive mode: {e}")
+        
         # Disconnect from robot
         if self.ur15_robot is not None:
             try:
-                if self.freedrive_active:
-                    self.ur15_robot.freedrive_mode(False)
                 self.ur15_robot.close()
                 self.get_logger().info("Disconnected from UR15 robot")
             except Exception as e:
@@ -887,6 +824,157 @@ class UR15WebNode(Node):
                     'success': False,
                     'message': str(e)
                 })
+        
+        @self.app.route('/get_workflow_files', methods=['GET'])
+        def get_workflow_files():
+            """Get list of JSON files from temp/workflow_files directory."""
+            from flask import jsonify
+            from common.workspace_utils import get_workspace_root
+            import glob
+            
+            try:
+                # Get workspace root
+                workspace_root = get_workspace_root()
+                if not workspace_root:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Could not find workspace root',
+                        'files': []
+                    }), 500
+                
+                # Build path to workflow_files directory
+                workflow_dir = os.path.join(workspace_root, 'temp', 'workflow_files')
+                
+                # Check if directory exists
+                if not os.path.exists(workflow_dir):
+                    self.get_logger().warning(f"Workflow directory not found: {workflow_dir}")
+                    return jsonify({
+                        'status': 'success',
+                        'message': 'Workflow directory not found',
+                        'files': []
+                    })
+                
+                # Get all JSON files
+                json_files = glob.glob(os.path.join(workflow_dir, '*.json'))
+                # Extract just the filenames
+                file_names = [os.path.basename(f) for f in json_files]
+                file_names.sort()  # Sort alphabetically
+                
+                self.get_logger().info(f"Found {len(file_names)} workflow files in {workflow_dir}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'files': file_names,
+                    'directory': workflow_dir
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error getting workflow files: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'files': []
+                }), 500
+        
+        @self.app.route('/run_workflow', methods=['POST'])
+        def run_workflow():
+            """Run a workflow using ros2 run ur15_workflow run_workflow.py."""
+            from flask import request, jsonify
+            from common.workspace_utils import get_workspace_root
+            import subprocess
+            import threading
+            
+            try:
+                data = request.get_json()
+                workflow_file = data.get('workflow_file')
+                
+                if not workflow_file:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'No workflow file specified'
+                    }), 400
+                
+                # Get workspace root
+                workspace_root = get_workspace_root()
+                if not workspace_root:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Could not find workspace root'
+                    }), 500
+                
+                # Build full path to workflow file
+                workflow_path = os.path.join(workspace_root, 'temp', 'workflow_files', workflow_file)
+                
+                # Check if file exists
+                if not os.path.exists(workflow_path):
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Workflow file not found: {workflow_file}'
+                    }), 404
+                
+                # Build ros2 run command
+                command = ['ros2', 'run', 'ur15_workflow', 'run_workflow.py', '--config', workflow_path]
+                
+                self.get_logger().info(f"Running workflow command: {' '.join(command)}")
+                
+                # Run command in background thread to avoid blocking
+                def run_command():
+                    try:
+                        process = subprocess.Popen(
+                            command,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True
+                        )
+                        self.get_logger().info(f"Workflow process started with PID: {process.pid}")
+                        
+                        # Wait for process to complete
+                        stdout, stderr = process.communicate()
+                        return_code = process.returncode
+                        
+                        # Log completion to web
+                        if return_code == 0:
+                            self.push_web_log(f"Workflow completed successfully: {workflow_file}", 'success')
+                            self.get_logger().info(f"Workflow completed successfully: {workflow_file}")
+                        else:
+                            self.push_web_log(f"Workflow failed with exit code {return_code}: {workflow_file}", 'error')
+                            self.get_logger().error(f"Workflow failed with exit code {return_code}: {workflow_file}")
+                            if stderr:
+                                self.get_logger().error(f"Workflow stderr: {stderr}")
+                    except Exception as e:
+                        self.get_logger().error(f"Error running workflow process: {e}")
+                        self.push_web_log(f"Error running workflow: {str(e)}", 'error')
+                
+                thread = threading.Thread(target=run_command, daemon=True)
+                thread.start()
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': f'Workflow started: {workflow_file}',
+                    'workflow_file': workflow_file,
+                    'workflow_path': workflow_path
+                })
+                
+            except Exception as e:
+                self.get_logger().error(f"Error running workflow: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                }), 500
+        
+        @self.app.route('/workflow_config_center_url', methods=['GET'])
+        def workflow_config_center_url():
+            """Return the URL for workflow configuration center."""
+            from flask import jsonify
+            
+            workflow_url = 'http://localhost:8008'
+            
+            self.get_logger().info(f"Redirecting to workflow config center: {workflow_url}")
+            
+            return jsonify({
+                'status': 'success',
+                'url': workflow_url
+            })
         
         @self.app.route('/prepare_last_captured_image', methods=['GET'])
         def prepare_last_captured_image():
@@ -2905,90 +2993,6 @@ class UR15WebNode(Node):
                     'message': str(e)
                 })
         
-        @self.app.route('/locate_rack', methods=['POST'])
-        def locate_rack():
-            """Execute locate rack script (ur_locate_rack.py)."""
-            from flask import jsonify
-            import subprocess
-            import threading
-            
-            try:
-                # Get the scripts directory
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Could not find scripts directory'
-                    })
-                
-                script_path = os.path.join(scripts_dir, 'ur_locate_rack.py')
-                
-                # Check if script exists
-                if not os.path.exists(script_path):
-                    return jsonify({
-                        'success': False,
-                        'message': f'Script not found: {script_path}'
-                    })
-                
-                # Prepare command
-                cmd = ['python3', script_path]
-                
-                self.get_logger().info(f"Locate rack command: {' '.join(cmd)}")
-                
-                # Define a function to monitor the process
-                def monitor_locate_rack():
-                    """Monitor locate rack process and report completion status."""
-                    try:
-                        process = subprocess.Popen(
-                            cmd,
-                            cwd=os.path.dirname(script_path),
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            text=True
-                        )
-                        
-                        # Track this process for cleanup
-                        with self.process_lock:
-                            self.child_processes.append(process)
-                        
-                        self.get_logger().info(f"Started locate rack script with PID: {process.pid}")
-                        
-                        # Wait for the process to complete
-                        return_code = process.wait()
-                        
-                        self.get_logger().info(f"Locate rack script finished with return code: {return_code}")
-                        
-                        # Push completion message to web log
-                        if return_code == 0:
-                            self.push_web_log("✅ Locate rack completed successfully!", 'success')
-                        else:
-                            self.push_web_log(f"❌ Locate rack failed with return code: {return_code}", 'error')
-                    except Exception as e:
-                        self.get_logger().error(f"Error in locate rack monitor thread: {e}")
-                        self.push_web_log(f"❌ Locate rack error: {str(e)}", 'error')
-                
-                # Start monitoring thread
-                monitor_thread = threading.Thread(target=monitor_locate_rack, daemon=True)
-                monitor_thread.start()
-                
-                self.get_logger().info(f"Started locate rack monitoring thread")
-                
-                # Push start message to web log
-                self.push_web_log("🗄️ Starting locate rack process...", 'info')
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'Locate rack script started'
-                })
-                
-            except Exception as e:
-                self.get_logger().error(f"Error starting locate rack script: {e}")
-                self.push_web_log(f"❌ Failed to start locate rack: {str(e)}", 'error')
-                return jsonify({
-                    'success': False,
-                    'message': str(e)
-                })
-        
         @self.app.route('/locate_last_operation', methods=['POST'])
         def locate_last_operation():
             """Execute locate last operation script (ur_3d_positioning.py)."""
@@ -3486,135 +3490,6 @@ class UR15WebNode(Node):
             except Exception as e:
                 self.get_logger().error(f"Error starting execute close right script: {e}")
                 self.push_web_log(f"❌ Failed to start execute close right: {str(e)}", 'error')
-                return jsonify({'success': False, 'message': str(e)})
-        
-        @self.app.route('/save_rack_positions', methods=['POST'])
-        def save_rack_positions():
-            """Save rack positions to JSON file."""
-            from flask import request, jsonify
-            import json
-            
-            try:
-                data = request.get_json()
-                rack_number = data.get('rack_number')
-                positions = data.get('positions')
-                rack_key = data.get('rack_key')  # Now accept custom key name
-                
-                if rack_number is None or positions is None:
-                    return jsonify({'success': False, 'message': 'Missing rack_number or positions'})
-                
-                if len(positions) != 6:
-                    return jsonify({'success': False, 'message': 'Positions must contain 6 values'})
-                
-                # Default rack key mapping if not provided
-                if rack_key is None:
-                    rack_key_map = {
-                        1: 'lower_left',
-                        2: 'lower_right',
-                        3: 'top_left',
-                        4: 'top_right'
-                    }
-                    rack_key = rack_key_map.get(rack_number)
-                    if rack_key is None:
-                        return jsonify({'success': False, 'message': 'Invalid rack number'})
-                
-                # Update in-memory data
-                with self.rack_positions_lock:
-                    self.rack_positions_data[rack_key] = positions
-                
-                # Save to file
-                self._save_rack_positions_to_file()
-                
-                self.get_logger().info(f"Saved rack {rack_number} (key: {rack_key}) positions")
-                
-                return jsonify({'success': True, 'message': f'Rack {rack_number} positions saved'})
-                
-            except Exception as e:
-                self.get_logger().error(f"Error saving rack positions: {e}")
-                return jsonify({'success': False, 'message': str(e)})
-        
-        @self.app.route('/rename_rack_key', methods=['POST'])
-        def rename_rack_key():
-            """Rename a rack key in the JSON file while preserving order."""
-            from flask import request, jsonify
-            import json
-            from collections import OrderedDict
-            
-            try:
-                data = request.get_json()
-                rack_number = data.get('rack_number')
-                old_key = data.get('old_key')
-                new_key = data.get('new_key')
-                position = data.get('position')  # 0-indexed position
-                
-                if not old_key or not new_key:
-                    return jsonify({'success': False, 'message': 'Missing old_key or new_key'})
-                
-                if position is None:
-                    position = rack_number - 1 if rack_number else 0
-                
-                # Use in-memory data
-                with self.rack_positions_lock:
-                    rack_data = self.rack_positions_data.copy()
-                
-                # Get keys in order
-                keys = list(rack_data.keys())
-                
-                # Find the position of old_key
-                old_position = keys.index(old_key) if old_key in keys else -1
-                
-                # Create new ordered dict
-                new_rack_data = OrderedDict()
-                
-                if old_position >= 0:
-                    # Rename the key at the specific position
-                    for i, key in enumerate(keys):
-                        if i == old_position:
-                            # Replace old key with new key at this position
-                            new_rack_data[new_key] = rack_data[old_key]
-                        else:
-                            new_rack_data[key] = rack_data[key]
-                else:
-                    # Old key doesn't exist, insert at specified position
-                    inserted = False
-                    for i, key in enumerate(keys):
-                        if i == position and not inserted:
-                            new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                            inserted = True
-                        new_rack_data[key] = rack_data[key]
-                    
-                    # If position is at the end or beyond
-                    if not inserted:
-                        new_rack_data[new_key] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                
-                # Update in-memory data and save
-                with self.rack_positions_lock:
-                    self.rack_positions_data = dict(new_rack_data)
-                
-                self._save_rack_positions_to_file()
-                
-                self.get_logger().info(f"Renamed rack key from '{old_key}' to '{new_key}' at position {position}")
-                return jsonify({'success': True, 'message': f'Renamed key from {old_key} to {new_key}'})
-                
-            except Exception as e:
-                self.get_logger().error(f"Error renaming rack key: {e}")
-                return jsonify({'success': False, 'message': str(e)})
-        
-        @self.app.route('/load_rack_positions', methods=['GET'])
-        def load_rack_positions():
-            """Load rack positions from memory."""
-            from flask import jsonify
-            
-            try:
-                # Return in-memory data
-                with self.rack_positions_lock:
-                    rack_data = self.rack_positions_data.copy()
-                
-                self.get_logger().info("Returned rack positions from memory")
-                return jsonify({'success': True, 'data': rack_data})
-                
-            except Exception as e:
-                self.get_logger().error(f"Error loading rack positions: {e}")
                 return jsonify({'success': False, 'message': str(e)})
         
         # Asset route must come BEFORE the main report route to avoid conflicts

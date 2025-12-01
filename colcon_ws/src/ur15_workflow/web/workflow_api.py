@@ -8,12 +8,16 @@ from flask_cors import CORS
 import os
 import json
 from pathlib import Path
+from common.workspace_utils import get_temp_directory
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)  # Enable CORS
 
 # Workflow configuration directory
 WORKFLOW_CONFIG_DIR = Path(__file__).parent.parent.parent / 'ur15_workflow' / 'examples'
+
+# Workflow files directory for new workflow creation
+WORKFLOW_FILES_PATH = Path(get_temp_directory()) / 'workflow_files'
 
 # Initialize RobotStatusClient for Redis access
 robot_status_client = None
@@ -24,6 +28,27 @@ try:
 except Exception as e:
     print(f"✗ Failed to initialize RobotStatusClient: {e}")
     print("  Robot status endpoints will not be available")
+
+# Initialize UR15Robot for direct robot communication
+ur15_robot = None
+try:
+    import sys
+    import os
+    # Add ur15_robot_arm package to path
+    current_dir = Path(__file__).parent.parent.parent
+    ur15_pkg_path = current_dir / 'ur15_robot_arm'
+    if ur15_pkg_path.exists():
+        sys.path.insert(0, str(ur15_pkg_path))
+    
+    from ur15_robot_arm.ur15 import UR15Robot
+    # Default UR15 connection parameters (can be overridden via env variables)
+    ur15_ip = os.environ.get('UR15_IP', '192.168.1.15')
+    ur15_port = int(os.environ.get('UR15_PORT', '30002'))
+    ur15_robot = UR15Robot(ur15_ip, ur15_port)
+    print(f"✓ UR15Robot initialized (IP: {ur15_ip}, Port: {ur15_port})")
+except Exception as e:
+    print(f"✗ Failed to initialize UR15Robot: {e}")
+    print("  Direct robot joint position endpoint will not be available")
 
 
 @app.route('/api/workflow', methods=['POST'])
@@ -41,15 +66,15 @@ def create_workflow():
         if not filename.endswith('.json'):
             filename += '.json'
         
-        # Build full path
-        filepath = WORKFLOW_CONFIG_DIR / filename
+        # Build full path using WORKFLOW_FILES_PATH for new workflow creation
+        filepath = WORKFLOW_FILES_PATH / filename
         
         # Check if file already exists
         if filepath.exists():
             return jsonify({'success': False, 'error': 'File already exists'}), 400
         
         # Ensure directory exists
-        WORKFLOW_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        WORKFLOW_FILES_PATH.mkdir(parents=True, exist_ok=True)
         
         # Write to file
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -80,11 +105,11 @@ def save_workflow():
         if not filename.endswith('.json'):
             filename += '.json'
         
-        # Build full path
-        filepath = WORKFLOW_CONFIG_DIR / filename
+        # Build full path using WORKFLOW_FILES_PATH
+        filepath = WORKFLOW_FILES_PATH / filename
         
         # Ensure directory exists
-        WORKFLOW_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        WORKFLOW_FILES_PATH.mkdir(parents=True, exist_ok=True)
         
         # Write to file
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -109,7 +134,7 @@ def delete_workflow(filename):
             filename += '.json'
         
         # Build full path
-        filepath = WORKFLOW_CONFIG_DIR / filename
+        filepath = WORKFLOW_FILES_PATH / filename
         
         # Check if file exists
         if not filepath.exists():
@@ -131,10 +156,10 @@ def delete_workflow(filename):
 def list_workflows():
     """List all workflow files"""
     try:
-        if not WORKFLOW_CONFIG_DIR.exists():
+        if not WORKFLOW_FILES_PATH.exists():
             return jsonify({'success': True, 'files': []})
         
-        files = [f.name for f in WORKFLOW_CONFIG_DIR.glob('*.json')]
+        files = [f.name for f in WORKFLOW_FILES_PATH.glob('*.json')]
         
         return jsonify({
             'success': True,
@@ -154,11 +179,58 @@ def get_workflow(filename):
             filename += '.json'
         
         # Build full path
-        filepath = WORKFLOW_CONFIG_DIR / filename
+        filepath = WORKFLOW_FILES_PATH / filename
         
         # Check if file exists
         if not filepath.exists():
             return jsonify({'success': False, 'error': 'File not found'}), 404
+        
+        # Read file
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = json.load(f)
+        
+        return jsonify({
+            'success': True,
+            'content': content,
+            'filename': filename
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/templates', methods=['GET'])
+def list_templates():
+    """List all template files from WORKFLOW_CONFIG_DIR"""
+    try:
+        if not WORKFLOW_CONFIG_DIR.exists():
+            return jsonify({'success': True, 'files': []})
+        
+        files = [f.name for f in WORKFLOW_CONFIG_DIR.glob('*.json')]
+        
+        return jsonify({
+            'success': True,
+            'files': sorted(files)
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/template/<filename>', methods=['GET'])
+def get_template(filename):
+    """Get template file content from WORKFLOW_CONFIG_DIR"""
+    try:
+        # Ensure filename ends with .json
+        if not filename.endswith('.json'):
+            filename += '.json'
+        
+        # Build full path
+        filepath = WORKFLOW_CONFIG_DIR / filename
+        
+        # Check if file exists
+        if not filepath.exists():
+            return jsonify({'success': False, 'error': 'Template not found'}), 404
         
         # Read file
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -196,6 +268,41 @@ def get_robot_status(namespace, key):
             'namespace': namespace,
             'key': key,
             'value': value
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ur15/actual_joint_positions', methods=['GET'])
+def get_actual_joint_positions():
+    """Get actual joint positions directly from UR15 robot (in radians)"""
+    try:
+        if ur15_robot is None:
+            return jsonify({'success': False, 'error': 'UR15Robot not available'}), 503
+        
+        # Open connection if not already connected
+        if not ur15_robot.connected:
+            result = ur15_robot.open()
+            if result != 0:
+                return jsonify({'success': False, 'error': 'Failed to connect to robot'}), 503
+        
+        # Get actual joint positions (already in radians)
+        joint_positions = ur15_robot.get_actual_joint_positions()
+        
+        if joint_positions is None:
+            return jsonify({'success': False, 'error': 'Failed to read joint positions from robot'}), 500
+        
+        # Convert numpy array to list for JSON serialization
+        import numpy as np
+        if isinstance(joint_positions, np.ndarray):
+            joint_positions = joint_positions.tolist()
+        
+        return jsonify({
+            'success': True,
+            'value': joint_positions,
+            'unit': 'radians',
+            'description': 'Actual joint positions from UR15 robot'
         })
         
     except Exception as e:

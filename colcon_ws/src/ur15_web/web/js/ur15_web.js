@@ -383,6 +383,105 @@ function updateCaptureX3ButtonState() {
     }
 }
 
+function loadWorkflowFiles() {
+    fetch('/get_workflow_files', {
+        method: 'GET',
+    })
+    .then(response => response.json())
+    .then(data => {
+        const select = document.getElementById('workflowFiles');
+        select.innerHTML = ''; // Clear existing options
+        
+        if (data.status === 'success' && data.files.length > 0) {
+            // Add default option
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Select a workflow file';
+            select.appendChild(defaultOption);
+            
+            // Add file options
+            data.files.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file;
+                option.textContent = file;
+                select.appendChild(option);
+            });
+            
+            logToWeb(`Loaded ${data.files.length} workflow files`, 'info');
+        } else {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No workflow files found';
+            select.appendChild(option);
+            logToWeb('No workflow files found', 'warning');
+        }
+    })
+    .catch(error => {
+        logToWeb(`Error loading workflow files: ${error.message}`, 'error');
+        const select = document.getElementById('workflowFiles');
+        select.innerHTML = '<option value="">Error loading files</option>';
+    });
+}
+
+function runCurrentWorkflow() {
+    const select = document.getElementById('workflowFiles');
+    const selectedFile = select.value;
+    
+    if (!selectedFile || selectedFile === '') {
+        logToWeb('Please select a workflow file first', 'warning');
+        showMessage('Please select a workflow file', 'warning');
+        return;
+    }
+    
+    logToWeb(`Running workflow: ${selectedFile}...`, 'info');
+    
+    fetch('/run_workflow', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            workflow_file: selectedFile
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            logToWeb(`Workflow started successfully: ${selectedFile}`, 'success');
+        } else {
+            logToWeb(`Failed to start workflow: ${data.message}`, 'error');
+            showMessage(`Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`Error running workflow: ${error.message}`, 'error');
+        showMessage('Failed to run workflow', 'error');
+    });
+}
+
+function goToWorkflowConfigCenter() {
+    logToWeb('Opening workflow configuration center...', 'info');
+    
+    fetch('/workflow_config_center_url', {
+        method: 'GET',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Open workflow config center in new tab
+            window.open(data.url, '_blank');
+            logToWeb('Workflow configuration center opened in new tab', 'success');
+        } else {
+            logToWeb(`Error: ${data.message}`, 'error');
+            showMessage(`Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`Error opening workflow config center: ${error.message}`, 'error');
+        showMessage('Failed to open workflow config center', 'error');
+    });
+}
+
 function labelLastCapturedImage() {
     logToWeb('Preparing last captured image for labeling...', 'info');
     
@@ -1178,66 +1277,7 @@ function confirmDeleteImage() {
     });
 }
 
-// Load rack labels and positions based on JSON key order
-function loadRackLabelsAndKeys() {
-    fetch('/load_rack_positions')
-    .then(response => response.json())
-    .then(data => {
-        if (data.success && data.data) {
-            // Get keys in their order from JSON
-            const keys = Object.keys(data.data);
-            
-            // Map the first 4 keys to rack rows 1-4
-            for (let i = 0; i < Math.min(keys.length, 4); i++) {
-                const rackNum = i + 1;
-                const key = keys[i];
-                
-                // Store the JSON key
-                rackJsonKeys[rackNum] = key;
-                
-                // Convert key to display format (e.g., "lower_left" -> "Lower Left")
-                const displayName = key.split('_').map(word => 
-                    word.charAt(0).toUpperCase() + word.slice(1)
-                ).join(' ');
-                
-                // Update display name
-                rackDisplayNames[rackNum] = displayName;
-                
-                // Update input field
-                const labelInput = document.getElementById(`rackLabel${rackNum}`);
-                if (labelInput) {
-                    labelInput.value = displayName;
-                }
-                
-                // Update position display
-                const positions = data.data[key];
-                if (Array.isArray(positions) && positions.length === 6) {
-                    rackPositions[rackNum] = [...positions];
-                    for (let j = 0; j < 6; j++) {
-                        const element = document.getElementById(`rack${rackNum}_j${j}`);
-                        if (element) {
-                            element.textContent = positions[j].toFixed(2);
-                        }
-                    }
-                }
-            }
-            
-            logToWeb('📂 Loaded saved rack positions', 'info');
-        }
-    })
-    .catch(error => {
-        logToWeb(`⚠️ Could not load saved rack positions: ${error.message}`, 'warning');
-    });
-}
 
-// Load rack positions on page load
-function loadRackPositions() {
-    // Use the combined function that loads both labels and positions in order
-    loadRackLabelsAndKeys();
-}
-
-// Load rack positions when page loads
-loadRackPositions();
 
 // Update status every 200ms
 setInterval(() => {
@@ -1686,6 +1726,9 @@ window.onload = function() {
     
     // Initialize Capture x3 button state
     updateCaptureX3ButtonState();
+    
+    // Load workflow files
+    loadWorkflowFiles();
     
     logToWeb('UR15 Web Interface loaded', 'success');
     logToWeb('System ready for operation', 'info');
@@ -2243,44 +2286,6 @@ function openIntrinsicReport() {
 }
 
 // Task Panel Functions
-function locateRack() {
-    logToWeb('🗄️ Locate Rack button clicked', 'info');
-    
-    // Disable button during execution
-    const btn = document.getElementById('locateRackBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    
-    fetch('/locate_rack', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb(`✅ ${data.message}`, 'success');
-        } else {
-            logToWeb(`❌ Error: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        logToWeb(`❌ Network error: ${error.message}`, 'error');
-    })
-    .finally(() => {
-        // Re-enable button after 2 seconds
-        setTimeout(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }, 2000);
-    });
-}
-
 function locateLastOperation() {
     logToWeb('🎯 Locate Last Operation button clicked', 'info');
     
@@ -2618,38 +2623,7 @@ function emergencyStop() {
     }
 }
 
-// Rack position recording functionality
-let selectedRack = null;
-let rackPositions = {
-    1: null,
-    2: null,
-    3: null,
-    4: null
-};
-
-// Map rack numbers to display names (now editable)
-let rackDisplayNames = {
-    1: 'Lower Left',
-    2: 'Lower Right',
-    3: 'Top Left',
-    4: 'Top Right'
-};
-
-// Store the actual JSON keys in order (populated from server)
-let rackJsonKeys = {
-    1: 'lower_left',
-    2: 'lower_right',
-    3: 'top_left',
-    4: 'top_right'
-};
-
-// Map rack numbers to JSON key names (now directly from rackJsonKeys)
-function getRackKeyMap() {
-    return rackJsonKeys;
-}
-
-// Update rack label and sync with backend
-function updateRackLabel(rackNumber, newLabel) {
+function locateUnlockKnob() {
     if (!newLabel || newLabel.trim() === '') {
         logToWeb('⚠️ Label cannot be empty', 'warning');
         // Restore previous value

@@ -140,6 +140,8 @@
         "positioning_type": "get_result",
         "template_points": [],
         "save_path": "../temp/positioning_result_standard.json",
+        "status_namespace": "ur15",
+        "status_key_name": "last_points_3d",
         "timeout": 10000,
         "wait_time": 1.0,
         "stop_on_failure": true
@@ -158,7 +160,7 @@
         "save_path": "../temp/positioning_result_filtered.json",
         "timeout": 10000,
         "status_namespace": "ur15",
-        "status_key_name": "rack_corner_points",
+        "status_key_name": "last_points_3d",
         "wait_time": 1.0,
         "stop_on_failure": true
         },

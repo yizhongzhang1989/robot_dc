@@ -160,6 +160,9 @@ function loadSelectedWorkflow() {
                     filenameDisplay.textContent = data.filename;
                 }
                 
+                // 更新 Modular View
+                renderModularView();
+                
                 closeLoadWorkflowModal();
                 console.log('Loaded workflow:', data.filename);
                 checkWorkflowLoaded(); // Update drag state after loading
@@ -188,7 +191,7 @@ function createNewWorkflow() {
     }
     
     // 确保文件名以.json结尾
-    const finalFileName = fileName.endsWith('.json') ? fileName : fileName + '.json';
+    const originalFileName = fileName.endsWith('.json') ? fileName : fileName + '.json';
     
     // 创建空的workflow配置
     const emptyWorkflow = {
@@ -207,32 +210,27 @@ function createNewWorkflow() {
         editor.value = JSON.stringify(emptyWorkflow, null, 2);
     }
     
-    // 更新文件名显示
-    const filenameDisplay = document.getElementById('workflowFilename');
-    if (filenameDisplay) {
-        filenameDisplay.textContent = finalFileName;
-    }
+    // 更新 Modular View
+    renderModularView();
     
     closeNewWorkflowModal();
     checkWorkflowLoaded(); // Update drag state after creating new workflow
     
-    // 调用API创建文件
-    fetch('http://localhost:8008/api/workflow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileName: finalFileName, content: emptyWorkflow })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            console.log('Workflow created:', data.message);
-        } else {
-            console.error('Failed to create workflow:', data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error creating workflow:', error);
-    });
+    // 尝试创建文件，如果已存在则自动生成新文件名
+    tryCreateWorkflowFile(originalFileName, emptyWorkflow, originalFileName)
+        .then(result => {
+            if (result.success) {
+                // 更新文件名显示为实际保存的文件名
+                const filenameDisplay = document.getElementById('workflowFilename');
+                if (filenameDisplay) {
+                    filenameDisplay.textContent = result.fileName;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error creating workflow:', error);
+            showErrorModal('Failed to create workflow: ' + error.message);
+        });
 }
 
 function deleteWorkflow() {
@@ -276,6 +274,9 @@ function confirmDeleteWorkflow() {
             if (editor) {
                 editor.value = '';
             }
+            
+            // 清空 Modular View
+            renderModularView();
             
             // 重置文件名显示
             if (filenameDisplay) {
@@ -336,48 +337,137 @@ function saveWorkflowToFile() {
     }
 }
 
-function clearWorkflow() {
-    const filenameDisplay = document.getElementById('workflowFilename');
-    const currentFilename = filenameDisplay ? filenameDisplay.textContent : '';
+function showLoadTemplateModal() {
+    // 从模板目录获取文件列表
+    fetch('http://localhost:8008/api/templates')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('templateFileList');
+            if (data.success && data.files.length > 0) {
+                select.innerHTML = '';
+                data.files.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file;
+                    option.textContent = file;
+                    select.appendChild(option);
+                });
+            } else {
+                select.innerHTML = '<option value="">No template files found</option>';
+            }
+            document.getElementById('loadTemplateModal').style.display = 'block';
+        })
+        .catch(error => {
+            console.error('Error loading template list:', error);
+            showErrorModal('Failed to load template list: ' + error.message);
+        });
+}
+
+function closeLoadTemplateModal() {
+    document.getElementById('loadTemplateModal').style.display = 'none';
+    // 重置文件名输入框为默认值
+    document.getElementById('newWorkflowFileName').value = 'default_name.json';
+}
+
+// 辅助函数：生成带编号的文件名
+function generateUniqueFilename(baseFilename, counter = 1) {
+    // 移除 .json 后缀
+    const nameWithoutExt = baseFilename.replace(/\.json$/, '');
+    // 生成新的文件名，如 filename(1).json
+    return `${nameWithoutExt}(${counter}).json`;
+}
+
+// 辅助函数：尝试创建文件，如果已存在则自动重试
+function tryCreateWorkflowFile(fileName, content, originalName, counter = 1) {
+    return fetch('http://localhost:8008/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: fileName, content: content })
+    })
+    .then(response => response.json())
+    .then(saveData => {
+        if (saveData.success) {
+            console.log('Workflow file created from template:', saveData.message);
+            
+            // 如果使用了带编号的文件名，显示提示
+            if (counter > 1) {
+                showInfoModal(`File "${originalName}" already exists. Created as "${fileName}" instead.`);
+            }
+            
+            return { success: true, fileName: fileName };
+        } else if (saveData.error === 'File already exists') {
+            // 文件已存在，生成新的文件名并重试
+            const newFileName = generateUniqueFilename(originalName, counter);
+            console.log(`File ${fileName} exists, trying ${newFileName}`);
+            return tryCreateWorkflowFile(newFileName, content, originalName, counter + 1);
+        } else {
+            throw new Error(saveData.error);
+        }
+    });
+}
+
+function loadSelectedTemplate() {
+    const select = document.getElementById('templateFileList');
+    const templateFilename = select.value;
     
-    if (!currentFilename || currentFilename === 'No file loaded') {
+    if (!templateFilename) {
         return;
     }
     
-    // 显示清空确认模态框
-    document.getElementById('clearWorkflowModal').style.display = 'block';
-}
-
-function closeClearWorkflowModal() {
-    document.getElementById('clearWorkflowModal').style.display = 'none';
-}
-
-function confirmClearWorkflow() {
-    const editor = document.getElementById('jsonEditor');
+    // 获取用户输入的新文件名
+    const newFilenameInput = document.getElementById('newWorkflowFileName');
+    let newFilename = newFilenameInput.value.trim();
     
-    if (editor && editor.value) {
-        try {
-            const jsonData = JSON.parse(editor.value);
-            
-            // 清空 workflow 数组，保留 context
-            if (jsonData.workflow) {
-                jsonData.workflow = [];
-            }
-            
-            // 更新编辑器内容
-            editor.value = JSON.stringify(jsonData, null, 2);
-            checkWorkflowLoaded(); // Update drag state after clearing
-            
-            // 更新 Modular View
-            renderModularView();
-            
-            console.log('Workflow cleared, context preserved');
-        } catch (error) {
-            console.error('Failed to parse JSON:', error);
+    // 如果用户输入了文件名，确保以 .json 结尾
+    if (newFilename) {
+        if (!newFilename.endsWith('.json')) {
+            newFilename += '.json';
         }
     }
     
-    closeClearWorkflowModal();
+    // 从服务器加载模板文件
+    fetch(`http://localhost:8008/api/template/${templateFilename}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 更新编辑器内容
+                const editor = document.getElementById('jsonEditor');
+                if (editor) {
+                    editor.value = JSON.stringify(data.content, null, 2);
+                }
+                
+                // 确定最终的文件名
+                const originalFileName = newFilename || 'default_name.json';
+                
+                closeLoadTemplateModal();
+                console.log('Loaded template:', data.filename, `as ${originalFileName}`);
+                checkWorkflowLoaded(); // Update drag state after loading
+                
+                // 更新 Modular View
+                renderModularView();
+                
+                // 尝试创建文件，如果已存在则自动生成新文件名
+                tryCreateWorkflowFile(originalFileName, data.content, originalFileName)
+                    .then(result => {
+                        if (result.success) {
+                            // 更新文件名显示为实际保存的文件名
+                            const filenameDisplay = document.getElementById('workflowFilename');
+                            if (filenameDisplay) {
+                                filenameDisplay.textContent = result.fileName;
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error creating workflow file:', error);
+                        showErrorModal('Template loaded but failed to save file: ' + error.message);
+                    });
+            } else {
+                showErrorModal('Failed to load template: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading template:', error);
+            showErrorModal('Failed to load template: ' + error.message);
+        });
 }
 
 function closeWorkflow() {
@@ -413,6 +503,9 @@ function confirmCloseWorkflow() {
     if (editor) {
         editor.value = '';
     }
+    
+    // 清空 Modular View
+    renderModularView();
     
     // 重置文件名显示
     if (filenameDisplay) {
@@ -1085,13 +1178,13 @@ function closeEditParamsModal() {
 
 async function loadJointAngles() {
     try {
-        // Get joint positions from Redis via workflow API
-        const response = await fetch('http://localhost:8008/api/robot_status/ur15/joint_positions', {
+        // Get actual joint positions directly from UR15 robot
+        const response = await fetch('http://localhost:8008/api/ur15/actual_joint_positions', {
             method: 'GET'
         });
         
         if (!response.ok) {
-            throw new Error('Failed to get joint positions from Redis');
+            throw new Error('Failed to get joint positions from robot');
         }
         
         const data = await response.json();
@@ -1100,8 +1193,8 @@ async function loadJointAngles() {
             throw new Error('Invalid joint positions data');
         }
         
-        // Convert from degrees to radians and round to 4 decimal places
-        const jointAnglesRad = data.value.map(deg => parseFloat((deg * Math.PI / 180).toFixed(4)));
+        // Joint positions are already in radians from the robot, round to 4 decimal places
+        const jointAnglesRad = data.value.map(rad => parseFloat(rad.toFixed(4)));
         
         // Get current parameters from editor
         const paramsEditor = document.getElementById('paramsEditor');
@@ -1118,7 +1211,7 @@ async function loadJointAngles() {
         // Update editor with new parameters
         paramsEditor.value = JSON.stringify(params, null, 2);
         
-        console.log('Loaded joint angles:', jointAnglesRad);
+        console.log('Loaded joint angles from robot:', jointAnglesRad);
         
     } catch (error) {
         console.error('Error loading joint angles:', error);
@@ -1426,8 +1519,8 @@ function handleStepDrop(e) {
 window.onclick = function(event) {
     const newWorkflowModal = document.getElementById('newWorkflowModal');
     const loadWorkflowModal = document.getElementById('loadWorkflowModal');
+    const loadTemplateModal = document.getElementById('loadTemplateModal');
     const deleteWorkflowModal = document.getElementById('deleteWorkflowModal');
-    const clearWorkflowModal = document.getElementById('clearWorkflowModal');
     const deleteStepModal = document.getElementById('deleteStepModal');
     const successModal = document.getElementById('successModal');
     
@@ -1439,12 +1532,12 @@ window.onclick = function(event) {
         closeLoadWorkflowModal();
     }
     
-    if (event.target === deleteWorkflowModal) {
-        closeDeleteWorkflowModal();
+    if (event.target === loadTemplateModal) {
+        closeLoadTemplateModal();
     }
     
-    if (event.target === clearWorkflowModal) {
-        closeClearWorkflowModal();
+    if (event.target === deleteWorkflowModal) {
+        closeDeleteWorkflowModal();
     }
     
     if (event.target === successModal) {

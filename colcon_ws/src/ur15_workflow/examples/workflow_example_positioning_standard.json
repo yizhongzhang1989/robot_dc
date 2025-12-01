@@ -27,12 +27,12 @@
       "type": "robot_move",
       "description": "Move robot to pose using movej",
       "robot_pose": [
-        1.1397,
-        -1.4622,
-        1.3295,
-        -1.958,
-        -0.5907,
-        -0.8942
+        1.2745,
+        -0.6904,
+        2.2714,
+        -2.9944,
+        -0.731,
+        -1.6306
       ],
       "move_type": "movej",
       "velocity": 0.5,
@@ -67,13 +67,116 @@
       "stop_on_failure": true
     },
     {
+      "id": "move_tcp_to_offset",
+      "type": "robot_move",
+      "description": "Move robot to offset using move_tcp",
+      "robot_pose": [
+        0.02,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 2
+    },
+    {
+      "id": "capture_at_current_pose",
+      "type": "capture_image",
+      "description": "Capture image at current pose and store in memory (image_name optional, auto-generates timestamp if not provided)",
+      "camera_topic": "/ur15_camera/image_raw",
+      "timeout": 3,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_data_pose",
+      "type": "record_data",
+      "description": "Record robot pose data and store in memory (pose_name optional, uses latest image_name or auto-generates timestamp)",
+      "record_type": "pose",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view",
+      "type": "positioning",
+      "description": "Upload view data from memory to server (image_name and data_name optional, auto-detects from previous capture/record operations, auto-saves to dataset after upload)",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "move_tcp_to_offset",
+      "type": "robot_move",
+      "description": "Move robot to offset using move_tcp",
+      "robot_pose": [
+        -0.02,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 2
+    },
+    {
+      "id": "move_tcp_to_offset",
+      "type": "robot_move",
+      "description": "Move robot to offset using move_tcp",
+      "robot_pose": [
+        0,
+        0.02,
+        0,
+        0,
+        0,
+        0
+      ],
+      "move_type": "move_tcp",
+      "velocity": 0.1,
+      "acceleration": 0.1,
+      "wait_time": 2
+    },
+    {
+      "id": "capture_at_current_pose",
+      "type": "capture_image",
+      "description": "Capture image at current pose and store in memory (image_name optional, auto-generates timestamp if not provided)",
+      "camera_topic": "/ur15_camera/image_raw",
+      "timeout": 3,
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "record_data_pose",
+      "type": "record_data",
+      "description": "Record robot pose data and store in memory (pose_name optional, uses latest image_name or auto-generates timestamp)",
+      "record_type": "pose",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
+      "id": "upload_view",
+      "type": "positioning",
+      "description": "Upload view data from memory to server (image_name and data_name optional, auto-detects from previous capture/record operations, auto-saves to dataset after upload)",
+      "positioning_type": "upload_view",
+      "reference_name": "rack_bottom_left",
+      "wait_time": 0.5,
+      "stop_on_failure": true
+    },
+    {
       "id": "get_result_standard",
       "type": "positioning",
-      "description": "Get positioning result by standard triangulation mode",
+      "description": "Get positioning result by standard mode",
       "positioning_type": "get_result",
-      "template_points": [],
-      "save_path": "../temp/positioning_result_standard.json",
       "timeout": 10000,
+      "status_namespace": "ur15",
+      "status_key_name": "last_points_3d",
       "wait_time": 1,
       "stop_on_failure": true
     },
