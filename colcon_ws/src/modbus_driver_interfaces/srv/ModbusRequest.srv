@@ -4,6 +4,7 @@ uint16 address
 uint16 count
 uint16[] values
 uint16 seq_id
+uint8[] raw_message
 ---
 bool success
 uint16[] response

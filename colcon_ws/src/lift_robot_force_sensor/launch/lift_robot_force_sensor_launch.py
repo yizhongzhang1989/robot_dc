@@ -4,6 +4,10 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 import os
 import json
+import sys
+
+# Add common package to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'common'))
 
 
 def launch_setup(context, *args, **kwargs):
@@ -15,6 +19,26 @@ def launch_setup(context, *args, **kwargs):
     device_id = int(LaunchConfiguration('device_id').perform(context))
     topic_name = LaunchConfiguration('topic_name').perform(context)
     node_name_suffix = LaunchConfiguration('node_name_suffix').perform(context)
+    read_interval = float(LaunchConfiguration('read_interval').perform(context))
+    
+    # Try to load calibration file name from config
+    calib_filename = None
+    try:
+        from common.config_manager import ConfigManager
+        config = ConfigManager()
+        # Dynamically find which sensor (right/left) matches this device_id
+        for sensor_name in ['force_sensor_right', 'force_sensor_left']:
+            config_path = f'lift_robot.{sensor_name}'
+            if config.has(f'{config_path}.device_id') and config.get(f'{config_path}.device_id') == device_id:
+                if config.has(f'{config_path}.calibration_file'):
+                    calib_filename = config.get(f'{config_path}.calibration_file')
+                    break
+    except Exception:
+        pass
+    
+    # Fallback: Use generic device_id-based naming
+    if calib_filename is None:
+        calib_filename = f'force_sensor_calibration_{device_id}.json'
     
     # Portable config path resolution (ENV -> colcon_ws -> CWD)
     env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
@@ -39,18 +63,13 @@ def launch_setup(context, *args, **kwargs):
     
     config_dir = resolve_config_dir()
     os.makedirs(config_dir, exist_ok=True)
-    config_path = os.path.join(config_dir, f'force_sensor_calibration_{device_id}.json')
+    
+    config_path = os.path.join(config_dir, calib_filename)
     
     # Default calibration values (fallback when config file doesn't exist)
-    if device_id == 52:
-        calib_scale = 0.116125
-        calib_offset = 0.0
-    elif device_id == 53:
-        calib_scale = 0.023614
-        calib_offset = 0.0
-    else:
-        calib_scale = 0.116125
-        calib_offset = 0.0
+    # Use neutral defaults - actual calibration should be done via web interface
+    calib_scale = 0.1
+    calib_offset = 0.0
     
     # Load from JSON if exists (overrides defaults)
     if os.path.exists(config_path):
@@ -80,11 +99,16 @@ def launch_setup(context, *args, **kwargs):
             print(f"[force_sensor_{device_id}] Failed to create default calibration file: {e}")
         print(f"[force_sensor_{device_id}] Using default calibration values: scale={calib_scale:.6f}, offset={calib_offset:.6f}")
     
+    # Construct node name with suffix
+    node_name = 'lift_robot_force_sensor'
+    if node_name_suffix:
+        node_name = f'{node_name}_{node_name_suffix}'
+    
     return [
         Node(
             package='lift_robot_force_sensor',
             executable='force_sensor_node',
-            name='lift_robot_force_sensor',
+            name=node_name,  # Use dynamic node name with suffix
             output='screen',
             emulate_tty=True,
             parameters=[{
@@ -92,7 +116,7 @@ def launch_setup(context, *args, **kwargs):
                 'topic_name': topic_name,
                 'node_name_suffix': node_name_suffix,
                 'use_ack_patch': True,
-                'read_interval': 0.02,  # 50Hz
+                'read_interval': read_interval,
                 'calibration_scale': calib_scale,
                 'calibration_offset': calib_offset
             }]
@@ -108,12 +132,12 @@ def generate_launch_description():
     It accepts parameters for device_id, topic_name, and node_name_suffix.
     
     Usage:
-      # Single instance (default device_id=52, topic=/force_sensor)
+      # Single instance (default device_id=52, topic=/force_sensor_right)
       ros2 launch lift_robot_force_sensor lift_robot_force_sensor_launch.py
       
       # Custom instance
       ros2 launch lift_robot_force_sensor lift_robot_force_sensor_launch.py \
-          device_id:=53 topic_name:=/force_sensor_2 node_name_suffix:=left
+          device_id:=53 topic_name:=/force_sensor_left node_name_suffix:=left
     
     Config file paths (resolved dynamically):
         Base directory priority:
@@ -122,29 +146,56 @@ def generate_launch_description():
             3. CWD/config
     """
     
+    # Load defaults from config file
+    def get_config_value(key, fallback):
+        """Helper to safely get config value with fallback"""
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            if config.has(key):
+                return config.get(key)
+        except:
+            pass
+        return fallback
+    
+    # For right sensor by default
+    default_device_id = str(get_config_value('lift_robot.force_sensor_right.device_id', 52))
+    default_topic = get_config_value('lift_robot.force_sensor_right.topic', '/force_sensor_right')
+    default_read_interval = str(get_config_value('lift_robot.force_sensor_right.read_interval', 0.06))
+    default_node_suffix = get_config_value('lift_robot.force_sensor_right.node_name_suffix', '')
+    
+    print(f"[force_sensor_launch] Config: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
+    
     # Declare launch arguments
     device_id_arg = DeclareLaunchArgument(
         'device_id',
-        default_value='52',
-        description='Force sensor Modbus device ID (52=right sensor, 53=left sensor)'
+        default_value=default_device_id,
+        description='Force sensor Modbus device ID (52=right, 53=left)'
     )
     
     topic_name_arg = DeclareLaunchArgument(
         'topic_name',
-        default_value='/force_sensor',
+        default_value=default_topic,
         description='Topic name for publishing force data'
     )
     
     node_name_suffix_arg = DeclareLaunchArgument(
         'node_name_suffix',
-        default_value='',
+        default_value=default_node_suffix,
         description='Suffix for node name (e.g., "right", "left")'
+    )
+    
+    read_interval_arg = DeclareLaunchArgument(
+        'read_interval',
+        default_value=default_read_interval,
+        description='Sensor read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz, 0.01 = 100Hz)'
     )
     
     return LaunchDescription([
         device_id_arg,
         topic_name_arg,
         node_name_suffix_arg,
+        read_interval_arg,
         OpaqueFunction(function=launch_setup)
     ])
 

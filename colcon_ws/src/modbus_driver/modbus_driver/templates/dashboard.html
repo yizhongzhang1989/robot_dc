@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modbus Dashboard</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        h1 { color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .status-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .log-container { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #007bff; color: white; }
+        tr:hover { background-color: #f1f1f1; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .timestamp { color: #666; font-size: 0.9em; }
+        #connection-status { font-weight: bold; }
+        .connected { color: green; }
+        .disconnected { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Modbus Manager Dashboard</h1>
+        
+        <div class="status-card">
+            <h3>System Status</h3>
+            <p>Connection: <span id="connection-status" class="disconnected">Checking...</span></p>
+            <p>Total Requests: <span id="total-requests">0</span></p>
+            <p>Log File: <span id="log-filename">Loading...</span> (<span id="log-size">0</span> MB)</p>
+            <p>
+                <label style="display: inline-flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="file-logging-toggle" onchange="toggleFileLogging()" style="margin-right: 8px; cursor: pointer; width: 18px; height: 18px;">
+                    <span style="font-weight: bold;">Enable File Logging</span>
+                </label>
+                <span style="margin-left: 10px; color: #666; font-size: 0.9em;">(Logs grow fast, enable only when needed)</span>
+            </p>
+            <p>
+                <label style="display: inline-flex; align-items: center;">
+                    <span style="font-weight: bold; margin-right: 8px;">Display Limit:</span>
+                    <select id="display-limit" onchange="changeDisplayLimit()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                        <option value="100" selected>100</option>
+                        <option value="200">200</option>
+                        <option value="500">500</option>
+                        <option value="1000">1000</option>
+                    </select>
+                    <span style="margin-left: 10px; color: #666; font-size: 0.9em;">rows</span>
+                </label>
+            </p>
+            <p>
+                <label style="display: inline-flex; align-items: center;">
+                    <span style="font-weight: bold; margin-right: 8px;">Filter Device IDs:</span>
+                    <input type="text" id="device-filter" oninput="applyDeviceFilter()" placeholder="e.g., 1,2,5" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 200px;">
+                    <span style="margin-left: 10px; color: #666; font-size: 0.9em;">(comma-separated, empty = show all)</span>
+                </label>
+            </p>
+            <button onclick="downloadLog()" style="padding: 8px 16px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">Download Log File</button>
+            <button id="pause-btn" onclick="togglePause()" style="padding: 8px 16px; background-color: #ffc107; color: black; border: none; border-radius: 4px; cursor: pointer;">Pause Updates</button>
+        </div>
+
+        <div class="log-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Delta (ms)</th>
+                        <th>Seq ID</th>
+                        <th>Function</th>
+                        <th>Address</th>
+                        <th>Device ID</th>
+                        <th>Values/Count</th>
+                        <th>Status</th>
+                        <th>Response</th>
+                        <th>Resp Time (ms)</th>
+                    </tr>
+                </thead>
+                <tbody id="log-table-body">
+                    <!-- Logs will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let lastLogId = -1;
+        let lastTimestamp = 0;
+        let isPaused = false;
+        let pendingBatches = [];
+        let updateScheduled = false;
+        let displayLimit = 100;
+        let filteredDeviceIds = null; // null means show all, otherwise array of device IDs
+
+        // Helper function to decode raw_message (flash command)
+        function decodeRawMessage(rawMsg, fullCommand) {
+            if (!rawMsg || rawMsg.length === 0) {
+                return null;
+            }
+            
+            // Raw message format: [function_code, operation_type, relay_addr, interval_high, interval_low]
+            if (rawMsg.length >= 5) {
+                const funcCode = rawMsg[0];
+                const opType = rawMsg[1];
+                const relayAddr = rawMsg[2];
+                const intervalMs = (rawMsg[3] << 8) | rawMsg[4];
+                const actualDelayMs = intervalMs * 100;
+                
+                let opName = 'Unknown';
+                if (opType === 0x02) {
+                    opName = 'Flash-Open';
+                } else if (opType === 0x04) {
+                    opName = 'Flash-Close';
+                }
+                
+                // 生成完整命令的十进制字符串 (如果有 full_command)
+                let decDisplay = '';
+                if (fullCommand && fullCommand.length > 0) {
+                    decDisplay = fullCommand.join(' ');
+                }
+                
+                return {
+                    type: opName,
+                    relay: relayAddr,
+                    interval: intervalMs,
+                    delay: actualDelayMs,
+                    display: `${opName} R${relayAddr} (${actualDelayMs}ms)`,
+                    decDisplay: decDisplay
+                };
+            }
+            
+            return {
+                type: 'Raw',
+                display: `[${rawMsg.join(', ')}]`,
+                decDisplay: ''
+            };
+        }
+
+        // Helper function to check if log should be shown based on filter
+        function shouldShowLog(log) {
+            if (!filteredDeviceIds || filteredDeviceIds.length === 0) {
+                return true; // Show all if no filter
+            }
+            return filteredDeviceIds.includes(String(log.slave_id));
+        }
+
+        // Initialize Socket.IO connection
+        const socket = io();
+
+        socket.on('connect', function() {
+            console.log('Socket.IO connected');
+            const statusSpan = document.getElementById('connection-status');
+            statusSpan.textContent = "Connected";
+            statusSpan.className = "connected";
+            
+            // Load initial logs and log file info
+            loadInitialLogs();
+            loadLogInfo();
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Socket.IO disconnected');
+            const statusSpan = document.getElementById('connection-status');
+            statusSpan.textContent = "Disconnected";
+            statusSpan.className = "disconnected";
+        });
+
+        // Listen for batch log events (high performance)
+        socket.on('new_logs_batch', function(data) {
+            if (isPaused) return;
+            
+            pendingBatches.push(data);
+            
+            if (!updateScheduled) {
+                updateScheduled = true;
+                requestAnimationFrame(processPendingBatches);
+            }
+        });
+
+        // Listen for single log events (legacy/fallback)
+        socket.on('new_log', function(data) {
+            if (isPaused) return;
+            
+            const log = data.log;
+            const tbody = document.getElementById('log-table-body');
+            
+            if (log.id > lastLogId) {
+                lastLogId = log.id;
+                
+                // Skip if filtered out
+                if (!shouldShowLog(log)) {
+                    return;
+                }
+                
+                let delta = 0;
+                if (lastTimestamp > 0 && log.timestamp_raw) {
+                    delta = (log.timestamp_raw - lastTimestamp) * 1000;
+                }
+                if (log.timestamp_raw) {
+                    lastTimestamp = log.timestamp_raw;
+                }
+
+                let deltaDisplay = delta.toFixed(1);
+                if (delta > 1000) {
+                    deltaDisplay = ">1000";
+                }
+
+                // Decode raw_message if present
+                const rawInfo = decodeRawMessage(log.raw_message, log.full_command);
+                const typeCell = rawInfo ? `<span style="color: #ff6600; font-weight: bold;">${rawInfo.display}</span>` : 'Standard';
+                const valuesCell = rawInfo && rawInfo.hexDisplay ? rawInfo.hexDisplay : (log.values || log.count);
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="timestamp">${log.timestamp}</td>
+                    <td>${deltaDisplay}</td>
+                    <td>${log.seq_id || '-'}</td>
+                    <td>${typeCell}</td>
+                    <td>${log.function_code}</td>
+                    <td>${log.address}</td>
+                    <td>${log.slave_id}</td>
+                    <td>${valuesCell}</td>
+                    <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
+                    <td>${JSON.stringify(log.response)}</td>
+                `;
+                
+                // Insert at top
+                if (tbody.firstChild) {
+                    tbody.insertBefore(row, tbody.firstChild);
+                } else {
+                    tbody.appendChild(row);
+                }
+
+                // Limit rows to displayLimit
+                while (tbody.children.length > displayLimit) {
+                    tbody.removeChild(tbody.lastChild);
+                }
+            }
+            
+            // Update total requests count
+            document.getElementById('total-requests').textContent = data.total_requests;
+        });
+
+        // Process batches with requestAnimationFrame for smooth UI updates
+        function processPendingBatches() {
+            updateScheduled = false;
+            
+            if (pendingBatches.length === 0) return;
+            
+            const tbody = document.getElementById('log-table-body');
+            const fragment = document.createDocumentFragment();
+            
+            // Collect all logs from all batches first
+            const allLogs = [];
+            while (pendingBatches.length > 0) {
+                const batchData = pendingBatches.shift();
+                allLogs.push(...batchData.logs);
+                // Update total requests with the latest value
+                document.getElementById('total-requests').textContent = batchData.total_requests;
+            }
+            
+            // Filter out logs we've already seen and find the max ID
+            const newLogs = allLogs.filter(log => log.id > lastLogId);
+            if (newLogs.length === 0) return;
+            
+            // Update lastLogId to the maximum ID in this batch
+            const maxLogId = Math.max(...newLogs.map(log => log.id));
+            
+            // First pass: process logs in FORWARD order to calculate deltas correctly
+            const processedLogs = [];
+            for (let i = 0; i < newLogs.length; i++) {
+                const log = newLogs[i];
+                
+                // Calculate delta in chronological order
+                let delta = 0;
+                if (lastTimestamp > 0 && log.timestamp_raw) {
+                    delta = (log.timestamp_raw - lastTimestamp) * 1000;
+                }
+                if (log.timestamp_raw) {
+                    lastTimestamp = log.timestamp_raw;
+                }
+                
+                // Skip if filtered out
+                if (!shouldShowLog(log)) {
+                    continue;
+                }
+
+                let deltaDisplay = delta.toFixed(1);
+                if (delta > 1000) {
+                    deltaDisplay = ">1000";
+                }
+                
+                processedLogs.push({log, deltaDisplay});
+            }
+            
+            // Second pass: create DOM elements in REVERSE order (newest first)
+            for (let i = processedLogs.length - 1; i >= 0; i--) {
+                const {log, deltaDisplay} = processedLogs[i];
+
+                // Decode raw_message if present
+                const rawInfo = decodeRawMessage(log.raw_message, log.full_command);
+                const valuesCell = rawInfo && rawInfo.decDisplay ? rawInfo.decDisplay : (log.values || log.count);
+                const respTimeCell = log.response_time_ms !== undefined ? log.response_time_ms.toFixed(2) : '-';
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="timestamp">${log.timestamp}</td>
+                    <td>${deltaDisplay}</td>
+                    <td>${log.seq_id || '-'}</td>
+                    <td>${log.function_code}</td>
+                    <td>${log.address}</td>
+                    <td>${log.slave_id}</td>
+                    <td>${valuesCell}</td>
+                    <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
+                    <td>${JSON.stringify(log.response)}</td>
+                    <td>${respTimeCell}</td>
+                `;
+                fragment.appendChild(row);
+            }
+            
+            // Update lastLogId after processing all logs
+            lastLogId = maxLogId;
+            
+            // Insert all rows at once at the top
+            if (fragment.children.length > 0) {
+                if (tbody.firstChild) {
+                    tbody.insertBefore(fragment, tbody.firstChild);
+                } else {
+                    tbody.appendChild(fragment);
+                }
+                
+                // Limit rows to displayLimit
+                while (tbody.children.length > displayLimit) {
+                    tbody.removeChild(tbody.lastChild);
+                }
+            }
+        }
+
+        // Toggle pause/resume updates
+        function togglePause() {
+            isPaused = !isPaused;
+            const btn = document.getElementById('pause-btn');
+            if (isPaused) {
+                btn.textContent = 'Resume Updates';
+                btn.style.backgroundColor = '#28a745';
+            } else {
+                btn.textContent = 'Pause Updates';
+                btn.style.backgroundColor = '#ffc107';
+                // Clear pending batches when resuming
+                pendingBatches = [];
+                // Reload current state
+                loadInitialLogs();
+            }
+        }
+
+        // Load initial logs via REST API
+        function loadInitialLogs() {
+            fetch(`/api/logs?after_id=${lastLogId}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('total-requests').textContent = data.total_requests;
+
+                    const tbody = document.getElementById('log-table-body');
+                    
+                    // Append initial logs
+                    data.logs.forEach(log => {
+                        if (log.id > lastLogId) {
+                            lastLogId = log.id;
+                            
+                            // Calculate delta BEFORE filtering
+                            let delta = 0;
+                            if (lastTimestamp > 0 && log.timestamp_raw) {
+                                delta = (log.timestamp_raw - lastTimestamp) * 1000;
+                            }
+                            if (log.timestamp_raw) {
+                                lastTimestamp = log.timestamp_raw;
+                            }
+                            
+                            // Skip rendering if filtered out
+                            if (!shouldShowLog(log)) {
+                                return;
+                            }
+
+                            let deltaDisplay = delta.toFixed(1);
+                            if (delta > 1000) {
+                                deltaDisplay = ">1000";
+                            }
+
+                            // Decode raw_message if present
+                            const rawInfo = decodeRawMessage(log.raw_message, log.full_command);
+                            const valuesCell = rawInfo && rawInfo.decDisplay ? rawInfo.decDisplay : (log.values || log.count);
+                            const respTimeCell = log.response_time_ms !== undefined ? log.response_time_ms.toFixed(2) : '-';
+
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td class="timestamp">${log.timestamp}</td>
+                                <td>${deltaDisplay}</td>
+                                <td>${log.seq_id || '-'}</td>
+                                <td>${log.function_code}</td>
+                                <td>${log.address}</td>
+                                <td>${log.slave_id}</td>
+                                <td>${valuesCell}</td>
+                                <td class="${log.success ? 'success' : 'error'}">${log.success ? 'OK' : 'FAIL'}</td>
+                                <td>${JSON.stringify(log.response)}</td>
+                                <td>${respTimeCell}</td>
+                            `;
+                            
+                            // Insert at top
+                            if (tbody.firstChild) {
+                                tbody.insertBefore(row, tbody.firstChild);
+                            } else {
+                                tbody.appendChild(row);
+                            }
+                        }
+                    });
+                    
+                    // Limit rows to displayLimit
+                    while (tbody.children.length > displayLimit) {
+                        tbody.removeChild(tbody.lastChild);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error fetching initial logs:', err);
+                });
+        }
+
+        // Load log file information
+        function loadLogInfo() {
+            fetch('/api/log_info')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.error) {
+                        document.getElementById('log-filename').textContent = data.filename;
+                        document.getElementById('log-size').textContent = data.size_mb;
+                        // Update checkbox state
+                        document.getElementById('file-logging-toggle').checked = data.file_logging_enabled || false;
+                    }
+                })
+                .catch(err => {
+                    console.error('Error fetching log info:', err);
+                });
+        }
+
+        // Download log file
+        function downloadLog() {
+            window.location.href = '/api/download_log';
+        }
+
+        // Apply device ID filter
+        function applyDeviceFilter() {
+            const input = document.getElementById('device-filter');
+            const value = input.value.trim();
+            
+            if (value === '') {
+                filteredDeviceIds = null; // Show all
+            } else {
+                // Parse comma-separated device IDs
+                filteredDeviceIds = value.split(',').map(id => id.trim()).filter(id => id !== '');
+            }
+            
+            // Re-filter existing rows and rebuild table in correct order
+            const tbody = document.getElementById('log-table-body');
+            const rows = Array.from(tbody.children);
+            
+            // Remove all rows
+            while (tbody.firstChild) {
+                tbody.removeChild(tbody.firstChild);
+            }
+            
+            // Re-add only visible rows in correct order
+            const fragment = document.createDocumentFragment();
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const deviceIdCell = row.children[5]; // Device ID is the 6th column (index 5)
+                const deviceId = deviceIdCell.textContent.trim();
+                
+                if (!filteredDeviceIds || filteredDeviceIds.length === 0 || filteredDeviceIds.includes(deviceId)) {
+                    if (visibleCount < displayLimit) {
+                        row.style.display = ''; // Ensure row is visible
+                        fragment.appendChild(row);
+                        visibleCount++;
+                    }
+                }
+            });
+            
+            tbody.appendChild(fragment);
+            
+            console.log('Filter applied:', filteredDeviceIds || 'Show all', '- Showing', visibleCount, 'rows');
+        }
+
+        // Change display limit
+        function changeDisplayLimit() {
+            const select = document.getElementById('display-limit');
+            displayLimit = parseInt(select.value);
+            
+            // Trim or reload logs based on new limit
+            const tbody = document.getElementById('log-table-body');
+            
+            if (tbody.children.length > displayLimit) {
+                // Remove excess rows from the bottom
+                while (tbody.children.length > displayLimit) {
+                    tbody.removeChild(tbody.lastChild);
+                }
+            } else if (tbody.children.length < displayLimit) {
+                // Could load more logs here if needed
+                // For now, new logs will fill up to the new limit
+            }
+            
+            console.log('Display limit changed to:', displayLimit);
+        }
+
+        // Toggle file logging
+        function toggleFileLogging() {
+            const checkbox = document.getElementById('file-logging-toggle');
+            const enabled = checkbox.checked;
+            
+            fetch('/api/toggle_file_logging', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ enabled: enabled })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('File logging ' + (enabled ? 'enabled' : 'disabled'));
+                    // Update log info to reflect changes
+                    loadLogInfo();
+                } else {
+                    console.error('Failed to toggle file logging');
+                    // Revert checkbox on failure
+                    checkbox.checked = !enabled;
+                }
+            })
+            .catch(err => {
+                console.error('Error toggling file logging:', err);
+                // Revert checkbox on error
+                checkbox.checked = !enabled;
+            });
+        }
+
+        // Update log info every 10 seconds
+        setInterval(loadLogInfo, 10000);
+    </script>
+</body>
+</html>

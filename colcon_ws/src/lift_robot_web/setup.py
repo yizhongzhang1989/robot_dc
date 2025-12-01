@@ -19,5 +19,10 @@ setup(
     description='Lift robot simple web viewer for cable sensor data',
     license='Apache-2.0',
     tests_require=['pytest'],
-    entry_points={'console_scripts': ['server = lift_robot_web.server:main']},
+    entry_points={
+        'console_scripts': [
+            'server = lift_robot_web.server:main',
+            'cmd_processor = lift_robot_web.cmd_processor_node:main',
+        ]
+    },
 )
