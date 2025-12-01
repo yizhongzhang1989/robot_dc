@@ -28,6 +28,7 @@ class CourierRobotWebAPI:
         self.verbose = verbose
         self.background_task = None  # Track background task thread
         self.background_task_lock = threading.Lock()
+        self.reset_flag = False  # Flag to signal background tasks to abort
         if verbose:
             print(f"📡 CourierRobot initialized with base URL: {base_url}")
     
@@ -317,7 +318,6 @@ class CourierRobotWebAPI:
                     if self.verbose:
                         print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
                     self.platform_stop()
-                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"🎯 [Platform] Goto height: {target_height}mm")
@@ -334,13 +334,13 @@ class CourierRobotWebAPI:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='platform', timeout=timeout)
             
-            # Print completion message BEFORE final status
+            # Only print completion message and status if successful (not aborted by reset)
             if completion['success'] and self.verbose:
                 print(f"✅ Goto {target_height}mm completed")
-            
-            # Then get and print final status
-            if self.verbose:
                 self.get_status()
+            elif self.verbose and completion.get('error') != 'Aborted by reset':
+                # Print error only if it's not a reset abort (reset handles its own messages)
+                print(f"❌ Task failed: {completion.get('error', 'unknown')}")
             
             return completion
         else:
@@ -385,7 +385,6 @@ class CourierRobotWebAPI:
                     if self.verbose:
                         print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
                     self.platform_stop()
-                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"⚡⬆️  [Platform] Force UP to {target_force}N")
@@ -402,13 +401,12 @@ class CourierRobotWebAPI:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='platform', timeout=timeout)
             
-            # Print completion message BEFORE final status
+            # Only print completion message and status if successful (not aborted by reset)
             if completion['success'] and self.verbose:
                 print(f"✅ Force UP {target_force}N completed")
-            
-            # Then get and print final status
-            if self.verbose:
                 self.get_status()
+            elif self.verbose and completion.get('error') != 'Aborted by reset':
+                print(f"❌ Task failed: {completion.get('error', 'unknown')}")
             
             return completion
         else:
@@ -450,7 +448,6 @@ class CourierRobotWebAPI:
                     if self.verbose:
                         print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
                     self.platform_stop()
-                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"⚡⬇️  [Platform] Force DOWN to {target_force}N")
@@ -467,13 +464,12 @@ class CourierRobotWebAPI:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='platform', timeout=timeout)
             
-            # Print completion message BEFORE final status
+            # Only print completion message and status if successful (not aborted by reset)
             if completion['success'] and self.verbose:
                 print(f"✅ Force DOWN {target_force}N completed")
-            
-            # Then get and print final status
-            if self.verbose:
                 self.get_status()
+            elif self.verbose and completion.get('error') != 'Aborted by reset':
+                print(f"❌ Task failed: {completion.get('error', 'unknown')}")
             
             return completion
         else:
@@ -518,7 +514,6 @@ class CourierRobotWebAPI:
                     if self.verbose:
                         print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
                     self.platform_stop()
-                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"🎯⚡ [Platform] Hybrid: {target_height}mm OR {target_force}N")
@@ -536,13 +531,12 @@ class CourierRobotWebAPI:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='platform', timeout=timeout)
             
-            # Print completion message BEFORE final status
+            # Only print completion message and status if successful (not aborted by reset)
             if completion['success'] and self.verbose:
                 print(f"✅ Hybrid control completed")
-            
-            # Then get and print final status
-            if self.verbose:
                 self.get_status()
+            elif self.verbose and completion.get('error') != 'Aborted by reset':
+                print(f"❌ Task failed: {completion.get('error', 'unknown')}")
             
             return completion
         else:
@@ -678,7 +672,6 @@ class CourierRobotWebAPI:
                     if self.verbose:
                         print(f"⚠️  Pushrod is busy (state: {pushrod_state}), auto-stopping...")
                     self.pushrod_stop()
-                    time.sleep(0.1)  # Brief pause for stop to take effect
         
         if self.verbose:
             print(f"🎯 [Pushrod] Goto height: {target_height}mm (mode: {mode})")
@@ -697,13 +690,12 @@ class CourierRobotWebAPI:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
             completion = self.wait_for_completion(target='pushrod', timeout=timeout)
             
-            # Print completion message BEFORE final status
+            # Only print completion message and status if successful (not aborted by reset)
             if completion['success'] and self.verbose:
                 print(f"✅ Pushrod goto {target_height}mm completed")
-            
-            # Then get and print final status
-            if self.verbose:
                 self.get_status()
+            elif self.verbose and completion.get('error') != 'Aborted by reset':
+                print(f"❌ Task failed: {completion.get('error', 'unknown')}")
             
             return completion
         else:
@@ -719,21 +711,42 @@ class CourierRobotWebAPI:
         """
         Emergency reset - ALWAYS allowed, stops all movements and clears all states
         Can interrupt any command including blocking ones
+        Cleans up background threads to return to initial state
         
         Returns:
-            dict with success status and complete state
+            dict with success status
         """
+        # Set reset flag to signal background tasks to abort
+        self.reset_flag = True
+        
+        # Clean up background thread
+        with self.background_task_lock:
+            if self.background_task is not None and self.background_task.is_alive():
+                if self.verbose:
+                    print("🛑 Terminating background task...")
+                # Wait briefly for background task to notice the flag
+                time.sleep(0.1)
+            self.background_task = None
+        
         if self.verbose:
             print("🚨 EMERGENCY RESET")
         result = self._send_command('platform', 'reset')
         
-        # Wait for reset to complete, then get status
-        time.sleep(0.5)
-        final_status = self.get_status(print_status=False)
-        result['status'] = final_status
+        # Clear reset flag after command sent
+        self.reset_flag = False
         
         if self.verbose:
-            print(f"✅ Emergency reset completed")
+            if result['success']:
+                print(f"✅ Emergency reset sent")
+            else:
+                print(f"❌ Emergency reset failed: {result.get('error')}")
+        
+        # Always show status after reset regardless of verbose
+        # Use print to ensure it's visible
+        if result.get('success', False) or True:  # Always show status
+            print("")  # Add blank line for clarity
+            self.get_status()
+        
         return result
     
     # ==================== Convenience Methods ====================
@@ -745,6 +758,9 @@ class CourierRobotWebAPI:
         Args:
             func: Function to execute
             *args, **kwargs: Arguments to pass to function
+        
+        Returns:
+            bool: True if task started, False if rejected (previous task still running)
         """
         def wrapper():
             try:
@@ -757,22 +773,16 @@ class CourierRobotWebAPI:
                     self.background_task = None
         
         with self.background_task_lock:
-            # Wait for previous background task to complete if exists
+            # Check if previous background task is still running
             if self.background_task is not None and self.background_task.is_alive():
                 if self.verbose:
-                    print("⚠️  Previous command still running, waiting for completion...")
-                old_task = self.background_task
-                # Release lock to allow old task to finish
-                self.background_task = None
-        
-        # Wait for old task outside of lock (don't interrupt, just wait)
-        if 'old_task' in locals():
-            old_task.join()  # Wait indefinitely for old task to complete
-        
-        with self.background_task_lock:
+                    print("⚠️  Previous command still running. Use 'stop' or 'reset' to interrupt.")
+                return False
+            
             # Start new background task
             self.background_task = threading.Thread(target=wrapper, daemon=True)
             self.background_task.start()
+            return True
     
     def interactive_mode(self):
         """
@@ -813,7 +823,7 @@ class CourierRobotWebAPI:
           pstop             - Stop pushrod (can interrupt any command!)
         
         Emergency:
-          reset, emergency  - Emergency reset (requires confirmation, can interrupt any command!)
+          reset, emergency  - Emergency reset (can interrupt any command!)
         
         Note: Commands without '!' run in background - you can type 'stop' anytime to interrupt!
         """
@@ -954,11 +964,7 @@ class CourierRobotWebAPI:
                 
                 # Emergency
                 elif command in ['reset', 'emergency']:
-                    confirm = input("⚠️  Confirm emergency reset? (yes/no): ").strip().lower()
-                    if confirm in ['yes', 'y']:
-                        self.emergency_reset()
-                    else:
-                        print("❌ Reset cancelled")
+                    self.emergency_reset()
                 
                 else:
                     print(f"❌ Unknown command: '{command}'. Type 'help' for available commands.")
@@ -995,6 +1001,11 @@ class CourierRobotWebAPI:
             initial_wait_timeout = 5.0  # Wait up to 5 seconds for task to start
             
             while time.time() - start_time < initial_wait_timeout:
+                # Check for reset flag
+                if self.reset_flag:
+                    self.verbose = original_verbose
+                    return {"success": False, "error": "Aborted by reset"}
+                
                 status_result = self.get_status()
                 if status_result['success'] and target in status_result['data']:
                     task_state = status_result['data'][target].get('task_state', 'unknown')
@@ -1010,6 +1021,11 @@ class CourierRobotWebAPI:
             
             # Now wait for completion
             while time.time() - start_time < timeout:
+                # Check for reset flag
+                if self.reset_flag:
+                    self.verbose = original_verbose
+                    return {"success": False, "error": "Aborted by reset"}
+                
                 status_result = self.get_status()
                 
                 if status_result['success'] and target in status_result['data']:
