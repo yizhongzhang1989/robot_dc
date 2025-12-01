@@ -201,8 +201,12 @@ class CameraCalibrationNode(Node):
         """Start the camera node using ros2 launch."""
         try:
             # Find the workspace root
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            workspace_root = os.path.dirname(current_dir)  # Go up one level from scripts
+            try:
+                from common.workspace_utils import get_workspace_root
+                workspace_root = get_workspace_root()
+            except:
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                workspace_root = os.path.dirname(current_dir)  # Go up one level from scripts
             colcon_ws = os.path.join(workspace_root, 'colcon_ws')
             
             # Check if colcon workspace exists

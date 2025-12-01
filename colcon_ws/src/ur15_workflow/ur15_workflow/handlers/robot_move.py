@@ -7,9 +7,12 @@ import sys
 import time
 from pathlib import Path
 from typing import Dict, Any
+from common.workspace_utils import get_workspace_root, get_scripts_directory
 
 # Add scripts directory to path for robot imports
-sys.path.append(str(Path(__file__).parent.parent.parent / 'scripts'))
+scripts_dir = get_scripts_directory()
+if scripts_dir:
+    sys.path.append(scripts_dir)
 
 from ur15_workflow.base import OperationHandler
 

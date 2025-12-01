@@ -8,13 +8,13 @@ from flask_cors import CORS
 import os
 import json
 from pathlib import Path
-from common.workspace_utils import get_temp_directory
+from common.workspace_utils import get_temp_directory, get_workspace_root
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)  # Enable CORS
 
 # Workflow configuration directory
-WORKFLOW_CONFIG_DIR = Path(__file__).parent.parent.parent / 'ur15_workflow' / 'examples'
+WORKFLOW_CONFIG_DIR = Path(get_workspace_root()) / 'colcon_ws' / 'src' / 'ur15_workflow' / 'examples'
 
 # Workflow files directory for new workflow creation
 WORKFLOW_FILES_PATH = Path(get_temp_directory()) / 'workflow_files'
@@ -37,8 +37,8 @@ try:
     import sys
     import os
     # Add ur15_robot_arm package to path
-    current_dir = Path(__file__).parent.parent.parent
-    ur15_pkg_path = current_dir / 'ur15_robot_arm'
+    colcon_src = Path(get_workspace_root()) / 'colcon_ws' / 'src'
+    ur15_pkg_path = colcon_src / 'ur15_robot_arm'
     if ur15_pkg_path.exists():
         sys.path.insert(0, str(ur15_pkg_path))
     

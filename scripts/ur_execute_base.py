@@ -6,6 +6,15 @@ from ur15_robot_arm.ur15 import UR15Robot
 import time
 import socket
 
+# Import workspace utilities
+try:
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
+    from common.workspace_utils import get_workspace_root
+    WORKSPACE_ROOT = get_workspace_root()
+except ImportError:
+    WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 class URExecuteBase:
     def __init__(self, robot_ip="192.168.1.15", robot_port=30002, rs485_port=54321):
@@ -23,7 +32,7 @@ class URExecuteBase:
 
         # Define the path to camera parameters
         self.camera_params_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            WORKSPACE_ROOT,
             "temp",
             "ur15_cam_calibration_result",
             "ur15_camera_parameters"
@@ -31,14 +40,14 @@ class URExecuteBase:
         
         # Data directory path (for storing collected data)
         self.data_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            WORKSPACE_ROOT,
             "temp",
             "ur_locate_crack_data"
         )
         
         # Result directory path (for storing results)
         self.result_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            WORKSPACE_ROOT,
             "temp",
             "ur_locate_crack_result"
         )

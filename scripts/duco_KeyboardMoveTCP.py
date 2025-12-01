@@ -8,7 +8,13 @@ import time
 import math
 
 # 把duco_robot_arm目录加入搜索路径
-duco_robot_arm_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src', 'duco_robot_arm', 'duco_robot_arm'))
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
+    from common.workspace_utils import get_workspace_root
+    workspace_root = get_workspace_root()
+    duco_robot_arm_path = os.path.join(workspace_root, 'colcon_ws', 'src', 'duco_robot_arm', 'duco_robot_arm')
+except ImportError:
+    duco_robot_arm_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src', 'duco_robot_arm', 'duco_robot_arm'))
 sys.path.append(duco_robot_arm_path)
 sys.path.append(os.path.join(duco_robot_arm_path, 'gen_py'))
 sys.path.append(os.path.join(duco_robot_arm_path, 'lib'))

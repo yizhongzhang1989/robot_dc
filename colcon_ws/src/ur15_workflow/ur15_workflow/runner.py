@@ -17,12 +17,9 @@ import sys
 import os
 from pathlib import Path
 
-# Add package root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 import rclpy
 from rclpy.node import Node
-from common import get_temp_directory
+from common.workspace_utils import get_temp_directory, get_workspace_root
 from datetime import datetime
 
 # Import workflow components

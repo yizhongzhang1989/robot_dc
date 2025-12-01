@@ -25,7 +25,15 @@ import os
 import time
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from common.workspace_utils import get_scripts_directory
+    scripts_dir = get_scripts_directory()
+    if scripts_dir:
+        sys.path.insert(0, scripts_dir)
+    else:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+except ImportError:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import only the lift controller (no robot dependencies)
 from ur_execute_base import LiftPlatformController
