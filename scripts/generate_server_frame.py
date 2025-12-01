@@ -12,7 +12,7 @@ class GenerateServerFrame:
 
         # ======================= Configuration =======================
         # variables to configure rack position offsets
-        self.rack_origin_to_unit_start_z = 0.03815
+        self.rack_origin_to_unit_start_z = 0.03715
         self.rack_origin_to_unit_start_y = 0.190
 
         # variables to store rack dimensions
