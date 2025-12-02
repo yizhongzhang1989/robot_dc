@@ -650,7 +650,7 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             tcp_x_to_rack=[1, 0, 0],
             tcp_y_to_rack=[0, 0, -1],
             tcp_z_to_rack=[0, 1, 0],
-            angle_deg=31
+            angle_deg=-149
         )
         if result != 0:
             print(f"[ERROR] Failed to correct TCP pose")
