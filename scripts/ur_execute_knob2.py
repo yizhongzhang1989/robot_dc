@@ -876,7 +876,7 @@ if __name__ == "__main__":
     ur_knob2.force_task_unlock_right_knob2()
     time.sleep(0.5)
 
-     # open right handle
+    # open right handle
     # move away from the knob2
     print("\n" + "="*50)
     ur_knob2.movel_in_crack_frame([0, -0.10, 0])

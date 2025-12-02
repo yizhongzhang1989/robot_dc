@@ -35,6 +35,9 @@ class UROperateWobj:
         # Rack coordinate system storage
         self.rack_transformation_matrix_in_base = None
         self.rack_origin_in_base = None
+        
+        # Server coordinate system storage
+        self.server2base_matrix = None
 
         # ========================= Initialization =========================
         self._setup_paths()
@@ -46,6 +49,9 @@ class UROperateWobj:
         # Automatically load neccessary parameters
         self._load_camera_params_from_service()
         self._load_rack2base_from_service()
+        
+        # Calculate server2base transformation matrix
+        self._calculate_server2base(self.server_index)
     
     # ================================== Private Helper Methods ==================================
     def _setup_paths(self):
@@ -225,6 +231,61 @@ class UROperateWobj:
             print(f"Error loading operating unit ID: {e}")
             return False
 
+    def _calculate_server2base(self, index, offset_in_rack=[0, 0, 0]):
+        """
+        Calculate server to base coordinate transformation matrix.
+        
+        Args:
+            index: Server index
+            offset_in_rack: List [x, y, z] offset in rack coordinate system to apply to target position (default: [0, 0, 0])
+        
+        Returns:
+            server2base: 4x4 transformation matrix from server to base coordinate system, or None if failed
+        """
+        if self.server_frame_generator is None:
+            print("Server frame generator is not initialized")
+            return None
+        
+        if self.rack_transformation_matrix_in_base is None:
+            print("Rack coordinate system transformation matrix not loaded")
+            return None
+        
+        # Step 1: Generate server frame in rack coordinate system
+        print(f"Generating server frame for index {index} in rack coordinate system...")
+        server_frame_in_rack = self.server_frame_generator.generate_server_frame_in_rack(index)
+        
+        if server_frame_in_rack is None:
+            print("Failed to generate server frame in rack")
+            return None
+        
+        # Extract server2rack transformation matrix
+        server2rack = server_frame_in_rack['target_server_transformation_matrix_in_rack']
+        print(f"✓ Server frame generated successfully")
+        
+        # Step 2: Apply offset in rack coordinate system
+        offset_array = np.array(offset_in_rack)
+        if np.linalg.norm(offset_array) > 0:
+            print(f"Applying offset in rack coordinate system: ({offset_array[0]:.6f}, {offset_array[1]:.6f}, {offset_array[2]:.6f})")
+            # Add offset to the translation part of server2rack matrix
+            server2rack[:3, 3] += offset_array
+            print(f"✓ Offset applied to server position in rack frame")
+        
+        # Step 3: Get rack2base transformation matrix
+        rack2base = self.rack_transformation_matrix_in_base
+        
+        # Step 4: Calculate server2base = rack2base @ server2rack
+        print(f"Calculating server2base transformation...")
+        server2base = rack2base @ server2rack
+        
+        self.server2base_matrix = server2base
+
+        # Extract target position for logging
+        server_position = server2base[:3, 3]
+        print(f"Target position in base coordinate system: ({server_position[0]:.6f}, "
+              f"{server_position[1]:.6f}, {server_position[2]:.6f})")
+        
+        return server2base
+
     # ============================= Robot Movement and Control Methods =============================
     def movel_in_rack_frame(self, offset_in_rack=[0, 0, 0]):
         """
@@ -284,6 +345,66 @@ class UROperateWobj:
         
         time.sleep(0.5)
         print("[INFO] Successfully moved in rack frame")
+        return 0
+
+    def movel_in_server_frame(self, offset_in_server=[0, 0, 0]):
+        """
+        Move robot in server coordinate system by specified offset.
+        
+        Args:
+            offset_in_server: List [x, y, z] offset in server coordinate system (default: [0, 0, 0])
+        
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.server2base_matrix is None:
+            print("Server coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract server coordinate system rotation
+        server_rotation = self.server2base_matrix[:3, :3]
+        server_x = server_rotation[:, 0] / np.linalg.norm(server_rotation[:, 0])
+        server_y = server_rotation[:, 1] / np.linalg.norm(server_rotation[:, 1])
+        server_z = server_rotation[:, 2] / np.linalg.norm(server_rotation[:, 2])
+        
+        # Calculate movement vector in base frame
+        offset_array = np.array(offset_in_server)
+        movement_vector = (offset_array[0] * server_x + 
+                          offset_array[1] * server_y + 
+                          offset_array[2] * server_z)
+        
+        # Calculate target position
+        current_position = np.array(current_pose[:3])
+        target_position = current_position + movement_vector
+        
+        target_pose = [
+            target_position[0],  # x
+            target_position[1],  # y
+            target_position[2],  # z
+            current_pose[3],     # rx (keep current orientation)
+            current_pose[4],     # ry
+            current_pose[5]      # rz
+        ]
+        
+        print(f"\n[Movement in Server Frame]")
+        print(f"  Offset: X={offset_array[0]:.6f}m, Y={offset_array[1]:.6f}m, Z={offset_array[2]:.6f}m")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.1)
+        if res != 0:
+            print(f"Failed to move in server frame with error code: {res}")
+            return res
+        
+        time.sleep(0.5)
+        print("[INFO] Successfully moved in server frame")
         return 0
 
     def movel_to_correct_tcp_pose(self, tcp_x_to_rack=[1, 0, 0], tcp_y_to_rack=[0, 0, -1], tcp_z_to_rack=[0, 1, 0], angle_deg=0):
@@ -495,45 +616,26 @@ class UROperateWobj:
             print(f"       Received: {execution_order}")
             return -1
         
-        # Step 1: Generate server frame in rack coordinate system
-        print(f"\nStep 1: Generating server frame for index {index} in rack coordinate system...")
-        server_frame_in_rack = self.server_frame_generator.generate_server_frame_in_rack(index)
-        
-        if server_frame_in_rack is None:
-            print("Failed to generate server frame in rack")
-            return -1
-        
-        # Extract server2rack transformation matrix
-        server2rack = server_frame_in_rack['target_server_transformation_matrix_in_rack']
-        print(f"✓ Server frame generated successfully")
-        
-        # Apply offset in rack coordinate system
-        offset_array = np.array(offset_in_rack)
-        if np.linalg.norm(offset_array) > 0:
-            print(f"Applying offset in rack coordinate system: ({offset_array[0]:.6f}, {offset_array[1]:.6f}, {offset_array[2]:.6f})")
-            # Add offset to the translation part of server2rack matrix
-            server2rack[:3, 3] += offset_array
-            print(f"✓ Offset applied to server position in rack frame")
-        
-        # Step 2: Reload rack2base transformation matrix from service (in case it has changed)
-        print(f"\nStep 2: Reloading rack2base transformation matrix from service...")
+        # Step 1: Reload rack2base transformation matrix from service (in case it has changed)
+        print(f"\nStep 1: Reloading rack2base transformation matrix from service...")
         self._load_rack2base_from_service()
         
         if self.rack_transformation_matrix_in_base is None:
             print("Failed to reload rack2base transformation matrix")
             return -1
         
-        rack2base = self.rack_transformation_matrix_in_base
         print(f"✓ rack2base transformation matrix reloaded successfully")
         
-        # Step 3: Calculate server2base = rack2base @ server2rack
-        print(f"\nStep 3: Calculating server2base transformation...")
-        server2base = rack2base @ server2rack
+        # Step 2: Calculate server2base transformation matrix
+        print(f"\nStep 2: Calculating server2base transformation...")
+        server2base = self._calculate_server2base(index, offset_in_rack)
+        
+        if server2base is None:
+            print("Failed to calculate server2base transformation matrix")
+            return -1
         
         # Extract target position (xyz) from server2base
         target_position = server2base[:3, 3]
-        print(f"Target position in base coordinate system: ({target_position[0]:.6f}, "
-              f"{target_position[1]:.6f}, {target_position[2]:.6f})")
         
         # Get current TCP pose
         current_pose = self.robot.get_actual_tcp_pose()
@@ -546,10 +648,11 @@ class UROperateWobj:
         print(f"Using current TCP pose (rotation vector): ({current_rotation_vector[0]:.6f}, "
               f"{current_rotation_vector[1]:.6f}, {current_rotation_vector[2]:.6f})")
         
-        # Step 4: Execute movement in steps according to execution_order
-        print(f"\nStep 4: Moving robot to target position...")
+        # Step 3: Execute movement in steps according to execution_order
+        print(f"\nStep 3: Moving robot to target position...")
         
         # Extract rack coordinate system axes from transformation matrix
+        rack2base = self.rack_transformation_matrix_in_base
         rack_rotation = rack2base[:3, :3]
         # Normalize axes to ensure they are unit vectors for accurate projection
         rack_axes = {
