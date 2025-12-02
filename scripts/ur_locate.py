@@ -27,7 +27,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vis
 from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_params_from_json
 
 from ur_capture import URCapture
-from robot_status.client_utils import RobotStatusClient
+from robot_status_redis import RobotStatusClient
 
 
 class URLocate(URCapture):
