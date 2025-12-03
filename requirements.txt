@@ -7,7 +7,6 @@ flask
 flask-cors
 flask-socketio
 python-socketio
-nlopt
 thrift>=0.13.0
 numpy>=1.24.0,<2.0.0
 opencv-python
