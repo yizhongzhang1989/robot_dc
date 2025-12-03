@@ -229,7 +229,7 @@ lift_robot:
     device_id: 50             # Modbus slave ID for platform controller
     calibration_file: "platform_overshoot_calibration.json"  # Overshoot calibration config in colcon_ws/config/
     range_file: "platform_range.json"  # Platform range limits config in colcon_ws/config/
-    max_force_limit: 300.0    # Maximum allowable combined force (N) before emergency stop (CRITICAL SAFETY PARAMETER)
+    max_force_limit: 50000.0    # Maximum allowable combined force (N) before emergency stop (CRITICAL SAFETY PARAMETER), initially set to 50000N to disable this function, should change to reasonable value after calibration
     launch_delay: 3.0         # Launch delay after system start (seconds, allows modbus driver to initialize)
     status_publish_rate: 10.0 # Status publish frequency in Hz (10Hz = 100ms interval, higher = more responsive but more CPU load)
     
