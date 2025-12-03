@@ -212,14 +212,15 @@ class LiftRobotNodeAction(Node):
         self.get_logger().info(f"Subscribed to {force_topic_right} and {force_topic_left}")
         
         # ═══════════════════════════════════════════════════════════════
-        # Status Publisher (10Hz for web monitoring)
+        # Status Publisher (configurable rate, default 10Hz for web monitoring)
         # ═══════════════════════════════════════════════════════════════
         self.status_publisher = self.create_publisher(
             String,
             'lift_robot_platform/status',
             10
         )
-        self.status_timer = self.create_timer(0.1, self._publish_status)
+        self.status_timer = self.create_timer(self.status_publish_interval, self._publish_status)
+        self.get_logger().info(f"Status publisher initialized: {1.0/self.status_publish_interval:.1f}Hz (interval={self.status_publish_interval*1000:.1f}ms)")
         
         # Range Scan detection timer (10Hz)
         self.range_scan_timer = self.create_timer(0.1, self._range_scan_check)
@@ -311,13 +312,20 @@ class LiftRobotNodeAction(Node):
         
         # Load overshoot calibration file name from config
         overshoot_filename = 'platform_overshoot_calibration.json'
+        status_publish_rate = 10.0  # Default 10Hz
         try:
             from common.config_manager import ConfigManager
             config = ConfigManager()
             if config.has('lift_robot.platform.calibration_file'):
                 overshoot_filename = config.get('lift_robot.platform.calibration_file')
-        except Exception:
-            pass
+            if config.has('lift_robot.platform.status_publish_rate'):
+                status_publish_rate = float(config.get('lift_robot.platform.status_publish_rate'))
+                self.get_logger().info(f"Loaded status_publish_rate from config: {status_publish_rate} Hz")
+        except Exception as e:
+            self.get_logger().warn(f"Failed to load config (using defaults): {e}")
+        
+        # Calculate status publish interval
+        self.status_publish_interval = 1.0 / status_publish_rate if status_publish_rate > 0 else 0.1
         
         # ═══════════════════════════════════════════════════════════════
         # Load Overshoot Calibration Config
@@ -534,19 +542,7 @@ class LiftRobotNodeAction(Node):
             target = command_data.get('target', 'platform')
             seq_id_str = command_data.get('seq_id', str(uuid.uuid4())[:8])
             
-            if command == 'stop':
-                # Cancel the current active action
-                self.get_logger().info(f"[STOP] Stop command received for {target}")
-                
-                # Request cancel on the active goal handle
-                with self.action_lock:
-                    if self.active_goal_handle is not None:
-                        self.get_logger().info(f"[STOP] Requesting cancel on active {self.active_action_type}")
-                        self.active_goal_handle.cancel()
-                    else:
-                        self.get_logger().warn(f"[STOP] No active action to cancel for {target}")
-            
-            elif command == 'reset':
+            if command == 'reset':
                 self.get_logger().warn(f"[RESET] 🔴 Emergency reset triggered")
                 
                 # Step 1: Set emergency_reset state (Actions will detect and abort immediately)
@@ -825,7 +821,7 @@ class LiftRobotNodeAction(Node):
     # Status Publishing
     # ═══════════════════════════════════════════════════════════════
     def _publish_status(self):
-        """Publish current status (10Hz) - compatible with Web monitoring"""
+        """Publish current status (configurable rate, default 10Hz) - compatible with Web monitoring"""
         with self.state_lock:
             status = {
                 'height': self.current_height,

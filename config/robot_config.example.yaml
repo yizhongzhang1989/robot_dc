@@ -211,6 +211,7 @@ lift_robot:
     range_file: "platform_range.json"  # Platform range limits config in colcon_ws/config/
     max_force_limit: 300.0    # Maximum allowable combined force (N) before emergency stop (CRITICAL SAFETY PARAMETER)
     launch_delay: 3.0         # Launch delay after system start (seconds, allows modbus driver to initialize)
+    status_publish_rate: 10.0 # Status publish frequency in Hz (10Hz = 100ms interval, higher = more responsive but more CPU load)
     
     # Control Action Timeouts (seconds) - Max execution time for each control mode
     # If action exceeds timeout, it will abort with 'timeout' completion_reason
@@ -236,7 +237,6 @@ lift_robot:
     node_name_suffix: "right"
     calibration_file: "force_sensor_calibration_right.json"  # Calibration config in colcon_ws/config/
     launch_delay: 4.5         # Delay after modbus driver ready (seconds)
-    zero_drift_threshold: 65336  # Raw values > this threshold are filtered to 0 (zero drift elimination)
   
   # Force Sensor Node Configuration (Left Sensor)
   force_sensor_left:
@@ -246,7 +246,6 @@ lift_robot:
     node_name_suffix: "left"
     calibration_file: "force_sensor_calibration_left.json"  # Calibration config in colcon_ws/config/
     launch_delay: 5.0         # Delay after modbus driver ready (seconds)
-    zero_drift_threshold: 65336  # Raw values > this threshold are filtered to 0 (zero drift elimination)
   
   # Web Interface Node Configuration
   web:

@@ -82,7 +82,9 @@ def interactive_mode(robot):
             
             # Status commands
             elif command in ['status', 'st']:
-                robot.get_status()
+                import json
+                status = robot.get_status()
+                print(json.dumps(status, indent=2))
             
             elif command in ['sensor', 'sn']:
                 robot.get_sensor_data()

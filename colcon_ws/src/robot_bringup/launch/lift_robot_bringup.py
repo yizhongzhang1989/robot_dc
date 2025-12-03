@@ -46,14 +46,12 @@ def generate_launch_description():
     force_right_interval_default = get_config_value('lift_robot.force_sensor_right.read_interval', '0.06')
     force_right_topic_default = get_config_value('lift_robot.force_sensor_right.topic', '/force_sensor_right')
     force_right_delay_default = get_config_value('lift_robot.force_sensor_right.launch_delay', '4.5')
-    force_right_zero_drift_default = get_config_value('lift_robot.force_sensor_right.zero_drift_threshold', '65336')
     
     # Force sensor left defaults
     force_left_device_id_default = get_config_value('lift_robot.force_sensor_left.device_id', '53')
     force_left_interval_default = get_config_value('lift_robot.force_sensor_left.read_interval', '0.06')
     force_left_topic_default = get_config_value('lift_robot.force_sensor_left.topic', '/force_sensor_left')
     force_left_delay_default = get_config_value('lift_robot.force_sensor_left.launch_delay', '5.0')
-    force_left_zero_drift_default = get_config_value('lift_robot.force_sensor_left.zero_drift_threshold', '65336')
     
     # Web interface defaults
     web_enabled_default = get_config_value('lift_robot.web.enabled', 'true')
@@ -108,8 +106,6 @@ def generate_launch_description():
         'force_right_topic', default_value=force_right_topic_default, description='Right force sensor topic')
     force_right_delay_arg = DeclareLaunchArgument(
         'force_right_delay', default_value=force_right_delay_default, description='Right force sensor launch delay (s)')
-    force_right_zero_drift_arg = DeclareLaunchArgument(
-        'force_right_zero_drift', default_value=force_right_zero_drift_default, description='Right force sensor zero drift threshold')
     
     # Launch arguments - Force Sensor Left
     force_left_device_id_arg = DeclareLaunchArgument(
@@ -120,8 +116,6 @@ def generate_launch_description():
         'force_left_topic', default_value=force_left_topic_default, description='Left force sensor topic')
     force_left_delay_arg = DeclareLaunchArgument(
         'force_left_delay', default_value=force_left_delay_default, description='Left force sensor launch delay (s)')
-    force_left_zero_drift_arg = DeclareLaunchArgument(
-        'force_left_zero_drift', default_value=force_left_zero_drift_default, description='Left force sensor zero drift threshold')
     
     # Launch arguments - Web Interface
     web_enabled_arg = DeclareLaunchArgument(
@@ -212,8 +206,7 @@ def generate_launch_description():
                 'device_id': LaunchConfiguration('force_right_device_id'),
                 'topic_name': LaunchConfiguration('force_right_topic'),
                 'node_name_suffix': 'right',
-                'read_interval': LaunchConfiguration('force_right_interval'),
-                'zero_drift_threshold': LaunchConfiguration('force_right_zero_drift')
+                'read_interval': LaunchConfiguration('force_right_interval')
             }.items()
         )]
     )
@@ -227,8 +220,7 @@ def generate_launch_description():
                 'device_id': LaunchConfiguration('force_left_device_id'),
                 'topic_name': LaunchConfiguration('force_left_topic'),
                 'node_name_suffix': 'left',
-                'read_interval': LaunchConfiguration('force_left_interval'),
-                'zero_drift_threshold': LaunchConfiguration('force_left_zero_drift')
+                'read_interval': LaunchConfiguration('force_left_interval')
             }.items()
         )]
     )
@@ -268,13 +260,11 @@ def generate_launch_description():
         force_right_interval_arg,
         force_right_topic_arg,
         force_right_delay_arg,
-        force_right_zero_drift_arg,
         # Force sensor left arguments
         force_left_device_id_arg,
         force_left_interval_arg,
         force_left_topic_arg,
         force_left_delay_arg,
-        force_left_zero_drift_arg,
         # Web interface arguments
         web_enabled_arg,
         web_port_arg,

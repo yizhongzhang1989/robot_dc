@@ -43,8 +43,6 @@ class LiftRobotForceSensorNode(Node):
         # web-based calibration and save to JSON config file.
         self.declare_parameter('calibration_scale', 0.116125)
         self.declare_parameter('calibration_offset', 0.0)  # Always 0.0 after tare
-        # Zero drift threshold: raw values > this threshold are filtered to 0
-        self.declare_parameter('zero_drift_threshold', 65336)
 
         self.device_id = self.get_parameter('device_id').value
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
@@ -54,7 +52,6 @@ class LiftRobotForceSensorNode(Node):
         self.node_name_suffix = self.get_parameter('node_name_suffix').value
         self.calibration_scale = float(self.get_parameter('calibration_scale').value)
         self.calibration_offset = float(self.get_parameter('calibration_offset').value)
-        self.zero_drift_threshold = int(self.get_parameter('zero_drift_threshold').value)
 
         # Log node info with suffix in message (node name itself stays as base name)
         node_identifier = f"{self.get_name()}_{self.node_name_suffix}" if self.node_name_suffix else self.get_name()
@@ -64,11 +61,8 @@ class LiftRobotForceSensorNode(Node):
         self.get_logger().info(
             f"[{node_identifier}] Calibration: actual_force = sensor_reading × {self.calibration_scale:.6f} + {self.calibration_offset:.6f}"
         )
-        self.get_logger().info(
-            f"[{node_identifier}] Zero drift threshold: {self.zero_drift_threshold} (raw values > threshold filtered to 0)"
-        )
 
-        self.controller = ForceSensorController(self.device_id, self, self.use_ack_patch, self.zero_drift_threshold)
+        self.controller = ForceSensorController(self.device_id, self, self.use_ack_patch)
         self.controller.initialize()
 
         # Sequence id generator
