@@ -660,14 +660,23 @@ class URWobjCloseLeft(UROperateWobj):
     def execute_close_left_sequence(self):
         """
         Execute the complete sequence for closing left handle operation.
-        This includes:
-        1. Move to target server position
-        2. Touch left handle
-        3. Close left handle (6 motions)
-        4. Touch server
-        5. Push server after close
-        6. Pull server
-        7. Move away from server
+        
+        Steps:
+        1. Correct TCP pose
+        2. Move to target server position (for vision positioning)
+        3. Update server2base_matrix by vision positioning
+        4. Move to target server position
+        5. Correct TCP pose (with tool angle)
+        6. Move to close left handle position
+        7. Close left handle (complete sequence with 6 motions)
+        8. Move away from the server
+        9. Move to server push position (reset server2base to init)
+        10. Push server after close
+        11. Move to leave the server and prepare for pull out
+        12. Touch the server
+        13. Pull server
+        14. Move to leave the server
+        15. Move away from the server
         """
         print("\n" + "="*70)
         print("STARTING COMPLETE CLOSE LEFT HANDLE SEQUENCE")

@@ -405,6 +405,22 @@ class URWobjOpenHandle(UROperateWobj):
     def execute_open_handle_sequence(self):
         """
         Execute complete open handle sequence following the task flow
+        
+        Steps:
+        1. Correct TCP pose
+        2. Move to target server position
+        3. Move to open handle start position
+        4. Touch the handle before opening
+        5. Open left handle (prepull and open)
+        6. Move away from handle
+        7. Move to server push position
+        8. Push server to end after opening handle
+        9. Move to leave the server
+        10. Move under the server
+        11. Touch the server
+        12. Pull the server
+        13. Move to leave the server
+        14. Move away from the server
         """
         print("\n" + "="*70)
         print("STARTING COMPLETE OPEN HANDLE SEQUENCE")

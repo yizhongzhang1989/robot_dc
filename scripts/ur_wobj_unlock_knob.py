@@ -593,6 +593,26 @@ class UROperateWobjUnlockKnob(UROperateWobj):
     def execute_complete_unlock_sequence(self):
         """
         Execute complete unlock sequence for both knobs following the task flow
+        
+        Steps:
+        1. Correct TCP pose to align with rack coordinate system
+        2. Move to target position (approach left knob)
+        3. Move to left knob position
+        4. Touch left knob
+        5. Move away from knob slightly
+        6. Unlock left knob
+        7. Move away from server
+        8. Open left handle
+        9. Move away from left handle
+        10. Correct TCP pose (for right knob)
+        11. Move to target position (approach right knob)
+        12. Move to right knob position
+        13. Touch right knob
+        14. Move away from knob slightly
+        15. Unlock right knob
+        16. Move away from server
+        17. Open right handle
+        18. Move away from right handle
         """
         print("\n" + "="*70)
         print("STARTING COMPLETE KNOB UNLOCK SEQUENCE")

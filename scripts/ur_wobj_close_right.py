@@ -606,16 +606,21 @@ class URWobjCloseRight(UROperateWobj):
     def execute_close_right_sequence(self):
         """
         Execute the complete sequence for closing right handle operation.
-        This includes:
+        
+        Steps:
         1. Correct TCP pose
-        2. Move to target server position
-        3. Update server2base by vision positioning
-        4. Touch right handle
-        5. Close right handle (6 motions)
-        6. Move away and up
-        7. Touch server
-        8. Pull server
-        9. Move away from server
+        2. Move to target server position (for vision positioning)
+        3. Update server2base_matrix by vision positioning
+        4. Move to target server position
+        5. Correct TCP pose (with tool angle)
+        6. Move to close right handle position
+        7. Close right handle (complete sequence with 6 motions)
+        8. Move away from the server
+        9. Move to leave the server and prepare for pull out
+        10. Touch server
+        11. Pull server
+        12. Move to leave the server
+        13. Move away from the server
         """
         print("\n" + "="*70)
         print("STARTING COMPLETE CLOSE RIGHT HANDLE SEQUENCE")
