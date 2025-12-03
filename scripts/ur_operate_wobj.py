@@ -14,7 +14,7 @@ from generate_server_frame import GenerateServerFrame
 class UROperateWobj:
     def __init__(self, robot_ip=None, robot_port=None, server_index=14):
         # Load config parameters if not provided
-        config_params = self._load_config_parameters()
+        config_params = self._load_robot_parameters_from_config()
         
         # =========================== Configurable Parameters ===========================
         self.robot_ip = robot_ip if robot_ip is not None else config_params['robot_ip']
@@ -56,7 +56,7 @@ class UROperateWobj:
         self._calculate_server2base(self.server_index)
     
     # ================================== Private Helper Methods ==================================
-    def _load_config_parameters(self):
+    def _load_robot_parameters_from_config(self):
         """
         Load robot IP and port from robot_config.yaml
         

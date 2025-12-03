@@ -3311,7 +3311,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_unlock_knob', methods=['POST'])
         def execute_unlock_knob():
-            """Execute unlock knob script (ur_op_unlock_knob.py)."""
+            """Execute unlock knob script (ur_wobj_unlock_knob.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3321,11 +3321,22 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_op_unlock_knob.py')
+                script_path = os.path.join(scripts_dir, 'ur_wobj_unlock_knob.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
                 self.get_logger().info(f"Execute unlock knob command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3359,7 +3370,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_open_handle', methods=['POST'])
         def execute_open_handle():
-            """Execute open handle script (ur_op_open_handle.py)."""
+            """Execute open handle script (ur_wobj_open_handle.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3369,11 +3380,22 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_op_open_handle.py')
+                script_path = os.path.join(scripts_dir, 'ur_wobj_open_handle.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
                 self.get_logger().info(f"Execute open handle command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3407,7 +3429,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_close_left', methods=['POST'])
         def execute_close_left():
-            """Execute close left script (ur_op_close_left.py)."""
+            """Execute close left script (ur_wobj_close_left.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3417,11 +3439,22 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_op_close_left.py')
+                script_path = os.path.join(scripts_dir, 'ur_wobj_close_left.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
                 self.get_logger().info(f"Execute close left command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3455,7 +3488,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_close_right', methods=['POST'])
         def execute_close_right():
-            """Execute close right script (ur_op_close_right.py)."""
+            """Execute close right script (ur_wobj_close_right.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3465,11 +3498,22 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_op_close_right.py')
+                script_path = os.path.join(scripts_dir, 'ur_wobj_close_right.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
                 self.get_logger().info(f"Execute close right command: {' '.join(cmd)}")
                 
                 def monitor_process():

@@ -2339,40 +2339,6 @@ function locateLastOperation() {
     });
 }
 
-function locateUnlockKnob() {
-    logToWeb('🔓 Locate Unlock Knob button clicked', 'info');
-    
-    const btn = document.getElementById('locateUnlockKnobBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    
-    fetch('/locate_unlock_knob', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb(`✅ ${data.message}`, 'success');
-        } else {
-            logToWeb(`❌ Error: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        logToWeb(`❌ Network error: ${error.message}`, 'error');
-    })
-    .finally(() => {
-        setTimeout(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }, 2000);
-    });
-}
-
 function executeUnlockKnob() {
     logToWeb('🔧 Execute Unlock Knob button clicked', 'info');
     
@@ -2383,40 +2349,6 @@ function executeUnlockKnob() {
     }
     
     fetch('/execute_unlock_knob', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb(`✅ ${data.message}`, 'success');
-        } else {
-            logToWeb(`❌ Error: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        logToWeb(`❌ Network error: ${error.message}`, 'error');
-    })
-    .finally(() => {
-        setTimeout(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }, 2000);
-    });
-}
-
-function locateOpenHandle() {
-    logToWeb('🕹️ Locate Open Handle button clicked', 'info');
-    
-    const btn = document.getElementById('locateOpenHandleBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    
-    fetch('/locate_open_handle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })
@@ -2475,40 +2407,6 @@ function executeOpenHandle() {
     });
 }
 
-function locateCloseLeft() {
-    logToWeb('⬅️ Locate Close Left button clicked', 'info');
-    
-    const btn = document.getElementById('locateCloseLeftBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    
-    fetch('/locate_close_left', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb(`✅ ${data.message}`, 'success');
-        } else {
-            logToWeb(`❌ Error: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        logToWeb(`❌ Network error: ${error.message}`, 'error');
-    })
-    .finally(() => {
-        setTimeout(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }, 2000);
-    });
-}
-
 function executeCloseLeft() {
     logToWeb('◀️ Execute Close Left button clicked', 'info');
     
@@ -2519,40 +2417,6 @@ function executeCloseLeft() {
     }
     
     fetch('/execute_close_left', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb(`✅ ${data.message}`, 'success');
-        } else {
-            logToWeb(`❌ Error: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        logToWeb(`❌ Network error: ${error.message}`, 'error');
-    })
-    .finally(() => {
-        setTimeout(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }, 2000);
-    });
-}
-
-function locateCloseRight() {
-    logToWeb('➡️ Locate Close Right button clicked', 'info');
-    
-    const btn = document.getElementById('locateCloseRightBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    
-    fetch('/locate_close_right', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })

@@ -21,6 +21,9 @@ class URWobjCloseRight(UROperateWobj):
         # Call parent class constructor
         super().__init__(robot_ip=robot_ip, robot_port=robot_port, server_index=server_index)
         
+        # Load tool parameters from config file
+        self._load_tool_pushpull_parameters_from_config()
+        
         # Store operation name
         self.operation_name = "close_right"
         
@@ -33,6 +36,57 @@ class URWobjCloseRight(UROperateWobj):
         self._calculate_server2base(self.server_index)
         
         print(f"URWobjCloseRight initialized for server index: {server_index}")
+
+    def _load_tool_pushpull_parameters_from_config(self):
+        """
+        Load tool_pushpull parameters from robot_config.yaml
+        
+        Loads:
+            - tool_length: Length of the tool from flange to tip (meters)
+            - tool_angle_z: Rotation angle around Z axis (degrees)
+        """
+        # Default values
+        defaults = {
+            'tool_length': 0.325,
+            'tool_angle_z': -31
+        }
+        
+        try:
+            import yaml
+            from common.workspace_utils import get_workspace_root
+            
+            # Get workspace root
+            workspace_root = get_workspace_root()
+            if workspace_root is None:
+                workspace_root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+            
+            # Path to config file
+            config_path = os.path.join(workspace_root, 'config', 'robot_config.yaml')
+            
+            if not os.path.exists(config_path):
+                print(f"Config file not found: {config_path}")
+                print(f"Using default tool_pushpull values: length={defaults['tool_length']}, angle_z={defaults['tool_angle_z']}")
+                self.tool_length = defaults['tool_length']
+                self.tool_angle_z = defaults['tool_angle_z']
+                return
+            
+            # Load config file
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Get tool_pushpull parameters from ur15.tool.tool_pushpull
+            tool_pushpull = config.get('ur15', {}).get('tool', {}).get('tool_pushpull', {})
+            
+            self.tool_length = tool_pushpull.get('length', defaults['tool_length'])
+            self.tool_angle_z = tool_pushpull.get('angle_z', defaults['tool_angle_z'])
+            
+            print(f"✓ Loaded tool_pushpull parameters: length={self.tool_length}m, angle_z={self.tool_angle_z}°")
+            
+        except Exception as e:
+            print(f"Error loading tool_pushpull parameters: {e}")
+            print(f"Using default values: length={defaults['tool_length']}, angle_z={defaults['tool_angle_z']}")
+            self.tool_length = defaults['tool_length']
+            self.tool_angle_z = defaults['tool_angle_z']
 
     def _initialize_ur_positioning(self):
         """Initialize URPositioning instance for camera capture and positioning"""
@@ -629,7 +683,7 @@ class URWobjCloseRight(UROperateWobj):
             tcp_x_to_rack=[1, 0, 0],
             tcp_y_to_rack=[0, 0, -1],
             tcp_z_to_rack=[0, 1, 0],
-            angle_deg=31
+            angle_deg=-self.tool_angle_z
         )
         if result != 0:
             print(f"[ERROR] Failed to correct TCP pose (error code: {result})")
