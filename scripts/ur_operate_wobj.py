@@ -284,6 +284,16 @@ class UROperateWobj:
         print(f"Target position in base coordinate system: ({server_position[0]:.6f}, "
               f"{server_position[1]:.6f}, {server_position[2]:.6f})")
         
+        # Step 5: Upload server2base_matrix to Redis
+        if self.robot_status_client is not None:
+            try:
+                self.robot_status_client.set_status('ur15', 'server2base_matrix', server2base)
+                print(f"✓ server2base_matrix uploaded to Redis successfully")
+            except Exception as e:
+                print(f"✗ Failed to upload server2base_matrix to Redis: {e}")
+        else:
+            print("Robot status client is not initialized, skipping server2base_matrix upload")
+        
         return server2base
 
     # ============================= Robot Movement and Control Methods =============================
@@ -626,16 +636,49 @@ class UROperateWobj:
         
         print(f"✓ rack2base transformation matrix reloaded successfully")
         
-        # Step 2: Calculate server2base transformation matrix
-        print(f"\nStep 2: Calculating server2base transformation...")
-        server2base = self._calculate_server2base(index, offset_in_rack)
+        # Step 2: Load server2base transformation matrix from Redis
+        print(f"\nStep 2: Loading server2base transformation matrix from Redis...")
         
-        if server2base is None:
-            print("Failed to calculate server2base transformation matrix")
+        if self.robot_status_client is None:
+            print("Robot status client is not initialized")
+            return -1
+        
+        try:
+            server2base_matrix = self.robot_status_client.get_status('ur15', 'server2base_matrix')
+            if server2base_matrix is None:
+                print("Failed to get server2base_matrix from Redis")
+                return -1
+            
+            server2base = np.array(server2base_matrix)
+            
+            # Validate matrix shape (should be 4x4)
+            if server2base.shape != (4, 4):
+                print(f"Invalid server2base_matrix shape: {server2base.shape}, expected (4, 4)")
+                return -1
+            
+            print(f"✓ server2base transformation matrix loaded successfully from Redis")
+            
+            # Apply additional offset if provided
+            if offset_in_rack != [0, 0, 0]:
+                offset_array = np.array(offset_in_rack)
+                print(f"Applying additional offset in rack coordinate system: ({offset_array[0]:.6f}, {offset_array[1]:.6f}, {offset_array[2]:.6f})")
+                
+                # Transform offset from rack frame to base frame
+                rack_rotation = self.rack_transformation_matrix_in_base[:3, :3]
+                offset_in_base = rack_rotation @ offset_array
+                
+                # Apply offset to server position in base frame
+                server2base[:3, 3] += offset_in_base
+                print(f"✓ Offset applied to server position")
+            
+        except Exception as e:
+            print(f"Error loading server2base_matrix from Redis: {e}")
             return -1
         
         # Extract target position (xyz) from server2base
         target_position = server2base[:3, 3]
+        print(f"Target position in base coordinate system: ({target_position[0]:.6f}, "
+              f"{target_position[1]:.6f}, {target_position[2]:.6f})")
         
         # Get current TCP pose
         current_pose = self.robot.get_actual_tcp_pose()

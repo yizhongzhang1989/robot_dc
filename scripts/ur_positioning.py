@@ -109,7 +109,7 @@ class URPositioning(Node):
         
         self.template_points = [
             {"name": "Server_Top_Left_Corner",  "x": -0.094, "y": 0, "z": 0.017},
-            {"name": "Serverk_Top_Right_Corner", "x": 0.186, "y": 0, "z": 0.017},
+            {"name": "Server_Top_Right_Corner", "x": 0.186, "y": 0, "z": 0.017},
             {"name": "Server_Bottom_Left_Corner", "x": -0.094, "y": 0, "z": 0.006},
             {"name": "Server_Bottom_Right_Corner", "x": 0.186, "y": 0, "z": 0.006}
         ]
