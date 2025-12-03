@@ -1,8 +1,12 @@
 import os
 import time
 import numpy as np
+import threading
 from scipy.spatial.transform import Rotation as R
 from ur_operate_wobj import UROperateWobj
+from ur_positioning import URPositioning
+import rclpy
+from rclpy.executors import MultiThreadedExecutor
 
 
 class URWobjCloseLeft(UROperateWobj):
@@ -17,63 +21,110 @@ class URWobjCloseLeft(UROperateWobj):
         # Call parent class constructor
         super().__init__(robot_ip=robot_ip, robot_port=robot_port, server_index=server_index)
         
+        # Store operation name
+        self.operation_name = "close_left"
+        
+        # Initialize URPositioning instance and ROS2 executor
+        self.ur_positioning = None
+        self.executor = None
+        self.spin_thread = None
+        self._initialize_ur_positioning()
+
+        self._calculate_server2base(self.server_index)
+        
         print(f"URWobjCloseLeft initialized for server index: {server_index}")
 
+    def _initialize_ur_positioning(self):
+        """Initialize URPositioning instance for camera capture and positioning"""
+        try:
+            print(f'Initializing URPositioning for operation: {self.operation_name}...')
+            
+            # Initialize ROS2 if not already initialized
+            if not rclpy.ok():
+                rclpy.init()
+                print('✓ ROS2 initialized')
+            
+            self.ur_positioning = URPositioning(
+                robot_ip=self.robot_ip,
+                robot_port=self.robot_port,
+                camera_topic="/ur15_camera/image_raw",
+                operation_name=self.operation_name
+            )
+            
+            # Create executor and start spinning in separate thread
+            self.executor = MultiThreadedExecutor()
+            self.executor.add_node(self.ur_positioning)
+            
+            self.spin_thread = threading.Thread(target=self.executor.spin, daemon=True)
+            self.spin_thread.start()
+            
+            print('✓ URPositioning initialized successfully')
+            print('✓ ROS2 executor started in background thread')
+            
+            # Wait a moment for camera subscription to be ready
+            time.sleep(2.0)
+            
+        except Exception as e:
+            print(f'✗ Failed to initialize URPositioning: {e}')
+            import traceback
+            traceback.print_exc()
+            self.ur_positioning = None
+
+    def cleanup(self):
+        """Cleanup resources"""
+        try:
+            if self.executor is not None:
+                self.executor.shutdown()
+                print('✓ ROS2 executor shutdown')
+            
+            if rclpy.ok():
+                rclpy.shutdown()
+                print('✓ ROS2 shutdown')
+        except Exception as e:
+            print(f'Warning: Error during cleanup: {e}')
+
+    def update_server2base_by_positioning(self):
+        """
+        Update server2base_matrix using vision positioning.
+        
+        This method:
+        1. Calls auto_positioning() to perform vision-based positioning
+        2. Extracts the local2world transformation matrix from the result
+        3. Updates self.server2base_matrix with the vision-corrected coordinate system
+        
+        Returns:
+            int: 0 if successful, -1 if failed
+        """
+        if self.ur_positioning is None:
+            print("[ERROR] URPositioning is not initialized")
+            return -1
+        
+        print("Updating server coordinate system using vision positioning...")
+        
+        # Execute auto positioning to get updated server coordinate system
+        positioning_result = self.ur_positioning.auto_positioning()
+        
+        # Check if positioning was successful
+        if not isinstance(positioning_result, dict) or not positioning_result.get('success', False):
+            print(f"[ERROR] Auto positioning failed")
+            if isinstance(positioning_result, dict):
+                error_msg = positioning_result.get('result', {}).get('error_message', 'Unknown error')
+                print(f"  Error: {error_msg}")
+            return -1
+        
+        # Read updated server2base_matrix from positioning result
+        local2world = positioning_result.get('result', {}).get('local2world', None)
+        if local2world is None:
+            print("[ERROR] No transformation matrix in positioning result")
+            return -1
+        
+        # Update self.server2base_matrix with vision-corrected coordinate system
+        self.server2base_matrix = np.array(local2world)
+        print("✓ server2base_matrix updated from vision positioning result")
+        
+        return 0
 
     # ================================ Force Control Functions ================================
-    def force_task_touch_left_handle(self):
-        """
-        Execute force control task to touch the left handle using server coordinate system.
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-        
-        if self.server2base_matrix is None:
-            print("Server coordinate system transformation matrix not loaded")
-            return -1
-        
-        # Get current TCP pose
-        tcp_pose = self.robot.get_actual_tcp_pose()
-        print(f"[INFO] Current TCP pose: {tcp_pose}")
-        
-        # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
-        
-        # Create task frame using current position with server orientation
-        task_frame = [
-            tcp_pose[0],        # x (current position)
-            tcp_pose[1],        # y
-            tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
-        ]
-        
-        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
-        
-        # Set force mode parameters
-        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [0, 25, 0, 0, 0, 0]  # Desired force/torque in each direction
-        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
-        
-        print("[INFO] Starting force control task - touching left handle...")
-        
-        # Execute force control task with distance-based termination
-        result = self.robot.force_control_task(
-            task_frame=task_frame,
-            selection_vector=selection_vector,
-            wrench=wrench,
-            limits=limits,
-            damping=0.05,
-            end_type=3,
-            end_distance=[0.02, 0.10, 0.02, 0, 0, 0]
-        )
-        time.sleep(0.5)
-        return result
-
     def force_task_close_left_handle(self):
         """
         Execute force control task to close the left handle using server coordinate system.
@@ -95,18 +146,18 @@ class URWobjCloseLeft(UROperateWobj):
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
         # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
         # Create task frame using current position with server orientation
         task_frame = [
             tcp_pose[0],        # x (current position)
             tcp_pose[1],        # y
             tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
@@ -144,18 +195,18 @@ class URWobjCloseLeft(UROperateWobj):
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
         # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
         # Create task frame using current position with server orientation
         task_frame = [
             tcp_pose[0],        # x (current position)
             tcp_pose[1],        # y
             tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
@@ -222,18 +273,18 @@ class URWobjCloseLeft(UROperateWobj):
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
         # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
         # Create task frame using current position with server orientation
         task_frame = [
             tcp_pose[0],        # x (current position)
             tcp_pose[1],        # y
             tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
@@ -292,33 +343,33 @@ class URWobjCloseLeft(UROperateWobj):
         print("[INFO] Motion 5 completed successfully")
         time.sleep(0.5)
 
-        # ==============Motion 6: push to lock the knob=================
-        print("\n[Motion 6] Pushing to lock the knob...")
+        # ==============Motion 6: push server to end=================
+        print("\n[Motion 6] Pushing to server to end...")
         
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
         # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
         # Create task frame using current position with server orientation
         task_frame = [
             tcp_pose[0],        # x (current position)
             tcp_pose[1],        # y
             tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters for locking
-        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
-        wrench = [-15, 30, 0, 0, 0, 0]  # Desired force/torque in each direction
+        selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
+        wrench = [0, 40, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -330,8 +381,8 @@ class URWobjCloseLeft(UROperateWobj):
             wrench=wrench,
             limits=limits,
             damping=0.05,
-            end_type=3,
-            end_distance=[0.08, 0.10, 0, 0, 0, 0]
+            end_type=1,
+            end_time=3.0
         )
         
         if result6 != 0:
@@ -340,11 +391,60 @@ class URWobjCloseLeft(UROperateWobj):
         
         print("[INFO] Motion 6 completed successfully")
         time.sleep(0.5)
+
+        # ==============Motion 7: push to lock the knob=================
+        print("\n[Motion 7] Pushing to lock the knob...")
+        
+        # Get current TCP pose
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Extract rotation matrix from server transformation matrix and convert to rotation vector
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
+        
+        # Create task frame using current position with server orientation
+        task_frame = [
+            tcp_pose[0],        # x (current position)
+            tcp_pose[1],        # y
+            tcp_pose[2],        # z
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
+        ]
+        
+        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
+        
+        # Set force mode parameters for locking
+        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
+        wrench = [-25, 30, 0, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - locking knob...")
+        
+        # Execute force control with distance-based termination
+        result7 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.05,
+            end_type=3,
+            end_distance=[0.07, 0.10, 0, 0, 0, 0]
+        )
+        
+        if result7 != 0:
+            print(f"[ERROR] Motion 7 failed with code: {result7}")
+            return result7
+        
+        print("[INFO] Motion 7 completed successfully")
+        time.sleep(0.5)
         
         print("[INFO] CloseLeft handle sequence completed successfully")
         return 0
 
-    def force_task_push_server_after_close(self):
+    def force_task_push_server_after_close_left(self):
         """
         Execute force control task to push server to end after closing handle using server coordinate system.
         """
@@ -361,25 +461,25 @@ class URWobjCloseLeft(UROperateWobj):
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
         # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
         # Create task frame using current position with server orientation
         task_frame = [
             tcp_pose[0],        # x (current position)
             tcp_pose[1],        # y
             tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
-        wrench = [0, 30, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 50, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pushing server...")
@@ -392,7 +492,7 @@ class URWobjCloseLeft(UROperateWobj):
             limits=limits,
             damping=0.1,
             end_type=1,
-            end_time=5
+            end_time=3.5
         )
         time.sleep(0.5)
         return result
@@ -414,18 +514,18 @@ class URWobjCloseLeft(UROperateWobj):
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
         # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
         # Create task frame using current position with server orientation
         task_frame = [
             tcp_pose[0],        # x (current position)
             tcp_pose[1],        # y
             tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
@@ -445,7 +545,7 @@ class URWobjCloseLeft(UROperateWobj):
             limits=limits,
             damping=0.1,
             end_type=2,
-            end_force=[0, 0, 2, 0, 0, 0]
+            end_force=[0, 0, 15, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
@@ -467,18 +567,18 @@ class URWobjCloseLeft(UROperateWobj):
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
         # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
         # Create task frame using current position with server orientation
         task_frame = [
             tcp_pose[0],        # x (current position)
             tcp_pose[1],        # y
             tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
@@ -498,13 +598,13 @@ class URWobjCloseLeft(UROperateWobj):
             limits=limits,
             damping=0.1,
             end_type=3,
-            end_distance=[0, 0.35, 0, 0, 0, 0]
+            end_distance=[0, 0.05, 0, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
 
     # ================================ Complete Sequence ================================
-    def execute_complete_close_left_sequence(self):
+    def execute_close_left_sequence(self):
         """
         Execute the complete sequence for closing left handle operation.
         This includes:
@@ -535,33 +635,79 @@ class URWobjCloseLeft(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 2: Move to target server position with offset
+        # Step 2: Move to target position with offset to update server2base_matrix
         print("\n" + "="*50)
         print("Step 2: Moving to target server position...")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.60, 0]
+            offset_in_rack=[0, -0.70, 0]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 3: Touch left handle
+        # Step 3: Update server2base_matrix by vision positioning
         print("\n" + "="*50)
-        print("Step 3: Touching left handle...")
+        print("Step 3: Updating server coordinate system...")
         print("="*50)
-        result = self.force_task_touch_left_handle()
+        
+        result = self.update_server2base_by_positioning()
         if result != 0:
-            print(f"[ERROR] Failed to touch left handle (error code: {result})")
+            print(f"[ERROR] Failed to update server coordinate system")
             return result
         time.sleep(0.5)
 
-        # Step 4: Close left handle (complete sequence with 6 motions)
+        # Step 4: Move to target server position with offset
         print("\n" + "="*50)
-        print("Step 4: Closing left handle...")
+        print("Step 4: Moving to target server position...")
+        print("="*50)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0, -0.65, 0]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to target position (error code: {result})")
+            return result
+        time.sleep(0.5)
+
+        # Step 5: Correct TCP pose
+        print("\n" + "="*50)
+        print("Step 5: Correcting TCP pose...")
+        print("="*50)
+        result = self.movel_to_correct_tcp_pose(
+            tcp_x_to_rack=[1, 0, 0],
+            tcp_y_to_rack=[0, 0, -1],
+            tcp_z_to_rack=[0, 1, 0],
+            angle_deg=31
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to correct TCP pose (error code: {result})")
+            return result
+        time.sleep(0.5)
+
+        # Step 6: Move to close left handle position
+        print("\n" + "="*50)
+        print("Step 6: Moving to close left handle position...")
+        print("="*50)
+        result = self.movel_in_server_frame([-0.24, 0, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move to close left handle position (error code: {result})")
+            return result
+        time.sleep(0.5)
+
+        result = self.movel_in_server_frame([0, 0.13, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from right knob")
+            return result
+        time.sleep(0.5)
+
+        # Step 7: Close left handle (complete sequence with 6 motions)
+        print("\n" + "="*50)
+        print("Step 7: Closing left handle...")
         print("="*50)
         result = self.force_task_close_left_handle()
         if result != 0:
@@ -569,39 +715,66 @@ class URWobjCloseLeft(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 5: Move in server frame to touch server
+        # Step 8: Move away from the server
         print("\n" + "="*50)
-        print("Step 5: Moving to touch server...")
+        print("Step 8: Moving away from the server...")
         print("="*50)
-        result = self.movel_in_server_frame([0, 0, 0.02])
+        result = self.movel_in_rack_frame([0, -0.20, 0])
         if result != 0:
-            print(f"[ERROR] Failed to move to touch position (error code: {result})")
+            print(f"[ERROR] Failed to move away (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 6: Touch server
+        # Step 9: Move to push server position, update server2base to init
         print("\n" + "="*50)
-        print("Step 6: Touching server...")
+        print("Step 9: Moving to server push position...")
         print("="*50)
-        result = self.force_task_touch_server()
+        self._calculate_server2base(self.server_index)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0.03, -0.50, 0.025]  # Offset to reach server push position
+        )
         if result != 0:
-            print(f"[ERROR] Failed to touch server (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 7: Push server after close
+        # Step 10: Push server after close
         print("\n" + "="*50)
-        print("Step 7: Pushing server after close...")
+        print("Step 10: Pushing server after close...")
         print("="*50)
-        result = self.force_task_push_server_after_close()
+        result = self.force_task_push_server_after_close_left()
         if result != 0:
             print(f"[ERROR] Failed to push server (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 8: Pull server
+        # Step 11: Move to leave the server and prepare for pull out
         print("\n" + "="*50)
-        print("Step 8: Pulling server...")
+        print("Step 11: Moving to leave the server and prepare for pull out...")
+        print("="*50)
+        result = self.movel_in_server_frame([0, -0.05, -0.035])
+        if result != 0:
+            return result
+        time.sleep(0.5)
+
+        result = self.movel_in_server_frame([0, 0.06, 0])
+        if result != 0:
+            return result
+        time.sleep(0.5)
+
+        # Step 12: Force control to touch the server
+        print("\n" + "="*50)
+        print("Step 12: Force control to touch the server...")
+        print("="*50)
+        result = self.force_task_touch_server()
+        if result != 0:
+            return result
+        time.sleep(0.5)
+
+        # Step 13: Pull server
+        print("\n" + "="*50)
+        print("Step 13: Pulling server...")
         print("="*50)
         result = self.force_task_pull_server()
         if result != 0:
@@ -609,21 +782,20 @@ class URWobjCloseLeft(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 9: Move to leave the server
+        # Step 14: Move to leave the server
         print("\n" + "="*50)
-        print("Step 9: Moving to leave the server...")
+        print("Step 14: Moving to leave the server...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.02, -0.04])
         if result != 0:
-            print(f"[ERROR] Failed to leave server (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 10: Move away from the server
+        # Step 15: Move away from the server
         print("\n" + "="*50)
-        print("Step 10: Moving away from the server...")
+        print("Step 15: Moving away from the server...")
         print("="*50)
-        result = self.movel_in_server_frame([0, -0.10, 0])
+        result = self.movel_in_rack_frame([0, -0.20, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away (error code: {result})")
             return result
@@ -687,7 +859,7 @@ if __name__ == "__main__":
     print("="*70)
     
     try:
-        result = ur_wobj_close_left.execute_complete_close_left_sequence()
+        result = ur_wobj_close_left.execute_close_left_sequence()
         
         if result == 0:
             print("\n✓ Task completed successfully!")
@@ -700,3 +872,6 @@ if __name__ == "__main__":
         print(f"\n✗ Error during task execution: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        # Cleanup resources
+        ur_wobj_close_left.cleanup()
