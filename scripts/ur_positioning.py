@@ -522,18 +522,12 @@ class URPositioning(Node):
         try:
             # Step 1: Upload reference
             print("\n>>> Step 1: Uploading reference data...")
-            refs = self.positioning_client.list_references()
-            reference_exists = refs.get('success') and self.operation_name in refs.get('references', {})
-            
-            if not reference_exists:
-                result = self.positioning_client.upload_references()
-                if result.get('success'):
-                    print(f"  ✓ Reference uploaded: {result.get('references_loaded', 0)}/{result.get('references_found', 0)}")
-                else:
-                    print(f"  ✗ Failed to upload reference: {result.get('error')}")
-                    return None
+            result = self.positioning_client.upload_references()
+            if result.get('success'):
+                print(f"  ✓ Reference uploaded: {result.get('references_loaded', 0)}/{result.get('references_found', 0)}")
             else:
-                print(f"  ✓ Reference '{self.operation_name}' already exists")
+                print(f"  ✗ Failed to upload reference: {result.get('error')}")
+                return None
             
             # Step 2: Initialize session
             print("\n>>> Step 2: Initializing session...")
