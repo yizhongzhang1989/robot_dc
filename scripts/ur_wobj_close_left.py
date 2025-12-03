@@ -806,7 +806,7 @@ class URWobjCloseLeft(UROperateWobj):
         print("\n" + "="*50)
         print("Step 11: Moving to leave the server and prepare for pull out...")
         print("="*50)
-        result = self.movel_in_server_frame([0, -0.05, -0.035])
+        result = self.movel_in_server_frame([0, -0.05, -0.045])
         if result != 0:
             return result
         time.sleep(0.5)

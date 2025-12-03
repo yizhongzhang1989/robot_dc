@@ -421,7 +421,7 @@ class URWobjCloseRight(UROperateWobj):
         
         # Set force mode parameters for locking
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
-        wrench = [0, 60, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 80, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -470,7 +470,7 @@ class URWobjCloseRight(UROperateWobj):
         
         # Set force mode parameters for locking
         selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [25, 25, 0, 0, 0, -1.0]
+        wrench = [30, 30, 0, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -584,7 +584,7 @@ class URWobjCloseRight(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
-        wrench = [0, -50, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, -80, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pulling server...")
@@ -643,7 +643,7 @@ class URWobjCloseRight(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.70, 0]
+            offset_in_rack=[0, -0.375-self.tool_length, 0]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
@@ -668,7 +668,7 @@ class URWobjCloseRight(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.65, 0]
+            offset_in_rack=[0, -0.325-self.tool_length, 0]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
@@ -764,7 +764,7 @@ class URWobjCloseRight(UROperateWobj):
         print("\n" + "="*50)
         print("Step 12: Moving to leave the server...")
         print("="*50)
-        result = self.movel_in_server_frame([0, -0.015, -0.03])
+        result = self.movel_in_server_frame([0, -0.04, -0.03])
         if result != 0:
             print(f"[ERROR] Failed to leave server (error code: {result})")
             return result
@@ -774,7 +774,7 @@ class URWobjCloseRight(UROperateWobj):
         print("\n" + "="*50)
         print("Step 13: Moving away from the server...")
         print("="*50)
-        result = self.movel_in_server_frame([0, -0.15, 0])
+        result = self.movel_in_server_frame([0, -0.20, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away (error code: {result})")
             return result
