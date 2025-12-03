@@ -36,7 +36,7 @@ ur15:
   # tool configuration
   tool:
     tool_rotate:
-      length: 0.325          # Length of the tool from flange to tip (meters)
+      length: 0.325          # Length of the tool rotate from flange to tip (meters)
       angle_z: -31           # Rotation angle around Z axis (degrees)
 
     tool_pushpull:
