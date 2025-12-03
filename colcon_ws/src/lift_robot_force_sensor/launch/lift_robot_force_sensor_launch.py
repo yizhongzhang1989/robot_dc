@@ -20,6 +20,11 @@ def launch_setup(context, *args, **kwargs):
     topic_name = LaunchConfiguration('topic_name').perform(context)
     node_name_suffix = LaunchConfiguration('node_name_suffix').perform(context)
     read_interval = float(LaunchConfiguration('read_interval').perform(context))
+    dashboard_enabled = LaunchConfiguration('dashboard_enabled').perform(context).lower() == 'true'
+    dashboard_host = LaunchConfiguration('dashboard_host').perform(context)
+    dashboard_port = int(LaunchConfiguration('dashboard_port').perform(context))
+    serial_port = LaunchConfiguration('serial_port').perform(context)
+    serial_baudrate = int(LaunchConfiguration('serial_baudrate').perform(context))
     
     # Try to load calibration file name from config
     calib_filename = None
@@ -118,7 +123,12 @@ def launch_setup(context, *args, **kwargs):
                 'use_ack_patch': True,
                 'read_interval': read_interval,
                 'calibration_scale': calib_scale,
-                'calibration_offset': calib_offset
+                'calibration_offset': calib_offset,
+                'dashboard_enabled': dashboard_enabled,
+                'dashboard_host': dashboard_host,
+                'dashboard_port': dashboard_port,
+                'serial_port': serial_port,
+                'serial_baudrate': serial_baudrate
             }]
         ),
     ]
@@ -163,6 +173,11 @@ def generate_launch_description():
     default_topic = get_config_value('lift_robot.force_sensor_right.topic', '/force_sensor_right')
     default_read_interval = str(get_config_value('lift_robot.force_sensor_right.read_interval', 0.06))
     default_node_suffix = get_config_value('lift_robot.force_sensor_right.node_name_suffix', '')
+    default_dashboard_enabled = str(get_config_value('lift_robot.force_sensor_right.dashboard.enabled', False)).lower()
+    default_dashboard_host = get_config_value('lift_robot.force_sensor_right.dashboard.host', '0.0.0.0')
+    default_dashboard_port = str(get_config_value('lift_robot.force_sensor_right.dashboard.port', 5001))
+    default_serial_port = get_config_value('lift_robot.modbus_driver.port', 'auto')
+    default_serial_baudrate = str(get_config_value('lift_robot.modbus_driver.baudrate', 115200))
     
     print(f"[force_sensor_launch] Config: device_id={default_device_id}, topic={default_topic}, interval={default_read_interval}")
     
@@ -191,11 +206,46 @@ def generate_launch_description():
         description='Sensor read interval in seconds (0.06 = ~17Hz, 0.02 = 50Hz, 0.01 = 100Hz)'
     )
     
+    dashboard_enabled_arg = DeclareLaunchArgument(
+        'dashboard_enabled',
+        default_value=default_dashboard_enabled,
+        description='Enable force sensor configuration dashboard'
+    )
+    
+    dashboard_host_arg = DeclareLaunchArgument(
+        'dashboard_host',
+        default_value=default_dashboard_host,
+        description='Dashboard host address'
+    )
+    
+    dashboard_port_arg = DeclareLaunchArgument(
+        'dashboard_port',
+        default_value=default_dashboard_port,
+        description='Dashboard port'
+    )
+    
+    serial_port_arg = DeclareLaunchArgument(
+        'serial_port',
+        default_value=default_serial_port,
+        description='Serial port for Modbus communication'
+    )
+    
+    serial_baudrate_arg = DeclareLaunchArgument(
+        'serial_baudrate',
+        default_value=default_serial_baudrate,
+        description='Serial baudrate for Modbus communication'
+    )
+    
     return LaunchDescription([
         device_id_arg,
         topic_name_arg,
         node_name_suffix_arg,
         read_interval_arg,
+        dashboard_enabled_arg,
+        dashboard_host_arg,
+        dashboard_port_arg,
+        serial_port_arg,
+        serial_baudrate_arg,
         OpaqueFunction(function=launch_setup)
     ])
 

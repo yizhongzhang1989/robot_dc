@@ -46,12 +46,18 @@ def generate_launch_description():
     force_right_interval_default = get_config_value('lift_robot.force_sensor_right.read_interval', '0.06')
     force_right_topic_default = get_config_value('lift_robot.force_sensor_right.topic', '/force_sensor_right')
     force_right_delay_default = get_config_value('lift_robot.force_sensor_right.launch_delay', '4.5')
+    force_right_dashboard_enabled_default = get_config_value('lift_robot.force_sensor_right.dashboard.enabled', 'false')
+    force_right_dashboard_host_default = get_config_value('lift_robot.force_sensor_right.dashboard.host', '0.0.0.0')
+    force_right_dashboard_port_default = get_config_value('lift_robot.force_sensor_right.dashboard.port', '5001')
     
     # Force sensor left defaults
     force_left_device_id_default = get_config_value('lift_robot.force_sensor_left.device_id', '53')
     force_left_interval_default = get_config_value('lift_robot.force_sensor_left.read_interval', '0.06')
     force_left_topic_default = get_config_value('lift_robot.force_sensor_left.topic', '/force_sensor_left')
     force_left_delay_default = get_config_value('lift_robot.force_sensor_left.launch_delay', '5.0')
+    force_left_dashboard_enabled_default = get_config_value('lift_robot.force_sensor_left.dashboard.enabled', 'false')
+    force_left_dashboard_host_default = get_config_value('lift_robot.force_sensor_left.dashboard.host', '0.0.0.0')
+    force_left_dashboard_port_default = get_config_value('lift_robot.force_sensor_left.dashboard.port', '5002')
     
     # Web interface defaults
     web_enabled_default = get_config_value('lift_robot.web.enabled', 'true')
@@ -106,6 +112,12 @@ def generate_launch_description():
         'force_right_topic', default_value=force_right_topic_default, description='Right force sensor topic')
     force_right_delay_arg = DeclareLaunchArgument(
         'force_right_delay', default_value=force_right_delay_default, description='Right force sensor launch delay (s)')
+    force_right_dashboard_enabled_arg = DeclareLaunchArgument(
+        'force_right_dashboard_enabled', default_value=force_right_dashboard_enabled_default, description='Enable force sensor dashboard')
+    force_right_dashboard_host_arg = DeclareLaunchArgument(
+        'force_right_dashboard_host', default_value=force_right_dashboard_host_default, description='Force sensor dashboard host')
+    force_right_dashboard_port_arg = DeclareLaunchArgument(
+        'force_right_dashboard_port', default_value=force_right_dashboard_port_default, description='Force sensor dashboard port')
     
     # Launch arguments - Force Sensor Left
     force_left_device_id_arg = DeclareLaunchArgument(
@@ -116,6 +128,12 @@ def generate_launch_description():
         'force_left_topic', default_value=force_left_topic_default, description='Left force sensor topic')
     force_left_delay_arg = DeclareLaunchArgument(
         'force_left_delay', default_value=force_left_delay_default, description='Left force sensor launch delay (s)')
+    force_left_dashboard_enabled_arg = DeclareLaunchArgument(
+        'force_left_dashboard_enabled', default_value=force_left_dashboard_enabled_default, description='Enable left force sensor dashboard')
+    force_left_dashboard_host_arg = DeclareLaunchArgument(
+        'force_left_dashboard_host', default_value=force_left_dashboard_host_default, description='Left force sensor dashboard host')
+    force_left_dashboard_port_arg = DeclareLaunchArgument(
+        'force_left_dashboard_port', default_value=force_left_dashboard_port_default, description='Left force sensor dashboard port')
     
     # Launch arguments - Web Interface
     web_enabled_arg = DeclareLaunchArgument(
@@ -206,7 +224,12 @@ def generate_launch_description():
                 'device_id': LaunchConfiguration('force_right_device_id'),
                 'topic_name': LaunchConfiguration('force_right_topic'),
                 'node_name_suffix': 'right',
-                'read_interval': LaunchConfiguration('force_right_interval')
+                'read_interval': LaunchConfiguration('force_right_interval'),
+                'dashboard_enabled': LaunchConfiguration('force_right_dashboard_enabled'),
+                'dashboard_host': LaunchConfiguration('force_right_dashboard_host'),
+                'dashboard_port': LaunchConfiguration('force_right_dashboard_port'),
+                'serial_port': LaunchConfiguration('modbus_port'),
+                'serial_baudrate': LaunchConfiguration('modbus_baudrate')
             }.items()
         )]
     )
@@ -220,7 +243,12 @@ def generate_launch_description():
                 'device_id': LaunchConfiguration('force_left_device_id'),
                 'topic_name': LaunchConfiguration('force_left_topic'),
                 'node_name_suffix': 'left',
-                'read_interval': LaunchConfiguration('force_left_interval')
+                'read_interval': LaunchConfiguration('force_left_interval'),
+                'dashboard_enabled': LaunchConfiguration('force_left_dashboard_enabled'),
+                'dashboard_host': LaunchConfiguration('force_left_dashboard_host'),
+                'dashboard_port': LaunchConfiguration('force_left_dashboard_port'),
+                'serial_port': LaunchConfiguration('modbus_port'),
+                'serial_baudrate': LaunchConfiguration('modbus_baudrate')
             }.items()
         )]
     )
@@ -260,11 +288,17 @@ def generate_launch_description():
         force_right_interval_arg,
         force_right_topic_arg,
         force_right_delay_arg,
+        force_right_dashboard_enabled_arg,
+        force_right_dashboard_host_arg,
+        force_right_dashboard_port_arg,
         # Force sensor left arguments
         force_left_device_id_arg,
         force_left_interval_arg,
         force_left_topic_arg,
         force_left_delay_arg,
+        force_left_dashboard_enabled_arg,
+        force_left_dashboard_host_arg,
+        force_left_dashboard_port_arg,
         # Web interface arguments
         web_enabled_arg,
         web_port_arg,

@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Force Sensor Configuration Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .device-info {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 15px;
+            color: #666;
+        }
+        
+        .device-info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #28a745;
+            box-shadow: 0 0 10px #28a745;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .cards-container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .card-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .config-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        .config-table th,
+        .config-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .config-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .config-table .param-value {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .raw-value-display {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .raw-value {
+            font-size: 2em;
+            font-weight: 700;
+            color: #667eea;
+        }
+        
+        .write-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .form-group label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+        
+        .form-group select,
+        .form-group input {
+            padding: 10px;
+            border: 2px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .special-actions-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+        
+        .alert-danger {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .hidden { display: none; }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 Force Sensor Configuration Dashboard</h1>
+            <div class="device-info">
+                <div class="device-info-item">
+                    <div class="status-indicator"></div>
+                    <span>Device ID: <strong id="device-id">--</strong></span>
+                </div>
+                <div class="device-info-item">
+                    <span>Port: <strong id="device-port">--</strong></span>
+                </div>
+                <div class="device-info-item">
+                    <span>Baud: <strong id="device-baudrate">--</strong></span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="alert-container"></div>
+        
+        <div class="cards-container">
+            <!-- Read Card -->
+            <div class="card">
+                <div class="card-title">
+                    📖 Read Configuration
+                    <button class="btn btn-primary" onclick="readConfig()" style="margin-left: auto;">🔄 Refresh</button>
+                </div>
+                
+                <div id="loading-read" class="loading hidden">Loading configuration...</div>
+                
+                <div id="config-display" class="hidden">
+                    <table class="config-table">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Current Value</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Mask Value</td>
+                                <td class="param-value" id="display_mask_value">--</td>
+                                <td>Output is 0 below this value</td>
+                            </tr>
+                            <tr>
+                                <td>Sampling Frequency</td>
+                                <td class="param-value" id="display_sampling_freq">--</td>
+                                <td>Data acquisition rate</td>
+                            </tr>
+                            <tr>
+                                <td>RC Filter</td>
+                                <td class="param-value" id="display_rc_filter">--</td>
+                                <td>Signal filtering coefficient</td>
+                            </tr>
+                            <tr>
+                                <td>Zero Track Range</td>
+                                <td class="param-value" id="display_zero_track_range">--</td>
+                                <td>Auto zero compensation range</td>
+                            </tr>
+                            <tr>
+                                <td>Zero Track Time</td>
+                                <td class="param-value" id="display_zero_track_time">--</td>
+                                <td>Zero tracking duration</td>
+                            </tr>
+                            <tr>
+                                <td>Input Polarity</td>
+                                <td class="param-value" id="display_polarity">--</td>
+                                <td>Unipolar / Bipolar mode</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <div class="raw-value-display">
+                        <h4>📊 Raw Sensor Value</h4>
+                        <div class="raw-value" id="raw-sensor-value">--</div>
+                        <small style="color: #6c757d;">Real-time raw ADC reading</small>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Write Card -->
+            <div class="card">
+                <div class="card-title">
+                    ✏️ Write Configuration
+                </div>
+                
+                <form class="write-form" onsubmit="event.preventDefault(); writeParameter();">
+                    <div class="form-group">
+                        <label for="param-select">Select Parameter</label>
+                        <select id="param-select" onchange="updateValueInput()">
+                            <option value="mask_value">Mask Value</option>
+                            <option value="sampling_freq">Sampling Frequency</option>
+                            <option value="rc_filter">RC Filter</option>
+                            <option value="zero_track_range">Zero Track Range</option>
+                            <option value="zero_track_time">Zero Track Time</option>
+                            <option value="polarity">Input Polarity</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="param-value">Value</label>
+                        <div id="value-input-container">
+                            <input type="number" id="param-value-number" min="0" max="50" value="0">
+                        </div>
+                        <small id="param-hint">Range: 0-50</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-success" style="width: 100%; padding: 15px;">
+                        📤 Send
+                    </button>
+                </form>
+                
+                <hr style="margin: 25px 0; border: none; border-top: 1px solid #e9ecef;">
+                
+                <div class="card-title" style="font-size: 1.2em;">
+                    ⚠️ Special Actions
+                </div>
+                
+                <div class="special-actions-grid">
+                    <button class="btn btn-warning" onclick="performTare()">⚖️ Tare</button>
+                    <button class="btn btn-warning" onclick="clearTare()">🔄 Clear Tare</button>
+                    <button class="btn btn-danger" onclick="clearZero()">🎯 Clear Zero</button>
+                </div>
+                <p style="margin-top: 12px; color: #856404; font-size: 12px;">
+                    ⚠️ Special actions execute immediately. Use with caution!
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const paramConfigs = {
+            mask_value: {
+                type: 'number',
+                min: 0,
+                max: 50,
+                hint: 'Range: 0-50 (output is 0 below this value)'
+            },
+            sampling_freq: {
+                type: 'select',
+                options: [
+                    {value: 1, label: '600 pcs/s'},
+                    {value: 2, label: '300 pcs/s'},
+                    {value: 3, label: '150 pcs/s'},
+                    {value: 4, label: '75 pcs/s'},
+                    {value: 5, label: '37.5 pcs/s (default)'},
+                    {value: 6, label: '18.75 pcs/s'},
+                    {value: 7, label: '10 pcs/s'}
+                ],
+                hint: 'Data acquisition frequency'
+            },
+            rc_filter: {
+                type: 'select',
+                options: [
+                    {value: 1, label: 'None'},
+                    {value: 2, label: '0.8'},
+                    {value: 3, label: '0.6'},
+                    {value: 4, label: '0.4'},
+                    {value: 5, label: '0.2'},
+                    {value: 6, label: '0.1'}
+                ],
+                hint: 'Signal filtering coefficient'
+            },
+            zero_track_range: {
+                type: 'number',
+                min: 0,
+                max: 100,
+                hint: 'Range: 0-100 (auto zero compensation)'
+            },
+            zero_track_time: {
+                type: 'select',
+                options: [
+                    {value: 0, label: 'Disabled'},
+                    {value: 1, label: '5s'},
+                    {value: 2, label: '10s'},
+                    {value: 3, label: '15s'},
+                    {value: 4, label: '20s'}
+                ],
+                hint: 'Zero tracking duration'
+            },
+            polarity: {
+                type: 'select',
+                options: [
+                    {value: 1, label: 'Unipolar (0~65535)'},
+                    {value: 2, label: 'Bipolar (-32768~32767)'}
+                ],
+                hint: 'Input signal polarity'
+            }
+        };
+        
+        window.onload = function() {
+            loadDeviceInfo();
+            updateValueInput();
+            startRawValuePolling();
+        };
+        
+        function showAlert(message, type) {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-' + type;
+            alert.textContent = message;
+            container.appendChild(alert);
+            setTimeout(function() { alert.remove(); }, 5000);
+        }
+        
+        async function loadDeviceInfo() {
+            try {
+                const response = await fetch('/api/device_info');
+                const data = await response.json();
+                document.getElementById('device-id').textContent = data.device_id;
+                document.getElementById('device-port').textContent = data.port || 'Not connected';
+                document.getElementById('device-baudrate').textContent = data.baudrate;
+            } catch (error) {
+                console.error('Error loading device info:', error);
+            }
+        }
+        
+        async function readConfig() {
+            document.getElementById('loading-read').classList.remove('hidden');
+            document.getElementById('config-display').classList.add('hidden');
+            
+            try {
+                const response = await fetch('/api/read_config');
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateConfigDisplay(data.config);
+                    document.getElementById('config-display').classList.remove('hidden');
+                    showAlert('✅ Configuration read successfully!', 'success');
+                } else {
+                    showAlert('❌ Read failed: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'danger');
+            } finally {
+                document.getElementById('loading-read').classList.add('hidden');
+            }
+        }
+        
+        function updateConfigDisplay(config) {
+            document.getElementById('display_mask_value').textContent = config.mask_value || 0;
+            document.getElementById('display_sampling_freq').textContent = config.sampling_freq_desc || '--';
+            document.getElementById('display_rc_filter').textContent = config.rc_filter_desc || '--';
+            document.getElementById('display_zero_track_range').textContent = config.zero_track_range || 0;
+            document.getElementById('display_zero_track_time').textContent = config.zero_track_time_desc || '--';
+            document.getElementById('display_polarity').textContent = config.polarity_desc || '--';
+        }
+        
+        function updateValueInput() {
+            const paramName = document.getElementById('param-select').value;
+            const config = paramConfigs[paramName];
+            const container = document.getElementById('value-input-container');
+            
+            if (config.type === 'number') {
+                container.innerHTML = '<input type="number" id="param-value-number" min="' + config.min + '" max="' + config.max + '" value="' + config.min + '">';
+            } else if (config.type === 'select') {
+                let optionsHTML = config.options.map(function(opt) {
+                    return '<option value="' + opt.value + '">' + opt.label + '</option>';
+                }).join('');
+                container.innerHTML = '<select id="param-value-select">' + optionsHTML + '</select>';
+            }
+            
+            document.getElementById('param-hint').textContent = config.hint;
+        }
+        
+        async function writeParameter() {
+            const paramName = document.getElementById('param-select').value;
+            const config = paramConfigs[paramName];
+            
+            let value;
+            if (config.type === 'number') {
+                value = parseInt(document.getElementById('param-value-number').value);
+            } else {
+                value = parseInt(document.getElementById('param-value-select').value);
+            }
+            
+            try {
+                const response = await fetch('/api/write_config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({parameter: paramName, value: value})
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateConfigDisplay(data.config);
+                    showAlert('✅ ' + paramName + ' written successfully!', 'success');
+                } else {
+                    showAlert('❌ Write failed: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'danger');
+            }
+        }
+        
+        async function performTare() {
+            if (!confirm('Confirm tare operation?')) return;
+            
+            try {
+                const response = await fetch('/api/write_config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({parameter: 'tare', value: 1})
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showAlert('✅ Tare operation completed!', 'success');
+                } else {
+                    showAlert('❌ Tare failed: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'danger');
+            }
+        }
+        
+        async function clearTare() {
+            if (!confirm('Confirm clear tare?')) return;
+            
+            try {
+                const response = await fetch('/api/write_config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({parameter: 'tare', value: 2})
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showAlert('✅ Tare cleared!', 'success');
+                } else {
+                    showAlert('❌ Clear failed: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'danger');
+            }
+        }
+        
+        async function clearZero() {
+            if (!confirm('⚠️ Confirm clear zero operation? This action cannot be undone!')) return;
+            
+            try {
+                const response = await fetch('/api/write_config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({parameter: 'clear_zero', value: 1})
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showAlert('✅ Clear zero operation completed!', 'success');
+                } else {
+                    showAlert('❌ Clear zero failed: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'danger');
+            }
+        }
+        
+        function startRawValuePolling() {
+            setInterval(async function() {
+                try {
+                    const response = await fetch('/api/raw_value');
+                    const data = await response.json();
+                    if (data.success) {
+                        document.getElementById('raw-sensor-value').textContent = data.value;
+                    }
+                } catch (error) {
+                    // Silently fail
+                }
+            }, 500);
+        }
+    </script>
+</body>
+</html>

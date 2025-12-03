@@ -43,6 +43,13 @@ class LiftRobotForceSensorNode(Node):
         # web-based calibration and save to JSON config file.
         self.declare_parameter('calibration_scale', 0.116125)
         self.declare_parameter('calibration_offset', 0.0)  # Always 0.0 after tare
+        
+        # Dashboard parameters
+        self.declare_parameter('dashboard_enabled', False)
+        self.declare_parameter('dashboard_host', '0.0.0.0')
+        self.declare_parameter('dashboard_port', 5001)
+        self.declare_parameter('serial_port', '')  # Empty = auto-detect
+        self.declare_parameter('serial_baudrate', 115200)
 
         self.device_id = self.get_parameter('device_id').value
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
@@ -52,6 +59,14 @@ class LiftRobotForceSensorNode(Node):
         self.node_name_suffix = self.get_parameter('node_name_suffix').value
         self.calibration_scale = float(self.get_parameter('calibration_scale').value)
         self.calibration_offset = float(self.get_parameter('calibration_offset').value)
+        
+        # Dashboard configuration
+        self.dashboard_enabled = bool(self.get_parameter('dashboard_enabled').value)
+        self.dashboard_host = self.get_parameter('dashboard_host').value
+        self.dashboard_port = int(self.get_parameter('dashboard_port').value)
+        self.serial_port = self.get_parameter('serial_port').value or None
+        self.serial_baudrate = int(self.get_parameter('serial_baudrate').value)
+        self.dashboard = None
 
         # Log node info with suffix in message (node name itself stays as base name)
         node_identifier = f"{self.get_name()}_{self.node_name_suffix}" if self.node_name_suffix else self.get_name()
@@ -61,6 +76,10 @@ class LiftRobotForceSensorNode(Node):
         self.get_logger().info(
             f"[{node_identifier}] Calibration: actual_force = sensor_reading × {self.calibration_scale:.6f} + {self.calibration_offset:.6f}"
         )
+        
+        # Start dashboard if enabled
+        if self.dashboard_enabled:
+            self._start_dashboard()
 
         self.controller = ForceSensorController(self.device_id, self, self.use_ack_patch)
         self.controller.initialize()
@@ -238,13 +257,49 @@ class LiftRobotForceSensorNode(Node):
             cv2.destroyWindow('ForceSensorLive')
             self.enable_visualization = False
 
+    def _start_dashboard(self):
+        """Start force sensor configuration dashboard"""
+        try:
+            from .force_sensor_dashboard import ForceSensorDashboard
+            
+            node_identifier = f"{self.get_name()}_{self.node_name_suffix}" if self.node_name_suffix else self.get_name()
+            
+            # Pass ROS2 node to dashboard for Modbus service access
+            self.dashboard = ForceSensorDashboard(
+                device_id=self.device_id,
+                ros_node=self,  # Pass ROS2 node for Modbus service calls
+                host=self.dashboard_host,
+                web_port=self.dashboard_port
+            )
+            
+            self.dashboard.start()
+            
+            self.get_logger().info(
+                f"[{node_identifier}] Force Sensor Dashboard started at http://{self.dashboard_host}:{self.dashboard_port}"
+            )
+        except Exception as e:
+            self.get_logger().error(f"Failed to start dashboard: {e}")
+            import traceback
+            traceback.print_exc()
+
     def destroy_node(self):
         self.get_logger().info("Shutting down force sensor node...")
+        
+        # Stop dashboard if running
+        if self.dashboard is not None:
+            try:
+                self.dashboard.stop()
+                self.get_logger().info("Dashboard stopped")
+            except Exception as e:
+                self.get_logger().warning(f"Error stopping dashboard: {e}")
+        
+        # Stop visualization if running
         if cv2 is not None and self.enable_visualization:
             try:
                 cv2.destroyWindow('ForceSensorLive')
             except Exception:
                 pass
+        
         self.controller.cleanup()
         super().destroy_node()
 

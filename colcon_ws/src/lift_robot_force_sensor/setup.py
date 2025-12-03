@@ -11,6 +11,9 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/lift_robot_force_sensor_launch.py']),
     ],
+    package_data={
+        package_name: ['templates/*.html'],
+    },
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Maintainer',

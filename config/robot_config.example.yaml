@@ -257,6 +257,10 @@ lift_robot:
     node_name_suffix: "right"
     calibration_file: "force_sensor_calibration_right.json"  # Calibration config in colcon_ws/config/
     launch_delay: 4.5         # Delay after modbus driver ready (seconds)
+    dashboard:
+      enabled: true           # Enable force sensor configuration dashboard
+      host: "0.0.0.0"         # Dashboard host address
+      port: 5001              # Dashboard port (different from modbus dashboard 5000)
   
   # Force Sensor Node Configuration (Left Sensor)
   force_sensor_left:
@@ -266,6 +270,10 @@ lift_robot:
     node_name_suffix: "left"
     calibration_file: "force_sensor_calibration_left.json"  # Calibration config in colcon_ws/config/
     launch_delay: 5.0         # Delay after modbus driver ready (seconds)
+    dashboard:
+      enabled: false          # Disable dashboard for left sensor (only one dashboard needed)
+      host: "0.0.0.0"
+      port: 5002
   
   # Web Interface Node Configuration
   web:
