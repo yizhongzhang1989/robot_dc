@@ -277,7 +277,7 @@ class URWobjOpenHandle(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction relative to task frame
-        wrench = [0, 50, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 80, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pushing server...")
@@ -383,7 +383,7 @@ class URWobjOpenHandle(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction relative to task frame
-        wrench = [0, -50, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, -80, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pulling server...")
@@ -427,13 +427,13 @@ class URWobjOpenHandle(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.60, 0]  # Offset to reach handle position
+            offset_in_rack=[0, -0.275-self.tool_length, 0]  # Offset to reach handle position
         )
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # move to touch start position
+        # Step 3: Move to Open handle start position
         print("\n" + "="*50)
         print("Step 3: Moving to touch start position...")
         print("="*50)
@@ -443,91 +443,112 @@ class URWobjOpenHandle(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        result = self.movel_in_server_frame([-0.08, 0.17, 0])
+        result = self.movel_in_server_frame([-0.08, 0.18, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away from right knob")
             return result
         time.sleep(0.5)
 
 
-        # Step 3: Force control to touch the handle
+        # Step 4: Force control to touch the handle
         print("\n" + "="*50)
+        print("Step 4: Touching the handle before opening...")
+        print("="*50)
         result = self.force_task_touch_handle_before_open_handle()
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 4: Force control to open the left handle (includes prepull and open)
+        # Step 5: Force control to open the left handle (includes prepull and open)
         print("\n" + "="*50)
+        print("Step 5: Opening left handle...")
+        print("="*50)
         result = self.force_task_open_left_handle()
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 5: Move away from the handle
+        # Step 6: Move away from the handle
         print("\n" + "="*50)
+        print("Step 6: Moving away from the handle...")
+        print("="*50)
         result = self.movel_in_server_frame([0.10, 0, -0.01])
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 6: Move to server push position
+        # Step 7: Move to server push position
         print("\n" + "="*50)
+        print("Step 7: Moving to server push position...")
+        print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0.03, -0.50, 0.025]  # Offset to reach server push position
+            offset_in_rack=[0.03, -0.175-self.tool_length, 0.025]  # Offset to reach server push position
         )
         if result != 0:
             return result
         time.sleep(0.5)
 
-
-        # Step 7: Force control to push server to end
+        # Step 8: Force control to push server to end
         print("\n" + "="*50)
+        print("Step 8: Pushing server to end after opening handle...")
+        print("="*50)
         result = self.force_task_push_server_after_open_handle()
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 8: Move to leave the server
+        # Step 9: Move to leave the server
         print("\n" + "="*50)
+        print("Step 9: Moving to leave the server...")
+        print("="*50)
         result = self.movel_in_server_frame([0, -0.05, -0.04])
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 9: Move to the server
+        # Step 10: Move to the server
         print("\n" + "="*50)
+        print("Step 10: Moving to under the server...")
+        print("="*50)
         result = self.movel_in_server_frame([0, 0.06, 0])
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 10: Force control to touch the server
+        # Step 11: Force control to touch the server
         print("\n" + "="*50)
+        print("Step 11: Touching the server...")
+        print("="*50)
         result = self.force_task_touch_server()
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 11: Force control to pull the server
+        # Step 12: Force control to pull the server
         print("\n" + "="*50)
+        print("Step 12: Pulling the server...")
+        print("="*50)
         result = self.force_task_pull_server()
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 12: Move to leave the server
+        # Step 13: Move to leave the server
         print("\n" + "="*50)
-        result = self.movel_in_server_frame([0, -0.02, -0.04])
+        print("Step 13: Moving to leave the server...")
+        print("="*50)
+        result = self.movel_in_server_frame([0, -0.03, -0.04])
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 13: Move away from the server
+        # Step 14: Move away from the server
         print("\n" + "="*50)
-        result = self.movel_in_server_frame([0, -0.15, 0])
+        print("Step 14: Moving away from the server...")
+        print("="*50)
+        result = self.movel_in_server_frame([0, -0.20, 0])
         if result != 0:
             return result
         time.sleep(0.5)

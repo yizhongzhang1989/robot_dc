@@ -672,15 +672,21 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 7: Move away from the server
+        # Step 7: Move away from the server and close to open handle position
         print("\n" + "="*50)
         print("Step 7: Moving away from server...")
         print("="*50)
-        self.movel_in_server_frame([0, -0.25, 0])
+        result = self.movel_in_server_frame([0, -0.25, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to unlock left knob")
+            return result
         time.sleep(0.5)
 
         print("\n" + "="*50)
-        self.movel_in_server_frame([0.03, 0.23, -0.04])
+        result = self.movel_in_server_frame([0.03, 0.23, -0.04])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from left knob")
+            return result
         time.sleep(0.5)
 
         # Step 8: Force task to open the left handle
@@ -693,8 +699,10 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # move away from the server
+        # Step 9: Move away from the server
         print("\n" + "="*50)
+        print("Step 9: Moving away from left handle...")
+        print("="*50)
         result = self.movel_in_server_frame([0, -0.20, -0.02])
         if result != 0:
             print(f"[ERROR] Failed to move away from left handle")
@@ -702,9 +710,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
         time.sleep(0.5)
 
         # ==============Unlock the right knob=================
-        # Step 9: Correct TCP pose to align with rack coordinate system
+        # Step 10: Correct TCP pose to align with rack coordinate system
         print("\n" + "="*50)
-        print("Step 9: Correcting TCP pose...")
+        print("Step 10: Correcting TCP pose...")
         print("="*50)
         result = self.movel_to_correct_tcp_pose(
             tcp_x_to_rack=[1, 0, 0],
@@ -717,9 +725,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 10: Move to target position (right knob) using linear movement
+        # Step 11: Move to target position (right knob) using linear movement
         print("\n" + "="*50)
-        print("Step 10: Moving to target position...")
+        print("Step 11: Moving to target position...")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
@@ -731,8 +739,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
+        # Step 12: Move to right knob position
         print("\n" + "="*50)
-        print("Step 11: Moving to right knob position")
+        print("Step 12 : Moving to right knob position")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
@@ -744,9 +753,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 12: Force control to touch the right knob
+        # Step 13: Force control to touch the right knob
         print("\n" + "="*50)
-        print("Step 12: Touching right knob...")
+        print("Step 13: Touching right knob...")
         print("="*50)
         result = self.force_task_touch_knob()
         if result != 0:
@@ -754,9 +763,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 13: Move away from the right knob slightly
+        # Step 14: Move away from the right knob slightly
         print("\n" + "="*50)
-        print("Step 13: Moving away from right knob slightly...")
+        print("Step 14: Moving away from right knob slightly...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.001, 0])
         if result != 0:
@@ -764,9 +773,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 14: Force control to unlock the right knob
+        # Step 15: Force control to unlock the right knob
         print("\n" + "="*50)
-        print("Step 14: Unlocking right knob...")
+        print("Step 15: Unlocking right knob...")
         print("="*50)
         result = self.force_task_unlock_right_knob()
         if result != 0:
@@ -774,9 +783,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 15: Move away from the server
+        # Step 16: Move away from the server
         print("\n" + "="*50)
-        print("Step 15: Moving away from server...")
+        print("Step 16: Moving away from server...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.25, 0])
         if result != 0:
@@ -787,9 +796,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
         self.movel_in_server_frame([-0.03, 0.23, -0.04])
         time.sleep(0.5)
 
-        # Step 16: Force task to open the right handle
+        # Step 17: Force task to open the right handle
         print("\n" + "="*50)
-        print("Step 16: Opening right handle...")
+        print("Step 17: Opening right handle...")
         print("="*50)
         result = self.force_task_open_handle()
         if result != 0:
@@ -797,9 +806,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 17: Move away from the knob2
+        # Step 18: Move away from the knob2
         print("\n" + "="*50)
-        print("Step 17: Moving away from right handle...")
+        print("Step 18: Moving away from right handle...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.20, -0.02])
         if result != 0:
