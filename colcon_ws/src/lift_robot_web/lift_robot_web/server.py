@@ -147,9 +147,14 @@ class LiftRobotWeb(Node):
         
         self.cmd_pub = self.create_publisher(String, '/lift_robot_platform/command', 10)
         
-        # Command queue publisher (sends commands to cmd_processor_node)
-        self.command_queue_pub = self.create_publisher(String, '/lift_robot/command_queue', 10)
-        self.get_logger().info("Created command queue publisher on /lift_robot/command_queue")
+        # Command publishers for different purposes:
+        # 1. Action commands (stop, goto_height, force_up, etc.) -> cmd_processor
+        self.action_command_pub = self.create_publisher(String, '/lift_robot/command_queue', 10)
+        self.get_logger().info("Created action command publisher on /lift_robot/command_queue (for cmd_processor)")
+        
+        # 2. Direct commands (reset, range_scan) -> lift_robot_node
+        self.direct_command_pub = self.create_publisher(String, 'lift_robot_platform/command', 10)
+        self.get_logger().info("Created direct command publisher on lift_robot_platform/command (for lift_robot_node)")
         
         # Modbus service client for direct commands (e.g., force sensor tare)
         # Use modbus_manager's service instead of direct /modbus_write topic
@@ -389,8 +394,9 @@ def run_fastapi_server(port):
         @app.post('/api/cmd')
         async def send_cmd(payload: dict):
             """
-            Simplified command endpoint - only publishes to queue, no Action logic.
-            All control logic is handled by cmd_processor_node (50Hz polling).
+            Command endpoint - routes commands to appropriate handlers:
+            - Action commands (goto_height, force_up, etc.) -> cmd_processor_node
+            - Direct commands (stop, reset, range_scan) -> lift_robot_node
             """
             cmd = payload.get('command')
             target = payload.get('target', 'platform')
@@ -404,18 +410,34 @@ def run_fastapi_server(port):
             if cmd not in allowed:
                 return JSONResponse({'error': 'invalid command'}, status_code=400)
             
-            # Publish to command queue (cmd_processor will handle execution)
+            # Route commands to appropriate publisher
+            # Direct commands: ONLY reset and range_scan_* -> lift_robot_node (stop uses Action)
+            direct_commands = {'reset', 'range_scan_down', 'range_scan_up', 'range_scan_cancel'}
+            
             queue_msg = String()
             queue_msg.data = json.dumps(payload)
-            lift_robot_node.command_queue_pub.publish(queue_msg)
             
-            lift_robot_node.get_logger().info(f'[CMD] Queued: {cmd} (target={target})')
-            return {
-                'status': 'ok',
-                'command': cmd,
-                'target': target,
-                'method': 'queue'
-            }
+            if cmd in direct_commands:
+                # Send to lift_robot_node for immediate handling (reset, range_scan)
+                lift_robot_node.direct_command_pub.publish(queue_msg)
+                lift_robot_node.get_logger().info(f'[CMD] Direct: {cmd} (target={target})')
+                return {
+                    'status': 'ok',
+                    'command': cmd,
+                    'target': target,
+                    'method': 'direct'
+                }
+            else:
+                # Send to cmd_processor for Action execution (including stop via StopMovement)
+                lift_robot_node.action_command_pub.publish(queue_msg)
+                lift_robot_node.get_logger().info(f'[CMD] Action: {cmd} (target={target})')
+                return {
+                    'status': 'ok',
+                    'command': cmd,
+                    'target': target,
+                    'method': 'action'
+                }
+
 
         
         @app.get('/api/status')

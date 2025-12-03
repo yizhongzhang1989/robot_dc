@@ -229,16 +229,16 @@ lift_robot:
     device_id: 50             # Modbus slave ID for platform controller
     calibration_file: "platform_overshoot_calibration.json"  # Overshoot calibration config in colcon_ws/config/
     range_file: "platform_range.json"  # Platform range limits config in colcon_ws/config/
-    max_force_limit: 500.0    # Maximum allowable combined force (N) before emergency stop (CRITICAL SAFETY PARAMETER)
+    max_force_limit: 50000.0    # Maximum allowable combined force (N) before emergency stop (CRITICAL SAFETY PARAMETER), initially set to 50000N to disable this function, should change to reasonable value after calibration
     launch_delay: 3.0         # Launch delay after system start (seconds, allows modbus driver to initialize)
+    status_publish_rate: 10.0 # Status publish frequency in Hz (10Hz = 100ms interval, higher = more responsive but more CPU load)
     
     # Control Action Timeouts (seconds) - Max execution time for each control mode
     # If action exceeds timeout, it will abort with 'timeout' completion_reason
-    # Set to 0 or negative to disable timeout for that action
     timeouts:
-      goto_height: 300.0       # GotoHeight action timeout (default: 60s, typical movement takes 5-20s)
-      force_control: 300.0     # ForceControl action timeout (default: 60s, force ramp takes 10-30s)
-      hybrid_control: 300.0    # HybridControl action timeout (default: 60s, combined control)
+      goto_height: 300.0       # GotoHeight action timeout (default: 60s)
+      force_control: 300.0     # ForceControl action timeout (default: 60s)
+      hybrid_control: 300.0    # HybridControl action timeout (default: 60s)
       manual_move: 300.0      # ManualMove action timeout (default: 300s, longer for manual operation)
   
   # Draw Wire Sensor Node Configuration
@@ -257,6 +257,10 @@ lift_robot:
     node_name_suffix: "right"
     calibration_file: "force_sensor_calibration_right.json"  # Calibration config in colcon_ws/config/
     launch_delay: 4.5         # Delay after modbus driver ready (seconds)
+    dashboard:
+      enabled: true           # Enable force sensor configuration dashboard
+      host: "0.0.0.0"         # Dashboard host address
+      port: 5001              # Dashboard port (different from modbus dashboard 5000)
   
   # Force Sensor Node Configuration (Left Sensor)
   force_sensor_left:
@@ -266,6 +270,10 @@ lift_robot:
     node_name_suffix: "left"
     calibration_file: "force_sensor_calibration_left.json"  # Calibration config in colcon_ws/config/
     launch_delay: 5.0         # Delay after modbus driver ready (seconds)
+    dashboard:
+      enabled: false          # Disable dashboard for left sensor (only one dashboard needed)
+      host: "0.0.0.0"
+      port: 5002
   
   # Web Interface Node Configuration
   web:
