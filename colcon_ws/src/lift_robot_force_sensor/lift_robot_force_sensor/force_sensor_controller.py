@@ -4,38 +4,63 @@ import time, struct
 class ForceSensorController(ModbusDevice):
     """Single-channel force sensor controller (function code 0x03 read holding registers).
 
-    New hardware: Only one force value register, address 0x0000 (decimal 0), length 1 (returns 1 16-bit register).
-    Read frame example (device address assumed 0x34 = 52 decimal):
+    Hardware: Bipolar force sensor (supports both compression and tension)
+    - Register address: 0x0000 (40001)
+    - Data format: Signed 16-bit two's complement
+    - Range: -32768 to +32767 (bipolar mode)
+    - Positive values: Compression force
+    - Negative values: Tension force
+    
+    Read frame example (device address 52 = 0x34):
       Request: 34 03 00 00 00 01 CRC(lo) CRC(hi)
       Response: 34 03 02 HH LL CRC(lo) CRC(hi)
-        02 = following byte count (2 bytes data); HH LL are 16-bit unsigned high/low bytes.
-    Value conversion: value = (HH << 8) | LL  (unit N, no decimal places).
+        02 = byte count (2 bytes data)
+        HH LL = 16-bit signed value in two's complement form
+    
+    Value conversion examples:
+      - 0x0014 (20) → +20 N (compression)
+      - 0xFFEC (65516) → -20 N (tension, two's complement)
+      - 0x7FFF (32767) → +32767 N (max compression)
+      - 0x8000 (32768) → -32768 N (max tension)
     """
     REG_FORCE = 0x0000
 
-    def __init__(self, device_id, node, use_ack_patch=False, zero_drift_threshold=65336):
+    def __init__(self, device_id, node, use_ack_patch=False):
         super().__init__(device_id, node, use_ack_patch)
         self.last_force_value = None
         self.last_force_reg = None
         self.last_force_ts = None
-        self.zero_drift_threshold = zero_drift_threshold
 
     def initialize(self):
         self.node.get_logger().info(
-            f"Single force sensor controller initialized (device_id={self.device_id}) "
-            f"REG_FORCE@{self.REG_FORCE}, zero_drift_threshold={self.zero_drift_threshold}"
+            f"Bipolar force sensor controller initialized (device_id={self.device_id}) "
+            f"REG_FORCE@{self.REG_FORCE}, mode=signed 16-bit (bipolar)"
         )
 
     def _parse_int16(self, regs):
+        """Parse register as signed 16-bit integer (two's complement for bipolar sensor)
+        
+        Converts unsigned 16-bit Modbus register to signed value:
+        - 0x0000 to 0x7FFF (0 to 32767) → positive (compression)
+        - 0x8000 to 0xFFFF (32768 to 65535) → negative (tension)
+        
+        Examples:
+        - 65516 (0xFFEC) → -20 N (tension)
+        - 20 (0x0014) → +20 N (compression)
+        - 0 (0x0000) → 0 N (no force)
+        """
         if not regs or len(regs) < 1:
             return None
         try:
-            raw_value = int(regs[0]) & 0xFFFF
-            # Zero drift elimination: filter values > threshold to 0
-            # This handles sensor noise/drift when no force is applied
-            if raw_value > self.zero_drift_threshold:
-                return 0
-            return raw_value
+            # Read as unsigned 16-bit first
+            unsigned_val = int(regs[0]) & 0xFFFF
+            
+            # Convert to signed 16-bit using two's complement
+            # If value >= 0x8000 (32768), it's negative
+            if unsigned_val >= 0x8000:
+                return unsigned_val - 0x10000  # Convert to negative (65536 - unsigned_val)
+            else:
+                return unsigned_val  # Already positive
         except Exception:
             return None
 

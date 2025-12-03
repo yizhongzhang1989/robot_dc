@@ -912,77 +912,258 @@ class CourierRobotWebAPI:
             self.verbose = original_verbose
 
 
+def interactive_mode(robot):
+    """
+    Interactive command-line mode for manual control
+    
+    Args:
+        robot: CourierRobotWebAPI instance
+    
+    Available commands:
+    
+    Status & Info:
+      status, st        - Show current status
+      sensor, sn        - Show sensor data
+      help, h, ?        - Show this help
+      quit, exit, q     - Exit interactive mode
+    
+    Platform Height Control:
+      goto <height>     - Go to height (mm), e.g., 'goto 900' (runs in background, can be interrupted)
+      g <height>        - Short form of goto
+      goto! <height>    - Non-blocking goto (fire-and-forget)
+      g! <height>       - Non-blocking short form
+    
+    Platform Force Control:
+      fup <force>       - Force control up (N), e.g., 'fup 50' (background)
+      fdown <force>     - Force control down (N), e.g., 'fdown 30' (background)
+      fup! <force>      - Non-blocking force up
+      fdown! <force>    - Non-blocking force down
+      hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50' (background)
+      hybrid! <h> <f>   - Non-blocking hybrid control
+    
+    Platform Manual Control:
+      up                - Manual up (use 'stop' to stop)
+      down              - Manual down (use 'stop' to stop)
+      stop              - Stop platform (can interrupt any command!)
+    
+    Pushrod Control:
+      pup               - Pushrod manual up (use 'pstop' to stop)
+      pdown             - Pushrod manual down (use 'pstop' to stop)
+      pgoto <height>    - Pushrod goto absolute height (mm, background)
+      pgoto! <height>   - Pushrod goto absolute height (non-blocking)
+      prel <offset>     - Pushrod relative move (mm, background), e.g., 'prel 10' or 'prel -5'
+      prel! <offset>    - Pushrod relative move (non-blocking)
+      pstop             - Stop pushrod (can interrupt any command!)
+    
+    Emergency:
+      reset, emergency  - Emergency reset (can interrupt any command!)
+    
+    Note: Commands without '!' run in background - you can type 'stop' anytime to interrupt!
+    """
+    print("\n" + "="*60)
+    print("🤖 CourierRobot Interactive Mode")
+    print("="*60)
+    print("Type 'help' for available commands, 'quit' to exit")
+    print("="*60 + "\n")
+    
+    while True:
+        try:
+            cmd = input("robot> ").strip().lower()
+            
+            if not cmd:
+                continue
+            
+            parts = cmd.split()
+            command = parts[0]
+            
+            # Exit commands
+            if command in ['quit', 'exit', 'q']:
+                print("👋 Exiting interactive mode")
+                break
+            
+            # Help
+            elif command in ['help', 'h', '?']:
+                print(interactive_mode.__doc__)
+            
+            # Status commands
+            elif command in ['status', 'st']:
+                import json
+                status = robot.get_status()
+                print(json.dumps(status, indent=2))
+            
+            elif command in ['sensor', 'sn']:
+                robot.get_sensor_data()
+            
+            # Platform height control
+            elif command in ['goto', 'g', 'goto!', 'g!']:
+                if len(parts) < 2:
+                    print("❌ Usage: goto <height> or goto! <height> (non-blocking)")
+                else:
+                    try:
+                        height = float(parts[1])
+                        wait = not command.endswith('!')  # Non-blocking if ends with !
+                        if wait:
+                            # Blocking mode: execute in background thread
+                            robot._execute_in_background(robot.platform_goto_height, height, wait=True)
+                        else:
+                            # Non-blocking mode: execute directly
+                            robot.platform_goto_height(height, wait=False)
+                    except ValueError:
+                        print("❌ Invalid height value")
+            
+            # Platform force control
+            elif command in ['fup', 'fup!']:
+                if len(parts) < 2:
+                    print("❌ Usage: fup <force> or fup! <force> (non-blocking)")
+                else:
+                    try:
+                        force = float(parts[1])
+                        wait = not command.endswith('!')
+                        if wait:
+                            # Blocking mode: execute in background thread
+                            robot._execute_in_background(robot.platform_force_up, force, wait=True)
+                        else:
+                            # Non-blocking mode: execute directly
+                            robot.platform_force_up(force, wait=False)
+                    except ValueError:
+                        print("❌ Invalid force value")
+            
+            elif command in ['fdown', 'fdown!']:
+                if len(parts) < 2:
+                    print("❌ Usage: fdown <force> or fdown! <force> (non-blocking)")
+                else:
+                    try:
+                        force = float(parts[1])
+                        wait = not command.endswith('!')
+                        if wait:
+                            # Blocking mode: execute in background thread
+                            robot._execute_in_background(robot.platform_force_down, force, wait=True)
+                        else:
+                            # Non-blocking mode: execute directly
+                            robot.platform_force_down(force, wait=False)
+                    except ValueError:
+                        print("❌ Invalid force value")
+            
+            elif command in ['hybrid', 'hybrid!']:
+                if len(parts) < 3:
+                    print("❌ Usage: hybrid <height> <force> or hybrid! <height> <force> (non-blocking)")
+                else:
+                    try:
+                        height = float(parts[1])
+                        force = float(parts[2])
+                        wait = not command.endswith('!')
+                        if wait:
+                            # Blocking mode: execute in background thread
+                            robot._execute_in_background(robot.platform_hybrid_control, height, force, wait=True)
+                        else:
+                            # Non-blocking mode: execute directly
+                            robot.platform_hybrid_control(height, force, wait=False)
+                    except ValueError:
+                        print("❌ Invalid height or force value")
+            
+            # Platform manual control
+            elif command == 'up':
+                robot.platform_up()
+            
+            elif command == 'down':
+                robot.platform_down()
+            
+            elif command == 'stop':
+                robot.platform_stop()
+            
+            # Pushrod control
+            elif command == 'pup':
+                robot.pushrod_up()
+            
+            elif command == 'pdown':
+                robot.pushrod_down()
+            
+            elif command in ['pgoto', 'pgoto!']:
+                if len(parts) < 2:
+                    print("❌ Usage: pgoto <height> or pgoto! <height> (non-blocking)")
+                else:
+                    try:
+                        height = float(parts[1])
+                        wait = not command.endswith('!')
+                        if wait:
+                            # Blocking mode: execute in background thread
+                            robot._execute_in_background(robot.pushrod_goto_height, height, mode='absolute', wait=True)
+                        else:
+                            # Non-blocking mode: execute directly
+                            robot.pushrod_goto_height(height, mode='absolute', wait=False)
+                    except ValueError:
+                        print("❌ Invalid height value")
+            
+            elif command in ['prel', 'prel!']:
+                if len(parts) < 2:
+                    print("❌ Usage: prel <offset> or prel! <offset> (non-blocking)")
+                else:
+                    try:
+                        offset = float(parts[1])
+                        wait = not command.endswith('!')
+                        if wait:
+                            # Blocking mode: execute in background thread
+                            robot._execute_in_background(robot.pushrod_goto_height, offset, mode='relative', wait=True)
+                        else:
+                            # Non-blocking mode: execute directly
+                            robot.pushrod_goto_height(offset, mode='relative', wait=False)
+                    except ValueError:
+                        print("❌ Invalid offset value")
+            
+            elif command == 'pstop':
+                robot.pushrod_stop()
+            
+            # Emergency
+            elif command in ['reset', 'emergency']:
+                robot.emergency_reset()
+            
+            else:
+                print(f"❌ Unknown command: '{command}'. Type 'help' for available commands.")
+        
+        except KeyboardInterrupt:
+            print("\n👋 Exiting interactive mode (Ctrl+C)")
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+
+
 if __name__ == "__main__":
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='Courier Robot Web API Controller',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        '--url',
+        type=str,
+        default='http://192.168.1.3:8090',
+        help='Base URL of the courier robot HTTP server'
+    )
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        default=True,
+        help='Enable verbose output'
+    )
+    parser.add_argument(
+        '--no-verbose',
+        dest='verbose',
+        action='store_false',
+        help='Disable verbose output'
+    )
+    
+    args = parser.parse_args()
+    
     # Example usage
     print("="*60)
     print("CourierRobot Control Example")
     print("="*60)
     
-    # Initialize robot
-    robot = CourierRobotWebAPI()
+    # Initialize robot with parsed URL
+    robot = CourierRobotWebAPI(base_url=args.url, verbose=args.verbose)
     
-    # Import and run interactive mode
-    from courier_robot_terminal_test import interactive_mode
+    # Run interactive mode
     interactive_mode(robot)
     # ==================== Test Area ====================
-# Uncomment the commands you want to test
-
-# 1. Query status
-# robot.get_status()
-
-# 2. Query sensors
-# robot.get_sensor_data()
-
-# ========== Blocking Mode Tests (default wait=True) ==========
-
-# 3. goto 900mm (blocking, auto-wait for completion)
-# robot.platform_goto_height(900)
-
-# 4. goto 850mm (blocking, auto-wait for completion)
-# robot.platform_goto_height(850)
-
-# 5. Force control up to 50N (blocking)
-# robot.platform_force_up(50.0)
-
-# 6. Force control down to 30N (blocking)
-# robot.platform_force_down(30.0)
-
-# 7. Hybrid control (height 900mm, force 50N) (blocking)
-# robot.platform_hybrid_control(900, 50.0)
-
-# 8. Pushrod goto 100mm (blocking)
-# robot.pushrod_goto_height(100)
-
-# ========== Non-blocking Mode Tests (wait=False, auto-override) ==========
-
-# 9. Non-blocking goto 900, then immediately change to 850 (auto-stop old task)
-# robot.platform_goto_height(900, wait=False)
-# time.sleep(0.5)  # Let it start moving
-# robot.platform_goto_height(850, wait=False)  # ⚠️ Will auto-stop, then goto 850
-
-# 10. Non-blocking force control, then immediately change target force (auto-override)
-# robot.platform_force_up(50.0, wait=False)
-# time.sleep(0.5)
-# robot.platform_force_up(30.0, wait=False)  # ⚠️ Auto-stop, change to 30N
-
-# ========== Manual Control (always non-blocking) ==========
-
-# 11. Manual up (non-blocking, requires manual stop)
-# robot.platform_up()
-# time.sleep(2)
-# robot.platform_stop()
-
-# 12. Manual down (non-blocking, requires manual stop)
-# robot.platform_down()
-# time.sleep(2)
-# robot.platform_stop()
-
-# 13. Pushrod manual up (non-blocking)
-# robot.pushrod_up()
-# time.sleep(2)
-# robot.pushrod_stop()
-
-# ========== Emergency Stop ==========
-
-# 14. Emergency stop
-# robot.emergency_reset()
