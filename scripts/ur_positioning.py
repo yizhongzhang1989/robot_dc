@@ -48,14 +48,14 @@ except ImportError as e:
     print(f"Warning: Positioning3DWebAPIClient not available: {e}")
 
 class URPositioning(Node):
-    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, camera_topic="/ur15_camera/image_raw", operation_name="test_operation"):
+    def __init__(self, robot_ip=None, robot_port=None, camera_topic=None, operation_name="test_operation"):
         """
         Initialize URPositioning class for basic robot camera capture
         
         Args:
-            robot_ip (str): IP address of the UR15 robot
-            robot_port (int): Port number of the UR15 robot
-            camera_topic (str): ROS topic name for camera images
+            robot_ip (str): IP address of the UR15 robot. If None, loads from config file
+            robot_port (int): Port number of the UR15 robot. If None, loads from config file
+            camera_topic (str): ROS topic name for camera images. If None, loads from config file
             operation_name (str): Name of the operation for data directory
         """
         # Initialize ROS node
@@ -71,12 +71,15 @@ class URPositioning(Node):
         except ImportError:
             self.script_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # IP address and port for UR15 robot
-        self.robot_ip = robot_ip
-        self.robot_port = robot_port
+        # Load config once for all parameters
+        config_params = self._load_config_parameters()
         
-        # Camera topic name
-        self.camera_topic = camera_topic
+        # IP address and port for UR15 robot - load from config if not provided
+        self.robot_ip = robot_ip if robot_ip is not None else config_params['robot_ip']
+        self.robot_port = robot_port if robot_port is not None else config_params['robot_port']
+        
+        # Camera topic name - load from config if not provided
+        self.camera_topic = camera_topic if camera_topic is not None else config_params['camera_topic']
         
         # Operation name for data organization
         self.operation_name = operation_name
@@ -132,6 +135,64 @@ class URPositioning(Node):
             10,
             callback_group=self.callback_group
         )
+    
+    def _load_config_parameters(self):
+        """
+        Load robot IP, port, and camera topic from robot_config.yaml
+        
+        Returns:
+            dict: Dictionary with robot_ip, robot_port, and camera_topic
+        """
+        # Default values
+        defaults = {
+            'robot_ip': '192.168.1.15',
+            'robot_port': 30002,
+            'camera_topic': '/ur15_camera/image_raw'
+        }
+        
+        try:
+            import yaml
+            
+            # Get workspace root
+            workspace_root = get_workspace_root()
+            if workspace_root is None:
+                workspace_root = os.path.abspath(os.path.join(self.script_dir, '..'))
+            
+            # Path to config file
+            config_path = os.path.join(workspace_root, 'config', 'robot_config.yaml')
+            
+            if not os.path.exists(config_path):
+                self.get_logger().warning(f"Config file not found: {config_path}")
+                self.get_logger().warning(f"Using default values: IP={defaults['robot_ip']}, Port={defaults['robot_port']}, Topic={defaults['camera_topic']}")
+                return defaults
+            
+            # Load config file
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            ur15_config = config.get('ur15', {})
+            
+            # Get robot IP from ur15.robot.ip
+            robot_ip = ur15_config.get('robot', {}).get('ip', defaults['robot_ip'])
+            
+            # Get robot port from ur15.robot.ports.control
+            robot_port = ur15_config.get('robot', {}).get('ports', {}).get('control', defaults['robot_port'])
+            
+            # Get camera topic from ur15.camera.topic
+            camera_topic = ur15_config.get('camera', {}).get('topic', defaults['camera_topic'])
+            
+            self.get_logger().info(f"✓ Loaded config: IP={robot_ip}, Port={robot_port}, Topic={camera_topic}")
+            
+            return {
+                'robot_ip': robot_ip,
+                'robot_port': robot_port,
+                'camera_topic': camera_topic
+            }
+            
+        except Exception as e:
+            self.get_logger().warning(f"Error loading config: {e}")
+            self.get_logger().warning(f"Using default values: IP={defaults['robot_ip']}, Port={defaults['robot_port']}, Topic={defaults['camera_topic']}")
+            return defaults
     
     def image_callback(self, msg):
         """

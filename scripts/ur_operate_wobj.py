@@ -12,11 +12,13 @@ from generate_server_frame import GenerateServerFrame
 
 
 class UROperateWobj:
-    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, server_index=14):
-
+    def __init__(self, robot_ip=None, robot_port=None, server_index=14):
+        # Load config parameters if not provided
+        config_params = self._load_config_parameters()
+        
         # =========================== Configurable Parameters ===========================
-        self.robot_ip = robot_ip
-        self.robot_port = robot_port
+        self.robot_ip = robot_ip if robot_ip is not None else config_params['robot_ip']
+        self.robot_port = robot_port if robot_port is not None else config_params['robot_port']
         self.rs485_port = 54321
         self.server_index = server_index
 
@@ -54,6 +56,60 @@ class UROperateWobj:
         self._calculate_server2base(self.server_index)
     
     # ================================== Private Helper Methods ==================================
+    def _load_config_parameters(self):
+        """
+        Load robot IP and port from robot_config.yaml
+        
+        Returns:
+            dict: Dictionary with robot_ip and robot_port
+        """
+        # Default values
+        defaults = {
+            'robot_ip': '192.168.1.15',
+            'robot_port': 30002
+        }
+        
+        try:
+            import yaml
+            from common.workspace_utils import get_workspace_root
+            
+            # Get workspace root
+            workspace_root = get_workspace_root()
+            if workspace_root is None:
+                workspace_root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+            
+            # Path to config file
+            config_path = os.path.join(workspace_root, 'config', 'robot_config.yaml')
+            
+            if not os.path.exists(config_path):
+                print(f"Config file not found: {config_path}")
+                print(f"Using default values: IP={defaults['robot_ip']}, Port={defaults['robot_port']}")
+                return defaults
+            
+            # Load config file
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            ur15_config = config.get('ur15', {})
+            
+            # Get robot IP from ur15.robot.ip
+            robot_ip = ur15_config.get('robot', {}).get('ip', defaults['robot_ip'])
+            
+            # Get robot port from ur15.robot.ports.control
+            robot_port = ur15_config.get('robot', {}).get('ports', {}).get('control', defaults['robot_port'])
+            
+            print(f"✓ Loaded config: IP={robot_ip}, Port={robot_port}")
+            
+            return {
+                'robot_ip': robot_ip,
+                'robot_port': robot_port
+            }
+            
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            print(f"Using default values: IP={defaults['robot_ip']}, Port={defaults['robot_port']}")
+            return defaults
+    
     def _setup_paths(self):
         """Setup directory paths for script, dataset, data and results"""
         # Get the script directory for relative paths
@@ -764,11 +820,11 @@ if __name__ == "__main__":
     try:
         # Parse command line arguments
         parser = argparse.ArgumentParser(description='UR Robot Operation with Wobj')
-        parser.add_argument('--robot_ip', type=str, default='192.168.1.15',
+        parser.add_argument('--robot-ip', type=str, default='192.168.1.15',
                             help='Robot IP address (default: 192.168.1.15)')
-        parser.add_argument('--robot_port', type=int, default=30002,
+        parser.add_argument('--robot-port', type=int, default=30002,
                             help='Robot port (default: 30002)')
-        parser.add_argument('--server_index', type=int, default=14,
+        parser.add_argument('--server-index', type=int, default=14,
                             help='Server index (default: 14)')
         
         args = parser.parse_args()

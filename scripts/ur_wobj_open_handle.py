@@ -6,12 +6,12 @@ from ur_operate_wobj import UROperateWobj
 
 
 class URWobjOpenHandle(UROperateWobj):
-    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, server_index=14):
+    def __init__(self, robot_ip=None, robot_port=None, server_index=14):
         """
         Initialize URWobjOpenHandle instance
         Args:
-            robot_ip: IP address of the UR15 robot
-            robot_port: Port number of the UR15 robot
+            robot_ip: IP address of the UR15 robot. If None, loads from config file
+            robot_port: Port number of the UR15 robot. If None, loads from config file
             server_index: Server index for target server position
         """
         # Call parent class constructor
@@ -493,7 +493,7 @@ if __name__ == "__main__":
                        help='IP address of the UR15 robot (default: 192.168.1.15)')
     parser.add_argument('--robot-port', type=int, default=30002,
                        help='Port number of the UR15 robot (default: 30002)')
-    parser.add_argument('--server_index', type=int, default=14,
+    parser.add_argument('--server-index', type=int, default=14,
                        help='Target server index (default: 14)')
     
     args = parser.parse_args()

@@ -9,10 +9,10 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
 
-class URWobjCloseLeft(UROperateWobj):
+class URWobjCloseRight(UROperateWobj):
     def __init__(self, robot_ip=None, robot_port=None, server_index=14):
         """
-        Initialize URWobjCloseLeft instance
+        Initialize URWobjCloseRight instance
         Args:
             robot_ip: IP address of the UR15 robot. If None, loads from config file
             robot_port: Port number of the UR15 robot. If None, loads from config file
@@ -22,7 +22,7 @@ class URWobjCloseLeft(UROperateWobj):
         super().__init__(robot_ip=robot_ip, robot_port=robot_port, server_index=server_index)
         
         # Store operation name
-        self.operation_name = "close_left"
+        self.operation_name = "close_right"
         
         # Initialize URPositioning instance and ROS2 executor
         self.ur_positioning = None
@@ -32,7 +32,7 @@ class URWobjCloseLeft(UROperateWobj):
 
         self._calculate_server2base(self.server_index)
         
-        print(f"URWobjCloseLeft initialized for server index: {server_index}")
+        print(f"URWobjCloseRight initialized for server index: {server_index}")
 
     def _initialize_ur_positioning(self):
         """Initialize URPositioning instance for camera capture and positioning"""
@@ -124,9 +124,9 @@ class URWobjCloseLeft(UROperateWobj):
         return 0
 
     # ================================ Force Control Functions ================================
-    def force_task_close_left_handle(self):
+    def force_task_close_right_handle(self):
         """
-        Execute force control task to close the left handle using server coordinate system.
+        Execute force control task to close the right handle using server coordinate system.
         This function includes all 6 motions (0-5) in sequence.
         """
         if self.robot is None:
@@ -136,10 +136,10 @@ class URWobjCloseLeft(UROperateWobj):
         if self.server2base_matrix is None:
             print("Server coordinate system transformation matrix not loaded")
             return -1
-        
-        # ==============Motion 1: push to unlock the handle=================
-        print("\n[Motion 1] Pushing to unlock the handle...")
-        
+
+        # ==============Motion 1: push to close the handle (first push)=================
+        print("\n[Motion 1] Pushing to close the handle (first push)...")
+
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
@@ -161,12 +161,12 @@ class URWobjCloseLeft(UROperateWobj):
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
-        # Set force mode parameters for unlocking
-        selection_vector = [1, 0, 1, 0, 0, 0]  # Enable force control in X and Z directions
-        wrench = [15, 0, 0, 0, 0, 0]  # Desired force/torque in each direction
+        # Set force mode parameters for first push
+        selection_vector = [1, 0, 0, 0, 0, 0]  # Enable force control in X direction only
+        wrench = [-15, 0, 0, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
-        print("[INFO] Starting force control task - unlocking...")
+        print("[INFO] Starting force control task - first push...")
         
         # Execute force control with distance-based termination
         result1 = self.robot.force_control_task(
@@ -176,7 +176,7 @@ class URWobjCloseLeft(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.05, 0, 0.05, 0, 0, 0]
+            end_distance=[0.05, 0, 0, 0, 0, 0]
         )
         
         if result1 != 0:
@@ -185,10 +185,10 @@ class URWobjCloseLeft(UROperateWobj):
         
         print("[INFO] Motion 1 completed successfully")
         time.sleep(0.5)
-
-        # ==============Motion 2: push to close the handle=================
-        print("\n[Motion 2] Pushing to close the handle...")
         
+        # ==============Motion 2: push to close the handle (main push)=================
+        print("\n[Motion 2] Pushing to close the handle (main push)...")
+
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
@@ -210,12 +210,12 @@ class URWobjCloseLeft(UROperateWobj):
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
-        # Set force mode parameters for closing
+        # Set force mode parameters for main push
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [20, 15, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [-20, 15, 0, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
-        print("[INFO] Starting force control task - closing handle...")
+        print("[INFO] Starting force control task - main push...")
         
         # Execute force control with distance-based termination
         result2 = self.robot.force_control_task(
@@ -225,7 +225,7 @@ class URWobjCloseLeft(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.12, 0.10, 0.05, 0, 0, 0]
+            end_distance=[0.11, 0.10, 0.05, 0, 0, 0]
         )
         
         if result2 != 0:
@@ -266,7 +266,6 @@ class URWobjCloseLeft(UROperateWobj):
 
         # ==============Motion 4: push handle to completely close=================
         print("\n[Motion 4] Pushing handle to completely close...")
-        
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
@@ -288,12 +287,12 @@ class URWobjCloseLeft(UROperateWobj):
         
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
-        # Set force mode parameters
+        # Set force mode parameters for complete close
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [0, 20, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 20, 0, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
-        print("[INFO] Starting force control task - pushing handle completely...")
+        print("[INFO] Starting force control task - completing close...")
         
         # Execute force control with force-based termination
         result4 = self.robot.force_control_task(
@@ -368,7 +367,7 @@ class URWobjCloseLeft(UROperateWobj):
         
         # Set force mode parameters for locking
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
-        wrench = [0, 40, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 60, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -416,8 +415,8 @@ class URWobjCloseLeft(UROperateWobj):
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters for locking
-        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
-        wrench = [-25, 30, 0, 0, 0, 0]  # Desired force/torque in each direction
+        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X, Y, Z directions
+        wrench = [25, 25, 0, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -440,61 +439,8 @@ class URWobjCloseLeft(UROperateWobj):
         print("[INFO] Motion 7 completed successfully")
         time.sleep(0.5)
         
-        print("[INFO] CloseLeft handle sequence completed successfully")
+        print("[INFO] CloseRight handle sequence completed successfully")
         return 0
-
-    def force_task_push_server_after_close_left(self):
-        """
-        Execute force control task to push server to end after closing handle using server coordinate system.
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-        
-        if self.server2base_matrix is None:
-            print("Server coordinate system transformation matrix not loaded")
-            return -1
-        
-        # Get current TCP pose
-        tcp_pose = self.robot.get_actual_tcp_pose()
-        print(f"[INFO] Current TCP pose: {tcp_pose}")
-        
-        # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation_matrix = self.server2base_matrix[:3, :3]
-        server_rotation = R.from_matrix(server_rotation_matrix)
-        server_rotation_vector = server_rotation.as_rotvec()
-        
-        # Create task frame using current position with server orientation
-        task_frame = [
-            tcp_pose[0],        # x (current position)
-            tcp_pose[1],        # y
-            tcp_pose[2],        # z
-            server_rotation_vector[0], # rx (server orientation)
-            server_rotation_vector[1], # ry
-            server_rotation_vector[2]  # rz
-        ]
-        
-        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
-        
-        # Set force mode parameters
-        selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
-        wrench = [0, 50, 0, 0, 0, 0]  # Desired force/torque in each direction
-        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
-        
-        print("[INFO] Starting force control task - pushing server...")
-        
-        # Execute force control task with time-based termination
-        result = self.robot.force_control_task(
-            task_frame=task_frame,
-            selection_vector=selection_vector,
-            wrench=wrench,
-            limits=limits,
-            damping=0.1,
-            end_type=1,
-            end_time=3.5
-        )
-        time.sleep(0.5)
-        return result
 
     def force_task_touch_server(self):
         """
@@ -543,8 +489,8 @@ class URWobjCloseLeft(UROperateWobj):
             wrench=wrench,
             limits=limits,
             damping=0.1,
-            end_type=2,
-            end_force=[0, 0, 15, 0, 0, 0]
+            end_type=3,
+            end_distance=[0, 0, 0.015, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
@@ -597,26 +543,28 @@ class URWobjCloseLeft(UROperateWobj):
             limits=limits,
             damping=0.1,
             end_type=3,
-            end_distance=[0, 0.05, 0, 0, 0, 0]
+            end_distance=[0, 0.15, 0, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
 
     # ================================ Complete Sequence ================================
-    def execute_close_left_sequence(self):
+    def execute_close_right_sequence(self):
         """
-        Execute the complete sequence for closing left handle operation.
+        Execute the complete sequence for closing right handle operation.
         This includes:
-        1. Move to target server position
-        2. Touch left handle
-        3. Close left handle (6 motions)
-        4. Touch server
-        5. Push server after close
-        6. Pull server
-        7. Move away from server
+        1. Correct TCP pose
+        2. Move to target server position
+        3. Update server2base by vision positioning
+        4. Touch right handle
+        5. Close right handle (6 motions)
+        6. Move away and up
+        7. Touch server
+        8. Pull server
+        9. Move away from server
         """
         print("\n" + "="*70)
-        print("STARTING COMPLETE CLOSE LEFT HANDLE SEQUENCE")
+        print("STARTING COMPLETE CLOSE RIGHT HANDLE SEQUENCE")
         print("="*70)
 
         # Step 1: Correct TCP pose
@@ -634,7 +582,7 @@ class URWobjCloseLeft(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 2: Move to target position with offset to update server2base_matrix
+        # Step 2: Move to target position with offset
         print("\n" + "="*50)
         print("Step 2: Moving to target server position...")
         print("="*50)
@@ -692,7 +640,7 @@ class URWobjCloseLeft(UROperateWobj):
         print("\n" + "="*50)
         print("Step 6: Moving to close left handle position...")
         print("="*50)
-        result = self.movel_in_server_frame([-0.24, 0, 0])
+        result = self.movel_in_server_frame([0.24, 0, 0])
         if result != 0:
             print(f"[ERROR] Failed to move to close left handle position (error code: {result})")
             return result
@@ -704,13 +652,13 @@ class URWobjCloseLeft(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 7: Close left handle (complete sequence with 6 motions)
+        # Step 7: Close right handle (complete sequence with 6 motions)
         print("\n" + "="*50)
-        print("Step 7: Closing left handle...")
+        print("Step 7: Closing right handle...")
         print("="*50)
-        result = self.force_task_close_left_handle()
+        result = self.force_task_close_right_handle()
         if result != 0:
-            print(f"[ERROR] Failed to close left handle (error code: {result})")
+            print(f"[ERROR] Failed to close right handle (error code: {result})")
             return result
         time.sleep(0.5)
 
@@ -718,62 +666,39 @@ class URWobjCloseLeft(UROperateWobj):
         print("\n" + "="*50)
         print("Step 8: Moving away from the server...")
         print("="*50)
-        result = self.movel_in_rack_frame([0, -0.10, 0])
+        result = self.movel_in_server_frame([0, -0.10, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away (error code: {result})")
             return result
         time.sleep(0.5)
-    
-        # Step 9: Move to push server position, update server2base to init
+
+        # Step 9: Move to leave the server and prepare for pull out
         print("\n" + "="*50)
-        print("Step 9: Moving to server push position...")
+        print("Step 9: Moving to leave the server and prepare for pull out...")
         print("="*50)
-        self._calculate_server2base(self.server_index)
-        result = self.movel_to_target_position(
-            index=self.server_index,
-            execution_order=[1, 3, 2],
-            offset_in_rack=[0.03, -0.50, 0.025]  # Offset to reach server push position
-        )
+        result = self.movel_in_server_frame([0, 0, -0.025])
         if result != 0:
             return result
         time.sleep(0.5)
 
-        # Step 10: Push server after close
+        result = self.movel_in_server_frame([-0.11, 0.09, 0])
+        if result != 0:
+            return result
+        time.sleep(0.5)
+
+        # Step 10: Touch server
         print("\n" + "="*50)
-        print("Step 10: Pushing server after close...")
-        print("="*50)
-        result = self.force_task_push_server_after_close_left()
-        if result != 0:
-            print(f"[ERROR] Failed to push server (error code: {result})")
-            return result
-        time.sleep(0.5)
-
-        # Step 11: Move to leave the server and prepare for pull out
-        print("\n" + "="*50)
-        print("Step 11: Moving to leave the server and prepare for pull out...")
-        print("="*50)
-        result = self.movel_in_server_frame([0, -0.05, -0.035])
-        if result != 0:
-            return result
-        time.sleep(0.5)
-
-        result = self.movel_in_server_frame([0, 0.06, 0])
-        if result != 0:
-            return result
-        time.sleep(0.5)
-
-        # Step 12: Force control to touch the server
-        print("\n" + "="*50)
-        print("Step 12: Force control to touch the server...")
+        print("Step 10: Touching server...")
         print("="*50)
         result = self.force_task_touch_server()
         if result != 0:
+            print(f"[ERROR] Failed to touch server (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 13: Pull server
+        # Step 11: Pull server
         print("\n" + "="*50)
-        print("Step 13: Pulling server...")
+        print("Step 11: Pulling server...")
         print("="*50)
         result = self.force_task_pull_server()
         if result != 0:
@@ -781,27 +706,28 @@ class URWobjCloseLeft(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 14: Move to leave the server
+        # Step 12: Move to leave the server
         print("\n" + "="*50)
-        print("Step 14: Moving to leave the server...")
+        print("Step 12: Moving to leave the server...")
         print("="*50)
-        result = self.movel_in_server_frame([0, -0.02, -0.04])
+        result = self.movel_in_server_frame([0, -0.015, -0.03])
         if result != 0:
+            print(f"[ERROR] Failed to leave server (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 15: Move away from the server
+        # Step 13: Move away from the server
         print("\n" + "="*50)
-        print("Step 15: Moving away from the server...")
+        print("Step 13: Moving away from the server...")
         print("="*50)
-        result = self.movel_in_rack_frame([0, -0.20, 0])
+        result = self.movel_in_server_frame([0, -0.15, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away (error code: {result})")
             return result
         time.sleep(0.5)
         
         print("\n" + "="*70)
-        print("COMPLETE CLOSE LEFT HANDLE SEQUENCE FINISHED SUCCESSFULLY")
+        print("COMPLETE CLOSE RIGHT HANDLE SEQUENCE FINISHED SUCCESSFULLY")
         print("="*70)
         return 0
 
@@ -810,7 +736,7 @@ if __name__ == "__main__":
     import argparse
     
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='URWobjCloseLeft - Close left handle operation using server coordinate system')
+    parser = argparse.ArgumentParser(description='URWobjCloseRight - Close right handle operation using server coordinate system')
     parser.add_argument('--robot-ip', type=str, default='192.168.1.15',
                        help='IP address of the UR15 robot (default: 192.168.1.15)')
     parser.add_argument('--robot-port', type=int, default=30002,
@@ -820,8 +746,8 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Create URWobjCloseLeft instance
-    ur_wobj_close_left = URWobjCloseLeft(
+    # Create URWobjCloseRight instance
+    ur_wobj_close_right = URWobjCloseRight(
         robot_ip=args.robot_ip,
         robot_port=args.robot_port,
         server_index=args.server_index
@@ -832,33 +758,33 @@ if __name__ == "__main__":
     print("AUTOMATICALLY LOADED PARAMETERS")
     print("="*70)
     
-    if ur_wobj_close_left.camera_matrix is not None:
+    if ur_wobj_close_right.camera_matrix is not None:
         print("\n✓ Camera Matrix loaded")
-        print(ur_wobj_close_left.camera_matrix)
+        print(ur_wobj_close_right.camera_matrix)
         print("\n✓ Distortion Coefficients loaded")
-        print(ur_wobj_close_left.distortion_coefficients)
+        print(ur_wobj_close_right.distortion_coefficients)
     
-    if ur_wobj_close_left.cam2end_matrix is not None:
+    if ur_wobj_close_right.cam2end_matrix is not None:
         print("\n✓ Camera to End-effector Matrix loaded")
-        print(ur_wobj_close_left.cam2end_matrix)
+        print(ur_wobj_close_right.cam2end_matrix)
     
-    if ur_wobj_close_left.rack_transformation_matrix_in_base is not None:
+    if ur_wobj_close_right.rack_transformation_matrix_in_base is not None:
         print("\n✓ Rack Coordinate System loaded")
-        print(f"  Origin: {ur_wobj_close_left.rack_origin_in_base}")
+        print(f"  Origin: {ur_wobj_close_right.rack_origin_in_base}")
     
-    if ur_wobj_close_left.server2base_matrix is not None:
+    if ur_wobj_close_right.server2base_matrix is not None:
         print("\n✓ Server Coordinate System loaded")
-        server_origin = ur_wobj_close_left.server2base_matrix[:3, 3]
+        server_origin = ur_wobj_close_right.server2base_matrix[:3, 3]
         print(f"  Origin: x={server_origin[0]:.6f}, y={server_origin[1]:.6f}, z={server_origin[2]:.6f}")
-        print(f"  Server Index: {ur_wobj_close_left.server_index}")
+        print(f"  Server Index: {ur_wobj_close_right.server_index}")
 
-    # ==============Execute the close left handle task=================
+    # ==============Execute the close right handle task=================
     print("\n" + "="*70)
     print("STARTING TASK EXECUTION")
     print("="*70)
     
     try:
-        result = ur_wobj_close_left.execute_close_left_sequence()
+        result = ur_wobj_close_right.execute_close_right_sequence()
         
         if result == 0:
             print("\n✓ Task completed successfully!")
@@ -873,4 +799,4 @@ if __name__ == "__main__":
         traceback.print_exc()
     finally:
         # Cleanup resources
-        ur_wobj_close_left.cleanup()
+        ur_wobj_close_right.cleanup()
