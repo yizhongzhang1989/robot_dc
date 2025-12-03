@@ -12,7 +12,14 @@ import socket
 import subprocess
 
 # AMR
-script_dir = os.path.dirname(os.path.abspath(__file__))
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
+    from common.workspace_utils import get_workspace_root, get_scripts_directory
+    repo_root_path = get_workspace_root()
+    script_dir = get_scripts_directory()
+except ImportError:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root_path = os.path.abspath(os.path.join(script_dir, '..'))
 third_party_dir = os.path.join(script_dir, 'ThirdParty')
 sys.path.insert(0, third_party_dir)
 
@@ -22,8 +29,6 @@ amr_controller = None
 AMR_WEB_API_URL = "http://192.168.1.142:5000"
 
 # DUCO
-current_file_path = os.path.dirname(os.path.abspath(__file__))
-repo_root_path = os.path.abspath(os.path.join(current_file_path, '..'))
 duco_script_path = os.path.join(repo_root_path, 'colcon_ws/src/duco_robot_arm/duco_robot_arm')
 gen_py_path = os.path.join(duco_script_path, 'gen_py')
 lib_path = os.path.join(duco_script_path, 'lib')  # Fixed: Use correct lib path

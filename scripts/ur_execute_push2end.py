@@ -10,15 +10,22 @@ class URExecutePush2End(URExecuteBase):
         # Call parent class constructor first
         super().__init__(robot_ip, robot_port)
         
+        # Get workspace root
+        try:
+            from common.workspace_utils import get_workspace_root
+            workspace_root = get_workspace_root()
+        except:
+            workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         # Override data_dir and result_dir with push2end-specific paths
         self.data_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            workspace_root,
             "temp",
             "ur_locate_push2end_data"
         )
         
         self.result_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            workspace_root,
             "temp",
             "ur_locate_push2end_result"
         )

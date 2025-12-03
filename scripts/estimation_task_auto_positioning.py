@@ -10,8 +10,13 @@ import json
 from datetime import datetime
 
 # Add the duco_robot_arm directory and its lib subdirectory to the Python path
-script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
+    from common.workspace_utils import get_workspace_root
+    project_root = get_workspace_root()
+except ImportError:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
 duco_robot_arm_dir = os.path.join(project_root, 'colcon_ws', 'src', 'duco_robot_arm', 'duco_robot_arm')
 sys.path.insert(0, duco_robot_arm_dir)
 sys.path.insert(0, os.path.join(duco_robot_arm_dir, 'lib'))

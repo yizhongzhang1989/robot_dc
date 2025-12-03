@@ -11,9 +11,16 @@ class URExecuteHandle1(URExecuteBase):
         # Call parent class initialization first
         super().__init__(robot_ip, robot_port, rs485_port)
         
+        # Get workspace root
+        try:
+            from common.workspace_utils import get_workspace_root
+            workspace_root = get_workspace_root()
+        except:
+            workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         # Override camera parameters path (if needed)
         self.camera_params_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            workspace_root,
             "temp",
             "ur15_cam_calibration_result",
             "ur15_camera_parameters"
@@ -21,14 +28,14 @@ class URExecuteHandle1(URExecuteBase):
         
         # Data directory path - customized for handle1
         self.data_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            workspace_root,
             "temp",
             "ur_locate_handle1_data"
         )
         
         # Result directory path - customized for handle1
         self.result_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            workspace_root,
             "temp",
             "ur_locate_handle1_result"
         )

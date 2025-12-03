@@ -477,21 +477,6 @@
             font-size: 0.7rem;
             text-align: center;
         }
-        
-        /* Rack row styles */
-        .rack-row {
-            border: 2px solid transparent !important;
-        }
-        
-        .rack-row:hover {
-            background: #e9ecef !important;
-        }
-        
-        .rack-row.selected {
-            background: #d0e7ff !important;
-            border: 2px solid #3b82f6 !important;
-            box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
-        }
     </style>
 </head>
 <body class="bg-gray-100 h-full font-sans">
@@ -770,13 +755,13 @@
                         
                         <!-- Capture Button Row -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <button onclick="captureTaskData('crack')" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Save data to operation path">
-                                <span>📷</span>
-                                <span>Capture Only One</span>
-                            </button>
-                            <button id="captureX3Btn" onclick="captureTaskDataX3()" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Capture 3 images at different positions (x, y offsets)">
+                            <button onclick="captureRefImg1()" style="flex: 1; min-width: 0;" class="responsive-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Capture and save as ref_img_1.jpg">
                                 <span>📸</span>
-                                <span>Capture x3</span>
+                                <span>Capture Reference 1</span>
+                            </button>
+                            <button onclick="captureTaskData('crack')" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+                                <span>📷</span>
+                                <span>Capture Additional</span>
                             </button>
                         </div>
                         
@@ -784,85 +769,44 @@
                         <div style="display: flex; gap: 0.5rem;">
                             <button onclick="labelLastCapturedImage()" style="flex: 1; min-width: 0;" class="responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Open image labeling service for the last captured image">
                                 <span>🏷️</span>
-                                <span>Go To Label Last Captured Image</span>
+                                <span>Go To Label Selected Reference 1</span>
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
             
-            <!-- Rack Location Panel -->
+            <!-- Workflow Panel -->
             <div class="panel-with-title">
                 <div class="panel-title">
-                    Rack Location Panel
+                    Workflow Panel
                 </div>
                 <div class="panel-content">
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
-                        <!-- Joint Angles Display -->
-                        <div style="display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.5rem;">
-                            <!-- Row 1 -->
-                            <div class="rack-row" data-rack="1" style="display: flex; gap: 1rem; padding: 0.35rem 0.5rem; background: #f8f9fa; border-radius: 4px; transition: all 0.2s; align-items: center;">
-                                <input id="rackLabel1" type="text" value="Lower Left" onchange="updateRackLabel(1, this.value)" onclick="selectRack(1)" style="width: 100px; max-width: 100px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer; border: 1px solid #dee2e6; border-radius: 3px; padding: 0.15rem 0.3rem; background: white;" /><span style="margin-right: -0.5rem;">:</span>
-                                <span id="rack1_j0" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack1_j1" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack1_j2" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack1_j3" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack1_j4" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack1_j5" onclick="selectRack(1)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <button onclick="deleteRackPosition(1); event.stopPropagation();" style="margin-left: auto; padding: 0.2rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.7rem; transition: background 0.2s; white-space: nowrap;" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">🗑️</button>
-                            </div>
-                            <!-- Row 2 -->
-                            <div class="rack-row" data-rack="2" style="display: flex; gap: 1rem; padding: 0.35rem 0.5rem; background: #f8f9fa; border-radius: 4px; transition: all 0.2s; align-items: center;">
-                                <input id="rackLabel2" type="text" value="Lower Right" onchange="updateRackLabel(2, this.value)" onclick="selectRack(2)" style="width: 100px; max-width: 100px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer; border: 1px solid #dee2e6; border-radius: 3px; padding: 0.15rem 0.3rem; background: white;" /><span style="margin-right: -0.5rem;">:</span>
-                                <span id="rack2_j0" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack2_j1" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack2_j2" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack2_j3" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack2_j4" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack2_j5" onclick="selectRack(2)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <button onclick="deleteRackPosition(2); event.stopPropagation();" style="margin-left: auto; padding: 0.2rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.7rem; transition: background 0.2s; white-space: nowrap;" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">🗑️</button>
-                            </div>
-                            <!-- Row 3 -->
-                            <div class="rack-row" data-rack="3" style="display: flex; gap: 1rem; padding: 0.35rem 0.5rem; background: #f8f9fa; border-radius: 4px; transition: all 0.2s; align-items: center;">
-                                <input id="rackLabel3" type="text" value="Top Left" onchange="updateRackLabel(3, this.value)" onclick="selectRack(3)" style="width: 100px; max-width: 100px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer; border: 1px solid #dee2e6; border-radius: 3px; padding: 0.15rem 0.3rem; background: white;" /><span style="margin-right: -0.5rem;">:</span>
-                                <span id="rack3_j0" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack3_j1" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack3_j2" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack3_j3" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack3_j4" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack3_j5" onclick="selectRack(3)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <button onclick="deleteRackPosition(3); event.stopPropagation();" style="margin-left: auto; padding: 0.2rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.7rem; transition: background 0.2s; white-space: nowrap;" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">🗑️</button>
-                            </div>
-                            <!-- Row 4 -->
-                            <div class="rack-row" data-rack="4" style="display: flex; gap: 1rem; padding: 0.35rem 0.5rem; background: #f8f9fa; border-radius: 4px; transition: all 0.2s; align-items: center;">
-                                <input id="rackLabel4" type="text" value="Top Right" onchange="updateRackLabel(4, this.value)" onclick="selectRack(4)" style="width: 100px; max-width: 100px; font-weight: 600; color: #495057; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; font-size: 0.8rem; cursor: pointer; border: 1px solid #dee2e6; border-radius: 3px; padding: 0.15rem 0.3rem; background: white;" /><span style="margin-right: -0.5rem;">:</span>
-                                <span id="rack4_j0" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack4_j1" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack4_j2" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack4_j3" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack4_j4" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <span id="rack4_j5" onclick="selectRack(4)" style="width: 50px; text-align: right; color: #212529; font-family: 'Courier New', 'Consolas', monospace; font-size: 0.75rem; cursor: pointer;">0.00</span>
-                                <button onclick="deleteRackPosition(4); event.stopPropagation();" style="margin-left: auto; padding: 0.2rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.7rem; transition: background 0.2s; white-space: nowrap;" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">🗑️</button>
-                            </div>
+                        <!-- Workflow Files Dropdown -->
+                        <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                            <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">Workflow Files:</span>
+                            <select id="workflowFiles" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200" style="width: 100%;" title="Select a workflow file">
+                                <option value="">Loading...</option>
+                            </select>
+                            <button onclick="loadWorkflowFiles()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Refresh workflow files">
+                                🔄 Refresh
+                            </button>
                         </div>
                         
-                        <!-- Record Position and Play Buttons -->
+                        <!-- Go To Workflow Config Center Button -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <button id="recordPositionBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="recordPosition()">
-                                <span>⏺️</span>
-                                <span>Record Position</span>
+                            <button onclick="goToWorkflowConfigCenter()" style="flex: 1; min-width: 0;" class="responsive-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Open workflow configuration center">
+                                <span>⚙️</span>
+                                <span>Go To Workflow Config Center</span>
                             </button>
-                            <button id="playBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="play()">
+                        </div>
+                        
+                        <!-- Run Current Selected Workflow Button -->
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button onclick="runCurrentWorkflow()" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Run the currently selected workflow">
                                 <span>▶️</span>
-                                <span>Play</span>
-                            </button>
-                        </div>
-                        
-                        <!-- Locate Rack Button -->
-                        <div style="display: flex; gap: 0.5rem;">
-                            <button id="locateRackBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateRack()">
-                                <span>🚪</span>
-                                <span>Locate Rack</span>
+                                <span>Run Current Selected Workflow</span>
                             </button>
                         </div>
                     </div>
@@ -876,6 +820,15 @@
                 </div>
                 <div class="panel-content">
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
+                        <!-- Operating Unit Input -->
+                        <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                            <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">Operating Unit:</span>
+                            <input type="number" id="operatingUnit" value="1" min="1" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200" style="width: 100%;" title="Enter operating unit number (starting from 1)" placeholder="1">
+                            <button onclick="setOperatingUnit()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Set operating unit">
+                                📝 Set
+                            </button>
+                        </div>
+                        
                         <!-- Row 2: locate unlock_knob and execute unlock_knob -->
                         <div style="display: flex; gap: 0.5rem;">
                             <button id="locateUnlockKnobBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateUnlockKnob()">

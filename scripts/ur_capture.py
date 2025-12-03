@@ -46,7 +46,11 @@ class URCapture(Node):
         
         # =========================== Configurable Parameters ===========================
         # Get the script directory for relative paths
-        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            from common.workspace_utils import get_scripts_directory
+            self.script_dir = get_scripts_directory() if get_scripts_directory() else os.path.dirname(os.path.abspath(__file__))
+        except ImportError:
+            self.script_dir = os.path.dirname(os.path.abspath(__file__))
         
         # IP address and port for UR15 robot
         self.robot_ip = robot_ip

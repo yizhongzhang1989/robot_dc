@@ -17,9 +17,17 @@ try:
     from .gen_py.robot.ttypes import StateRobot, StateProgram, OperationMode, TaskState, Op
 except ImportError:
     # Fall back to absolute imports with sys.path manipulation (when used directly)
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.append(os.path.join(current_dir, 'gen_py'))
-    sys.path.append(os.path.join(current_dir, 'lib'))
+    try:
+        from common.workspace_utils import get_workspace_root
+        workspace_root = get_workspace_root()
+        if workspace_root:
+            duco_pkg_dir = os.path.join(workspace_root, 'colcon_ws', 'src', 'duco_robot_arm', 'duco_robot_arm')
+        else:
+            duco_pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    except ImportError:
+        duco_pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.append(os.path.join(duco_pkg_dir, 'gen_py'))
+    sys.path.append(os.path.join(duco_pkg_dir, 'lib'))
     
     from thrift import Thrift
     from thrift.transport import TSocket

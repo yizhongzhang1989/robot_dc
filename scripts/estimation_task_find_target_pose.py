@@ -24,8 +24,13 @@ import sys
 import matplotlib.pyplot as plt
 
 # Add the duco_robot_arm directory and its lib subdirectory to the Python path
-script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
+    from common.workspace_utils import get_workspace_root
+    project_root = get_workspace_root()
+except ImportError:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
 duco_robot_arm_dir = os.path.join(project_root, 'colcon_ws', 'src', 'duco_robot_arm', 'duco_robot_arm')
 sys.path.insert(0, duco_robot_arm_dir)
 sys.path.insert(0, os.path.join(duco_robot_arm_dir, 'lib'))
@@ -49,8 +54,12 @@ def get_start_point_in_base():
             - rpy_angles: [rx, ry, rz] in degrees (ZYX intrinsic rpy angles)
     """
     # File paths
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
+    try:
+        from common.workspace_utils import get_workspace_root
+        project_root = get_workspace_root()
+    except:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(script_dir)
     
     coord_file = os.path.join(project_root, 'temp', 'build_cabinet_frame_result', 'build_cabinet_frame_result.json')
     pose_file = os.path.join(project_root, 'temp', 'positioning_data', 'target_pose.json')
@@ -291,8 +300,12 @@ def visualize_coordinate_systems(robot=None, target_joint_angles=None):
     """
     print("\nVisualizing Coordinate Systems...")
     # Read coordinate transformation data
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
+    try:
+        from common.workspace_utils import get_workspace_root
+        project_root = get_workspace_root()
+    except:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(script_dir)
     
     coord_file = os.path.join(project_root, 'temp', 'build_cabinet_frame_result', 'build_cabinet_frame_result.json')
     pose_file = os.path.join(project_root, 'temp', 'positioning_data', 'target_pose.json')

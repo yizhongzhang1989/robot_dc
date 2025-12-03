@@ -470,7 +470,25 @@ class URLocateRack(URCapture):
                         print(f"✓ Positioning completed!")
                         print(f"  Number of 3D points: {len(points_3d)}")
                         print(f"  Mean reprojection error: {mean_error:.3f} pixels")
-                        
+
+                        # save rack localization data to status
+                        if 'local2world' in positioning_result and positioning_result['local2world'] is not None:
+                            local2world_matrix = np.array(positioning_result['local2world'])
+                            if self.robot_status_client:
+                                try:
+                                    self.robot_status_client.set_status(
+                                        "ur15",
+                                        "rack2base_matrix",
+                                        local2world_matrix
+                                    )
+                                    self.robot_status_client.set_status(
+                                        "ur15",
+                                        "rack_points_3d",
+                                        points_3d
+                                    )
+                                except Exception as e:
+                                    print(f"  ✗ Error saving local2world to robot_status: {e}")
+
                         # Save results for each rack
                         for operation_name in self.operation_names:
                             if operation_name not in results or not results[operation_name].get('capture_success', False):
@@ -1176,10 +1194,34 @@ class URLocateRack(URCapture):
                 print(f"  Session directory: {session_dir}")
                 
                 # Get the appropriate origin for this operation
+                # Map operation name to corresponding template point index
+                operation_to_index = {
+                    'rack_bottom_left': 0,   # GB200_Rack_Bottom_Left_Corner
+                    'rack_bottom_right': 1,  # GB200_Rack_Bottom_Right_Corner
+                    'rack_top_left': 2,      # GB200_Rack_Top_Left_Corner
+                    'rack_top_right': 3      # GB200_Rack_Top_Right_Corner
+                }
+                
                 keypoints_for_rack = coord_system['keypoints_used'].get(operation_name, [])
                 if keypoints_for_rack:
-                    origin_coords = keypoints_for_rack[0]['coordinates']
-                    origin_3d = np.array(origin_coords)
+                    # Use the specific keypoint that matches this operation
+                    target_index = operation_to_index.get(operation_name, 0)
+                    # Find the keypoint with the matching index
+                    origin_kp = None
+                    for kp in keypoints_for_rack:
+                        if kp['index'] == target_index:
+                            origin_kp = kp
+                            break
+                    
+                    if origin_kp:
+                        origin_coords = origin_kp['coordinates']
+                        origin_3d = np.array(origin_coords)
+                        print(f"  Using origin at {origin_kp['name']}: ({origin_3d[0]:.6f}, {origin_3d[1]:.6f}, {origin_3d[2]:.6f})")
+                    else:
+                        # Fallback to first keypoint
+                        origin_coords = keypoints_for_rack[0]['coordinates']
+                        origin_3d = np.array(origin_coords)
+                        print(f"  Using first keypoint as origin: ({origin_3d[0]:.6f}, {origin_3d[1]:.6f}, {origin_3d[2]:.6f})")
                 else:
                     # Fallback to wobj origin
                     origin_3d = wobj_origin_3d.copy()
@@ -1323,7 +1365,12 @@ class URLocateRack(URCapture):
                     axes[idx].axis('off')
                 
                 # Add overall title
-                origin_label = f"{operation_name}_point"
+                # Determine the origin label based on the actual keypoint used
+                if 'origin_kp' in locals() and origin_kp:
+                    origin_label = origin_kp['name']
+                else:
+                    origin_label = f"{operation_name}_point"
+                
                 fig.suptitle(f'Wobj Coordinate System Validation - {operation_name.upper()}\n'
                             f'Origin: {origin_label} | Red: X-axis | Green: Y-axis | Blue: Z-axis',
                             fontsize=14, fontweight='bold', y=0.98)
@@ -1458,7 +1505,7 @@ def main():
         all_positioning_success = all(
             r.get('positioning_success', False) for r in results.values()
         )
-        
+
         if not all_positioning_success:
             print("\n✗ Some positioning operations failed.")
             print("✗ Skipping wobj coordinate system building")

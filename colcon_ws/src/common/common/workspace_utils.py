@@ -118,7 +118,6 @@ def get_workspace_root() -> Optional[str]:
     fallback_paths = [
         os.path.expanduser('~/Documents/robot_dc'),
         os.path.expanduser('~/robot_dc'),
-        '/home/robot/Documents/robot_dc',
     ]
     
     for fallback_path in fallback_paths:

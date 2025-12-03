@@ -4,8 +4,13 @@ import sys
 import os
 
 # get current file path
-current_file_path = os.path.dirname(os.path.abspath(__file__))
-repo_root_path = os.path.abspath(os.path.join(current_file_path, '..'))
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
+    from common.workspace_utils import get_workspace_root
+    repo_root_path = get_workspace_root()
+except ImportError:
+    current_file_path = os.path.dirname(os.path.abspath(__file__))
+    repo_root_path = os.path.abspath(os.path.join(current_file_path, '..'))
 duco_script_path = os.path.join(repo_root_path, 'colcon_ws/src/duco_robot_arm/duco_robot_arm')
 gen_py_path = os.path.join(duco_script_path, 'gen_py')
 lib_path = os.path.join(duco_script_path, 'lib')  # Fixed: Use correct lib path

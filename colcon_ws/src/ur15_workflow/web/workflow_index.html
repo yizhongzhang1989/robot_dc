@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Config Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/workflow_config_center.js" defer></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        .container {
+            max-width: 1600px;
+            width: 100%;
+            height: 100vh;
+            padding: 1.5rem 2rem;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .title {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: white;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            margin: 0 0 1rem 0;
+            flex-shrink: 0;
+        }
+        
+        .button-section {
+            background: white;
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            flex-shrink: 0;
+            display: flex;
+            gap: 0.75rem;
+        }
+        
+        .btn {
+            color: white;
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn:nth-child(1) {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+        
+        .btn:nth-child(2) {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }
+        
+        .btn:nth-child(3) {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+        }
+        
+        .btn:nth-child(4) {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .btn:nth-child(5) {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        }
+        
+        .btn:nth-child(6) {
+            background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+        }
+        
+        .btn:nth-child(7) {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        #fileInput {
+            display: none;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal[style*="display: block"] {
+            display: flex !important;
+        }
+        
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            width: 500px;
+            max-width: 90%;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .modal-header {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal-body {
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal-label {
+            display: block;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 0.5rem;
+        }
+        
+        .modal-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        
+        .modal-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .modal-footer {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+        
+        .btn-cancel {
+            background: #e2e8f0;
+            color: #4a5568;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-cancel:hover {
+            background: #cbd5e0;
+        }
+        
+        .btn-confirm {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-confirm:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+            }
+            50% {
+                opacity: 0.7;
+                box-shadow: 0 0 16px rgba(59, 130, 246, 0.8);
+            }
+        }
+        
+        .content-wrapper {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1rem;
+            flex: 1;
+            min-height: 0;
+        }
+        
+        .handlers-section {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .workflow-section {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+            margin: 0;
+            padding: 1.5rem 2rem;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            flex-shrink: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .workflow-filename {
+            font-size: 1rem;
+            font-weight: normal;
+            opacity: 0.9;
+        }
+        
+        .handlers-section .section-title {
+            background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+        }
+        
+        .workflow-section .section-title {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }
+        
+        .section-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem 2rem;
+        }
+        
+        .json-editor {
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            padding: 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            resize: none;
+            box-sizing: border-box;
+        }
+        
+        .json-editor:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        
+        .editor-toolbar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .toolbar-btn {
+            background: #4b5563;
+            color: white;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .toolbar-btn:hover {
+            background: #374151;
+        }
+        
+        .toolbar-btn.primary {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .toolbar-btn.primary:hover {
+            transform: translateY(-1px);
+        }
+        
+        .handler-category {
+            margin-bottom: 2rem;
+        }
+        
+        .category-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        
+        .handler-item {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 1.1rem;
+            margin-bottom: 0.75rem;
+            cursor: move;
+            transition: all 0.3s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.75rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        
+        .handler-item:hover {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-color: #3b82f6;
+            transform: translateX(5px);
+            box-shadow: 0 4px 8px rgba(59, 130, 246, 0.12);
+        }
+        
+        .handler-item.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+        
+        .json-editor.drag-over {
+            background: #e0f2fe;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        
+        /* Modular Workflow View Styles */
+        .workflow-modular-view {
+            display: none;
+            flex-direction: column;
+            gap: 0.75rem;
+            height: 100%;
+            overflow-y: auto;
+        }
+        
+        .workflow-modular-view.active {
+            display: flex;
+        }
+        
+        .workflow-step {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            position: relative;
+            transition: all 0.2s ease;
+        }
+        
+        .workflow-step:hover {
+            border-color: #cbd5e0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .workflow-step.dragging {
+            opacity: 0.5;
+        }
+        
+        .workflow-step-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .workflow-step-number {
+            background: #3b82f6;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.875rem;
+            flex-shrink: 0;
+        }
+        
+        .workflow-step-info {
+            flex: 1;
+        }
+        
+        .workflow-step-handler {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 1rem;
+        }
+        
+        .workflow-step-type {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
+        }
+        
+        /* Type colors matching handler library */
+        .workflow-step-type[data-type="robot_move"] {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            box-shadow: 0 1px 2px rgba(59, 130, 246, 0.2);
+        }
+        
+        .workflow-step-type[data-type="capture_image"] {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            box-shadow: 0 1px 2px rgba(139, 92, 246, 0.2);
+        }
+        
+        .workflow-step-type[data-type="record_data"] {
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+            box-shadow: 0 1px 2px rgba(249, 115, 22, 0.2);
+        }
+        
+        .workflow-step-type[data-type="positioning"] {
+            background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+            box-shadow: 0 1px 2px rgba(20, 184, 166, 0.2);
+        }
+        
+        .workflow-step-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .workflow-step-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 1.25rem;
+            padding: 0.25rem 0.5rem;
+            transition: all 0.2s ease;
+            border-radius: 4px;
+        }
+        
+        .workflow-step-btn:hover {
+            background: #f7fafc;
+        }
+        
+        .workflow-step-params {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 0.75rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #4a5568;
+        }
+        
+        .workflow-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #9ca3af;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .workflow-empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        
+        .view-toggle-btn {
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .view-toggle-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(249, 115, 22, 0.4);
+        }
+        
+        .handler-id {
+            font-weight: 700;
+            color: #2563eb;
+            margin-bottom: 0.35rem;
+            font-size: 1.05rem;
+            letter-spacing: -0.01em;
+        }
+        
+        .handler-desc {
+            font-size: 0.8rem;
+            color: #64748b;
+            line-height: 1.4;
+        }
+        
+        .handler-type {
+            display: inline-block;
+            color: white;
+            padding: 0.3rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            white-space: nowrap;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+            min-width: 105px;
+            text-align: center;
+        }
+        
+        /* Robot Move - 蓝色 */
+        .handler-item[data-handler-type="robot_move"] .handler-type {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+        }
+        
+        /* Capture Image - 紫色 */
+        .handler-item[data-handler-type="capture_image"] .handler-type {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            box-shadow: 0 2px 4px rgba(139, 92, 246, 0.2);
+        }
+        
+        /* Record Data - 橙色 */
+        .handler-item[data-handler-type="record_data"] .handler-type {
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+            box-shadow: 0 2px 4px rgba(249, 115, 22, 0.2);
+        }
+        
+        /* Positioning - 青色 */
+        .handler-item[data-handler-type="positioning"] .handler-type {
+            background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+            box-shadow: 0 2px 4px rgba(20, 184, 166, 0.2);
+        }
+        
+        .handler-content {
+            flex: 1;
+            min-width: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">Workflow Config Center</h1>
+        <div class="button-section">
+            <button class="btn" onclick="showNewWorkflowModal()">📄 New Workflow</button>
+            <button class="btn" onclick="showLoadTemplateModal()">📋 Load Template</button>
+            <button class="btn" onclick="showLoadWorkflowModal()">📂 Load Workflow</button>
+            <button class="btn" onclick="deleteWorkflow()">🗑️ Delete Workflow</button>
+            <button class="btn" onclick="closeWorkflow()">🚫 Close Workflow</button>
+            <button class="btn" onclick="saveWorkflowToFile()">💾 Save Workflow</button>
+            <button id="viewToggleBtn" class="btn" onclick="toggleWorkflowView()">
+                <span id="viewToggleIcon">📋</span>
+                <span id="viewToggleText">Modular View</span>
+            </button>
+        </div>
+        
+        <!-- New Workflow Modal -->
+        <div id="newWorkflowModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">Create New Workflow</div>
+                <div class="modal-body">
+                    <label class="modal-label" for="workflowFileName">File Name:</label>
+                    <input type="text" id="workflowFileName" class="modal-input" value="workflow_default.json">
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeNewWorkflowModal()">Cancel</button>
+                    <button class="btn-confirm" onclick="createNewWorkflow()">Create</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Delete Workflow Confirmation Modal -->
+        <div id="deleteWorkflowModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">Delete Workflow</div>
+                <div class="modal-body">
+                    <p style="color: #4a5568; line-height: 1.6;">
+                        Are you sure you want to delete workflow "<strong id="deleteFileName"></strong>"?
+                        <br><br>
+                        This will delete the file and clear the editor.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeDeleteWorkflowModal()">Cancel</button>
+                    <button class="btn-confirm" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);" onclick="confirmDeleteWorkflow()">Delete</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Load Workflow Modal -->
+        <div id="loadWorkflowModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">Load Workflow</div>
+                <div class="modal-body">
+                    <label class="modal-label">Select workflow file:</label>
+                    <select id="workflowFileList" class="modal-input" size="10">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeLoadWorkflowModal()">Cancel</button>
+                    <button class="btn-confirm" onclick="loadSelectedWorkflow()">Load</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Load Template Modal -->
+        <div id="loadTemplateModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">Load Template</div>
+                <div class="modal-body">
+                    <label class="modal-label">Select template file:</label>
+                    <select id="templateFileList" class="modal-input" size="8">
+                        <option value="">Loading...</option>
+                    </select>
+                    <label class="modal-label" for="newWorkflowFileName" style="margin-top: 15px;">New workflow file name:</label>
+                    <input type="text" id="newWorkflowFileName" class="modal-input" value="default_name.json" placeholder="Enter new workflow name (optional)">
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeLoadTemplateModal()">Cancel</button>
+                    <button class="btn-confirm" onclick="loadSelectedTemplate()">Load</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Close Workflow Confirmation Modal -->
+        <div id="closeWorkflowModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">Close Workflow</div>
+                <div class="modal-body">
+                    <p style="color: #4a5568; line-height: 1.6;">
+                        Are you sure you want to close workflow "<strong id="closeFileName"></strong>"?
+                        <br><br>
+                        This will close the current workflow without saving. Make sure you have saved your changes.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeCloseWorkflowModal()">Cancel</button>
+                    <button class="btn-confirm" style="background: linear-gradient(135deg, #64748b 0%, #475569 100%);" onclick="confirmCloseWorkflow()">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success Message Modal -->
+        <div id="successModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">Success</div>
+                <div class="modal-body">
+                    <p id="successMessage" style="color: #10b981; line-height: 1.6; font-weight: 500;"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-confirm" onclick="closeSuccessModal()">OK</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Error Message Modal -->
+        <div id="errorModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">Error</div>
+                <div class="modal-body">
+                    <p id="errorMessage" style="color: #ef4444; line-height: 1.6; font-weight: 500;"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-confirm" onclick="closeErrorModal()">OK</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Info Message Modal -->
+        <div id="infoModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">Information</div>
+                <div class="modal-body">
+                    <p id="infoMessage" style="color: #4a5568; line-height: 1.6;"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-confirm" onclick="closeInfoModal()">OK</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Delete Step Confirmation Modal -->
+        <div id="deleteStepModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">Delete Step</div>
+                <div class="modal-body">
+                    <p style="color: #4a5568; line-height: 1.6;">
+                        Are you sure you want to delete step <strong id="deleteStepNumber"></strong>: <strong id="deleteStepName"></strong>?
+                        <br><br>
+                        This action cannot be undone.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="closeDeleteStepModal()">Cancel</button>
+                    <button class="btn-confirm" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);" onclick="confirmDeleteStep()">Delete</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Edit Step Parameters Modal -->
+        <div id="editParamsModal" class="modal">
+            <div class="modal-content" style="max-width: 900px; max-height: 90vh; display: flex; flex-direction: column;">
+                <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; padding: 1.5rem 2rem; border-radius: 12px 12px 0 0; margin: -2rem -2rem 0 -2rem;">
+                    <div style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem;">✏️ Edit Handler Parameters</div>
+                    <div style="font-size: 0.9rem; opacity: 0.95;">Configure parameters for: <strong id="editParamsHandlerName" style="font-size: 1.05rem;"></strong></div>
+                </div>
+                <div class="modal-body" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; padding-top: 1.5rem;">
+                    <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                        <textarea id="paramsEditor" style="flex: 1; font-family: 'Courier New', monospace; font-size: 0.9rem; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 8px; background: #1e1e1e; color: #d4d4d4; resize: none; box-sizing: border-box; min-height: 350px; line-height: 1.6;" spellcheck="false" placeholder="Enter parameters in JSON format..."></textarea>
+                    </div>
+                    <div id="paramsErrorMessage" style="color: #ef4444; background: #fef2f2; border: 1px solid #fecaca; padding: 0.75rem 1rem; border-radius: 6px; margin-top: 1rem; font-size: 0.875rem; display: none; font-weight: 500;">
+                        <span style="margin-right: 0.5rem;">⚠️</span>
+                        <span id="paramsErrorText"></span>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding-top: 1.5rem; border-top: 2px solid #f3f4f6; margin-top: 1rem; justify-content: space-between;">
+                    <button id="loadJointAnglesBtn" class="btn-confirm" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); display: none; align-items: center; gap: 0.5rem;" onclick="loadJointAngles()">
+                        <span>🤖</span>
+                        <span>Load Joint Angles</span>
+                    </button>
+                    <div style="display: flex; gap: 1rem;">
+                        <button class="btn-cancel" onclick="closeEditParamsModal()" style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span>✖️</span>
+                            <span>Cancel</span>
+                        </button>
+                        <button class="btn-confirm" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); display: flex; align-items: center; gap: 0.5rem;" onclick="confirmEditParams()">
+                            <span>💾</span>
+                            <span>Save Changes</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="content-wrapper">
+            <div class="handlers-section">
+                <div class="section-title">Standard Handlers</div>
+                <div class="section-content">
+                    <div class="handler-category">
+                <div class="category-title">🤖 Robot Move</div>
+                <div class="handler-item" draggable="true" data-handler-id="movej_to_pose" data-handler-type="robot_move">
+                    <div class="handler-content">
+                        <div class="handler-id">movej_to_pose</div>
+                        <div class="handler-desc">Move robot to pose using movej</div>
+                    </div>
+                    <span class="handler-type">robot_move</span>
+                </div>
+                <div class="handler-item" draggable="true" data-handler-id="movel_to_pose" data-handler-type="robot_move">
+                    <div class="handler-content">
+                        <div class="handler-id">movel_to_pose</div>
+                        <div class="handler-desc">Move robot to pose using movel</div>
+                    </div>
+                    <span class="handler-type">robot_move</span>
+                </div>
+                <div class="handler-item" draggable="true" data-handler-id="move_tcp_to_offset" data-handler-type="robot_move">
+                    <div class="handler-content">
+                        <div class="handler-id">move_tcp_to_offset</div>
+                        <div class="handler-desc">Move robot to offset using move_tcp</div>
+                    </div>
+                    <span class="handler-type">robot_move</span>
+                </div>
+            </div>
+            
+            <div class="handler-category">
+                <div class="category-title">📸 Capture Image</div>
+                <div class="handler-item" draggable="true" data-handler-id="capture_at_current_pose" data-handler-type="capture_image">
+                    <div class="handler-content">
+                        <div class="handler-id">capture_at_current_pose</div>
+                        <div class="handler-desc">Capture image at current pose</div>
+                    </div>
+                    <span class="handler-type">capture_image</span>
+                </div>
+            </div>
+            
+            <div class="handler-category">
+                <div class="category-title">📝 Record Data</div>
+                <div class="handler-item" draggable="true" data-handler-id="record_data_pose" data-handler-type="record_data">
+                    <div class="handler-content">
+                        <div class="handler-id">record_data_pose</div>
+                        <div class="handler-desc">Record robot pose data</div>
+                    </div>
+                    <span class="handler-type">record_data</span>
+                </div>
+            </div>
+            
+            <div class="handler-category">
+                <div class="category-title">🎯 Positioning</div>
+                <div class="handler-item" draggable="true" data-handler-id="upload_reference_data" data-handler-type="positioning">
+                    <div class="handler-content">
+                        <div class="handler-id">upload_reference_data</div>
+                        <div class="handler-desc">Upload reference data to server</div>
+                    </div>
+                    <span class="handler-type">positioning</span>
+                </div>
+                <div class="handler-item" draggable="true" data-handler-id="init_session" data-handler-type="positioning">
+                    <div class="handler-content">
+                        <div class="handler-id">init_session</div>
+                        <div class="handler-desc">Initialize session on server</div>
+                    </div>
+                    <span class="handler-type">positioning</span>
+                </div>
+                <div class="handler-item" draggable="true" data-handler-id="upload_view" data-handler-type="positioning">
+                    <div class="handler-content">
+                        <div class="handler-id">upload_view</div>
+                        <div class="handler-desc">Upload view data from memory to server (auto-saves to dataset after upload)</div>
+                    </div>
+                    <span class="handler-type">positioning</span>
+                </div>
+                <div class="handler-item" draggable="true" data-handler-id="get_result_fitting" data-handler-type="positioning">
+                    <div class="handler-content">
+                        <div class="handler-id">get_result_fitting</div>
+                        <div class="handler-desc">Get positioning result by fitting mode</div>
+                    </div>
+                    <span class="handler-type">positioning</span>
+                </div>
+                <div class="handler-item" draggable="true" data-handler-id="get_result_standard" data-handler-type="positioning">
+                    <div class="handler-content">
+                        <div class="handler-id">get_result_standard</div>
+                        <div class="handler-desc">Get positioning result by standard triangulation mode</div>
+                    </div>
+                    <span class="handler-type">positioning</span>
+                </div>
+                <div class="handler-item" draggable="true" data-handler-id="get_result_filtered" data-handler-type="positioning">
+                    <div class="handler-content">
+                        <div class="handler-id">get_result_filtered</div>
+                        <div class="handler-desc">Get positioning result by filtered keypoints mode</div>
+                    </div>
+                    <span class="handler-type">positioning</span>
+                </div>
+                <div class="handler-item" draggable="true" data-handler-id="terminate_session" data-handler-type="positioning">
+                    <div class="handler-content">
+                        <div class="handler-id">terminate_session</div>
+                        <div class="handler-desc">Terminate session on server</div>
+                    </div>
+                    <span class="handler-type">positioning</span>
+                </div>
+            </div>
+                </div>
+            </div>
+        
+            <div class="workflow-section">
+                <div class="section-title">
+                    <span>Workflow Configuration</span>
+                    <span id="workflowFilename" class="workflow-filename">No file loaded</span>
+                </div>
+                <div class="section-content">
+                    <textarea id="jsonEditor" class="json-editor" placeholder="Load or create a workflow to edit..."></textarea>
+                    <div id="workflowModularView" class="workflow-modular-view">
+                        <div class="workflow-empty">
+                            <div class="workflow-empty-icon">📦</div>
+                            <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">No Workflow Steps</div>
+                            <div style="font-size: 0.9rem;">Drag handlers from the left panel to start building your workflow</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
