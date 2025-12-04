@@ -2475,6 +2475,108 @@ function executeCloseRight() {
     });
 }
 
+function executePutFrame() {
+    logToWeb('🎯 Execute Put Frame button clicked', 'info');
+    
+    const btn = document.getElementById('executePutFrameBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_put_frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeUnlockKnobInsert() {
+    logToWeb('🔑 Execute Unlock Knob Insert button clicked', 'info');
+    
+    const btn = document.getElementById('executeUnlockKnobInsertBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_unlock_knob_insert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeCloseHandles() {
+    logToWeb('🤝 Execute Close Handles button clicked', 'info');
+    
+    const btn = document.getElementById('executeCloseHandlesBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_close_handles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
 function emergencyStop() {
     // Confirm emergency stop action
     if (confirm('⚠️ WARNING: Are you sure you want to trigger EMERGENCY STOP?\n\nThis will immediately halt all robot operations!')) {

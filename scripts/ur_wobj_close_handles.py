@@ -326,7 +326,7 @@ class URWobjCloseHandles(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=2,
-            end_force=[10, 20, 10, 0, 0, 0]
+            end_force=[10, 15, 10, 0, 0, 0]
         )
         
         if result4 != 0:

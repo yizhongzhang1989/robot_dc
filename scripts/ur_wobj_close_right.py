@@ -217,7 +217,7 @@ class URWobjCloseRight(UROperateWobj):
         
         # Set force mode parameters for first push
         selection_vector = [1, 0, 0, 0, 0, 0]  # Enable force control in X direction only
-        wrench = [-15, 0, 0, 0, 0, -1.0]
+        wrench = [-25, 0, 0, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - first push...")
@@ -266,7 +266,7 @@ class URWobjCloseRight(UROperateWobj):
         
         # Set force mode parameters for main push
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [-20, 15, 0, 0, 0, -1.0]
+        wrench = [-25, 20, 0, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - main push...")
@@ -279,7 +279,7 @@ class URWobjCloseRight(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.11, 0.10, 0.05, 0, 0, 0]
+            end_distance=[0.12, 0.10, 0.05, 0, 0, 0]
         )
         
         if result2 != 0:
@@ -432,7 +432,7 @@ class URWobjCloseRight(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.05,
+            damping=1.0,
             end_type=1,
             end_time=3.0
         )
@@ -442,6 +442,10 @@ class URWobjCloseRight(UROperateWobj):
             return result6
         
         print("[INFO] Motion 6 completed successfully")
+        time.sleep(0.5)
+
+        # slightlt leave the handle by movel
+        result = self.movel_in_server_frame([0, -0.002, 0])
         time.sleep(0.5)
 
         # ==============Motion 7: push to lock the knob=================
@@ -483,7 +487,7 @@ class URWobjCloseRight(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.07, 0.10, 0, 0, 0, 0]
+            end_distance=[0.08, 0.10, 0, 0, 0, 0]
         )
         
         if result7 != 0:
@@ -595,7 +599,7 @@ class URWobjCloseRight(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.1,
+            damping=0.5,
             end_type=3,
             end_distance=[0, 0.15, 0, 0, 0, 0]
         )
@@ -699,15 +703,13 @@ class URWobjCloseRight(UROperateWobj):
         print("\n" + "="*50)
         print("Step 6: Moving to close left handle position...")
         print("="*50)
-        result = self.movel_in_server_frame([0.24, 0, 0])
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0.24, -0.18-self.tool_length, 0]
+        )
         if result != 0:
-            print(f"[ERROR] Failed to move to close left handle position (error code: {result})")
-            return result
-        time.sleep(0.5)
-
-        result = self.movel_in_server_frame([0, 0.13, 0])
-        if result != 0:
-            print(f"[ERROR] Failed to move away from right knob")
+            print(f"[ERROR] Failed to move to target position (error code: {result})")
             return result
         time.sleep(0.5)
 
@@ -769,7 +771,7 @@ class URWobjCloseRight(UROperateWobj):
         print("\n" + "="*50)
         print("Step 12: Moving to leave the server...")
         print("="*50)
-        result = self.movel_in_server_frame([0, -0.04, -0.03])
+        result = self.movel_in_server_frame([0, 0, -0.03])
         if result != 0:
             print(f"[ERROR] Failed to leave server (error code: {result})")
             return result

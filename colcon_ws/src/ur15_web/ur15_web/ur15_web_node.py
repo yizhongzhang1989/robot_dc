@@ -3545,6 +3545,183 @@ class UR15WebNode(Node):
                 self.push_web_log(f"❌ Failed to start execute close right: {str(e)}", 'error')
                 return jsonify({'success': False, 'message': str(e)})
         
+        @self.app.route('/execute_put_frame', methods=['POST'])
+        def execute_put_frame():
+            """Execute put frame script (ur_wobj_put_frame.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_wobj_put_frame.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
+                self.get_logger().info(f"Execute put frame command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute put frame script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute put frame script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute put frame completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute put frame failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute put frame monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute put frame error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🎯 Starting execute put frame process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute put frame script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute put frame script: {e}")
+                self.push_web_log(f"❌ Failed to start execute put frame: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_unlock_knob_insert', methods=['POST'])
+        def execute_unlock_knob_insert():
+            """Execute unlock knob insert script (ur_wobj_unlock_knob_insert.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_wobj_unlock_knob_insert.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
+                self.get_logger().info(f"Execute unlock knob insert command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute unlock knob insert script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute unlock knob insert script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute unlock knob insert completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute unlock knob insert failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute unlock knob insert monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute unlock knob insert error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🔑 Starting execute unlock knob insert process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute unlock knob insert script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute unlock knob insert script: {e}")
+                self.push_web_log(f"❌ Failed to start execute unlock knob insert: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_close_handles', methods=['POST'])
+        def execute_close_handles():
+            """Execute close handles script (ur_wobj_close_handles.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_wobj_close_handles.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
+                self.get_logger().info(f"Execute close handles command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute close handles script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute close handles script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute close handles completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute close handles failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute close handles monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute close handles error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🤝 Starting execute close handles process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute close handles script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute close handles script: {e}")
+                self.push_web_log(f"❌ Failed to start execute close handles: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
         # Asset route must come BEFORE the main report route to avoid conflicts
         @self.app.route('/calibration_report/<report_type>/<path:filename>')
         def serve_calibration_assets(report_type, filename):
