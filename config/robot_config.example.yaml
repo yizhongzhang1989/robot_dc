@@ -234,6 +234,9 @@ lift_robot:
     launch_delay: 3.0         # Launch delay after system start (seconds, allows modbus driver to initialize)
     status_publish_rate: 10.0 # Status publish frequency in Hz (10Hz = 100ms interval, higher = more responsive but more CPU load)
     
+    # Overshoot calibration fine-tuning parameters
+    overshoot_settle_time: 1.0   # Wait time after stop for platform to stabilize (seconds), affects calibration accuracy
+    
     # Control Action Timeouts (seconds) - Max execution time for each control mode
     # If action exceeds timeout, it will abort with 'timeout' completion_reason
     timeouts:

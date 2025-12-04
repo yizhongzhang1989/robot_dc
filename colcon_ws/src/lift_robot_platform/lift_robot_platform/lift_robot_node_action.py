@@ -49,8 +49,10 @@ class LiftRobotNodeAction(Node):
         # Parameters
         self.declare_parameter('device_id', 1)
         self.declare_parameter('use_ack_patch', True)
+        self.declare_parameter('overshoot_settle_time', 0.8)  # Default 0.8s
         self.device_id = self.get_parameter('device_id').value
         self.use_ack_patch = self.get_parameter('use_ack_patch').value
+        self.overshoot_settle_time = float(self.get_parameter('overshoot_settle_time').value)
         
         # ═══════════════════════════════════════════════════════════════
         # Shared State (thread-safe access)
@@ -1688,8 +1690,8 @@ class LiftRobotNodeAction(Node):
                     stop_success = self._wait_for_stop_complete(target, timeout=2.0)
                     if not stop_success:
                         self.get_logger().warn(f"[GotoHeight] Stop verification failed at target_reached")
-                    # Wait for platform to settle
-                    time.sleep(0.3)
+                    # Wait for platform to settle (configurable settle time)
+                    time.sleep(self.overshoot_settle_time)
                     
                     # Read final stable height
                     with self.state_lock:
@@ -1783,7 +1785,7 @@ class LiftRobotNodeAction(Node):
                 #           Action version logic: early stop then send STOP, wait for stillness, measure overshoot, then succeed return
                 # Pushrod: Skip early stop logic - uses simple real-time control below
                 if target == 'platform' and error > 0:  # Moving up
-                    early_stop_height = target_height - max(overshoot_up - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
+                    early_stop_height = target_height - overshoot_up
                     # Only check early stop if platform is actually moving (not just command sent)
                     # This prevents immediate stop when starting from a position already in early-stop zone
                     if current_height >= early_stop_height and movement_state == 'up' and not self.movement_command_sent:
@@ -1798,8 +1800,8 @@ class LiftRobotNodeAction(Node):
                             self.get_logger().warn(f"[GotoHeight] Stop verification failed at early_stop UP")
                         self.get_logger().info(f"Early stop UP: height={current_height:.2f}, target={target_height:.2f}, overshoot={overshoot_up:.2f}")
                         
-                        # Wait for platform to settle
-                        time.sleep(0.3)
+                        # Wait for platform to settle (configurable settle time)
+                        time.sleep(self.overshoot_settle_time)
                         
                         # Read final stable height
                         with self.state_lock:
@@ -1836,7 +1838,7 @@ class LiftRobotNodeAction(Node):
                         return result
                         
                 elif target == 'platform' and error < 0:  # Moving down
-                    early_stop_height = target_height + max(overshoot_down - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
+                    early_stop_height = target_height + overshoot_down
                     # Only check early stop if platform is actually moving (not just command sent)
                     # This prevents immediate stop when starting from a position already in early-stop zone
                     if current_height <= early_stop_height and movement_state == 'down' and not self.movement_command_sent:
@@ -1851,8 +1853,8 @@ class LiftRobotNodeAction(Node):
                             self.get_logger().warn(f"[GotoHeight] Stop verification failed at early_stop DOWN")
                         self.get_logger().info(f"Early stop DOWN: height={current_height:.2f}, target={target_height:.2f}, overshoot={overshoot_down:.2f}")
                         
-                        # Wait for platform to settle
-                        time.sleep(0.3)
+                        # Wait for platform to settle (configurable settle time)
+                        time.sleep(self.overshoot_settle_time)
                         
                         # Read final stable height
                         with self.state_lock:
@@ -2483,17 +2485,17 @@ class LiftRobotNodeAction(Node):
                 
                 # Priority 2: Predictive early stop (based on actual movement direction from height_error)
                 # Use the overshoot values calculated before the loop (from _get_overshoot)
-                if height_error > POSITION_TOLERANCE and overshoot_up > OVERSHOOT_MIN_MARGIN:
+                if height_error > POSITION_TOLERANCE and overshoot_up > 0:
                     # Moving up (height_error > 0)
-                    early_stop_height = target_height - max(overshoot_up - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
+                    early_stop_height = target_height - overshoot_up
                     if current_height >= early_stop_height and movement_state == 'up':
                         self.controller.stop()
                         self.get_logger().info(
                             f"[HybridControl] Early stop UP: height={current_height:.2f}, target={target_height:.2f}, overshoot={overshoot_up:.2f}"
                         )
                         
-                        # Wait for platform to settle
-                        time.sleep(0.5)
+                        # Wait for platform to settle (configurable settle time)
+                        time.sleep(self.overshoot_settle_time)
                         
                         # Read final stable height and force
                         with self.state_lock:
@@ -2517,17 +2519,17 @@ class LiftRobotNodeAction(Node):
                         self.get_logger().info(f"HybridControl succeeded (early stop): final={final_height:.2f}mm, force={final_force:.2f}N")
                         return result
                         
-                elif height_error < -POSITION_TOLERANCE and overshoot_down > OVERSHOOT_MIN_MARGIN:
+                elif height_error < -POSITION_TOLERANCE and overshoot_down > 0:
                     # Moving down (height_error < 0)
-                    early_stop_height = target_height + max(overshoot_down - OVERSHOOT_MIN_MARGIN, OVERSHOOT_MIN_MARGIN)
+                    early_stop_height = target_height + overshoot_down
                     if current_height <= early_stop_height and movement_state == 'down':
                         self.controller.stop()
                         self.get_logger().info(
                             f"[HybridControl] Early stop DOWN: height={current_height:.2f}, target={target_height:.2f}, overshoot={overshoot_down:.2f}"
                         )
                         
-                        # Wait for platform to settle
-                        time.sleep(0.5)
+                        # Wait for platform to settle (configurable settle time)
+                        time.sleep(self.overshoot_settle_time)
                         
                         # Read final stable height and force
                         with self.state_lock:
