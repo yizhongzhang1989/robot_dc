@@ -45,6 +45,10 @@ ur15:
     
     tool_frame:
       length: 0.345          # Length of the tool frame from flange to tip (meters)
+      angle_z: -33           # Rotation angle around Z axis (degrees)
+
+    tool_extract:
+      length: 0.225          # Length of the tool extract from flange to tip (meters)
       angle_z: -31           # Rotation angle around Z axis (degrees)
   
   # Launch modules and sequence
