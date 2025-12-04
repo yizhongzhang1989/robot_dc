@@ -8,7 +8,7 @@
 <style>
   body { 
     font-family: system-ui, Arial, sans-serif; 
-    padding-top: 140px; /* Reserve space for fixed header */
+    padding-top: 210px; /* Reserve space for fixed header */
   }
   .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
   .live { background:#10b981; }
@@ -33,8 +33,7 @@
     z-index: 1000;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     padding: 0.75rem;
-    max-height: 140px;
-    overflow-y: auto;
+    min-height: 210px; /* Increased to accommodate error messages */
   }
 </style>
 </head>
@@ -71,6 +70,11 @@
             <span>Freq:</span> <span id="heightFreq" class="font-mono">—</span>
             <span class="ml-2">Seq:</span> <span id="seq" class="font-mono">—</span>
           </div>
+          <!-- Error indicator -->
+          <div id="heightSensorError" class="hidden mt-2 p-1.5 bg-red-50 border border-red-200 rounded text-xs">
+            <div class="text-red-700 font-semibold">⚠️ Sensor Error</div>
+            <div id="heightSensorErrorMsg" class="text-red-600 mt-0.5"></div>
+          </div>
         </div>
 
         <!-- Force Sensors -->
@@ -100,6 +104,15 @@
             <div>
               <span>L Freq:</span> <span id="leftForceFreq" class="font-mono">—</span>
             </div>
+          </div>
+          <!-- Error indicators -->
+          <div id="rightForceError" class="hidden mt-2 p-1.5 bg-red-50 border border-red-200 rounded text-xs">
+            <div class="text-red-700 font-semibold">⚠️ Right Sensor Error</div>
+            <div id="rightForceErrorMsg" class="text-red-600 mt-0.5"></div>
+          </div>
+          <div id="leftForceError" class="hidden mt-2 p-1.5 bg-red-50 border border-red-200 rounded text-xs">
+            <div class="text-red-700 font-semibold">⚠️ Left Sensor Error</div>
+            <div id="leftForceErrorMsg" class="text-red-600 mt-0.5"></div>
           </div>
         </div>
 
@@ -597,21 +610,59 @@ function handle(raw){ lastReceive=Date.now(); $('raw').textContent=raw; try{ con
 function update(d){
   // Compact mode fields
   if(d.seq_id!==undefined) $('seq').textContent=d.seq_id;
-  if(d.height!==undefined) $('heightVal').textContent = (d.height===null?'-':(d.height.toFixed?d.height.toFixed(2):d.height));
+  
+  // Height sensor with error detection
+  if(d.height!==undefined) {
+    const elem = $('heightVal');
+    const hasError = d.sensor_error === true;
+    const errorBox = $('heightSensorError');
+    const errorMsg = $('heightSensorErrorMsg');
+    
+    if(hasError || d.height===null) {
+      elem.textContent = 'ERR';
+      elem.classList.add('text-red-600', 'font-bold');
+      elem.title = d.sensor_error_message || 'Sensor read error';
+      // Show error box
+      if(errorBox) {
+        errorBox.classList.remove('hidden');
+        if(errorMsg) errorMsg.textContent = d.sensor_error_message || 'Modbus recv failed or timeout';
+      }
+    } else {
+      elem.textContent = (d.height.toFixed?d.height.toFixed(2):d.height);
+      elem.classList.remove('text-red-600', 'font-bold');
+      elem.title = '';
+      // Hide error box
+      if(errorBox) errorBox.classList.add('hidden');
+    }
+  }
+  
   if(d.freq_hz!==undefined) $('heightFreq').textContent = (d.freq_hz && d.freq_hz.toFixed? d.freq_hz.toFixed(2): d.freq_hz);
   // Legacy fallback (timestamp / read_interval)
   if(d.timestamp){ $('ts').textContent=d.timestamp; }
   if(d.read_interval){ readInterval=d.read_interval*1000; }
   
-  // Dual channel force sensors (right=device_id 52, left=device_id 53)
+  // Dual channel force sensors (right=device_id 52, left=device_id 53) with error detection
   if(d.right_force_sensor!==undefined) {
     const elem = $('rightForceVal');
-    if(d.right_force_sensor===null) {
+    const hasError = d.right_force_error === true;
+    const errorBox = $('rightForceError');
+    const errorMsg = $('rightForceErrorMsg');
+    
+    if(hasError || d.right_force_sensor===null) {
       elem.textContent = 'ERR';
       elem.classList.add('text-red-600', 'font-bold');
+      elem.title = d.right_force_error_message || 'Force sensor read error';
+      // Show error box
+      if(errorBox) {
+        errorBox.classList.remove('hidden');
+        if(errorMsg) errorMsg.textContent = d.right_force_error_message || 'Modbus recv failed or timeout';
+      }
     } else {
       elem.textContent = d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(2):d.right_force_sensor;
       elem.classList.remove('text-red-600', 'font-bold');
+      elem.title = '';
+      // Hide error box
+      if(errorBox) errorBox.classList.add('hidden');
     }
   }
   if(d.right_force_freq_hz!==undefined) {
@@ -621,12 +672,25 @@ function update(d){
   
   if(d.left_force_sensor!==undefined) {
     const elem = $('leftForceVal');
-    if(d.left_force_sensor===null) {
+    const hasError = d.left_force_error === true;
+    const errorBox = $('leftForceError');
+    const errorMsg = $('leftForceErrorMsg');
+    
+    if(hasError || d.left_force_sensor===null) {
       elem.textContent = 'ERR';
       elem.classList.add('text-red-600', 'font-bold');
+      elem.title = d.left_force_error_message || 'Force sensor read error';
+      // Show error box
+      if(errorBox) {
+        errorBox.classList.remove('hidden');
+        if(errorMsg) errorMsg.textContent = d.left_force_error_message || 'Modbus recv failed or timeout';
+      }
     } else {
       elem.textContent = d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(2):d.left_force_sensor;
       elem.classList.remove('text-red-600', 'font-bold');
+      elem.title = '';
+      // Hide error box
+      if(errorBox) errorBox.classList.add('hidden');
     }
   }
   if(d.left_force_freq_hz!==undefined) {
@@ -635,12 +699,19 @@ function update(d){
   }
   if(d.combined_force_sensor!==undefined) {
     const elem = $('combinedForceVal');
-    if(d.combined_force_sensor===null) {
+    // Combined is ERR if either sensor has error
+    const hasError = d.right_force_error === true || d.left_force_error === true;
+    if(hasError || d.combined_force_sensor===null) {
       elem.textContent = 'ERR';
       elem.classList.add('text-red-600', 'font-bold');
+      const errMsgs = [];
+      if(d.right_force_error_message) errMsgs.push('Right: ' + d.right_force_error_message);
+      if(d.left_force_error_message) errMsgs.push('Left: ' + d.left_force_error_message);
+      elem.title = errMsgs.join('; ') || 'Force sensor error';
     } else {
       elem.textContent = d.combined_force_sensor.toFixed?d.combined_force_sensor.toFixed(2):d.combined_force_sensor;
       elem.classList.remove('text-red-600', 'font-bold');
+      elem.title = '';
     }
   }
   

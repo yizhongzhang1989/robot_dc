@@ -211,6 +211,15 @@ class LiftRobotNodeAction(Node):
         )
         self.get_logger().info(f"Subscribed to {force_topic_right} and {force_topic_left}")
         
+        # Subscribe to emergency reset topic
+        self.emergency_subscription = self.create_subscription(
+            String,
+            '/emergency_reset',
+            self._emergency_reset_callback,
+            10
+        )
+        self.get_logger().info("Subscribed to /emergency_reset")
+        
         # ═══════════════════════════════════════════════════════════════
         # Status Publisher (configurable rate, default 10Hz for web monitoring)
         # ═══════════════════════════════════════════════════════════════
@@ -760,6 +769,32 @@ class LiftRobotNodeAction(Node):
                     self._update_force_combined()
         except Exception as e:
             self.get_logger().warn(f"Force left parse error: {e}")
+    
+    def _emergency_reset_callback(self, msg):
+        """Emergency reset callback - triggered by sensor hardware failures"""
+        try:
+            import json
+            data = json.loads(msg.data)
+            reason = data.get('reason', 'unknown')
+            device_id = data.get('device_id', 'unknown')
+            consecutive_errors = data.get('consecutive_errors', 0)
+            
+            self.get_logger().error(
+                f"🔴 Emergency reset triggered by sensor failure: {reason} "
+                f"(device_id={device_id}, consecutive_errors={consecutive_errors})"
+            )
+            
+            # Call controller's emergency reset
+            try:
+                seq_id = int(time.time() * 1000) % 65536
+                self.controller._trigger_emergency_reset(
+                    seq_id=seq_id,
+                    reason=f"Sensor failure: {reason}"
+                )
+            except Exception as e:
+                self.get_logger().error(f"Emergency reset execution failed: {e}")
+        except Exception as e:
+            self.get_logger().error(f"Emergency reset callback error: {e}")
     
     def _update_force_combined(self):
         """Update combined force reading from available sensors (must be called with state_lock held)"""

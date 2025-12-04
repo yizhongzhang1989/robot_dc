@@ -73,6 +73,11 @@ class LiftRobotWeb(Node):
         self.left_force_freq_hz = 0.0   # publish frequency
         self.combined_force_sensor = None  # Combined force (sum of two sensors, falls back to single sensor if one missing)
         self.last_force_update = None  # Latest force sensor update timestamp (either sensor)
+        # Force sensor error status
+        self.right_force_error = False
+        self.right_force_error_msg = None
+        self.left_force_error = False
+        self.left_force_error_msg = None
         self.platform_status = None
         self.pushrod_status = None
 
@@ -188,6 +193,18 @@ class LiftRobotWeb(Node):
                         merged['left_force_freq_hz'] = self.left_force_freq_hz
                         merged['combined_force_sensor'] = self.combined_force_sensor
                         
+                        # Extract draw_wire_sensor error info (from latest_obj which comes from sensor topic)
+                        sensor_error = self.latest_obj.get('error', False)
+                        sensor_error_msg = self.latest_obj.get('error_message')
+                        merged['sensor_error'] = sensor_error
+                        merged['sensor_error_message'] = sensor_error_msg
+                        
+                        # Add force sensor error info
+                        merged['right_force_error'] = getattr(self, 'right_force_error', False)
+                        merged['right_force_error_message'] = getattr(self, 'right_force_error_msg', None)
+                        merged['left_force_error'] = getattr(self, 'left_force_error', False)
+                        merged['left_force_error_message'] = getattr(self, 'left_force_error_msg', None)
+                        
                         # Force sensor status detection
                         if self.last_force_update is None:
                             # Never received any force data
@@ -223,11 +240,21 @@ class LiftRobotWeb(Node):
             value = data.get('force', None)
             freq_hz = data.get('freq_hz', 0.0)
             
+            # Extract error info
+            has_error = data.get('error', False)
+            error_msg = data.get('error_message')
+            
+            # Store error status
+            self.right_force_error = has_error
+            self.right_force_error_msg = error_msg
+            
             # Check for overflow (inf/nan) - set to None if invalid
             if value is not None and (math.isinf(value) or math.isnan(value)):
                 self.get_logger().warn(f"Right force sensor overflow detected: {value}")
                 self.right_force_sensor = None
                 self.right_force_freq_hz = 0.0
+                self.right_force_error = True
+                self.right_force_error_msg = "Overflow detected (inf/nan)"
             else:
                 self.right_force_sensor = value
                 self.right_force_freq_hz = freq_hz
@@ -237,6 +264,8 @@ class LiftRobotWeb(Node):
             self.get_logger().error(f"Right force callback error: {e}")
             self.right_force_sensor = None  # Set to None on exception
             self.right_force_freq_hz = 0.0
+            self.right_force_error = True
+            self.right_force_error_msg = f"Callback exception: {e}"
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_cb_left(self, msg):
@@ -248,11 +277,21 @@ class LiftRobotWeb(Node):
             value = data.get('force', None)
             freq_hz = data.get('freq_hz', 0.0)
             
+            # Extract error info
+            has_error = data.get('error', False)
+            error_msg = data.get('error_message')
+            
+            # Store error status
+            self.left_force_error = has_error
+            self.left_force_error_msg = error_msg
+            
             # Check for overflow (inf/nan) - set to None if invalid
             if value is not None and (math.isinf(value) or math.isnan(value)):
                 self.get_logger().warn(f"Left force sensor overflow detected: {value}")
                 self.left_force_sensor = None
                 self.left_force_freq_hz = 0.0
+                self.left_force_error = True
+                self.left_force_error_msg = "Overflow detected (inf/nan)"
             else:
                 self.left_force_sensor = value
                 self.left_force_freq_hz = freq_hz
@@ -262,6 +301,8 @@ class LiftRobotWeb(Node):
             self.get_logger().error(f"Left force callback error: {e}")
             self.left_force_sensor = None  # Set to None on exception
             self.left_force_freq_hz = 0.0
+            self.left_force_error = True
+            self.left_force_error_msg = f"Callback exception: {e}"
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_raw_cb_right(self, msg):
@@ -366,6 +407,18 @@ def run_fastapi_server(port):
                 merged['right_force_freq_hz'] = lift_robot_node.right_force_freq_hz
                 merged['left_force_freq_hz'] = lift_robot_node.left_force_freq_hz
                 merged['combined_force_sensor'] = lift_robot_node.combined_force_sensor
+                
+                # Add error info from draw_wire_sensor
+                sensor_error = lift_robot_node.latest_obj.get('error', False)
+                sensor_error_msg = lift_robot_node.latest_obj.get('error_message')
+                merged['sensor_error'] = sensor_error
+                merged['sensor_error_message'] = sensor_error_msg
+                
+                # Add force sensor error info
+                merged['right_force_error'] = getattr(lift_robot_node, 'right_force_error', False)
+                merged['right_force_error_message'] = getattr(lift_robot_node, 'right_force_error_msg', None)
+                merged['left_force_error'] = getattr(lift_robot_node, 'left_force_error', False)
+                merged['left_force_error_message'] = getattr(lift_robot_node, 'left_force_error_msg', None)
                 
                 # Force sensor status detection
                 if lift_robot_node.last_force_update is None:
