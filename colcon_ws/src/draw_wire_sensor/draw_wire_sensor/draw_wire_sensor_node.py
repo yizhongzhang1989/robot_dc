@@ -115,10 +115,28 @@ class DrawWireSensorNode(Node):
         try:
             reg0, reg1, ts = self.controller.get_sensor_data()
             
-            # Get error status
+            # Get error status (including sensor disabled state)
             error_status = self.controller.get_error_status()
-            has_error = error_status.get('consecutive_errors', 0) > 0
+            has_error = error_status.get('consecutive_errors', 0) > 0 or self.controller.sensor_disabled
             error_msg = error_status.get('last_error') if has_error else None
+            
+            # If sensor is disabled, publish error status with null height
+            if self.controller.sensor_disabled:
+                now = time.time()
+                msg_obj = {
+                    'height': None,
+                    'seq_id': seq_id,
+                    'freq_hz': 0.0,
+                    'latency_ms': None,
+                    'error': True,
+                    'error_message': error_msg or 'Sensor disabled due to consecutive failures',
+                    'error_count': error_status.get('error_count', 0),
+                    'sensor_disabled': True
+                }
+                msg = String()
+                msg.data = json.dumps(msg_obj)
+                self.pub.publish(msg)
+                return
             
             # Calculate height from calibration (this is the real height)
             height_val = None

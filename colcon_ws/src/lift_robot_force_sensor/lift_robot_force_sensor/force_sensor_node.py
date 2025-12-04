@@ -179,11 +179,30 @@ class LiftRobotForceSensorNode(Node):
             try:
                 last = self.controller.get_last()
                 
-                # Check for errors
-                has_error = last.get('consecutive_errors', 0) > 0
+                # Check for errors (including sensor disabled state)
+                has_error = last.get('consecutive_errors', 0) > 0 or self.controller.sensor_disabled
                 error_msg = last.get('last_error') if has_error else None
                 
-                if last['right_value'] is not None:  # Compatible with controller return structure
+                # If sensor is disabled, always publish error status (don't use cached values)
+                if self.controller.sensor_disabled:
+                    try:
+                        msg_error_obj = {
+                            'force': None,
+                            'seq_id': seq,
+                            'freq_hz': 0.0,
+                            'timestamp': now,
+                            'error': True,
+                            'error_message': error_msg or 'Sensor disabled due to consecutive failures',
+                            'error_count': last.get('error_count', 0),
+                            'sensor_disabled': True
+                        }
+                        msg_error = String()
+                        msg_error.data = json.dumps(msg_error_obj)
+                        self.force_pub.publish(msg_error)
+                        self.force_raw_pub.publish(msg_error)
+                    except Exception as e:
+                        self.get_logger().warn(f"[SEQ {seq}] Failed to publish disabled sensor status: {e}")
+                elif last['right_value'] is not None:  # Compatible with controller return structure
                     # Apply calibration: actual_force = sensor_reading × scale + offset
                     raw_value = float(last['right_value'])
                     calibrated_force = raw_value * self.calibration_scale + self.calibration_offset
