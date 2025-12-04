@@ -2,12 +2,8 @@ import os
 import time
 import numpy as np
 import argparse
-import threading
 from scipy.spatial.transform import Rotation as R
 from ur_operate_wobj import UROperateWobj
-from ur_positioning import URPositioning
-import rclpy
-from rclpy.executors import MultiThreadedExecutor
 
 
 class URWobjUnlockKnobInsert(UROperateWobj):
@@ -24,15 +20,6 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         
         # Load tool parameters from config file
         self._load_tool_rotate_parameters_from_config()
-        
-        # Store operation name
-        self.operation_name = "unlock_knob_insert"
-        
-        # Initialize URPositioning instance and ROS2 executor
-        self.ur_positioning = None
-        self.executor = None
-        self.spin_thread = None
-        self._initialize_ur_positioning()
         
         # Recalculate server2base with specific offset for unlock knob task
         self.server2base_matrix = self._calculate_server2base(index=self.server_index)
@@ -89,95 +76,6 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             print(f"Using default values: length={defaults['tool_length']}, angle_z={defaults['tool_angle_z']}")
             self.tool_length = defaults['tool_length']
             self.tool_angle_z = defaults['tool_angle_z']
-
-    def _initialize_ur_positioning(self):
-        """Initialize URPositioning instance for camera capture and positioning"""
-        try:
-            print(f'Initializing URPositioning for operation: {self.operation_name}...')
-            
-            # Initialize ROS2 if not already initialized
-            if not rclpy.ok():
-                rclpy.init()
-                print('✓ ROS2 initialized')
-            
-            self.ur_positioning = URPositioning(
-                robot_ip=self.robot_ip,
-                robot_port=self.robot_port,
-                operation_name=self.operation_name
-            )
-            
-            # Create executor and start spinning in separate thread
-            self.executor = MultiThreadedExecutor()
-            self.executor.add_node(self.ur_positioning)
-            
-            self.spin_thread = threading.Thread(target=self.executor.spin, daemon=True)
-            self.spin_thread.start()
-            
-            print('✓ URPositioning initialized successfully')
-            print('✓ ROS2 executor started in background thread')
-            
-            # Wait a moment for camera subscription to be ready
-            time.sleep(2.0)
-            
-        except Exception as e:
-            print(f'✗ Failed to initialize URPositioning: {e}')
-            import traceback
-            traceback.print_exc()
-            self.ur_positioning = None
-
-    def cleanup(self):
-        """Cleanup resources"""
-        try:
-            if self.executor is not None:
-                self.executor.shutdown()
-                print('✓ ROS2 executor shutdown')
-            
-            if rclpy.ok():
-                rclpy.shutdown()
-                print('✓ ROS2 shutdown')
-        except Exception as e:
-            print(f'Warning: Error during cleanup: {e}')
-
-    def update_server2base_by_positioning(self):
-        """
-        Update server2base_matrix using vision positioning.
-        
-        This method:
-        1. Calls auto_positioning() to perform vision-based positioning
-        2. Extracts the local2world transformation matrix from the result
-        3. Updates self.server2base_matrix with the vision-corrected coordinate system
-        
-        Returns:
-            int: 0 if successful, -1 if failed
-        """
-        if self.ur_positioning is None:
-            print("[ERROR] URPositioning is not initialized")
-            return -1
-        
-        print("Updating server coordinate system using vision positioning...")
-        
-        # Execute auto positioning to get updated server coordinate system
-        positioning_result = self.ur_positioning.auto_positioning()
-        
-        # Check if positioning was successful
-        if not isinstance(positioning_result, dict) or not positioning_result.get('success', False):
-            print(f"[ERROR] Auto positioning failed")
-            if isinstance(positioning_result, dict):
-                error_msg = positioning_result.get('result', {}).get('error_message', 'Unknown error')
-                print(f"  Error: {error_msg}")
-            return -1
-        
-        # Read updated server2base_matrix from positioning result
-        local2world = positioning_result.get('result', {}).get('local2world', None)
-        if local2world is None:
-            print("[ERROR] No transformation matrix in positioning result")
-            return -1
-        
-        # Update self.server2base_matrix with vision-corrected coordinate system
-        self.server2base_matrix = np.array(local2world)
-        print("✓ server2base_matrix updated from vision positioning result")
-        
-        return 0
 
     # ================================= Force Control Functions ================================
     def force_task_touch_knob(self):
@@ -783,6 +681,28 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         Execute complete unlock and insert sequence following the task flow
         
         Steps:
+        1. Correct TCP pose
+        2. Move to server push position
+        3. Push server inward
+        4. Move away from server
+        5. Move to left knob position
+        6. Touch left knob
+        7. Move away from left knob slightly
+        8. Unlock left knob (force control)
+        9. Move away from server
+        10. Move to left handle position
+        11. Open left handle (force control)
+        12. Move away from left handle
+        13. Correct TCP pose for right side
+        14. Touch right knob
+        15. Move away from right knob slightly
+        16. Unlock right knob (force control)
+        17. Move away from server
+        18. Open right handle (force control)
+        19. Move away from right handle
+        20. Move to push position
+        21. Push server to end (force control)
+        22. Move away from server
         """
         print("\n" + "="*70)
         print("STARTING COMPLETE UNLOCK AND INSERT SEQUENCE")
