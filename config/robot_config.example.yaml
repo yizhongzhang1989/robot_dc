@@ -218,6 +218,7 @@ lift_robot:
   modbus_driver:
     port: "auto"              # Serial port (auto-detect RS485 device, or specify like /dev/ttyUSB0)
     baudrate: 115200          # Serial baudrate
+    timeout: 0.03             # Modbus RTU timeout in seconds (0.03 = 30ms, normal response: 10-20ms)
     dashboard:
       enabled: true          # Enable Modbus dashboard web interface
       host: "0.0.0.0"         # Dashboard host address
