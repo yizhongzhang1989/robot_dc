@@ -101,15 +101,6 @@ class URPositioning(Node):
         # Default fallback values if config file not found
         self.collect_start_position = None
         
-        # Collection movement offsets (in tcp coordinate system, unit: meters)
-        self.movements = {
-            "movement1": [0, 0, 0, 0, 0, 0],         # No offset
-            "movement2": [0.01, 0, 0, 0, 0, 0],      # X+1cm
-            "movement3": [-0.01, 0, 0, 0, 0, 0],     # X-1cm
-            "movement4": [0, 0.01, 0, 0, 0, 0],      # Y+1cm
-            "movement5": [0, -0.01, 0, 0, 0, 0]      # Y-1cm
-        }
-        
         self.template_points = [
             {"name": "Server_Top_Left_Corner",  "x": -0.094, "y": 0, "z": 0.017},
             {"name": "Server_Top_Right_Corner", "x": 0.186, "y": 0, "z": 0.017},

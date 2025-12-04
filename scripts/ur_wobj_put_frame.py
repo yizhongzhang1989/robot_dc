@@ -36,7 +36,7 @@ class URWobjPutFrame(UROperateWobj):
         # Default values
         defaults = {
             'tool_length': 0.345,
-            'tool_angle_z': 31
+            'tool_angle_z': -31
         }
         
         try:
