@@ -420,20 +420,6 @@ def run_fastapi_server(port):
                 merged['left_force_error'] = getattr(lift_robot_node, 'left_force_error', False)
                 merged['left_force_error_message'] = getattr(lift_robot_node, 'left_force_error_msg', None)
                 
-                # Force sensor status detection
-                if lift_robot_node.last_force_update is None:
-                    # Never received any force data
-                    merged['force_sensor_status'] = 'no_data'
-                    merged['force_stale'] = True
-                elif (time.time() - lift_robot_node.last_force_update) > 2.0:
-                    # No update for >2s (connection lost or sensor failed)
-                    merged['force_sensor_status'] = 'stale'
-                    merged['force_stale'] = True
-                else:
-                    # Normal operation
-                    merged['force_sensor_status'] = 'ok'
-                    merged['force_stale'] = False
-                
                 # Add platform status (pushrod shares same status)
                 if lift_robot_node.platform_status is not None:
                     merged['platform_status'] = lift_robot_node.platform_status

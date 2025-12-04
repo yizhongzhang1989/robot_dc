@@ -115,7 +115,14 @@ class CourierRobotWebAPI:
                         'combined_force': sensor_data.get('combined_force_sensor'),
                         'freq_hz': sensor_data.get('freq_hz'),
                         'right_force_freq_hz': sensor_data.get('right_force_freq_hz'),
-                        'left_force_freq_hz': sensor_data.get('left_force_freq_hz')
+                        'left_force_freq_hz': sensor_data.get('left_force_freq_hz'),
+                        # Error information
+                        'height_sensor_error': sensor_data.get('sensor_error', False),
+                        'height_sensor_error_message': sensor_data.get('sensor_error_message'),
+                        'right_force_error': sensor_data.get('right_force_error', False),
+                        'right_force_error_message': sensor_data.get('right_force_error_message'),
+                        'left_force_error': sensor_data.get('left_force_error', False),
+                        'left_force_error_message': sensor_data.get('left_force_error_message')
                     }
                 else:
                     result['sensors'] = {}
