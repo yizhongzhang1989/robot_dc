@@ -2,14 +2,18 @@ import os
 import time
 import numpy as np
 import argparse
+import threading
 from scipy.spatial.transform import Rotation as R
 from ur_operate_wobj import UROperateWobj
+from ur_positioning import URPositioning
+import rclpy
+from rclpy.executors import MultiThreadedExecutor
 
 
-class UROperateWobjUnlockKnob(UROperateWobj):
+class URWobjUnlockKnobInsert(UROperateWobj):
     def __init__(self, robot_ip=None, robot_port=None, server_index=14):
         """
-        Initialize UROperateWobjUnlockKnob instance
+        Initialize URWobjUnlockKnobInsert instance
         Args:
             robot_ip: IP address of the UR15 robot. If None, loads from config file
             robot_port: Port number of the UR15 robot. If None, loads from config file
@@ -21,11 +25,19 @@ class UROperateWobjUnlockKnob(UROperateWobj):
         # Load tool parameters from config file
         self._load_tool_rotate_parameters_from_config()
         
+        # Store operation name
+        self.operation_name = "unlock_knob_insert"
+        
+        # Initialize URPositioning instance and ROS2 executor
+        self.ur_positioning = None
+        self.executor = None
+        self.spin_thread = None
+        self._initialize_ur_positioning()
+        
         # Recalculate server2base with specific offset for unlock knob task
-        # This offset aligns with the offset used in movel_to_target_position
         self.server2base_matrix = self._calculate_server2base(index=self.server_index)
         
-        print(f"UROperateWobjUnlockKnob initialized for server index: {server_index}")
+        print(f"URWobjUnlockKnobInsert initialized for server index: {server_index}")
 
     def _load_tool_rotate_parameters_from_config(self):
         """
@@ -78,8 +90,96 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             self.tool_length = defaults['tool_length']
             self.tool_angle_z = defaults['tool_angle_z']
 
+    def _initialize_ur_positioning(self):
+        """Initialize URPositioning instance for camera capture and positioning"""
+        try:
+            print(f'Initializing URPositioning for operation: {self.operation_name}...')
+            
+            # Initialize ROS2 if not already initialized
+            if not rclpy.ok():
+                rclpy.init()
+                print('✓ ROS2 initialized')
+            
+            self.ur_positioning = URPositioning(
+                robot_ip=self.robot_ip,
+                robot_port=self.robot_port,
+                operation_name=self.operation_name
+            )
+            
+            # Create executor and start spinning in separate thread
+            self.executor = MultiThreadedExecutor()
+            self.executor.add_node(self.ur_positioning)
+            
+            self.spin_thread = threading.Thread(target=self.executor.spin, daemon=True)
+            self.spin_thread.start()
+            
+            print('✓ URPositioning initialized successfully')
+            print('✓ ROS2 executor started in background thread')
+            
+            # Wait a moment for camera subscription to be ready
+            time.sleep(2.0)
+            
+        except Exception as e:
+            print(f'✗ Failed to initialize URPositioning: {e}')
+            import traceback
+            traceback.print_exc()
+            self.ur_positioning = None
 
-    # ================================= Movement Functions ================================
+    def cleanup(self):
+        """Cleanup resources"""
+        try:
+            if self.executor is not None:
+                self.executor.shutdown()
+                print('✓ ROS2 executor shutdown')
+            
+            if rclpy.ok():
+                rclpy.shutdown()
+                print('✓ ROS2 shutdown')
+        except Exception as e:
+            print(f'Warning: Error during cleanup: {e}')
+
+    def update_server2base_by_positioning(self):
+        """
+        Update server2base_matrix using vision positioning.
+        
+        This method:
+        1. Calls auto_positioning() to perform vision-based positioning
+        2. Extracts the local2world transformation matrix from the result
+        3. Updates self.server2base_matrix with the vision-corrected coordinate system
+        
+        Returns:
+            int: 0 if successful, -1 if failed
+        """
+        if self.ur_positioning is None:
+            print("[ERROR] URPositioning is not initialized")
+            return -1
+        
+        print("Updating server coordinate system using vision positioning...")
+        
+        # Execute auto positioning to get updated server coordinate system
+        positioning_result = self.ur_positioning.auto_positioning()
+        
+        # Check if positioning was successful
+        if not isinstance(positioning_result, dict) or not positioning_result.get('success', False):
+            print(f"[ERROR] Auto positioning failed")
+            if isinstance(positioning_result, dict):
+                error_msg = positioning_result.get('result', {}).get('error_message', 'Unknown error')
+                print(f"  Error: {error_msg}")
+            return -1
+        
+        # Read updated server2base_matrix from positioning result
+        local2world = positioning_result.get('result', {}).get('local2world', None)
+        if local2world is None:
+            print("[ERROR] No transformation matrix in positioning result")
+            return -1
+        
+        # Update self.server2base_matrix with vision-corrected coordinate system
+        self.server2base_matrix = np.array(local2world)
+        print("✓ server2base_matrix updated from vision positioning result")
+        
+        return 0
+
+    # ================================= Force Control Functions ================================
     def force_task_touch_knob(self):
         """
         Execute force control task to touch the knob using TCP coordinate system.
@@ -114,14 +214,50 @@ class UROperateWobjUnlockKnob(UROperateWobj):
         )
         time.sleep(0.5)
         return result
+    
+    def force_task_touch_knob_right(self):
+        """
+        Execute force control task to touch the knob using TCP coordinate system.
+        The robot will apply a downward force (relative to TCP) to make contact with the knob.
+        Returns: result from force_control_task
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        # Get current TCP pose to use as task frame (for force control in TCP coordinate system)
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Set force mode parameters
+        task_frame = tcp_pose  # set task frame to TCP pose
+        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in XYZ direction relative to task frame
+        wrench = [0, 0, 50, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force task: 'Touch Knob'...")
+        
+        # Execute force control task with force-based termination (end_type=2)
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.05,
+            end_type=2,
+            end_force=[15, 15, 30, 0, 0, 0]
+        )
+        time.sleep(0.5)
+        return result
 
     def force_task_unlock_left_knob(self):
         """
         Execute force control task to unlock the left knob using TCP coordinate system.
         Three-step process:
-        1. Rotate counter-clockwise around TCP Z-axis to unlock (stops at specified angle)
-        2. Release the spring in the knob
-        3. Rotate clockwise to return
+        1. Initial contact with knob
+        2. Rotate counter-clockwise around TCP Z-axis to unlock (stops at specified angle)
+        3. Release the spring in the knob
+        4. Rotate clockwise to return
         """
         if self.robot is None:
             print("Robot is not initialized")
@@ -460,7 +596,7 @@ class UROperateWobjUnlockKnob(UROperateWobj):
         
         # Set force mode parameters for releasing spring
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction only
-        wrench = [0, -15.0, 0, 0, 0, 0]
+        wrench = [0, -20.0, 0, 0, 0, 0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - releasing spring...")
@@ -532,9 +668,8 @@ class UROperateWobjUnlockKnob(UROperateWobj):
 
     def force_task_open_handle(self):
         """
-        Execute force control task to touch the knob2 using TCP coordinate system.
-        The robot will apply a downward force (relative to TCP) to make contact with the knob2.
-        Returns: result from force_control_task
+        Execute force control task to open handle using server coordinate system.
+        The robot will apply force to pull the handle open.
         """
         if self.robot is None:
             print("Robot is not initialized")
@@ -588,37 +723,72 @@ class UROperateWobjUnlockKnob(UROperateWobj):
         time.sleep(0.5)
         return result
 
+    def force_task_push_server_to_end(self):
+        """
+        Execute force control task to push the server to end position using TCP coordinate system.
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.server2base_matrix is None:
+            print("Server coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        
+        # Extract rotation matrix from server transformation matrix and convert to rotation vector
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
+        
+        # Create task frame using current position with server orientation
+        task_frame = [
+            tcp_pose[0],        # x (current position)
+            tcp_pose[1],        # y
+            tcp_pose[2],        # z
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
+        ]
+        
+        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
+        
+        # Set force mode parameters
+        selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
+        wrench = [0, 80, 0, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - pushing server...")
+        
+        # Execute force control task with time-based termination
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.1,
+            end_type=1,
+            end_time=3.5
+        )
+        time.sleep(0.5)
+        return result
+
 
     # ================================ Task Execution Methods ================================
-    def execute_complete_unlock_sequence(self):
+    def execute_unlock_and_insert_sequence(self):
         """
-        Execute complete unlock sequence for both knobs following the task flow
+        Execute complete unlock and insert sequence following the task flow
         
         Steps:
-        1. Correct TCP pose to align with rack coordinate system
-        2. Move to target position (approach left knob)
-        3. Move to left knob position
-        4. Touch left knob
-        5. Move away from knob slightly
-        6. Unlock left knob
-        7. Move away from server
-        8. Open left handle
-        9. Move away from left handle
-        10. Correct TCP pose (for right knob)
-        11. Move to target position (approach right knob)
-        12. Move to right knob position
-        13. Touch right knob
-        14. Move away from knob slightly
-        15. Unlock right knob
-        16. Move away from server
-        17. Open right handle
-        18. Move away from right handle
         """
         print("\n" + "="*70)
-        print("STARTING COMPLETE KNOB UNLOCK SEQUENCE")
+        print("STARTING COMPLETE UNLOCK AND INSERT SEQUENCE")
         print("="*70)
         
-        # ===============Execute the knob unlocking task=================
+        # ===============Execute the left knob unlocking task=================
         # Step 1: Correct TCP pose to align with rack coordinate system
         print("\n" + "="*50)
         print("Step 1: Correcting TCP pose...")
@@ -634,22 +804,43 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
         
-        # Step 2: Move to target position (left knob) using linear movement
+        # Step 2: Move to left knob position
         print("\n" + "="*50)
-        print("Step 2: Moving to target position...")
+        print("Step 2: Moving to target server position to capture and update server2base_matrix...")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.275-self.tool_length, 0]
+            offset_in_rack=[0.03, -0.35-self.tool_length, 0.03]
         )
         if result != 0:
-            print(f"[ERROR] Failed to move to left knob position")
+            print(f"[ERROR] Failed to move to target position (error code: {result})")
             return result
         time.sleep(0.5)
 
+        # Step 3: Push the server to the end position
         print("\n" + "="*50)
-        print("Step 3: Moving to left knob position")
+        print("Step 3: Pushing server to end position...")
+        print("="*50)
+        result = self.force_task_push_server_to_end()
+        if result != 0:
+            print(f"[ERROR] Failed to push server to end")
+            return result
+        time.sleep(0.5)
+
+        # Step 4: Leave the server
+        print("\n" + "="*50)
+        print("Step 4: Leaving server area to prepare for positioning...")
+        print("="*50)
+        result = self.movel_in_server_frame([0, -0.15, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to leave server area")
+            return result
+        time.sleep(0.5)
+
+        # Step 5: Move to left knob position
+        print("\n" + "="*50)
+        print("Step 5: Moving to left knob position...")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
@@ -661,10 +852,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # ==============Unlock the left knob=================
-        # Step 4: Force control to touch the knob
+        # Step 6: Force control to touch the left knob
         print("\n" + "="*50)
-        print("Step 4: Touching left knob...")
+        print("Step 6: Touching left knob...")
         print("="*50)
         result = self.force_task_touch_knob()
         if result != 0:
@@ -672,9 +862,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 5: Move away from the knob slightly
+        # Step 7: Move away from the knob slightly
         print("\n" + "="*50)
-        print("Step 5: Moving away from the knob slightly...")
+        print("Step 7: Moving away from knob slightly...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.001, 0])
         if result != 0:
@@ -682,9 +872,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 6: Force control to unlock the left knob
+        # Step 8: Force control to unlock the left knob
         print("\n" + "="*50)
-        print("Step 6: Unlocking left knob...")
+        print("Step 8: Unlocking left knob...")
         print("="*50)
         result = self.force_task_unlock_left_knob()
         if result != 0:
@@ -692,9 +882,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 7: Move away from the server and close to open handle position
+        # Step 9: Move away and prepare for handle
         print("\n" + "="*50)
-        print("Step 7: Moving away from server...")
+        print("Step 9: Moving away and preparing for handle...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.25, 0])
         if result != 0:
@@ -702,16 +892,15 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        print("\n" + "="*50)
         result = self.movel_in_server_frame([0.03, 0.23, -0.04])
         if result != 0:
             print(f"[ERROR] Failed to move away from left knob")
             return result
         time.sleep(0.5)
 
-        # Step 8: Force task to open the left handle
+        # Step 10: Force control to open left handle
         print("\n" + "="*50)
-        print("Step 8: Opening left handle...")
+        print("Step 10: Opening left handle...")
         print("="*50)
         result = self.force_task_open_handle()
         if result != 0:
@@ -719,9 +908,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 9: Move away from the server
+        # Step 11: Move away from left handle
         print("\n" + "="*50)
-        print("Step 9: Moving away from left handle...")
+        print("Step 11: Moving away from left handle...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.20, -0.02])
         if result != 0:
@@ -729,10 +918,10 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # ==============Unlock the right knob=================
-        # Step 10: Correct TCP pose to align with rack coordinate system
+        # ===============Execute the right knob unlocking task=================
+        # Step 12: Correct TCP pose to align with rack coordinate system
         print("\n" + "="*50)
-        print("Step 10: Correcting TCP pose...")
+        print("Step 12: Moving to right knob position...")
         print("="*50)
         result = self.movel_to_correct_tcp_pose(
             tcp_x_to_rack=[1, 0, 0],
@@ -745,23 +934,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 11: Move to target position (right knob) using linear movement
+        # Step 13: Move to right knob position
         print("\n" + "="*50)
-        print("Step 11: Moving to target position...")
-        print("="*50)
-        result = self.movel_to_target_position(
-            index=self.server_index,
-            execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.275-self.tool_length, 0]
-        )
-        if result != 0:
-            print(f"[ERROR] Failed to move to left knob position")
-            return result
-        time.sleep(0.5)
-
-        # Step 12: Move to right knob position
-        print("\n" + "="*50)
-        print("Step 12 : Moving to right knob position")
+        print("Step 13: Moving to right knob position...")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
@@ -773,19 +948,19 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 13: Force control to touch the right knob
+        # Step 14: Force control to touch the right knob
         print("\n" + "="*50)
-        print("Step 13: Touching right knob...")
+        print("Step 14: Touching right knob...")
         print("="*50)
-        result = self.force_task_touch_knob()
+        result = self.force_task_touch_knob_right()
         if result != 0:
             print(f"[ERROR] Failed to touch right knob")
             return result
         time.sleep(0.5)
 
-        # Step 14: Move away from the right knob slightly
+        # Step 15: Move away from the knob slightly
         print("\n" + "="*50)
-        print("Step 14: Moving away from right knob slightly...")
+        print("Step 15: Moving away from knob slightly...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.001, 0])
         if result != 0:
@@ -793,9 +968,9 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 15: Force control to unlock the right knob
+        # Step 16: Force control to unlock the right knob
         print("\n" + "="*50)
-        print("Step 15: Unlocking right knob...")
+        print("Step 16: Unlocking right knob...")
         print("="*50)
         result = self.force_task_unlock_right_knob()
         if result != 0:
@@ -803,22 +978,22 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 16: Move away from the server
+        # Step 17: Move away from server and prepare for open handle
         print("\n" + "="*50)
-        print("Step 16: Moving away from server...")
+        print("Step 17: Moving away from server...")
         print("="*50)
         result = self.movel_in_server_frame([0, -0.25, 0])
         if result != 0:
-            print(f"[ERROR] Failed to unlock right knob")
+            print(f"[ERROR] Failed to move away from server")
             return result
         time.sleep(0.5)
-
+        
         self.movel_in_server_frame([-0.03, 0.23, -0.04])
         time.sleep(0.5)
 
-        # Step 17: Force task to open the right handle
+        # Step 18: Force control to open right handle
         print("\n" + "="*50)
-        print("Step 17: Opening right handle...")
+        print("Step 18: Opening right handle...")
         print("="*50)
         result = self.force_task_open_handle()
         if result != 0:
@@ -826,70 +1001,114 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 18: Move away from the knob2
+        # Step 19: Move away from right handle
         print("\n" + "="*50)
-        print("Step 18: Moving away from right handle...")
+        print("Step 19: Moving away from right handle...")
         print("="*50)
-        result = self.movel_in_server_frame([0, -0.20, -0.02])
+        result = self.movel_in_server_frame([0, -0.20, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away from right handle")
             return result
         time.sleep(0.5)
+
+        # ===============Push server to end position=================
+        # Step 20: Move to push position
+        print("\n" + "="*50)
+        print("Step 20: Moving to push position...")
+        print("="*50)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0.03, -0.15-self.tool_length, 0.03]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to push position")
+            return result
+        time.sleep(0.5)
+
+        # Step 21: Force control to push server to end
+        print("\n" + "="*50)
+        print("Step 21: Pushing server to end...")
+        print("="*50)
+        result = self.force_task_push_server_to_end()
+        if result != 0:
+            print(f"[ERROR] Failed to push server to end")
+            return result
+        time.sleep(0.5)
+
+        # Step 22: Move away from server
+        print("\n" + "="*50)
+        print("Step 22: Moving away from server...")
+        print("="*50)
+        result = self.movel_in_server_frame([0, -0.25, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from server")
+            return result
+        time.sleep(0.5)
         
         print("\n" + "="*70)
-        print("COMPLETE KNOB UNLOCK SEQUENCE FINISHED SUCCESSFULLY")
+        print("COMPLETE UNLOCK AND INSERT SEQUENCE FINISHED SUCCESSFULLY")
         print("="*70)
         return 0
 
 
 if __name__ == "__main__":
-    try:
-        # Parse command line arguments
-        parser = argparse.ArgumentParser(description='UR Robot Operate Wobj - Unlock Knob')
-        parser.add_argument('--robot-ip', type=str, default='192.168.1.15',
-                            help='Robot IP address (default: 192.168.1.15)')
-        parser.add_argument('--robot-port', type=int, default=30002,
-                            help='Robot port (default: 30002)')
-        parser.add_argument('--server-index', type=int, default=14,
-                            help='Server index (default: 14)')
-        
-        args = parser.parse_args()
-        
-        # Create UROperateWobjUnlockKnob instance
-        ur_unlock_knob = UROperateWobjUnlockKnob(
-            robot_ip=args.robot_ip,
-            robot_port=args.robot_port,
-            server_index=args.server_index
-        )
-        print("UROperateWobjUnlockKnob initialized successfully")
-        
-        # ==============Display automatically loaded parameters=================
-        print("\n" + "="*70)
-        print("AUTOMATICALLY LOADED PARAMETERS")
-        print("="*70)
-        
-        if ur_unlock_knob.camera_matrix is not None:
-            print("\n✓ Camera Matrix loaded")
-            print(ur_unlock_knob.camera_matrix)
-            print("\n✓ Distortion Coefficients loaded")
-            print(ur_unlock_knob.distortion_coefficients)
-        
-        if ur_unlock_knob.cam2end_matrix is not None:
-            print("\n✓ Camera to End-effector Matrix loaded")
-            print(ur_unlock_knob.cam2end_matrix)
-        
-        if ur_unlock_knob.rack_transformation_matrix_in_base is not None:
-            print("\n✓ Rack Coordinate System loaded")
-            print(f"  Origin: x={ur_unlock_knob.rack_origin_in_base[0]:.6f}, "
-                  f"y={ur_unlock_knob.rack_origin_in_base[1]:.6f}, "
-                  f"z={ur_unlock_knob.rack_origin_in_base[2]:.6f}")
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='URWobjUnlockKnobInsert - Unlock knob and insert operation using server coordinate system')
+    parser.add_argument('--robot-ip', type=str, default='192.168.1.15',
+                       help='IP address of the UR15 robot (default: 192.168.1.15)')
+    parser.add_argument('--robot-port', type=int, default=30002,
+                       help='Port number of the UR15 robot (default: 30002)')
+    parser.add_argument('--server-index', type=int, default=14,
+                       help='Target server index (default: 14)')
+    
+    args = parser.parse_args()
+    
+    # Create URWobjUnlockKnobInsert instance
+    ur_wobj_unlock_knob_insert = URWobjUnlockKnobInsert(
+        robot_ip=args.robot_ip,
+        robot_port=args.robot_port,
+        server_index=args.server_index
+    )
+    
+    # ==============Display automatically loaded parameters=================
+    print("\n" + "="*70)
+    print("AUTOMATICALLY LOADED PARAMETERS")
+    print("="*70)
+    
+    if ur_wobj_unlock_knob_insert.camera_matrix is not None:
+        print("\n✓ Camera Matrix loaded")
+        print(ur_wobj_unlock_knob_insert.camera_matrix)
+        print("\n✓ Distortion Coefficients loaded")
+        print(ur_wobj_unlock_knob_insert.distortion_coefficients)
+    
+    if ur_wobj_unlock_knob_insert.cam2end_matrix is not None:
+        print("\n✓ Camera to End-effector Matrix loaded")
+        print(ur_wobj_unlock_knob_insert.cam2end_matrix)
+    
+    if ur_wobj_unlock_knob_insert.rack_transformation_matrix_in_base is not None:
+        print("\n✓ Rack Coordinate System loaded")
+        print(f"  Origin: {ur_wobj_unlock_knob_insert.rack_origin_in_base}")
+    
+    if ur_wobj_unlock_knob_insert.server2base_matrix is not None:
+        print("\n✓ Server Coordinate System loaded")
+        server_origin = ur_wobj_unlock_knob_insert.server2base_matrix[:3, 3]
+        print(f"  Origin: {server_origin}")
+        print(f"  Server Index: {ur_wobj_unlock_knob_insert.server_index}")
+    
+    print(f"\n✓ Tool Parameters loaded")
+    print(f"  Tool Length: {ur_wobj_unlock_knob_insert.tool_length}m")
+    print(f"  Tool Angle Z: {ur_wobj_unlock_knob_insert.tool_angle_z}°")
 
-        # ==============Execute the knob unlocking task=================
-        print("\n" + "="*70)
-        print("STARTING TASK EXECUTION")
-        print("="*70)
-        
-        result = ur_unlock_knob.execute_complete_unlock_sequence()
+    # ==============Execute the unlock and insert task=================
+    print("\n" + "="*70)
+    print("STARTING TASK EXECUTION")
+    print("="*70)
+    
+    try:
+        result = ur_wobj_unlock_knob_insert.execute_unlock_and_insert_sequence()
         
         if result == 0:
             print("\n✓ Task completed successfully!")

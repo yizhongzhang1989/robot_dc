@@ -48,7 +48,7 @@ class URWobjCloseLeft(UROperateWobj):
         # Default values
         defaults = {
             'tool_length': 0.325,
-            'tool_angle_z': -31
+            'tool_angle_z': 31
         }
         
         try:

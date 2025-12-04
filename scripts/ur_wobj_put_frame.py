@@ -21,7 +21,7 @@ class URWobjPutFrame(UROperateWobj):
         self._load_tool_frame_parameters_from_config()
         
         # Calculate server coordinate system
-        self._calculate_server2base(self.server_index)
+        self.server2base_matrix = self._calculate_server2base(self.server_index)
         
         print(f"URWobjPutFrame initialized for server index: {server_index}")
 
@@ -35,8 +35,8 @@ class URWobjPutFrame(UROperateWobj):
         """
         # Default values
         defaults = {
-            'tool_length': 0.20,
-            'tool_angle_z': 32
+            'tool_length': 0.345,
+            'tool_angle_z': 31
         }
         
         try:
