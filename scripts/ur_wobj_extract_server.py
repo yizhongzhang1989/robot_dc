@@ -6,6 +6,7 @@ import threading
 from scipy.spatial.transform import Rotation as R
 from ur_operate_wobj import UROperateWobj
 from ur_positioning import URPositioning
+from courier_robot_webapi import CourierRobotWebAPI
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
@@ -35,12 +36,18 @@ class URWobjExtractServer(UROperateWobj):
         self.ur_positioning = None
         self.executor = None
         self.spin_thread = None
+        
+        # Initialize CourierRobotWebAPI variable
+        self.courier_robot = None
 
         # Load tool parameters from config file
         self._load_tool_extract_parameters_from_config()
         
         # Initialize URPositioning instance and ROS2 executor after parent init
         self._initialize_ur_positioning()
+        
+        # Initialize CourierRobotWebAPI instance
+        self._initialize_courier_robot()
 
         self._calculate_server2base(self.server_index)
         
@@ -133,6 +140,37 @@ class URWobjExtractServer(UROperateWobj):
             print(f'Error initializing URPositioning: {e}')
             import traceback
             traceback.print_exc()
+    
+    def _initialize_courier_robot(self):
+        """
+        Initialize CourierRobotWebAPI instance for lift platform control
+        
+        This private function initializes the courier robot web API client
+        to enable communication with the lift platform system.
+        """
+        try:
+            print('Initializing CourierRobotWebAPI...')
+            
+            # Initialize with default URL and verbose mode
+            self.courier_robot = CourierRobotWebAPI(
+                base_url="http://192.168.1.3:8090", 
+                verbose=True
+            )
+            
+            # Test connection by getting status
+            status_result = self.courier_robot.get_status()
+            if status_result.get('success', False):
+                print('✓ CourierRobotWebAPI initialized successfully')
+                print(f'  Platform state: {status_result.get("platform", {}).get("task_state", "unknown")}')
+                print(f'  Pushrod state: {status_result.get("pushrod", {}).get("task_state", "unknown")}')
+            else:
+                print(f'⚠️  CourierRobotWebAPI initialized but connection test failed: {status_result.get("error", "unknown")}')
+                
+        except Exception as e:
+            print(f'Error initializing CourierRobotWebAPI: {e}')
+            self.courier_robot = None
+            import traceback
+            traceback.print_exc()
 
     def update_server2base_by_positioning(self):
         """
@@ -177,6 +215,15 @@ class URWobjExtractServer(UROperateWobj):
     def cleanup(self):
         """Cleanup resources before exit"""
         print("\nCleaning up resources...")
+        
+        if self.courier_robot is not None:
+            # Perform emergency reset to stop any ongoing operations
+            try:
+                self.courier_robot.emergency_reset()
+                print("✓ CourierRobot emergency reset")
+            except Exception as e:
+                print(f"Warning: Failed to reset courier robot: {e}")
+            self.courier_robot = None
         
         if self.executor is not None:
             self.executor.shutdown()
@@ -395,9 +442,21 @@ class URWobjExtractServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 6: Execute force control task to touch handle
+        # Step 6: Courier robot lift platform up to touch the server before extraction
         print("\n" + "="*50)
-        print("Step 6: Touching handle with force control...")
+        print("Step 6: Lifting platform to touch server...")
+        print("="*50)
+        if self.courier_robot is None:
+            print("[ERROR] CourierRobotWebAPI is not initialized")
+            return -1
+        lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=125)
+        if not lift_result.get('success', False):
+            print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
+            return -1
+
+        # Step 7: Execute force control task to touch handle
+        print("\n" + "="*50)
+        print("Step 7: Touching handle with force control...")
         print("="*50)
         result = self.force_task_touch_handle(distance)
         if result != 0:
@@ -405,15 +464,57 @@ class URWobjExtractServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # # Step 7: Execute force control task to extract server
-        # print("\n" + "="*50)
-        # print("Step 7: Extracting server with force control...")
-        # print("="*50)
-        # result = self.force_task_extract_server(distance=0.60)
-        # if result != 0:
-        #     print(f"[ERROR] Failed to extract server (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 8: Execute force control task to extract server
+        print("\n" + "="*50)
+        print("Step 8: Extracting server with force control...")
+        print("="*50)
+        result = self.force_task_extract_server(distance=0.50)
+        if result != 0:
+            print(f"[ERROR] Failed to extract server (error code: {result})")
+            return result
+        time.sleep(0.5)
+
+        # Step 9: Slightly adjust height of end effector
+        print("\n" + "="*50)
+        print("Step 9: Adjusting end effector height...")
+        print("="*50)
+        result = self.movel_in_server_frame([[0, 0, 0.01]])
+        if result != 0:
+            print(f"[ERROR] Failed to adjust end effector height (error code: {result})")
+            return result
+        time.sleep(0.5)
+
+        # Step 10: Courier robot up to transfer center of mass of server
+        print("\n" + "="*50)
+        print("Step 10: Lifting platform to transfer center of mass...")
+        print("="*50)
+        if self.courier_robot is None:
+            print("[ERROR] CourierRobotWebAPI is not initialized")
+            return -1
+        lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=350)
+        if not lift_result.get('success', False):
+            print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
+            return -1
+
+        # Step 11: Execute force control task to extract server completely
+        print("\n" + "="*50)
+        print("Step 11: Extracting server with force control...")
+        print("="*50)
+        result = self.force_task_extract_server(distance=0.30)
+        if result != 0:
+            print(f"[ERROR] Failed to extract server (error code: {result})")
+            return result
+        time.sleep(0.5)
+
+        # Step 12: Move away from the server after extraction
+        print("\n" + "="*50)
+        print("Step 12: Moving away from the server...")
+        print("="*50)
+        result = self.movel_in_rack_frame([[0, 0, 0.20]])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from server (error code: {result})")
+            return result
+        time.sleep(0.5)
 
         print("\n" + "="*70)
         print("EXTRACT SERVER SEQUENCE FINISHED SUCCESSFULLY")
