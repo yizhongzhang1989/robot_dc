@@ -11,10 +11,10 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
 
-class URWobjExtractServer(UROperateWobj):
+class URWobjInsertServer(UROperateWobj):
     def __init__(self, robot_ip=None, robot_port=None, server_index=14):
         """
-        Initialize URWobjExtractServer instance
+        Initialize URWobjInsertServer instance
         Args:
             robot_ip: IP address of the UR15 robot. If None, loads from config file
             robot_port: Port number of the UR15 robot. If None, loads from config file
@@ -24,7 +24,7 @@ class URWobjExtractServer(UROperateWobj):
         super().__init__(robot_ip=robot_ip, robot_port=robot_port, server_index=server_index)
         
         # Store operation name and template points before parent init
-        self.operation_name = "extract_server"
+        self.operation_name = "insert_server"
         self.template_points = [
             {"name": "Handle_Top_Left_Corner",  "x": -0.074, "y": -0.036, "z": 0.002},
             {"name": "Handle_Top_Right_Corner", "x": 0.074, "y": -0.036, "z": 0.002},
@@ -41,7 +41,7 @@ class URWobjExtractServer(UROperateWobj):
         self.courier_robot = None
 
         # Load tool parameters from config file
-        self._load_tool_extract_parameters_from_config()
+        self._load_tool_insert_parameters_from_config()
         
         # Initialize URPositioning instance and ROS2 executor after parent init
         self._initialize_ur_positioning()
@@ -51,11 +51,11 @@ class URWobjExtractServer(UROperateWobj):
 
         self._calculate_server2base(self.server_index)
         
-        print(f"URWobjExtractServer initialized for server index: {server_index}")
+        print(f"URWobjInsertServer initialized for server index: {server_index}")
 
-    def _load_tool_extract_parameters_from_config(self):
+    def _load_tool_insert_parameters_from_config(self):
         """
-        Load tool_extract parameters from robot_config.yaml
+        Load tool_insert parameters from robot_config.yaml
         
         Loads:
             - tool_length: Length of the tool from flange to tip (meters)
@@ -81,7 +81,7 @@ class URWobjExtractServer(UROperateWobj):
             
             if not os.path.exists(config_path):
                 print(f"Config file not found: {config_path}")
-                print(f"Using default tool_extract values: length={defaults['tool_length']}, angle_z={defaults['tool_angle_z']}")
+                print(f"Using default tool_insert values: length={defaults['tool_length']}, angle_z={defaults['tool_angle_z']}")
                 self.tool_length = defaults['tool_length']
                 self.tool_angle_z = defaults['tool_angle_z']
                 return
@@ -90,16 +90,16 @@ class URWobjExtractServer(UROperateWobj):
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
             
-            # Get tool_extract parameters from ur15.tool.tool_extract
-            tool_extract = config.get('ur15', {}).get('tool', {}).get('tool_extract', {})
+            # Get tool_insert parameters from ur15.tool.tool_insert
+            tool_insert = config.get('ur15', {}).get('tool', {}).get('tool_insert', {})
             
-            self.tool_length = tool_extract.get('length', defaults['tool_length'])
-            self.tool_angle_z = tool_extract.get('angle_z', defaults['tool_angle_z'])
+            self.tool_length = tool_insert.get('length', defaults['tool_length'])
+            self.tool_angle_z = tool_insert.get('angle_z', defaults['tool_angle_z'])
             
-            print(f"✓ Loaded tool_extract parameters: length={self.tool_length}m, angle_z={self.tool_angle_z}°")
+            print(f"✓ Loaded tool_insert parameters: length={self.tool_length}m, angle_z={self.tool_angle_z}°")
             
         except Exception as e:
-            print(f"Error loading tool_extract parameters: {e}")
+            print(f"Error loading tool_insert parameters: {e}")
             print(f"Using default values: length={defaults['tool_length']}, angle_z={defaults['tool_angle_z']}")
             self.tool_length = defaults['tool_length']
             self.tool_angle_z = defaults['tool_angle_z']
@@ -212,6 +212,7 @@ class URWobjExtractServer(UROperateWobj):
         print("✓ server2base_matrix updated from vision positioning result")
         
         return 0
+
     def cleanup(self):
         """Cleanup resources before exit"""
         print("\nCleaning up resources...")
@@ -238,12 +239,12 @@ class URWobjExtractServer(UROperateWobj):
             print("✓ ROS2 shutdown")
 
     # ================================ Force Control Functions ================================
-    def force_task_extract_server(self, distance):
+    def force_task_insert_server(self, distance):
         """
-        Execute force control task to extract the server out of rack.
+        Execute force control task to insert the server into rack.
         
         Args:
-            distance: Distance to extract in meters (e.g., 0.60)
+            distance: Distance to insert in meters (e.g., 0.60)
         
         Returns:
             int: Result code from force control task
@@ -278,12 +279,12 @@ class URWobjExtractServer(UROperateWobj):
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters
-        # In server coordinate system: Y- is pulling direction (away from rack)
+        # In server coordinate system: Y+ is pushing direction (into rack)
         selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
-        wrench = [0, -70, 0, 0, 0, 0]  # -70N in server Y direction = pulling away from rack
+        wrench = [0, 70, 0, 0, 0, 0]  # +70N in server Y direction = pushing into rack
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
-        print(f"[INFO] Starting force control task to extract server {distance}m...")
+        print(f"[INFO] Starting force control task to insert server {distance}m...")
         
         # Execute force control task with distance-based termination
         result = self.robot.force_control_task(
@@ -298,9 +299,9 @@ class URWobjExtractServer(UROperateWobj):
         time.sleep(0.5)
         return result
 
-    def force_task_touch_handle(self,distance):
+    def force_task_touch_handle(self, distance):
         """
-        Execute force control task to touch handle based on server coordinate system.
+        Execute force control task to align handle based on server coordinate system.
         
         Returns:
             int: Result code from force control task
@@ -335,12 +336,12 @@ class URWobjExtractServer(UROperateWobj):
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters
-        # In server coordinate system: Z- is downward (toward handle)
+        # In server coordinate system: Z+ is upward (away from handle)
         selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control only in Z direction
-        wrench = [0, 0, -25, 0, 0, 0]  # -25N in server Z direction = downward (toward handle)
+        wrench = [0, 0, -25, 0, 0, 0]  # +25N in server Z direction = upward (away from handle)
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
-        print("[INFO] Starting force control task to touch handle...")
+        print("[INFO] Starting force control task to align handle...")
         
         # Execute force control task with force-based termination
         result = self.robot.force_control_task(
@@ -356,15 +357,15 @@ class URWobjExtractServer(UROperateWobj):
         return result
 
     # ================================ Main Sequence ================================
-    def execute_extract_server_sequence(self):
+    def execute_insert_server_sequence(self):
         """
-        Execute the complete extract server sequence.
+        Execute the complete insert server sequence.
         
         Returns:
             int: 0 on success, error code otherwise
         """
         print("\n" + "="*70)
-        print("STARTING EXTRACT SERVER SEQUENCE")
+        print("STARTING INSERT SERVER SEQUENCE")
         print("="*70)
         
         # Step 1: Correct TCP pose
@@ -372,8 +373,8 @@ class URWobjExtractServer(UROperateWobj):
         print("Step 1: Correcting TCP pose...")
         print("="*50)
         result = self.movel_to_correct_tcp_pose(
-            tcp_x_to_rack=[1, 0, 0],
-            tcp_y_to_rack=[0, -1, 0],
+            tcp_x_to_rack=[-1, 0, 0],
+            tcp_y_to_rack=[0, 1, 0],
             tcp_z_to_rack=[0, 0, -1],
             angle_deg=0,
         )
@@ -382,14 +383,14 @@ class URWobjExtractServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 2: Move to target position to position before extraction
+        # Step 2: Move to target position to position before insertion
         print("\n" + "="*50)
-        print("Step 2: Moving to target position before extraction...")
+        print("Step 2: Moving to target position before insertion...")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
-            execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.40, 0.20+self.tool_length]
+            execution_order=[1, 2, 3],
+            offset_in_rack=[0, -1.20, 0.20+self.tool_length]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
@@ -407,13 +408,13 @@ class URWobjExtractServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 4: Correct TCP pose again before extraction
+        # Step 4: Correct TCP pose again before insertion
         print("\n" + "="*50)
         print("Step 4: Correcting TCP pose...")
         print("="*50)
         result = self.movel_to_correct_tcp_pose(
-            tcp_x_to_rack=[1, 0, 0],
-            tcp_y_to_rack=[0, -1, 0],
+            tcp_x_to_rack=[-1, 0, 0],
+            tcp_y_to_rack=[0, 1, 0],
             tcp_z_to_rack=[0, 0, -1],
             angle_deg=-self.tool_angle_z,
         )
@@ -422,109 +423,119 @@ class URWobjExtractServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 5: move to extract serevr position
+        # Step 5: Move to insert server position
         print("\n" + "="*50)
-        print("Step 5: Extracting server from rack...")
+        print("Step 5: Moving to insert server position...")
         print("="*50)
-        print("\n" + "="*50)
-        print("Step 2: Moving to target position before extraction...")
-        print("="*50)
-
-        distance =0.06
+        
+        distance = 0.06
 
         result = self.movel_to_target_position(
             index=self.server_index,
-            execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.045, distance+self.tool_length]
+            execution_order=[1, 2, 3],
+            offset_in_rack=[0, -0.04, distance+self.tool_length]
         )
         if result != 0:
-            print(f"[ERROR] Failed to move to target position (error code: {result})")
+            print(f"[ERROR] Failed to move to insert position (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 6: Courier robot lift platform up to touch the server before extraction
-        print("\n" + "="*50)
-        print("Step 6: Lifting platform to touch server...")
-        print("="*50)
-        if self.courier_robot is None:
-            print("[ERROR] CourierRobotWebAPI is not initialized")
-            return -1
-        lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=125)
-        if not lift_result.get('success', False):
-            print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
-            return -1
+        # # Step 6: Courier robot platform down to prepare for insertion
+        # print("\n" + "="*50)
+        # print("Step 6: Lowering platform to prepare for insertion...")
+        # print("="*50)
+        # if self.courier_robot is None:
+        #     print("[ERROR] CourierRobotWebAPI is not initialized")
+        #     return -1
+        # # Lower platform to support server weight during insertion
+        # lift_result = self.courier_robot.platform_hybrid_control(target_height=750, target_force=200)
+        # if not lift_result.get('success', False):
+        #     print(f"[ERROR] Failed to lower platform: {lift_result.get('error', 'Unknown error')}")
+        #     return -1
 
-        # Step 7: Execute force control task to touch handle
+        # Step 7: Execute force control task to align handle
         print("\n" + "="*50)
-        print("Step 7: Touching handle with force control...")
+        print("Step 7: Aligning handle with force control...")
         print("="*50)
         result = self.force_task_touch_handle(distance)
         if result != 0:
-            print(f"[ERROR] Failed to touch handle (error code: {result})")
+            print(f"[ERROR] Failed to align handle (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 8: Execute force control task to extract server
-        print("\n" + "="*50)
-        print("Step 8: Extracting server with force control...")
-        print("="*50)
-        result = self.force_task_extract_server(distance=0.50)
-        if result != 0:
-            print(f"[ERROR] Failed to extract server (error code: {result})")
-            return result
-        time.sleep(0.5)
+        # # Step 8: Execute force control task to insert server partially
+        # print("\n" + "="*50)
+        # print("Step 8: Inserting server partially with force control...")
+        # print("="*50)
+        # result = self.force_task_insert_server(distance=0.30)
+        # if result != 0:
+        #     print(f"[ERROR] Failed to insert server partially (error code: {result})")
+        #     return result
+        # time.sleep(0.5)
 
-        # Step 9: Slightly adjust height of end effector
-        print("\n" + "="*50)
-        print("Step 9: Adjusting end effector height...")
-        print("="*50)
-        result = self.movel_in_server_frame([[0, 0, 0.01]])
-        if result != 0:
-            print(f"[ERROR] Failed to adjust end effector height (error code: {result})")
-            return result
-        time.sleep(0.5)
+        # # Step 9: Slightly adjust height of end effector
+        # print("\n" + "="*50)
+        # print("Step 9: Adjusting end effector height...")
+        # print("="*50)
+        # result = self.movel_in_server_frame([[0, 0, -0.01]])
+        # if result != 0:
+        #     print(f"[ERROR] Failed to adjust end effector height (error code: {result})")
+        #     return result
+        # time.sleep(0.5)
 
-        # Step 10: Courier robot up to transfer center of mass of server
-        print("\n" + "="*50)
-        print("Step 10: Lifting platform to transfer center of mass...")
-        print("="*50)
-        if self.courier_robot is None:
-            print("[ERROR] CourierRobotWebAPI is not initialized")
-            return -1
-        lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=350)
-        if not lift_result.get('success', False):
-            print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
-            return -1
+        # # Step 10: Courier robot down to transfer server weight to rack
+        # print("\n" + "="*50)
+        # print("Step 10: Lowering platform to transfer server weight...")
+        # print("="*50)
+        # if self.courier_robot is None:
+        #     print("[ERROR] CourierRobotWebAPI is not initialized")
+        #     return -1
+        # lift_result = self.courier_robot.platform_hybrid_control(target_height=700, target_force=50)
+        # if not lift_result.get('success', False):
+        #     print(f"[ERROR] Failed to lower platform: {lift_result.get('error', 'Unknown error')}")
+        #     return -1
 
-        # Step 11: Execute force control task to extract server completely
-        print("\n" + "="*50)
-        print("Step 11: Extracting server with force control...")
-        print("="*50)
-        result = self.force_task_extract_server(distance=0.30)
-        if result != 0:
-            print(f"[ERROR] Failed to extract server (error code: {result})")
-            return result
-        time.sleep(0.5)
+        # # Step 11: Execute force control task to insert server completely
+        # print("\n" + "="*50)
+        # print("Step 11: Inserting server completely with force control...")
+        # print("="*50)
+        # result = self.force_task_insert_server(distance=0.50)
+        # if result != 0:
+        #     print(f"[ERROR] Failed to insert server completely (error code: {result})")
+        #     return result
+        # time.sleep(0.5)
 
-        # Step 12: Move away from the server after extraction
-        print("\n" + "="*50)
-        print("Step 12: Moving away from the server...")
-        print("="*50)
-        result = self.movel_in_rack_frame([[0, 0, 0.20]])
-        if result != 0:
-            print(f"[ERROR] Failed to move away from server (error code: {result})")
-            return result
-        time.sleep(0.5)
+        # # Step 12: Move away from the server after insertion
+        # print("\n" + "="*50)
+        # print("Step 12: Moving away from the server...")
+        # print("="*50)
+        # result = self.movel_in_rack_frame([[0, 0, 0.20]])
+        # if result != 0:
+        #     print(f"[ERROR] Failed to move away from server (error code: {result})")
+        #     return result
+        # time.sleep(0.5)
+
+        # # Step 13: Final platform down to default position
+        # print("\n" + "="*50)
+        # print("Step 13: Lowering platform to default position...")
+        # print("="*50)
+        # if self.courier_robot is None:
+        #     print("[ERROR] CourierRobotWebAPI is not initialized")
+        #     return -1
+        # lift_result = self.courier_robot.platform_hybrid_control(target_height=500, target_force=0)
+        # if not lift_result.get('success', False):
+        #     print(f"[ERROR] Failed to lower platform to default: {lift_result.get('error', 'Unknown error')}")
+        #     return -1
 
         print("\n" + "="*70)
-        print("EXTRACT SERVER SEQUENCE FINISHED SUCCESSFULLY")
+        print("INSERT SERVER SEQUENCE FINISHED SUCCESSFULLY")
         print("="*70)
         return 0
 
 
 if __name__ == "__main__":
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='URWobjExtractServer - Extract server operation using server coordinate system')
+    parser = argparse.ArgumentParser(description='URWobjInsertServer - Insert server operation using server coordinate system')
     parser.add_argument('--robot-ip', type=str, default=None,
                        help='Robot IP address (default: from config file)')
     parser.add_argument('--robot-port', type=int, default=None,
@@ -534,8 +545,8 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Create URWobjExtractServer instance
-    ur_extract_server = URWobjExtractServer(
+    # Create URWobjInsertServer instance
+    ur_insert_server = URWobjInsertServer(
         robot_ip=args.robot_ip,
         robot_port=args.robot_port,
         server_index=args.server_index
@@ -546,33 +557,33 @@ if __name__ == "__main__":
     print("AUTOMATICALLY LOADED PARAMETERS")
     print("="*70)
     
-    if ur_extract_server.camera_matrix is not None:
+    if ur_insert_server.camera_matrix is not None:
         print("\n✓ Camera Matrix loaded")
-        print(ur_extract_server.camera_matrix)
+        print(ur_insert_server.camera_matrix)
         print("\n✓ Distortion Coefficients loaded")
-        print(ur_extract_server.distortion_coefficients)
+        print(ur_insert_server.distortion_coefficients)
     
-    if ur_extract_server.cam2end_matrix is not None:
+    if ur_insert_server.cam2end_matrix is not None:
         print("\n✓ Camera to End-effector Matrix loaded")
-        print(ur_extract_server.cam2end_matrix)
+        print(ur_insert_server.cam2end_matrix)
     
-    if ur_extract_server.rack_transformation_matrix_in_base is not None:
+    if ur_insert_server.rack_transformation_matrix_in_base is not None:
         print("\n✓ Rack Coordinate System loaded")
-        print(f"  Origin: {ur_extract_server.rack_origin_in_base}")
+        print(f"  Origin: {ur_insert_server.rack_origin_in_base}")
     
-    if ur_extract_server.server2base_matrix is not None:
+    if ur_insert_server.server2base_matrix is not None:
         print("\n✓ Server Coordinate System loaded")
-        server_origin = ur_extract_server.server2base_matrix[:3, 3]
+        server_origin = ur_insert_server.server2base_matrix[:3, 3]
         print(f"  Origin: x={server_origin[0]:.6f}, y={server_origin[1]:.6f}, z={server_origin[2]:.6f}")
-        print(f"  Server Index: {ur_extract_server.server_index}")
+        print(f"  Server Index: {ur_insert_server.server_index}")
 
-    # ==============Execute the extract server task=================
+    # ==============Execute the insert server task=================
     print("\n" + "="*70)
     print("STARTING TASK EXECUTION")
     print("="*70)
     
     try:
-        result = ur_extract_server.execute_extract_server_sequence()
+        result = ur_insert_server.execute_insert_server_sequence()
         
         if result == 0:
             print("\n✓ Task completed successfully!")
@@ -587,4 +598,4 @@ if __name__ == "__main__":
         traceback.print_exc()
     finally:
         # Cleanup resources
-        ur_extract_server.cleanup()
+        ur_insert_server.cleanup()
