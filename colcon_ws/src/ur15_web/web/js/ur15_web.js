@@ -2211,6 +2211,9 @@ async function disableCornerDetect() {
 // Draw GB200 Rack Functions
 let drawRackEnabled = false;
 
+// Draw GB200 Server Functions
+let drawServerEnabled = false;
+
 // Draw Keypoints Functions
 let drawKeypointsEnabled = false;
 
@@ -2245,6 +2248,44 @@ async function toggleDrawRack() {
         }
     } catch (error) {
         logToWeb(`Error toggling rack drawing: ${error.message}`, 'error');
+        // Revert checkbox on error
+        checkbox.checked = !checkbox.checked;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
+async function toggleDrawServer() {
+    const checkbox = document.getElementById('drawServerCheckbox');
+    checkbox.disabled = true;
+    
+    try {
+        const response = await fetch('/toggle_draw_server', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: checkbox.checked })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            drawServerEnabled = data.enabled;
+            checkbox.checked = data.enabled;
+            
+            if (data.enabled) {
+                logToWeb('Draw GB200 server enabled', 'success');
+            } else {
+                logToWeb('Draw GB200 server disabled', 'info');
+            }
+        } else {
+            logToWeb(`Failed to toggle server drawing: ${data.message}`, 'error');
+            // Revert checkbox on failure
+            checkbox.checked = !checkbox.checked;
+        }
+    } catch (error) {
+        logToWeb(`Error toggling server drawing: ${error.message}`, 'error');
         // Revert checkbox on error
         checkbox.checked = !checkbox.checked;
     } finally {

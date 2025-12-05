@@ -25,12 +25,12 @@ class URWobjExtractServer(UROperateWobj):
         # Store operation name and template points before parent init
         self.operation_name = "extract_server"
         self.template_points = [
-            {"name": "Handle_Top_Left_Corner",  "x": -0.074, "y": -0.038, "z": 0.002},
-            {"name": "Handle_Top_Right_Corner", "x": 0.074, "y": -0.038, "z": 0.002},
-            {"name": "Handle_Bottom_Left_Corner", "x": -0.074, "y": -0.0575, "z": 0.002},
-            {"name": "Handle_Bottom_Right_Corner", "x": 0.074, "y": -0.0575, "z": 0.002}
+            {"name": "Handle_Top_Left_Corner",  "x": -0.074, "y": -0.036, "z": 0.007},
+            {"name": "Handle_Top_Right_Corner", "x": 0.074, "y": -0.036, "z": 0.007},
+            {"name": "Handle_Bottom_Left_Corner", "x": -0.074, "y": -0.056, "z": 0.002},
+            {"name": "Handle_Bottom_Right_Corner", "x": 0.074, "y": -0.056, "z": 0.002}
         ]
-        
+
         # Initialize URPositioning variables before parent init
         self.ur_positioning = None
         self.executor = None
@@ -107,12 +107,14 @@ class URWobjExtractServer(UROperateWobj):
                 rclpy.init()
                 print('✓ ROS2 initialized')
             
-            # Create URPositioning instance with template points
+            # Create URPositioning instance with robot connection parameters
             self.ur_positioning = URPositioning(
+                robot_ip=self.robot_ip,
+                robot_port=self.robot_port,
                 operation_name=self.operation_name,
             )
             
-            # self.ur_positioning.template_points = self.template_points
+            self.ur_positioning.template_points = self.template_points
 
             # Create executor and start spinning in a separate thread
             self.executor = MultiThreadedExecutor()
@@ -123,6 +125,9 @@ class URWobjExtractServer(UROperateWobj):
             self.spin_thread.start()
             
             print('✓ URPositioning initialized and spinning in background')
+            
+            # Wait a moment for camera subscription to be ready
+            time.sleep(2.0)
             
         except Exception as e:
             print(f'Error initializing URPositioning: {e}')
@@ -169,7 +174,6 @@ class URWobjExtractServer(UROperateWobj):
         print("✓ server2base_matrix updated from vision positioning result")
         
         return 0
-
     def cleanup(self):
         """Cleanup resources before exit"""
         print("\nCleaning up resources...")
@@ -209,46 +213,27 @@ class URWobjExtractServer(UROperateWobj):
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
 
-        # Reconstruct the task frame BEFORE the tool_angle_z rotation
-        # This is the frame after Step 1 of movel_to_correct_tool_tcp (aligned with server coordinate system)
+        # Extract rotation matrix from server transformation matrix and convert to rotation vector
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
-        # Extract rotation matrix from server coordinate system transformation matrix
-        server_rotation = self.server2base_matrix[:3, :3]
-        server_x = server_rotation[:, 0]  # Server X+ direction
-        server_y = server_rotation[:, 1]  # Server Y+ direction
-        server_z = server_rotation[:, 2]  # Server Z+ direction
-        
-        # Reconstruct the task frame before the tool_angle_z rotation
-        # This should match the tool orientation after Step 1 of movel_to_correct_tool_tcp
-        # Tool X+ -> Server X+
-        # Tool Y+ -> Server Y- (negative Y)
-        # Tool Z+ -> Server Z- (negative Z)
-        
-        target_tool_rotation = np.column_stack([
-            server_x,     # Tool X+ = Server X+
-            -server_y,    # Tool Y+ = Server Y- (negative Y)
-            -server_z     # Tool Z+ = Server Z- (negative Z)
-        ])
-        
-        # Convert rotation matrix to rotation vector
-        rotation_obj = R.from_matrix(target_tool_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
-        
-        # Create task frame with current position but pre-rotation orientation
+        # Create task frame using current position with server orientation
         task_frame = [
-            tcp_pose[0],        # x (current position)
-            tcp_pose[1],        # y
-            tcp_pose[2],        # z
-            rotation_vector[0], # rx (orientation before Z-rotation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            tcp_pose[0],               # x (current position)
+            tcp_pose[1],               # y
+            tcp_pose[2],               # z
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
-        print(f"[INFO] Task frame (before Z-rotation): {task_frame}")
+        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters
-        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions (relative to task frame)
-        wrench = [0, 70, 0, 0, 0, 0]  # Desired force/torque in each direction (70N in Y direction)
+        # In server coordinate system: Y- is pulling direction (away from rack)
+        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
+        wrench = [0, -70, 0, 0, 0, 0]  # -70N in server Y direction = pulling away from rack
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print(f"[INFO] Starting force control task to extract server {distance}m...")
@@ -266,7 +251,7 @@ class URWobjExtractServer(UROperateWobj):
         time.sleep(0.5)
         return result
 
-    def force_task_touch_handle(self):
+    def force_task_touch_handle(self,distance):
         """
         Execute force control task to touch handle based on server coordinate system.
         
@@ -285,46 +270,27 @@ class URWobjExtractServer(UROperateWobj):
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
 
-        # Reconstruct the task frame BEFORE the tool_angle_z rotation
-        # This is the frame after Step 1 of movel_to_correct_tool_tcp (aligned with server coordinate system)
+        # Extract rotation matrix from server transformation matrix and convert to rotation vector
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
         
-        # Extract rotation matrix from server coordinate system transformation matrix
-        server_rotation = self.server2base_matrix[:3, :3]
-        server_x = server_rotation[:, 0]  # Server X+ direction
-        server_y = server_rotation[:, 1]  # Server Y+ direction
-        server_z = server_rotation[:, 2]  # Server Z+ direction
-        
-        # Reconstruct the task frame before the tool_angle_z rotation
-        # This should match the tool orientation after Step 1 of movel_to_correct_tool_tcp
-        # Tool X+ -> Server X+
-        # Tool Y+ -> Server Y- (negative Y)
-        # Tool Z+ -> Server Z- (negative Z)
-        
-        target_tool_rotation = np.column_stack([
-            server_x,     # Tool X+ = Server X+
-            -server_y,    # Tool Y+ = Server Y- (negative Y)
-            -server_z     # Tool Z+ = Server Z- (negative Z)
-        ])
-        
-        # Convert rotation matrix to rotation vector
-        rotation_obj = R.from_matrix(target_tool_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
-        
-        # Create task frame with current position but pre-rotation orientation
+        # Create task frame using current position with server orientation
         task_frame = [
-            tcp_pose[0],        # x (current position)
-            tcp_pose[1],        # y
-            tcp_pose[2],        # z
-            rotation_vector[0], # rx (orientation before Z-rotation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
+            tcp_pose[0],               # x (current position)
+            tcp_pose[1],               # y
+            tcp_pose[2],               # z
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
-        print(f"[INFO] Task frame (before Z-rotation): {task_frame}")
+        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters
-        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions (relative to task frame)
-        wrench = [0, 0, -25, 0, 0, 0]  # Desired force/torque in each direction (25N in Z direction)
+        # In server coordinate system: Z- is downward (toward handle)
+        selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control only in Z direction
+        wrench = [0, 0, -25, 0, 0, 0]  # -25N in server Z direction = downward (toward handle)
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task to touch handle...")
@@ -337,7 +303,7 @@ class URWobjExtractServer(UROperateWobj):
             limits=limits,
             damping=0.1,
             end_type=3,  # Force-based termination
-            end_distance=[0.03, 0.03, 0.11, 0, 0, 0]
+            end_distance=[0, 0, distance+0.01, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
@@ -375,8 +341,8 @@ class URWobjExtractServer(UROperateWobj):
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
-            execution_order=[1, 2, 3],
-            offset_in_rack=[0, -0.30, 0.30+self.tool_length]
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0, -0.40, 0.20+self.tool_length]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
@@ -394,47 +360,50 @@ class URWobjExtractServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # # Step 4: Correct TCP pose again before extraction
-        # print("\n" + "="*50)
-        # print("Step 4: Correcting TCP pose...")
-        # print("="*50)
-        # result = self.movel_to_correct_tcp_pose(
-        #     tcp_x_to_rack=[1, 0, 0],
-        #     tcp_y_to_rack=[0, -1, 0],
-        #     tcp_z_to_rack=[0, 0, -1],
-        #     angle_deg=-self.tool_angle_z,
-        # )
-        # if result != 0:
-        #     print(f"[ERROR] Failed to correct TCP pose (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 4: Correct TCP pose again before extraction
+        print("\n" + "="*50)
+        print("Step 4: Correcting TCP pose...")
+        print("="*50)
+        result = self.movel_to_correct_tcp_pose(
+            tcp_x_to_rack=[1, 0, 0],
+            tcp_y_to_rack=[0, -1, 0],
+            tcp_z_to_rack=[0, 0, -1],
+            angle_deg=-self.tool_angle_z,
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to correct TCP pose (error code: {result})")
+            return result
+        time.sleep(0.5)
 
-        # # Step 5: move to extract serevr position
-        # print("\n" + "="*50)
-        # print("Step 5: Extracting server from rack...")
-        # print("="*50)
-        # print("\n" + "="*50)
-        # print("Step 2: Moving to target position before extraction...")
-        # print("="*50)
-        # result = self.movel_to_target_position(
-        #     index=self.server_index,
-        #     execution_order=[1, 2, 3],
-        #     offset_in_rack=[0, -0.048, 0.10+self.tool_length]
-        # )
-        # if result != 0:
-        #     print(f"[ERROR] Failed to move to target position (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 5: move to extract serevr position
+        print("\n" + "="*50)
+        print("Step 5: Extracting server from rack...")
+        print("="*50)
+        print("\n" + "="*50)
+        print("Step 2: Moving to target position before extraction...")
+        print("="*50)
 
-        # # Step 6: Execute force control task to touch handle
-        # print("\n" + "="*50)
-        # print("Step 6: Touching handle with force control...")
-        # print("="*50)
-        # result = self.force_task_touch_handle()
-        # if result != 0:
-        #     print(f"[ERROR] Failed to touch handle (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        distance =0.06
+
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0, -0.045, distance+self.tool_length]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to target position (error code: {result})")
+            return result
+        time.sleep(0.5)
+
+        # Step 6: Execute force control task to touch handle
+        print("\n" + "="*50)
+        print("Step 6: Touching handle with force control...")
+        print("="*50)
+        result = self.force_task_touch_handle(distance)
+        if result != 0:
+            print(f"[ERROR] Failed to touch handle (error code: {result})")
+            return result
+        time.sleep(0.5)
 
         # # Step 7: Execute force control task to extract server
         # print("\n" + "="*50)

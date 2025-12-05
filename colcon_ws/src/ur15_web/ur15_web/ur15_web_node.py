@@ -201,6 +201,7 @@ class UR15WebNode(Node):
         self.corner_detection_enabled = False
         self.corner_detection_params = {}
         self.draw_rack_enabled = False
+        self.draw_server_enabled = False
         self.draw_keypoints_enabled = False
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
@@ -1806,6 +1807,40 @@ class UR15WebNode(Node):
                     
             except Exception as e:
                 self.get_logger().error(f"Error toggling rack drawing: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+        
+        @self.app.route('/toggle_draw_server', methods=['POST'])
+        def toggle_draw_server():
+            """Toggle GB200 server drawing on/off."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                self.draw_server_enabled = enable
+                
+                if enable:
+                    self.get_logger().info("GB200 server drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 server drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("GB200 server drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 server drawing disabled',
+                        'enabled': False
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error toggling server drawing: {e}")
                 return jsonify({
                     'success': False,
                     'message': str(e),
@@ -3908,48 +3943,52 @@ class UR15WebNode(Node):
                 thickness=2
             )
 
-            # Calculate server2camera transformation for GB200 server
-            # Get Operating Unit value from robot_status
-            try:
-                operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
-            except Exception as e:
-                self.get_logger().debug(f"Failed to get rack_operating_unit_id: {e}")
-                operating_unit_id = None
-            
-            if operating_unit_id is None:
-                operating_unit_id = 14  # Default to 14 if not set
-                self.get_logger().debug(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
-            
-            # Generate server frame in rack coordinate system using class instance
-            if self.server_frame_generator is None:
-                self.get_logger().warn("Server frame generator not initialized")
-                return frame
-            
-            result = self.server_frame_generator.generate_server_frame_in_rack(index=operating_unit_id)
-            
-            if result is not None:
-                # Get server2rack transformation matrix
-                server2rack_matrix = result['target_server_transformation_matrix_in_rack']
-                
-                # Calculate server2camera transformation
-                # server2camera = base2camera @ rack2base @ server2rack
-                server2camera = base2camera @ rack2base_matrix @ server2rack_matrix
-                
-                # Draw GB200 server model with server2camera extrinsic
-                frame = draw_utils.draw_model_on_image(
-                    frame,
-                    intrinsic=params['intrinsic'],
-                    extrinsic=server2camera,
-                    model=self.gb200server_model,
-                    distortion=params['distortion'],
-                    thickness=2
-                )
-            else:
-                self.get_logger().warn(f"Failed to generate server frame for unit {operating_unit_id}")
-
 
         except Exception as e:
             self.get_logger().error(f"Error projecting rack to image: {e}")
+        
+        return frame
+    
+    def project_server_to_image(self, frame):
+        """Project GB200 server to image using server2base_matrix directly from Redis."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                self.get_logger().warn("Camera calibration parameters not available for server drawing")
+                return frame
+            
+            # Get server2base_matrix directly from Redis ur15 namespace
+            try:
+                server2base_matrix = self.status_client.get_status('ur15', 'server2base_matrix')
+            except Exception as e:
+                self.get_logger().debug(f"Failed to get server2base_matrix: {e}")
+                return frame
+            
+            if server2base_matrix is None:
+                self.get_logger().debug("server2base_matrix is None, skipping server drawing")
+                return frame
+            
+            # Convert to numpy array
+            server2base_matrix = np.array(server2base_matrix)
+            
+            # Calculate server2camera transformation
+            # server2camera = base2camera @ server2base
+            base2camera = params['extrinsic']
+            server2camera = base2camera @ server2base_matrix
+            
+            # Draw GB200 server model with server2camera extrinsic
+            frame = draw_utils.draw_model_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=server2camera,
+                model=self.gb200server_model,
+                distortion=params['distortion'],
+                thickness=2
+            )
+
+        except Exception as e:
+            self.get_logger().error(f"Error projecting server to image: {e}")
         
         return frame
     
@@ -4080,6 +4119,10 @@ class UR15WebNode(Node):
                         # Draw GB200 rack if enabled
                         if self.draw_rack_enabled:
                             frame = self.project_rack_to_image(frame)
+                        
+                        # Draw GB200 server if enabled
+                        if self.draw_server_enabled:
+                            frame = self.project_server_to_image(frame)
                         
                         # Draw keypoints if enabled
                         if self.draw_keypoints_enabled:
