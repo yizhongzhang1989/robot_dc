@@ -8,6 +8,8 @@ All functions correspond to web interface controls
 import requests
 import time
 import threading
+import yaml
+from pathlib import Path
 
 
 class CourierRobotWebAPI:
@@ -16,14 +18,56 @@ class CourierRobotWebAPI:
     Provides all control functions available in the web interface
     """
     
-    def __init__(self, base_url="http://192.168.1.3:8090", verbose=True):
+    @staticmethod
+    def _load_config_url():
+        """
+        Load base URL from robot_config.yaml
+        
+        Returns:
+            str: Base URL from config, or default if not found
+        """
+        try:
+            # Try to find config file
+            script_dir = Path(__file__).parent
+            config_path = script_dir.parent / 'config' / 'robot_config.yaml'
+            
+            if not config_path.exists():
+                return None
+            
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Extract lift_robot.web configuration
+            web_config = config.get('lift_robot', {}).get('web', {})
+            host = web_config.get('host', 'localhost')
+            port = web_config.get('port', 8090)
+            
+            # Build URL
+            return f"http://{host}:{port}"
+        except Exception as e:
+            # Silently fail and return None if config cannot be loaded
+            return None
+    
+    def __init__(self, base_url=None, verbose=True):
         """
         Initialize courier robot controller
         
         Args:
-            base_url: HTTP server base URL (default: http://192.168.1.3:8090)
+            base_url: HTTP server base URL (default: read from config/robot_config.yaml, 
+                     fallback to http://192.168.1.3:8090 if config not found)
+                     Can override by passing explicit URL
             verbose: If True, automatically print command results (default: True)
         """
+        # Determine base URL priority: explicit parameter > config file > hardcoded default
+        if base_url is None:
+            base_url = self._load_config_url()
+            if base_url is None:
+                base_url = "http://192.168.1.3:8090"  # Hardcoded fallback
+                if verbose:
+                    print(f"⚠️  Config file not found, using default URL: {base_url}")
+            elif verbose:
+                print(f"📄 Loaded URL from config: {base_url}")
+        
         self.base_url = base_url
         self.verbose = verbose
         self.background_task = None  # Track background task thread
