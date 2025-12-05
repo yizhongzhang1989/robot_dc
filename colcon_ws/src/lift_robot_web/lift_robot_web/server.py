@@ -389,7 +389,14 @@ def run_fastapi_server(port):
 
         @app.get('/')
         def index():
-            return FileResponse(os.path.join(web_dir, 'index.html'))
+            return FileResponse(
+                os.path.join(web_dir, 'index.html'),
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
 
         @app.get('/api/latest')
         def latest():
