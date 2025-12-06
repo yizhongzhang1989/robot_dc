@@ -451,14 +451,15 @@ def run_fastapi_server(port):
             allowed = {
                 'up', 'down', 'stop', 'reset',
                 'goto_height', 'force_up', 'force_down', 'height_force_hybrid',
-                'range_scan_down', 'range_scan_up', 'range_scan_cancel'
+                'range_scan_down', 'range_scan_up', 'range_scan_cancel',
+                'set_force_limit'
             }
             if cmd not in allowed:
                 return JSONResponse({'error': 'invalid command'}, status_code=400)
             
             # Route commands to appropriate publisher
-            # Direct commands: ONLY reset and range_scan_* -> lift_robot_node (stop uses Action)
-            direct_commands = {'reset', 'range_scan_down', 'range_scan_up', 'range_scan_cancel'}
+            # Direct commands: ONLY reset, set_force_limit, and range_scan_* -> lift_robot_node (stop uses Action)
+            direct_commands = {'reset', 'set_force_limit', 'range_scan_down', 'range_scan_up', 'range_scan_cancel'}
             
             queue_msg = String()
             queue_msg.data = json.dumps(payload)
@@ -503,6 +504,11 @@ def run_fastapi_server(port):
                     'current_height': lift_robot_node.platform_status.get('current_height'),
                     'target_height': lift_robot_node.platform_status.get('target_height'),
                     'limit_exceeded': lift_robot_node.platform_status.get('limit_exceeded', False),
+                    # Force limit fields
+                    'force_limit_exceeded': lift_robot_node.platform_status.get('force_limit_exceeded', False),
+                    'max_force_limit': lift_robot_node.platform_status.get('max_force_limit', 0.0),
+                    'force_sensor_error': lift_robot_node.platform_status.get('force_sensor_error', False),
+                    'force_sensor_error_message': lift_robot_node.platform_status.get('force_sensor_error_message'),
                     # Overshoot calibration data
                     'last_goto_target': lift_robot_node.platform_status.get('last_goto_target'),
                     'last_goto_actual': lift_robot_node.platform_status.get('last_goto_actual'),

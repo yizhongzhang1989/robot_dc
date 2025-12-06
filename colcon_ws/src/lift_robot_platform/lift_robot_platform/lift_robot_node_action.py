@@ -96,6 +96,15 @@ class LiftRobotNodeAction(Node):
         # Platform force limit (loaded from config)
         self.max_force_limit = 500.0  # Default: 500N
         self.force_limit_enabled = True  # Always enabled for safety
+        self.force_limit_exceeded = False  # Current force limit status (for web display)
+        
+        # Force sensor error status (for force limit monitoring)
+        self.force_sensor_error = False  # True if any sensor has error
+        self.force_sensor_error_message = None  # Combined error message
+        self.right_force_error = False
+        self.right_force_error_msg = None
+        self.left_force_error = False
+        self.left_force_error_msg = None
         
         # Control action timeouts (loaded from config)
         self.timeout_goto_height = 60.0    # Default: 60s
@@ -290,6 +299,18 @@ class LiftRobotNodeAction(Node):
             goal_callback=self._goal_callback,
             cancel_callback=self._cancel_callback
         )
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Dedicated Force Limit Monitor Thread (50Hz polling)
+        # ═══════════════════════════════════════════════════════════════
+        self.force_monitor_running = True
+        self.force_monitor_thread = threading.Thread(
+            target=self._force_limit_monitor_loop,
+            daemon=False,
+            name="ForceMonitor"
+        )
+        self.force_monitor_thread.start()
+        self.get_logger().info("🔴 Dedicated force limit monitor thread started (50Hz)")
         
         self.get_logger().info("Lift platform Action-only node started")
     
@@ -630,6 +651,27 @@ class LiftRobotNodeAction(Node):
                 
                 self.get_logger().info("[RESET] ✅ Reset complete: system recovered to idle (ready for new Actions)")
             
+            elif command == 'set_force_limit':
+                # Set max force limit (runtime configuration, not saved to config file)
+                new_limit = command_data.get('value')
+                if new_limit is None:
+                    self.get_logger().error(f"[SET_FORCE_LIMIT] Missing 'value' parameter")
+                    return
+                
+                try:
+                    new_limit = float(new_limit)
+                    if new_limit <= 0:
+                        self.get_logger().error(f"[SET_FORCE_LIMIT] Invalid value: {new_limit} (must be > 0)")
+                        return
+                    
+                    with self.state_lock:
+                        old_limit = self.max_force_limit
+                        self.max_force_limit = new_limit
+                    
+                    self.get_logger().info(f"[SET_FORCE_LIMIT] ✅ Updated: {old_limit:.1f}N → {new_limit:.1f}N (±{new_limit:.1f}N)")
+                except ValueError:
+                    self.get_logger().error(f"[SET_FORCE_LIMIT] Invalid value type: {new_limit}")
+            
             elif command == 'range_scan_down':
                 # Start range scan: Step 1 - pushrod home, Step 2 - platform down, Step 3 - platform up
                 if self.range_scan_active:
@@ -752,12 +794,20 @@ class LiftRobotNodeAction(Node):
             import json
             data = json.loads(msg.data)
             force_value = data.get('force')
-            if force_value is not None:
-                with self.state_lock:
+            with self.state_lock:
+                if force_value is not None:
                     self.current_force_right = float(force_value)
                     self._update_force_combined()
+                # Extract error status
+                self.right_force_error = data.get('error', False)
+                self.right_force_error_msg = data.get('error_message')
+                self._update_force_sensor_error()
         except Exception as e:
             self.get_logger().warn(f"Force right parse error: {e}")
+            with self.state_lock:
+                self.right_force_error = True
+                self.right_force_error_msg = f"Parse error: {e}"
+                self._update_force_sensor_error()
     
     def _force_sensor_2_callback(self, msg):
         """Force sensor 2 (left) callback - now receives JSON String"""
@@ -765,12 +815,20 @@ class LiftRobotNodeAction(Node):
             import json
             data = json.loads(msg.data)
             force_value = data.get('force')
-            if force_value is not None:
-                with self.state_lock:
+            with self.state_lock:
+                if force_value is not None:
                     self.current_force_left = float(force_value)
                     self._update_force_combined()
+                # Extract error status
+                self.left_force_error = data.get('error', False)
+                self.left_force_error_msg = data.get('error_message')
+                self._update_force_sensor_error()
         except Exception as e:
             self.get_logger().warn(f"Force left parse error: {e}")
+            with self.state_lock:
+                self.left_force_error = True
+                self.left_force_error_msg = f"Parse error: {e}"
+                self._update_force_sensor_error()
     
     def _emergency_reset_callback(self, msg):
         """Emergency reset callback - triggered by sensor hardware failures"""
@@ -808,6 +866,42 @@ class LiftRobotNodeAction(Node):
             self.current_force_combined = self.current_force_left
         else:
             self.current_force_combined = None
+    
+    def _force_right_callback(self, msg):
+        """Right force sensor callback - extract error status"""
+        try:
+            data = json.loads(msg.data)
+            with self.state_lock:
+                self.right_force_error = data.get('error', False)
+                self.right_force_error_msg = data.get('error_message')
+                self._update_force_sensor_error()
+        except Exception as e:
+            self.get_logger().error(f"Force right callback error: {e}")
+    
+    def _force_left_callback(self, msg):
+        """Left force sensor callback - extract error status"""
+        try:
+            data = json.loads(msg.data)
+            with self.state_lock:
+                self.left_force_error = data.get('error', False)
+                self.left_force_error_msg = data.get('error_message')
+                self._update_force_sensor_error()
+        except Exception as e:
+            self.get_logger().error(f"Force left callback error: {e}")
+    
+    def _update_force_sensor_error(self):
+        """Update combined force sensor error status (must be called with state_lock held)"""
+        if self.right_force_error or self.left_force_error:
+            self.force_sensor_error = True
+            error_msgs = []
+            if self.right_force_error and self.right_force_error_msg:
+                error_msgs.append(f"Right: {self.right_force_error_msg}")
+            if self.left_force_error and self.left_force_error_msg:
+                error_msgs.append(f"Left: {self.left_force_error_msg}")
+            self.force_sensor_error_message = "; ".join(error_msgs) if error_msgs else "Sensor error"
+        else:
+            self.force_sensor_error = False
+            self.force_sensor_error_message = None
     
     def _on_flash_complete(self, relay, seq_id):
         """Relay flash verification complete callback.
@@ -864,6 +958,10 @@ class LiftRobotNodeAction(Node):
                 'height': self.current_height,
                 'movement_state': self.movement_state,
                 'force': self.current_force_combined if self.current_force_combined is not None else 0.0,
+                'force_limit_exceeded': self.force_limit_exceeded,  # Force limit status for web display
+                'max_force_limit': self.max_force_limit,  # Current force limit value for web display/editing
+                'force_sensor_error': self.force_sensor_error,  # Force sensor error status
+                'force_sensor_error_message': self.force_sensor_error_message,  # Force sensor error details
                 # Task state fields for Web compatibility
                 'task_state': self.task_state,
                 'task_type': self.task_type,
@@ -1142,6 +1240,135 @@ class LiftRobotNodeAction(Node):
                 self.get_logger().debug(f"[Action] Cleared active: {action_type} (handle={id(goal_handle)})")
             else:
                 self.get_logger().debug(f"[Action] Skip clear {action_type} - not active (handle={id(goal_handle)})")
+    
+    def _force_limit_monitor_loop(self):
+        """Dedicated force limit monitoring thread - polls current_force_combined at 50Hz.
+        
+        This is a standalone thread that continuously monitors the combined force value.
+        When force exceeds max_force_limit, it triggers emergency reset immediately.
+        
+        NOTE: This does NOT interfere with StopMovement Action - they work independently.
+        StopMovement sets stop_requested flag and cancels Actions, while this monitors force limit.
+        """
+        self.get_logger().info("[FORCE_MONITOR] 🔴 Monitor thread started (50Hz polling)")
+        
+        try:
+            while self.force_monitor_running and rclpy.ok():
+                # 50Hz polling (20ms interval)
+                time.sleep(0.02)
+                
+                # Read current force (minimal lock time)
+                with self.state_lock:
+                    current_force = self.current_force_combined
+                    force_limit_enabled = self.force_limit_enabled
+                    max_force_limit = self.max_force_limit
+                    force_sensor_error = self.force_sensor_error
+                    force_sensor_error_msg = self.force_sensor_error_message
+                
+                # Skip if force limit disabled or no force data
+                if not force_limit_enabled or current_force is None:
+                    # Reset status when disabled or no data
+                    with self.state_lock:
+                        self.force_limit_exceeded = False
+                    continue
+                
+                # Skip if force sensor has error (disable force limit check)
+                if force_sensor_error:
+                    with self.state_lock:
+                        self.force_limit_exceeded = False
+                    # Log warning only once per error state change
+                    if not hasattr(self, '_last_sensor_error_logged') or not self._last_sensor_error_logged:
+                        self.get_logger().warn(
+                            f"[FORCE_MONITOR] Force limit check DISABLED - Sensor error: {force_sensor_error_msg}"
+                        )
+                        self._last_sensor_error_logged = True
+                    continue
+                else:
+                    # Clear error log flag when sensor recovers
+                    if hasattr(self, '_last_sensor_error_logged') and self._last_sensor_error_logged:
+                        self.get_logger().info("[FORCE_MONITOR] Force sensors recovered - Force limit check ENABLED")
+                        self._last_sensor_error_logged = False
+                
+                # Check force limit (bidirectional: |force| > limit)
+                force_exceeded = abs(current_force) > max_force_limit
+                
+                # Get previous state
+                with self.state_lock:
+                    prev_exceeded = self.force_limit_exceeded
+                    self.force_limit_exceeded = force_exceeded
+                
+                # Only trigger emergency reset on state transition (False -> True)
+                if force_exceeded and not prev_exceeded:
+                    self.get_logger().error(
+                        f"[FORCE_MONITOR] 🚨 FORCE LIMIT EXCEEDED: {current_force:.1f}N (limit: ±{max_force_limit:.1f}N) - TRIGGERING EMERGENCY RESET!"
+                    )
+                    
+                    # Set emergency reset state
+                    with self.state_lock:
+                        self.task_state = 'emergency_reset'
+                        self.reset_in_progress = True
+                    
+                    # Execute emergency reset sequence (same as manual reset command)
+                    try:
+                        # Step 1: Cancel all timers
+                        try:
+                            self.controller.cancel_all_timers()
+                            self.get_logger().info("[FORCE_MONITOR] Timers cancelled")
+                        except Exception as e:
+                            self.get_logger().error(f"[FORCE_MONITOR] Timer cancel failed: {e}")
+                        
+                        # Step 2: Reset all relays to 0
+                        try:
+                            seq_id = int(time.time() * 1000) % 65536
+                            self.controller.reset_all_relays(seq_id=seq_id)
+                            self.get_logger().info("[FORCE_MONITOR] Relays reset")
+                        except Exception as e:
+                            self.get_logger().error(f"[FORCE_MONITOR] Relay reset failed: {e}")
+                        
+                        # Step 3: Abort any active flash
+                        try:
+                            aborted = self.controller.abort_active_flash()
+                            if aborted:
+                                self.get_logger().warn("[FORCE_MONITOR] Flash aborted")
+                        except Exception as e:
+                            self.get_logger().error(f"[FORCE_MONITOR] Flash abort failed: {e}")
+                        
+                        # Step 4: Send 3x STOP pulses
+                        try:
+                            seq_id = int(time.time() * 1000) % 65536
+                            for i in range(3):
+                                self.controller.stop(seq_id=seq_id)
+                                time.sleep(0.05)
+                            self.get_logger().warn("[FORCE_MONITOR] 3x STOP sent")
+                        except Exception as e:
+                            self.get_logger().error(f"[FORCE_MONITOR] Stop failed: {e}")
+                        
+                        # Step 5: Clear all states and recover to idle
+                        with self.state_lock:
+                            self.movement_state = 'stop'
+                            self.task_state = 'idle'
+                            self.task_end_time = time.time()
+                            self.current_manual_move_direction = None
+                            self.reset_in_progress = False
+                            self.system_busy = False
+                            self.active_control_owner = None
+                            # Clear stop_requested flag (in case it was set by StopMovement)
+                            self.stop_requested = False
+                        
+                        self.get_logger().warn(
+                            f"[FORCE_MONITOR] ✅ Emergency reset complete (force={current_force:.1f}N)"
+                        )
+                        
+                    except Exception as e:
+                        self.get_logger().error(f"[FORCE_MONITOR] ❌ Emergency reset failed: {e}")
+                        # Ensure reset_in_progress is cleared even on failure
+                        with self.state_lock:
+                            self.reset_in_progress = False
+        
+        except Exception as e:
+            self.get_logger().error(f"[FORCE_MONITOR] Thread error: {e}")
+        finally:
+            self.get_logger().info("[FORCE_MONITOR] Thread stopped")
     
     def _wait_for_stop_complete(self, target, timeout=5.0):
         """
@@ -1544,15 +1771,8 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # PRIORITY 1: Check force limit (triggers emergency_reset if exceeded)
-                with self.state_lock:
-                    current_force = self.current_force_combined
-                
-                # _check_force_limit() triggers emergency_reset internally if limit exceeded
-                # Next loop iteration will catch emergency_reset at PRIORITY 0 and abort
-                self._check_force_limit(current_force)
-                
-                # PRIORITY 2: Check action timeout (triggers emergency_reset if exceeded)
+                # PRIORITY 1: Check action timeout (triggers emergency_reset if exceeded)
+                # NOTE: Force limit is monitored by dedicated thread, not checked here
                 elapsed_time = time.time() - start_time
                 if self.timeout_goto_height > 0 and elapsed_time > self.timeout_goto_height:
                     self.get_logger().error(
@@ -2011,15 +2231,8 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # PRIORITY 1: Check force limit (triggers emergency_reset if exceeded)
-                with self.state_lock:
-                    current_force = self.current_force_combined
-                
-                # _check_force_limit() triggers emergency_reset internally if limit exceeded
-                # Next loop iteration will catch emergency_reset at PRIORITY 0 and abort
-                self._check_force_limit(current_force)
-                
-                # PRIORITY 2: Check action timeout (triggers emergency_reset if exceeded)
+                # PRIORITY 1: Check action timeout (triggers emergency_reset if exceeded)
+                # NOTE: Force limit is monitored by dedicated thread, not checked here
                 elapsed_time = time.time() - start_time
                 if self.timeout_force_control > 0 and elapsed_time > self.timeout_force_control:
                     self.get_logger().error(
@@ -2303,15 +2516,8 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # PRIORITY 1: Check force limit (triggers emergency_reset if exceeded)
-                with self.state_lock:
-                    current_force = self.current_force_combined
-                
-                # _check_force_limit() triggers emergency_reset internally if limit exceeded
-                # Next loop iteration will catch emergency_reset at PRIORITY 0 and abort
-                self._check_force_limit(current_force)
-                
-                # PRIORITY 2: Check action timeout (triggers emergency_reset if exceeded)
+                # PRIORITY 1: Check action timeout (triggers emergency_reset if exceeded)
+                # NOTE: Force limit is monitored by dedicated thread, not checked here
                 elapsed_time = time.time() - start_time
                 if self.timeout_hybrid_control > 0 and elapsed_time > self.timeout_hybrid_control:
                     self.get_logger().error(
@@ -2810,15 +3016,8 @@ class LiftRobotNodeAction(Node):
                     goal_handle.abort()
                     return result
                 
-                # PRIORITY 1: Check force limit (triggers emergency_reset if exceeded)
-                with self.state_lock:
-                    current_force = self.current_force_combined
-                
-                # _check_force_limit() triggers emergency_reset internally if limit exceeded
-                # Next loop iteration will catch emergency_reset at PRIORITY 0 and abort
-                self._check_force_limit(current_force)
-                
-                # PRIORITY 2: Check action timeout (triggers emergency_reset if exceeded)
+                # PRIORITY 1: Check action timeout (triggers emergency_reset if exceeded)
+                # NOTE: Force limit is monitored by dedicated thread, not checked here
                 elapsed_time = time.time() - start_time
                 if self.timeout_manual_move > 0 and elapsed_time > self.timeout_manual_move:
                     self.get_logger().error(

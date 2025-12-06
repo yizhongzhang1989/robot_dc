@@ -138,13 +138,29 @@ class CourierRobotWebAPI:
                     "platform": {
                         'task_state': status_data.get('platform', {}).get('task_state'),
                         'movement_state': status_data.get('platform', {}).get('movement_state'),
-                        'control_mode': status_data.get('platform', {}).get('control_mode')
+                        'control_mode': status_data.get('platform', {}).get('control_mode'),
+                        'max_force_limit': status_data.get('platform', {}).get('max_force_limit', 0.0)
                     },
                     "pushrod": {
                         'task_state': status_data.get('pushrod', {}).get('task_state'),
                         'movement_state': status_data.get('pushrod', {}).get('movement_state')
                     }
                 }
+                
+                # Calculate force_limit_status (3 states: 'ok', 'exceeded', 'disabled')
+                platform_data = status_data.get('platform', {})
+                force_sensor_error = platform_data.get('force_sensor_error', False)
+                force_limit_exceeded = platform_data.get('force_limit_exceeded', False)
+                
+                if force_sensor_error:
+                    result['platform']['force_limit_status'] = 'disabled'
+                    result['platform']['force_limit_message'] = platform_data.get('force_sensor_error_message', 'Sensor error')
+                elif force_limit_exceeded:
+                    result['platform']['force_limit_status'] = 'exceeded'
+                    result['platform']['force_limit_message'] = 'Force limit exceeded'
+                else:
+                    result['platform']['force_limit_status'] = 'ok'
+                    result['platform']['force_limit_message'] = 'Force within limits'
                 
                 # Keep full data available for internal use (verbose printing)
                 result['_full_data'] = status_data
