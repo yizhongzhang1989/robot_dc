@@ -13,6 +13,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*.py'))),
+        ('share/' + package_name + '/web', ['web/index.html', 'web/tailwind.js']),        
         (os.path.join('share', package_name, 'web'), ['web/index.html']),
         (os.path.join('share', package_name, 'web', 'js'), glob(os.path.join('web', 'js', '*.js'))),
     ],
