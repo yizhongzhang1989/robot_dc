@@ -2150,6 +2150,7 @@ class UR15WebNode(Node):
             """Get the count of images in the calibration directory."""
             from flask import jsonify, request
             import glob
+            import re
             
             try:
                 request_data = request.get_json() or {}
@@ -2162,10 +2163,16 @@ class UR15WebNode(Node):
                         'count': 0
                     })
                 
-                # Count JSON files (assuming each image has a corresponding JSON, excluding chessboard_config.json)
-                json_files = [f for f in glob.glob(os.path.join(directory, '*.json')) 
-                             if not f.endswith('chessboard_config.json')]
-                count = len(json_files)
+                # Count only numbered JPG files (e.g., 0.jpg, 1.jpg, 2.jpg)
+                jpg_files = glob.glob(os.path.join(directory, '*.jpg'))
+                numbered_jpg_files = []
+                for jpg_file in jpg_files:
+                    filename = os.path.basename(jpg_file)
+                    # Check if filename is purely numeric (e.g., "0.jpg", "123.jpg")
+                    if re.match(r'^\d+\.jpg$', filename):
+                        numbered_jpg_files.append(jpg_file)
+                
+                count = len(numbered_jpg_files)
                 
                 return jsonify({
                     'success': True,
@@ -2205,11 +2212,31 @@ class UR15WebNode(Node):
                              if not f.endswith('chessboard_config.json')]
                 
                 if delete_all:
-                    # Delete all images and JSON files (excluding chessboard_config.json)
+                    # Delete all numbered calibration images and their corresponding JSON files
                     jpg_files = glob.glob(os.path.join(directory, '*.jpg'))
-                    total_deleted = len(json_files) + len(jpg_files)
                     
-                    for file in json_files + jpg_files:
+                    # Filter to only numbered jpg files (e.g., 0.jpg, 1.jpg, 2.jpg)
+                    numbered_jpg_files = []
+                    for jpg_file in jpg_files:
+                        filename = os.path.basename(jpg_file)
+                        # Check if filename is purely numeric (e.g., "0.jpg", "123.jpg")
+                        if re.match(r'^\d+\.jpg$', filename):
+                            numbered_jpg_files.append(jpg_file)
+                    
+                    # Build list of files to delete: numbered jpg files + their corresponding json files
+                    files_to_delete = []
+                    files_to_delete.extend(numbered_jpg_files)
+                    
+                    # For each numbered jpg file, add its corresponding json file if it exists
+                    for jpg_file in numbered_jpg_files:
+                        basename = os.path.splitext(jpg_file)[0]
+                        json_file = basename + '.json'
+                        if os.path.exists(json_file):
+                            files_to_delete.append(json_file)
+                    
+                    total_deleted = len(files_to_delete)
+                    
+                    for file in files_to_delete:
                         try:
                             os.remove(file)
                         except Exception as e:
@@ -2217,7 +2244,7 @@ class UR15WebNode(Node):
                     
                     return jsonify({
                         'success': True,
-                        'message': f'Successfully deleted all {total_deleted} calibration files (chessboard_config.json preserved)'
+                        'message': f'Successfully deleted all {total_deleted} numbered calibration files (other files preserved)'
                     })
                 
                 # Delete specific image

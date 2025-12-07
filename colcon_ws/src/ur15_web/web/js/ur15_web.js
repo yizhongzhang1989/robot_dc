@@ -1212,6 +1212,9 @@ function openDeleteImageModal() {
     // Display current directory
     document.getElementById('deleteImageDirDisplay').textContent = calibDataPath;
     
+    // Show calculating... while fetching
+    document.getElementById('deleteImageCountDisplay').textContent = 'calculating...';
+    
     // Fetch image count from backend
     fetch('/get_image_count', {
         method: 'POST',
