@@ -9,7 +9,7 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/web', ['web/index.html']),
+        ('share/' + package_name + '/web', ['web/index.html', 'web/tailwind.js']),
         ('share/' + package_name + '/launch', ['launch/lift_robot_web.launch.py']),
     ],
     install_requires=['setuptools'],

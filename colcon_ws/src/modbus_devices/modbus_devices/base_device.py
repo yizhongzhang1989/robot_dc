@@ -40,10 +40,10 @@ class ModbusDevice(ABC):
             self.send = send_with_ack
 
     def send(self, func_code, addr, values, seq_id=None, callback=None):
-        # Check if the Modbus service is available
+        # Check if the Modbus service is available (warn but continue)
         if not self.cli.service_is_ready():
-            self.node.get_logger().warn("Modbus service not available. Skipping write request.")
-            return
+            self.node.get_logger().warn(f"[SEQ {seq_id}] Modbus service not ready - attempting anyway")
+            # Continue to send - service may recover, and failure will be caught in callback
 
         # Build the ModbusRequest message
         req = ModbusRequest.Request()
@@ -63,32 +63,43 @@ class ModbusDevice(ABC):
 
         # Define the response handler
         def handle_response(fut):
-            result = fut.result()
-            # Log ack if received
-            if hasattr(result, 'ack') and result.ack == 1:
-                self.node.get_logger().debug("Manager ACK received: 1")
+            try:
+                result = fut.result()
+                # Log ack if received
+                if hasattr(result, 'ack') and result.ack == 1:
+                    self.node.get_logger().debug("Manager ACK received: 1")
 
-            # Log result status
-            if result is not None and result.success:
-                self.node.get_logger().debug(
-                    f"[SEQ {req.seq_id}] ✅ Modbus write OK: fc={func_code} addr={hex(addr)} → {values} => {result.response}"
-                )
-            else:
-                self.node.get_logger().error(f"[SEQ {req.seq_id}] ❌ Modbus request failed or timed out")
+                # Log result status
+                if result is not None and result.success:
+                    self.node.get_logger().debug(
+                        f"[SEQ {req.seq_id}] ✅ Modbus write OK: fc={func_code} addr={hex(addr)} → {values} => {result.response}"
+                    )
+                else:
+                    self.node.get_logger().error(f"[SEQ {req.seq_id}] ❌ Modbus request failed or timed out")
 
-            # If a callback was given (e.g., ack_callback in send_with_ack), call it
-            if callback:
-                callback(fut)
+                # If a callback was given (e.g., ack_callback in send_with_ack), call it
+                if callback:
+                    try:
+                        callback(fut)
+                    except Exception as cb_err:
+                        self.node.get_logger().error(f"[SEQ {req.seq_id}] Callback execution error: {cb_err}")
+            except Exception as e:
+                self.node.get_logger().error(f"[SEQ {req.seq_id}] Modbus write exception: {e}")
+                # Call callback with error indication if possible
+                if callback:
+                    try:
+                        callback(None)
+                    except Exception:
+                        pass
 
         # Register the response handler to the future
         future.add_done_callback(handle_response)
 
     def recv(self, func_code, addr, count, callback=None, seq_id=None):
         if not self.cli.service_is_ready():
-            self.node.get_logger().warn("Modbus service not available. Skipping read request.")
-            if callback:
-                callback([])
-            return []
+            self.node.get_logger().warn(f"[SEQ {seq_id}] Modbus service not ready - attempting read anyway")
+            # Continue to send - service may recover, and failure will be caught in callback
+            # Don't return early - let it try and fail gracefully in the callback
 
         # For function codes other than 3 (read holding registers), callback is required
         # because recv is async and returns immediately
@@ -110,14 +121,25 @@ class ModbusDevice(ABC):
         future = self.cli.call_async(req)
 
         def handle_recv_response(fut):
-            result = fut.result()
-            if hasattr(result, 'ack') and result.ack == 1:
-                self.node.get_logger().debug("Manager ACK received: 1")
-            resp = result.response if result and result.success else []
-            self.node.get_logger().debug(f"[SEQ {req.seq_id}] ✅ Modbus read OK: fc={func_code} addr={hex(addr)} count={count} => {resp}")
-            if callback:
-                
-                callback(resp)
+            try:
+                result = fut.result()
+                if hasattr(result, 'ack') and result.ack == 1:
+                    self.node.get_logger().debug("Manager ACK received: 1")
+                resp = result.response if result and result.success else []
+                self.node.get_logger().debug(f"[SEQ {req.seq_id}] ✅ Modbus read OK: fc={func_code} addr={hex(addr)} count={count} => {resp}")
+                if callback:
+                    try:
+                        callback(resp)
+                    except Exception as cb_err:
+                        self.node.get_logger().error(f"[SEQ {req.seq_id}] Read callback execution error: {cb_err}")
+            except Exception as e:
+                self.node.get_logger().error(f"[SEQ {req.seq_id}] Modbus read exception: {e}")
+                # Notify callback with empty response to indicate error
+                if callback:
+                    try:
+                        callback(None)  # Pass None to indicate error
+                    except Exception:
+                        pass
 
         future.add_done_callback(handle_recv_response)
         return []
@@ -129,10 +151,10 @@ class ModbusDevice(ABC):
             seq_id: Sequence ID for logging
             callback: Optional callback function
         """
-        # Check if the Modbus service is available
+        # Check if the Modbus service is available (warn but continue)
         if not self.cli.service_is_ready():
-            self.node.get_logger().warn("Modbus service not available. Skipping raw request.")
-            return
+            self.node.get_logger().warn(f"[SEQ {seq_id}] Modbus service not ready - attempting raw send anyway")
+            # Continue to send - service may recover, and failure will be caught in callback
 
         # Build the ModbusRequest message with raw_message field
         req = ModbusRequest.Request()
@@ -155,22 +177,33 @@ class ModbusDevice(ABC):
 
         # Define the response handler
         def handle_raw_response(fut):
-            result = fut.result()
-            # Log ack if received
-            if hasattr(result, 'ack') and result.ack == 1:
-                self.node.get_logger().debug("Manager ACK received: 1")
+            try:
+                result = fut.result()
+                # Log ack if received
+                if hasattr(result, 'ack') and result.ack == 1:
+                    self.node.get_logger().debug("Manager ACK received: 1")
 
-            # Log result status
-            if result is not None and result.success:
-                self.node.get_logger().debug(
-                    f"[SEQ {req.seq_id}] ✅ Raw Modbus command OK: {[hex(b) for b in raw_message]}"
-                )
-            else:
-                self.node.get_logger().error(f"[SEQ {req.seq_id}] ❌ Raw Modbus request failed")
+                # Log result status
+                if result is not None and result.success:
+                    self.node.get_logger().debug(
+                        f"[SEQ {req.seq_id}] ✅ Raw Modbus command OK: {[hex(b) for b in raw_message]}"
+                    )
+                else:
+                    self.node.get_logger().error(f"[SEQ {req.seq_id}] ❌ Raw Modbus request failed")
 
-            # If a callback was given, call it
-            if callback:
-                callback(fut)
+                # If a callback was given, call it
+                if callback:
+                    try:
+                        callback(fut)
+                    except Exception as cb_err:
+                        self.node.get_logger().error(f"[SEQ {req.seq_id}] Raw callback execution error: {cb_err}")
+            except Exception as e:
+                self.node.get_logger().error(f"[SEQ {req.seq_id}] Raw Modbus exception: {e}")
+                if callback:
+                    try:
+                        callback(None)
+                    except Exception:
+                        pass
 
         # Register the response handler to the future
         future.add_done_callback(handle_raw_response)

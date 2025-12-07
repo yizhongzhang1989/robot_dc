@@ -4,11 +4,11 @@
 <meta charset="UTF-8" />
 <title>lift_robot</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="/static/tailwind.js"></script>
 <style>
   body { 
     font-family: system-ui, Arial, sans-serif; 
-    padding-top: 140px; /* Reserve space for fixed header */
+    padding-top: 210px; /* Reserve space for fixed header */
   }
   .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
   .live { background:#10b981; }
@@ -33,8 +33,7 @@
     z-index: 1000;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     padding: 0.75rem;
-    max-height: 140px;
-    overflow-y: auto;
+    min-height: 210px; /* Increased to accommodate error messages */
   }
 </style>
 </head>
@@ -58,6 +57,10 @@
         <div class="bg-white rounded-lg shadow p-3 border-l-4 border-red-500">
           <h2 class="font-bold text-sm mb-2 text-red-700">🚨 Emergency Control</h2>
           <button id="resetBtn" class="w-full px-3 py-2 bg-red-600 text-white text-sm font-semibold rounded hover:bg-red-700 transition">RESET</button>
+          <!-- Force Limit Status (3 states: enabled-normal, enabled-exceeded, disabled) -->
+          <div id="forceLimitStatus" class="mt-2 p-2 rounded text-xs text-center font-semibold bg-green-100 text-green-700">
+            ✅ Force Limit: OK
+          </div>
         </div>
 
         <!-- Height Sensor -->
@@ -70,6 +73,11 @@
           <div class="text-xs text-gray-600 mt-1">
             <span>Freq:</span> <span id="heightFreq" class="font-mono">—</span>
             <span class="ml-2">Seq:</span> <span id="seq" class="font-mono">—</span>
+          </div>
+          <!-- Error indicator -->
+          <div id="heightSensorError" class="hidden mt-2 p-1.5 bg-red-50 border border-red-200 rounded text-xs">
+            <div class="text-red-700 font-semibold">⚠️ Sensor Error</div>
+            <div id="heightSensorErrorMsg" class="text-red-600 mt-0.5"></div>
           </div>
         </div>
 
@@ -100,6 +108,15 @@
             <div>
               <span>L Freq:</span> <span id="leftForceFreq" class="font-mono">—</span>
             </div>
+          </div>
+          <!-- Error indicators -->
+          <div id="rightForceError" class="hidden mt-2 p-1.5 bg-red-50 border border-red-200 rounded text-xs">
+            <div class="text-red-700 font-semibold">⚠️ Right Sensor Error</div>
+            <div id="rightForceErrorMsg" class="text-red-600 mt-0.5"></div>
+          </div>
+          <div id="leftForceError" class="hidden mt-2 p-1.5 bg-red-50 border border-red-200 rounded text-xs">
+            <div class="text-red-700 font-semibold">⚠️ Left Sensor Error</div>
+            <div id="leftForceErrorMsg" class="text-red-600 mt-0.5"></div>
           </div>
         </div>
 
@@ -261,7 +278,31 @@
         </div>
       </div>
       
-      <!-- RIGHT: Empty Space -->
+      <!-- RIGHT: Force Limit Configuration -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-amber-500">
+        <h2 class="font-bold text-lg mb-3 text-amber-700 flex items-center gap-2">
+          ⚡ Force Limit Configuration
+        </h2>
+        
+        <!-- Force Limit Setting -->
+        <div class="mb-3">
+          <h3 class="font-semibold text-sm text-gray-700 mb-2 bg-amber-100 px-2 py-1 rounded">
+            ⚙️ Max Force Limit (±N)
+          </h3>
+          <div class="space-y-2 pl-2">
+            <div class="flex gap-2 items-center">
+              <input type="number" id="forceLimitInput" class="flex-1 px-3 py-2 text-sm border border-amber-300 rounded focus:ring-2 focus:ring-amber-400" step="10" min="0" placeholder="1000">
+              <button id="setForceLimitBtn" class="px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded hover:bg-amber-600 transition">SET</button>
+            </div>
+            <div class="text-sm text-gray-700 bg-amber-50 p-2 rounded">
+              Current: <span id="currentForceLimit" class="font-mono font-bold text-amber-700">—</span>N
+            </div>
+            <div class="text-xs text-gray-500 italic">
+              💡 Bidirectional limit: triggers when |force| > limit
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     
     <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -597,21 +638,59 @@ function handle(raw){ lastReceive=Date.now(); $('raw').textContent=raw; try{ con
 function update(d){
   // Compact mode fields
   if(d.seq_id!==undefined) $('seq').textContent=d.seq_id;
-  if(d.height!==undefined) $('heightVal').textContent = (d.height===null?'-':(d.height.toFixed?d.height.toFixed(2):d.height));
+  
+  // Height sensor with error detection
+  if(d.height!==undefined) {
+    const elem = $('heightVal');
+    const hasError = d.sensor_error === true;
+    const errorBox = $('heightSensorError');
+    const errorMsg = $('heightSensorErrorMsg');
+    
+    if(hasError || d.height===null) {
+      elem.textContent = 'ERR';
+      elem.classList.add('text-red-600', 'font-bold');
+      elem.title = d.sensor_error_message || 'Sensor read error';
+      // Show error box
+      if(errorBox) {
+        errorBox.classList.remove('hidden');
+        if(errorMsg) errorMsg.textContent = d.sensor_error_message || 'Modbus recv failed or timeout';
+      }
+    } else {
+      elem.textContent = (d.height.toFixed?d.height.toFixed(2):d.height);
+      elem.classList.remove('text-red-600', 'font-bold');
+      elem.title = '';
+      // Hide error box
+      if(errorBox) errorBox.classList.add('hidden');
+    }
+  }
+  
   if(d.freq_hz!==undefined) $('heightFreq').textContent = (d.freq_hz && d.freq_hz.toFixed? d.freq_hz.toFixed(2): d.freq_hz);
   // Legacy fallback (timestamp / read_interval)
   if(d.timestamp){ $('ts').textContent=d.timestamp; }
   if(d.read_interval){ readInterval=d.read_interval*1000; }
   
-  // Dual channel force sensors (right=device_id 52, left=device_id 53)
+  // Dual channel force sensors (right=device_id 52, left=device_id 53) with error detection
   if(d.right_force_sensor!==undefined) {
     const elem = $('rightForceVal');
-    if(d.right_force_sensor===null) {
+    const hasError = d.right_force_error === true;
+    const errorBox = $('rightForceError');
+    const errorMsg = $('rightForceErrorMsg');
+    
+    if(hasError || d.right_force_sensor===null) {
       elem.textContent = 'ERR';
       elem.classList.add('text-red-600', 'font-bold');
+      elem.title = d.right_force_error_message || 'Force sensor read error';
+      // Show error box
+      if(errorBox) {
+        errorBox.classList.remove('hidden');
+        if(errorMsg) errorMsg.textContent = d.right_force_error_message || 'Modbus recv failed or timeout';
+      }
     } else {
       elem.textContent = d.right_force_sensor.toFixed?d.right_force_sensor.toFixed(2):d.right_force_sensor;
       elem.classList.remove('text-red-600', 'font-bold');
+      elem.title = '';
+      // Hide error box
+      if(errorBox) errorBox.classList.add('hidden');
     }
   }
   if(d.right_force_freq_hz!==undefined) {
@@ -621,12 +700,25 @@ function update(d){
   
   if(d.left_force_sensor!==undefined) {
     const elem = $('leftForceVal');
-    if(d.left_force_sensor===null) {
+    const hasError = d.left_force_error === true;
+    const errorBox = $('leftForceError');
+    const errorMsg = $('leftForceErrorMsg');
+    
+    if(hasError || d.left_force_sensor===null) {
       elem.textContent = 'ERR';
       elem.classList.add('text-red-600', 'font-bold');
+      elem.title = d.left_force_error_message || 'Force sensor read error';
+      // Show error box
+      if(errorBox) {
+        errorBox.classList.remove('hidden');
+        if(errorMsg) errorMsg.textContent = d.left_force_error_message || 'Modbus recv failed or timeout';
+      }
     } else {
       elem.textContent = d.left_force_sensor.toFixed?d.left_force_sensor.toFixed(2):d.left_force_sensor;
       elem.classList.remove('text-red-600', 'font-bold');
+      elem.title = '';
+      // Hide error box
+      if(errorBox) errorBox.classList.add('hidden');
     }
   }
   if(d.left_force_freq_hz!==undefined) {
@@ -635,18 +727,64 @@ function update(d){
   }
   if(d.combined_force_sensor!==undefined) {
     const elem = $('combinedForceVal');
-    if(d.combined_force_sensor===null) {
+    // Combined is ERR if either sensor has error
+    const hasError = d.right_force_error === true || d.left_force_error === true;
+    if(hasError || d.combined_force_sensor===null) {
       elem.textContent = 'ERR';
       elem.classList.add('text-red-600', 'font-bold');
+      const errMsgs = [];
+      if(d.right_force_error_message) errMsgs.push('Right: ' + d.right_force_error_message);
+      if(d.left_force_error_message) errMsgs.push('Left: ' + d.left_force_error_message);
+      elem.title = errMsgs.join('; ') || 'Force sensor error';
     } else {
       elem.textContent = d.combined_force_sensor.toFixed?d.combined_force_sensor.toFixed(2):d.combined_force_sensor;
       elem.classList.remove('text-red-600', 'font-bold');
+      elem.title = '';
     }
   }
   
   // Update unified task status
   if(d.platform_status || d.pushrod_status) {
     updateUnifiedTaskStatus(d.platform_status, d.pushrod_status);
+  }
+  
+  // Update force limit status (3 states: enabled-normal, enabled-exceeded, disabled)
+  if(d.platform_status) {
+    const statusElem = $('forceLimitStatus');
+    if(statusElem) {
+      const sensorError = d.platform_status.force_sensor_error === true;
+      const forceExceeded = d.platform_status.force_limit_exceeded === true;
+      
+      if(sensorError) {
+        // State 1: Disabled due to sensor error
+        statusElem.className = 'mt-2 p-2 rounded text-xs text-center font-semibold bg-gray-200 text-gray-600';
+        statusElem.textContent = '⛔ Force Limit: DISABLED';
+        statusElem.title = 'Force limit disabled: ' + (d.platform_status.force_sensor_error_message || 'Sensor error');
+      } else if(forceExceeded) {
+        // State 2: Enabled but exceeded
+        statusElem.className = 'mt-2 p-2 rounded text-xs text-center font-semibold bg-red-100 text-red-700 animate-pulse';
+        statusElem.textContent = '🚨 Force Limit: EXCEEDED!';
+        statusElem.title = 'Force limit exceeded - emergency reset triggered';
+      } else {
+        // State 3: Enabled and normal
+        statusElem.className = 'mt-2 p-2 rounded text-xs text-center font-semibold bg-green-100 text-green-700';
+        statusElem.textContent = '✅ Force Limit: OK';
+        statusElem.title = 'Force within limits';
+      }
+    }
+  }
+  
+  // Update current force limit value display
+  if(d.platform_status && d.platform_status.max_force_limit !== undefined) {
+    const limitElem = $('currentForceLimit');
+    if(limitElem) {
+      limitElem.textContent = '±' + d.platform_status.max_force_limit.toFixed(1);
+    }
+    // Set input placeholder to current value if input is empty
+    const inputElem = $('forceLimitInput');
+    if(inputElem && !inputElem.value) {
+      inputElem.placeholder = d.platform_status.max_force_limit.toFixed(0);
+    }
   }
   
   computeFreq();
@@ -905,6 +1043,29 @@ $('resetBtn').addEventListener('click', async ()=>{
     $('cmdStatus').textContent='✅ RESET complete - '+(resp.target||'platform+pushrod');
     setTimeout(()=>$('cmdStatus').textContent='',5000);
   }catch(e){ $('cmdStatus').textContent='❌ Reset error: '+e.message; setTimeout(()=>$('cmdStatus').textContent='',3000); }
+});
+
+// Set Force Limit button
+$('setForceLimitBtn').addEventListener('click', async ()=>{
+  const inputElem = $('forceLimitInput');
+  const value = parseFloat(inputElem.value);
+  
+  if(isNaN(value) || value <= 0) {
+    $('cmdStatus').textContent='❌ Invalid force limit (must be > 0)';
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+    return;
+  }
+  
+  $('cmdStatus').textContent=`⚙️ Setting force limit to ±${value}N...`;
+  const payload={command:'set_force_limit', value: value};
+  try{
+    const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){ $('cmdStatus').textContent='❌ Set force limit failed'; setTimeout(()=>$('cmdStatus').textContent='',3000); return; }
+    const resp=await r.json();
+    $('cmdStatus').textContent=`✅ Force limit set to ±${value}N`;
+    inputElem.value = ''; // Clear input after successful set
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+  }catch(e){ $('cmdStatus').textContent='❌ Error: '+e.message; setTimeout(()=>$('cmdStatus').textContent='',3000); }
 });
 
 async function updateCalibrationSamples() {

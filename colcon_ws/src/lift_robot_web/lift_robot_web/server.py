@@ -73,6 +73,11 @@ class LiftRobotWeb(Node):
         self.left_force_freq_hz = 0.0   # publish frequency
         self.combined_force_sensor = None  # Combined force (sum of two sensors, falls back to single sensor if one missing)
         self.last_force_update = None  # Latest force sensor update timestamp (either sensor)
+        # Force sensor error status
+        self.right_force_error = False
+        self.right_force_error_msg = None
+        self.left_force_error = False
+        self.left_force_error_msg = None
         self.platform_status = None
         self.pushrod_status = None
 
@@ -188,6 +193,18 @@ class LiftRobotWeb(Node):
                         merged['left_force_freq_hz'] = self.left_force_freq_hz
                         merged['combined_force_sensor'] = self.combined_force_sensor
                         
+                        # Extract draw_wire_sensor error info (from latest_obj which comes from sensor topic)
+                        sensor_error = self.latest_obj.get('error', False)
+                        sensor_error_msg = self.latest_obj.get('error_message')
+                        merged['sensor_error'] = sensor_error
+                        merged['sensor_error_message'] = sensor_error_msg
+                        
+                        # Add force sensor error info
+                        merged['right_force_error'] = getattr(self, 'right_force_error', False)
+                        merged['right_force_error_message'] = getattr(self, 'right_force_error_msg', None)
+                        merged['left_force_error'] = getattr(self, 'left_force_error', False)
+                        merged['left_force_error_message'] = getattr(self, 'left_force_error_msg', None)
+                        
                         # Force sensor status detection
                         if self.last_force_update is None:
                             # Never received any force data
@@ -223,11 +240,21 @@ class LiftRobotWeb(Node):
             value = data.get('force', None)
             freq_hz = data.get('freq_hz', 0.0)
             
+            # Extract error info
+            has_error = data.get('error', False)
+            error_msg = data.get('error_message')
+            
+            # Store error status
+            self.right_force_error = has_error
+            self.right_force_error_msg = error_msg
+            
             # Check for overflow (inf/nan) - set to None if invalid
             if value is not None and (math.isinf(value) or math.isnan(value)):
                 self.get_logger().warn(f"Right force sensor overflow detected: {value}")
                 self.right_force_sensor = None
                 self.right_force_freq_hz = 0.0
+                self.right_force_error = True
+                self.right_force_error_msg = "Overflow detected (inf/nan)"
             else:
                 self.right_force_sensor = value
                 self.right_force_freq_hz = freq_hz
@@ -237,6 +264,8 @@ class LiftRobotWeb(Node):
             self.get_logger().error(f"Right force callback error: {e}")
             self.right_force_sensor = None  # Set to None on exception
             self.right_force_freq_hz = 0.0
+            self.right_force_error = True
+            self.right_force_error_msg = f"Callback exception: {e}"
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_cb_left(self, msg):
@@ -248,11 +277,21 @@ class LiftRobotWeb(Node):
             value = data.get('force', None)
             freq_hz = data.get('freq_hz', 0.0)
             
+            # Extract error info
+            has_error = data.get('error', False)
+            error_msg = data.get('error_message')
+            
+            # Store error status
+            self.left_force_error = has_error
+            self.left_force_error_msg = error_msg
+            
             # Check for overflow (inf/nan) - set to None if invalid
             if value is not None and (math.isinf(value) or math.isnan(value)):
                 self.get_logger().warn(f"Left force sensor overflow detected: {value}")
                 self.left_force_sensor = None
                 self.left_force_freq_hz = 0.0
+                self.left_force_error = True
+                self.left_force_error_msg = "Overflow detected (inf/nan)"
             else:
                 self.left_force_sensor = value
                 self.left_force_freq_hz = freq_hz
@@ -262,6 +301,8 @@ class LiftRobotWeb(Node):
             self.get_logger().error(f"Left force callback error: {e}")
             self.left_force_sensor = None  # Set to None on exception
             self.left_force_freq_hz = 0.0
+            self.left_force_error = True
+            self.left_force_error_msg = f"Callback exception: {e}"
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_raw_cb_right(self, msg):
@@ -348,7 +389,14 @@ def run_fastapi_server(port):
 
         @app.get('/')
         def index():
-            return FileResponse(os.path.join(web_dir, 'index.html'))
+            return FileResponse(
+                os.path.join(web_dir, 'index.html'),
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
 
         @app.get('/api/latest')
         def latest():
@@ -367,19 +415,17 @@ def run_fastapi_server(port):
                 merged['left_force_freq_hz'] = lift_robot_node.left_force_freq_hz
                 merged['combined_force_sensor'] = lift_robot_node.combined_force_sensor
                 
-                # Force sensor status detection
-                if lift_robot_node.last_force_update is None:
-                    # Never received any force data
-                    merged['force_sensor_status'] = 'no_data'
-                    merged['force_stale'] = True
-                elif (time.time() - lift_robot_node.last_force_update) > 2.0:
-                    # No update for >2s (connection lost or sensor failed)
-                    merged['force_sensor_status'] = 'stale'
-                    merged['force_stale'] = True
-                else:
-                    # Normal operation
-                    merged['force_sensor_status'] = 'ok'
-                    merged['force_stale'] = False
+                # Add error info from draw_wire_sensor
+                sensor_error = lift_robot_node.latest_obj.get('error', False)
+                sensor_error_msg = lift_robot_node.latest_obj.get('error_message')
+                merged['sensor_error'] = sensor_error
+                merged['sensor_error_message'] = sensor_error_msg
+                
+                # Add force sensor error info
+                merged['right_force_error'] = getattr(lift_robot_node, 'right_force_error', False)
+                merged['right_force_error_message'] = getattr(lift_robot_node, 'right_force_error_msg', None)
+                merged['left_force_error'] = getattr(lift_robot_node, 'left_force_error', False)
+                merged['left_force_error_message'] = getattr(lift_robot_node, 'left_force_error_msg', None)
                 
                 # Add platform status (pushrod shares same status)
                 if lift_robot_node.platform_status is not None:
@@ -405,14 +451,15 @@ def run_fastapi_server(port):
             allowed = {
                 'up', 'down', 'stop', 'reset',
                 'goto_height', 'force_up', 'force_down', 'height_force_hybrid',
-                'range_scan_down', 'range_scan_up', 'range_scan_cancel'
+                'range_scan_down', 'range_scan_up', 'range_scan_cancel',
+                'set_force_limit'
             }
             if cmd not in allowed:
                 return JSONResponse({'error': 'invalid command'}, status_code=400)
             
             # Route commands to appropriate publisher
-            # Direct commands: ONLY reset and range_scan_* -> lift_robot_node (stop uses Action)
-            direct_commands = {'reset', 'range_scan_down', 'range_scan_up', 'range_scan_cancel'}
+            # Direct commands: ONLY reset, set_force_limit, and range_scan_* -> lift_robot_node (stop uses Action)
+            direct_commands = {'reset', 'set_force_limit', 'range_scan_down', 'range_scan_up', 'range_scan_cancel'}
             
             queue_msg = String()
             queue_msg.data = json.dumps(payload)
@@ -457,6 +504,11 @@ def run_fastapi_server(port):
                     'current_height': lift_robot_node.platform_status.get('current_height'),
                     'target_height': lift_robot_node.platform_status.get('target_height'),
                     'limit_exceeded': lift_robot_node.platform_status.get('limit_exceeded', False),
+                    # Force limit fields
+                    'force_limit_exceeded': lift_robot_node.platform_status.get('force_limit_exceeded', False),
+                    'max_force_limit': lift_robot_node.platform_status.get('max_force_limit', 0.0),
+                    'force_sensor_error': lift_robot_node.platform_status.get('force_sensor_error', False),
+                    'force_sensor_error_message': lift_robot_node.platform_status.get('force_sensor_error_message'),
                     # Overshoot calibration data
                     'last_goto_target': lift_robot_node.platform_status.get('last_goto_target'),
                     'last_goto_actual': lift_robot_node.platform_status.get('last_goto_actual'),

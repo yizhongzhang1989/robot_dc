@@ -8,6 +8,8 @@ All functions correspond to web interface controls
 import requests
 import time
 import threading
+import yaml
+from pathlib import Path
 
 
 class CourierRobotWebAPI:
@@ -16,14 +18,56 @@ class CourierRobotWebAPI:
     Provides all control functions available in the web interface
     """
     
-    def __init__(self, base_url="http://192.168.1.3:8090", verbose=True):
+    @staticmethod
+    def _load_config_url():
+        """
+        Load base URL from robot_config.yaml
+        
+        Returns:
+            str: Base URL from config, or default if not found
+        """
+        try:
+            # Try to find config file
+            script_dir = Path(__file__).parent
+            config_path = script_dir.parent / 'config' / 'robot_config.yaml'
+            
+            if not config_path.exists():
+                return None
+            
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Extract lift_robot.web configuration
+            web_config = config.get('lift_robot', {}).get('web', {})
+            host = web_config.get('host', 'localhost')
+            port = web_config.get('port', 8090)
+            
+            # Build URL
+            return f"http://{host}:{port}"
+        except Exception as e:
+            # Silently fail and return None if config cannot be loaded
+            return None
+    
+    def __init__(self, base_url=None, verbose=True):
         """
         Initialize courier robot controller
         
         Args:
-            base_url: HTTP server base URL (default: http://192.168.1.3:8090)
+            base_url: HTTP server base URL (default: read from config/robot_config.yaml, 
+                     fallback to http://192.168.1.3:8090 if config not found)
+                     Can override by passing explicit URL
             verbose: If True, automatically print command results (default: True)
         """
+        # Determine base URL priority: explicit parameter > config file > hardcoded default
+        if base_url is None:
+            base_url = self._load_config_url()
+            if base_url is None:
+                base_url = "http://192.168.1.3:8090"  # Hardcoded fallback
+                if verbose:
+                    print(f"⚠️  Config file not found, using default URL: {base_url}")
+            elif verbose:
+                print(f"📄 Loaded URL from config: {base_url}")
+        
         self.base_url = base_url
         self.verbose = verbose
         self.background_task = None  # Track background task thread
@@ -94,13 +138,29 @@ class CourierRobotWebAPI:
                     "platform": {
                         'task_state': status_data.get('platform', {}).get('task_state'),
                         'movement_state': status_data.get('platform', {}).get('movement_state'),
-                        'control_mode': status_data.get('platform', {}).get('control_mode')
+                        'control_mode': status_data.get('platform', {}).get('control_mode'),
+                        'max_force_limit': status_data.get('platform', {}).get('max_force_limit', 0.0)
                     },
                     "pushrod": {
                         'task_state': status_data.get('pushrod', {}).get('task_state'),
                         'movement_state': status_data.get('pushrod', {}).get('movement_state')
                     }
                 }
+                
+                # Calculate force_limit_status (3 states: 'ok', 'exceeded', 'disabled')
+                platform_data = status_data.get('platform', {})
+                force_sensor_error = platform_data.get('force_sensor_error', False)
+                force_limit_exceeded = platform_data.get('force_limit_exceeded', False)
+                
+                if force_sensor_error:
+                    result['platform']['force_limit_status'] = 'disabled'
+                    result['platform']['force_limit_message'] = platform_data.get('force_sensor_error_message', 'Sensor error')
+                elif force_limit_exceeded:
+                    result['platform']['force_limit_status'] = 'exceeded'
+                    result['platform']['force_limit_message'] = 'Force limit exceeded'
+                else:
+                    result['platform']['force_limit_status'] = 'ok'
+                    result['platform']['force_limit_message'] = 'Force within limits'
                 
                 # Keep full data available for internal use (verbose printing)
                 result['_full_data'] = status_data
@@ -115,7 +175,14 @@ class CourierRobotWebAPI:
                         'combined_force': sensor_data.get('combined_force_sensor'),
                         'freq_hz': sensor_data.get('freq_hz'),
                         'right_force_freq_hz': sensor_data.get('right_force_freq_hz'),
-                        'left_force_freq_hz': sensor_data.get('left_force_freq_hz')
+                        'left_force_freq_hz': sensor_data.get('left_force_freq_hz'),
+                        # Error information
+                        'height_sensor_error': sensor_data.get('sensor_error', False),
+                        'height_sensor_error_message': sensor_data.get('sensor_error_message'),
+                        'right_force_error': sensor_data.get('right_force_error', False),
+                        'right_force_error_message': sensor_data.get('right_force_error_message'),
+                        'left_force_error': sensor_data.get('left_force_error', False),
+                        'left_force_error_message': sensor_data.get('left_force_error_message')
                     }
                 else:
                     result['sensors'] = {}

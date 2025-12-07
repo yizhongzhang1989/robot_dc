@@ -35,6 +35,12 @@ class DrawWireSensorNode(Node):
 
         self.pub = self.create_publisher(String, '/draw_wire_sensor/data', 10)
         self.cmd_sub = self.create_subscription(String, '/draw_wire_sensor/command', self.command_callback, 10)
+        
+        # Emergency reset publisher (for hardware failure detection)
+        self.emergency_pub = self.create_publisher(String, '/emergency_reset', 10)
+        
+        # Sensor disable state tracking
+        self.sensor_disabled_triggered = False
 
         self.seq_id = 0
         self.timer = self.create_timer(self.read_interval, self.periodic_read_callback)
@@ -77,8 +83,28 @@ class DrawWireSensorNode(Node):
         try:
             seq = self.next_seq()
             read_start_ts = time.time()
-            # Asynchronous request; callback inside controller updates internal registers.
-            self.controller.read_sensor_data(seq_id=seq)
+            
+            # Check if sensor is disabled - if so, stop sending Modbus commands
+            if self.controller.sensor_disabled:
+                if not self.sensor_disabled_triggered:
+                    self.sensor_disabled_triggered = True
+                    self.get_logger().error(
+                        f"[SEQ {seq}] ❌ Sensor disabled (consecutive {self.controller.disable_threshold} Modbus recv failures) - "
+                        f"stopping Modbus commands, triggering emergency reset"
+                    )
+                    # Trigger emergency reset
+                    emergency_msg = String()
+                    emergency_msg.data = json.dumps({
+                        'reason': f'draw_wire_sensor_{self.device_id}_recv_timeout',
+                        'device_id': self.device_id,
+                        'consecutive_errors': self.controller.consecutive_errors
+                    })
+                    self.emergency_pub.publish(emergency_msg)
+                # Keep publishing last known values but don't send new Modbus requests
+            else:
+                # Normal operation - send Modbus read request
+                self.controller.read_sensor_data(seq_id=seq)
+            
             # Immediate publish using last known registers (race acceptable).
             self.publish_sensor_data(seq_id=seq, read_start_ts=read_start_ts)
         except Exception as e:
@@ -88,6 +114,29 @@ class DrawWireSensorNode(Node):
     def publish_sensor_data(self, seq_id=None, read_start_ts=None):
         try:
             reg0, reg1, ts = self.controller.get_sensor_data()
+            
+            # Get error status (including sensor disabled state)
+            error_status = self.controller.get_error_status()
+            has_error = error_status.get('consecutive_errors', 0) > 0 or self.controller.sensor_disabled
+            error_msg = error_status.get('last_error') if has_error else None
+            
+            # If sensor is disabled, publish error status with null height
+            if self.controller.sensor_disabled:
+                now = time.time()
+                msg_obj = {
+                    'height': None,
+                    'seq_id': seq_id,
+                    'freq_hz': 0.0,
+                    'latency_ms': None,
+                    'error': True,
+                    'error_message': error_msg or 'Sensor disabled due to consecutive failures',
+                    'error_count': error_status.get('error_count', 0),
+                    'sensor_disabled': True
+                }
+                msg = String()
+                msg.data = json.dumps(msg_obj)
+                self.pub.publish(msg)
+                return
             
             # Calculate height from calibration (this is the real height)
             height_val = None
@@ -125,7 +174,10 @@ class DrawWireSensorNode(Node):
                     'height': height_val,
                     'seq_id': seq_id,
                     'freq_hz': freq_hz,
-                    'latency_ms': latency_ms
+                    'latency_ms': latency_ms,
+                    'error': has_error,
+                    'error_message': error_msg,
+                    'error_count': error_status.get('error_count', 0)
                 }
             else:
                 # Legacy full payload (retain for other subscribers needing raw registers)
@@ -139,11 +191,17 @@ class DrawWireSensorNode(Node):
                     'height': height_val,
                     'read_start_ts': read_start_ts,
                     'freq_hz': freq_hz,
-                    'latency_ms': latency_ms
+                    'latency_ms': latency_ms,
+                    'error': has_error,
+                    'error_message': error_msg,
+                    'error_count': error_status.get('error_count', 0)
                 }
             m = String(); m.data = json.dumps(msg_obj)
             self.pub.publish(m)
-            self.get_logger().debug(f"[SEQ {seq_id}] Publish(height={height_val}, freq={freq_hz:.2f}Hz, latency_ms={latency_ms}) compact={self.publish_compact}")
+            if has_error:
+                self.get_logger().warn(f"[SEQ {seq_id}] Publish with ERROR: {error_msg}")
+            else:
+                self.get_logger().debug(f"[SEQ {seq_id}] Publish(height={height_val}, freq={freq_hz:.2f}Hz, latency_ms={latency_ms}) compact={self.publish_compact}")
         except Exception as e:
             self.get_logger().error(f"[SEQ {seq_id}] Sensor data publish error: {e}")
             # Continue operation, publish what we can or skip this cycle

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import String
 from .force_sensor_controller import ForceSensorController
 import logging
 import uuid
@@ -24,9 +25,8 @@ class LiftRobotForceSensorNode(Node):
         # Parameters
         self.declare_parameter('device_id', 52)  # Modbus slave ID
         self.declare_parameter('use_ack_patch', True)
-        # For 50Hz we use 0.02s interval (was 0.1s for 10Hz previously)
-        # NOTE: Increasing frequency increases Modbus bus load. If bus saturation
-        # or latency occurs, raise this back toward 0.05 (20Hz) or 0.033 (30Hz).
+        # 50Hz (0.02s interval) for real-time force monitoring
+        # With 20ms Modbus timeout, even failed reads won't block the system
         self.declare_parameter('read_interval', 0.02)  # seconds (50 Hz default)
         # Visualization enable flag (can also be overridden via CLI args)
         self.declare_parameter('enable_visualization', False)
@@ -97,6 +97,12 @@ class LiftRobotForceSensorNode(Node):
         self.force_pub = self.create_publisher(String, self.topic_name, 10)
         # Raw force (for calibration and debugging) - also JSON
         self.force_raw_pub = self.create_publisher(String, f"{self.topic_name}/raw", 10)
+        
+        # Emergency reset publisher (for hardware failure detection)
+        self.emergency_pub = self.create_publisher(String, '/emergency_reset', 10)
+        
+        # Sensor disable state tracking
+        self.sensor_disabled_triggered = False
 
         # Periodic read timer
         self.timer = self.create_timer(self.read_interval, self.periodic_read)
@@ -125,13 +131,35 @@ class LiftRobotForceSensorNode(Node):
     def periodic_read(self):
         try:
             seq = self.next_seq()
-            # Single channel read - wrap in try to prevent Modbus errors from crashing
-            try:
-                self.controller.read_force(seq_id=seq)
-            except Exception as e:
-                self.get_logger().warn(f"[SEQ {seq}] Force sensor read_force error: {e}")
-                # Continue to next cycle without crashing
-                return
+            
+            # Check if sensor is disabled - if so, stop sending Modbus commands
+            if self.controller.sensor_disabled:
+                if not self.sensor_disabled_triggered:
+                    self.sensor_disabled_triggered = True
+                    self.get_logger().error(
+                        f"[SEQ {seq}] ❌ Sensor disabled (consecutive {self.controller.disable_threshold} Modbus recv failures) - "
+                        f"stopping Modbus commands, triggering emergency reset"
+                    )
+                    # Trigger emergency reset
+                    from std_msgs.msg import String as StringMsg
+                    emergency_msg = StringMsg()
+                    emergency_msg.data = json.dumps({
+                        'reason': f'force_sensor_{self.device_id}_recv_timeout',
+                        'device_id': self.device_id,
+                        'topic': self.topic_name,
+                        'consecutive_errors': self.controller.consecutive_errors
+                    })
+                    self.emergency_pub.publish(emergency_msg)
+                # Keep publishing last known values but don't send new Modbus requests
+                # Skip the read_force call below
+            else:
+                # Normal operation - send Modbus read request
+                try:
+                    self.controller.read_force(seq_id=seq)
+                except Exception as e:
+                    self.get_logger().warn(f"[SEQ {seq}] Force sensor read_force error: {e}")
+                    # Continue to next cycle without crashing
+                    return
             
             # Calculate frequency (same logic as draw_wire_sensor)
             now = time.time()
@@ -150,8 +178,31 @@ class LiftRobotForceSensorNode(Node):
             # After asynchronous callbacks complete, publish last known values (race acceptable for simple UI display)
             try:
                 last = self.controller.get_last()
-                from std_msgs.msg import String
-                if last['right_value'] is not None:  # Compatible with controller return structure
+                
+                # Check for errors (including sensor disabled state)
+                has_error = last.get('consecutive_errors', 0) > 0 or self.controller.sensor_disabled
+                error_msg = last.get('last_error') if has_error else None
+                
+                # If sensor is disabled, always publish error status (don't use cached values)
+                if self.controller.sensor_disabled:
+                    try:
+                        msg_error_obj = {
+                            'force': None,
+                            'seq_id': seq,
+                            'freq_hz': 0.0,
+                            'timestamp': now,
+                            'error': True,
+                            'error_message': error_msg or 'Sensor disabled due to consecutive failures',
+                            'error_count': last.get('error_count', 0),
+                            'sensor_disabled': True
+                        }
+                        msg_error = String()
+                        msg_error.data = json.dumps(msg_error_obj)
+                        self.force_pub.publish(msg_error)
+                        self.force_raw_pub.publish(msg_error)
+                    except Exception as e:
+                        self.get_logger().warn(f"[SEQ {seq}] Failed to publish disabled sensor status: {e}")
+                elif last['right_value'] is not None:  # Compatible with controller return structure
                     # Apply calibration: actual_force = sensor_reading × scale + offset
                     raw_value = float(last['right_value'])
                     calibrated_force = raw_value * self.calibration_scale + self.calibration_offset
@@ -162,7 +213,10 @@ class LiftRobotForceSensorNode(Node):
                             'force': raw_value,
                             'seq_id': seq,
                             'freq_hz': freq_hz,
-                            'timestamp': now
+                            'timestamp': now,
+                            'error': has_error,
+                            'error_message': error_msg,
+                            'error_count': last.get('error_count', 0)
                         }
                         msg_raw = String()
                         msg_raw.data = json.dumps(msg_raw_obj)
@@ -176,13 +230,34 @@ class LiftRobotForceSensorNode(Node):
                             'force': calibrated_force,
                             'seq_id': seq,
                             'freq_hz': freq_hz,
-                            'timestamp': now
+                            'timestamp': now,
+                            'error': has_error,
+                            'error_message': error_msg,
+                            'error_count': last.get('error_count', 0)
                         }
                         msg_force = String()
                         msg_force.data = json.dumps(msg_force_obj)
                         self.force_pub.publish(msg_force)
                     except Exception as e:
                         self.get_logger().warn(f"[SEQ {seq}] Failed to publish calibrated force: {e}")
+                elif has_error:
+                    # Force value is None due to error - publish error status
+                    try:
+                        msg_error_obj = {
+                            'force': None,
+                            'seq_id': seq,
+                            'freq_hz': 0.0,
+                            'timestamp': now,
+                            'error': True,
+                            'error_message': error_msg,
+                            'error_count': last.get('error_count', 0)
+                        }
+                        msg_error = String()
+                        msg_error.data = json.dumps(msg_error_obj)
+                        self.force_pub.publish(msg_error)
+                        self.force_raw_pub.publish(msg_error)
+                    except Exception as e:
+                        self.get_logger().warn(f"[SEQ {seq}] Failed to publish error status: {e}")
             except Exception as e:
                 self.get_logger().warn(f"[SEQ {seq}] Force sensor data processing error: {e}")
             

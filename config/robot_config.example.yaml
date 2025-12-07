@@ -235,6 +235,7 @@ lift_robot:
   modbus_driver:
     port: "auto"              # Serial port (auto-detect RS485 device, or specify like /dev/ttyUSB0)
     baudrate: 115200          # Serial baudrate
+    timeout: 0.03             # Modbus RTU timeout in seconds (0.03 = 30ms, normal response: 10-20ms)
     dashboard:
       enabled: true          # Enable Modbus dashboard web interface
       host: "0.0.0.0"         # Dashboard host address
@@ -249,6 +250,9 @@ lift_robot:
     max_force_limit: 50000.0    # Maximum allowable combined force (N) before emergency stop (CRITICAL SAFETY PARAMETER), initially set to 50000N to disable this function, should change to reasonable value after calibration
     launch_delay: 3.0         # Launch delay after system start (seconds, allows modbus driver to initialize)
     status_publish_rate: 10.0 # Status publish frequency in Hz (10Hz = 100ms interval, higher = more responsive but more CPU load)
+    
+    # Overshoot calibration fine-tuning parameters
+    overshoot_settle_time: 1.0   # Wait time after stop for platform to stabilize (seconds), affects calibration accuracy
     
     # Control Action Timeouts (seconds) - Max execution time for each control mode
     # If action exceeds timeout, it will abort with 'timeout' completion_reason
