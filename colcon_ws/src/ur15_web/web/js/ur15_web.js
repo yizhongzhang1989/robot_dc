@@ -992,17 +992,36 @@ function sendRobotStateToStatus(jointPositions, tcpPose) {
     }
     
     if (tcpPose) {
-        // Convert TCP pose from mm and quaternion to m and axis-angle (rad)
-        const axisAngle = quaternionToAxisAngle(tcpPose.qx, tcpPose.qy, tcpPose.qz, tcpPose.qw);
+        // Check if tcpPose already contains axis-angle (rx, ry, rz) or quaternion (qx, qy, qz, qw)
+        let rxRad, ryRad, rzRad;
+        
+        if (tcpPose.hasOwnProperty('rx') && tcpPose.hasOwnProperty('ry') && tcpPose.hasOwnProperty('rz')) {
+            // Already in axis-angle format (from 30003 port), rx/ry/rz are already in radians
+            rxRad = tcpPose.rx;
+            ryRad = tcpPose.ry;
+            rzRad = tcpPose.rz;
+        } else if (tcpPose.hasOwnProperty('qx') && tcpPose.hasOwnProperty('qy') && 
+                   tcpPose.hasOwnProperty('qz') && tcpPose.hasOwnProperty('qw')) {
+            // Convert from quaternion to axis-angle
+            const axisAngle = quaternionToAxisAngle(tcpPose.qx, tcpPose.qy, tcpPose.qz, tcpPose.qw);
+            // quaternionToAxisAngle returns degrees, convert to radians
+            rxRad = axisAngle.rx * Math.PI / 180.0;
+            ryRad = axisAngle.ry * Math.PI / 180.0;
+            rzRad = axisAngle.rz * Math.PI / 180.0;
+        } else {
+            // Invalid format, skip tcp_pose
+            console.warn('TCP pose has invalid format, skipping');
+            return;
+        }
         
         // Send as array in order: [x, y, z, rx, ry, rz] for numpy conversion
         dataToSend.tcp_pose = [
             tcpPose.x / 1000.0,  // x in meters
             tcpPose.y / 1000.0,  // y in meters
             tcpPose.z / 1000.0,  // z in meters
-            axisAngle.rx * Math.PI / 180.0,  // rx in radians
-            axisAngle.ry * Math.PI / 180.0,  // ry in radians
-            axisAngle.rz * Math.PI / 180.0   // rz in radians
+            rxRad,               // rx in radians
+            ryRad,               // ry in radians
+            rzRad                // rz in radians
         ];
     }
     

@@ -151,11 +151,10 @@ class URWobjExtractServer(UROperateWobj):
         try:
             print('Initializing CourierRobotWebAPI...')
             
-            # Initialize with default URL and verbose mode
-            self.courier_robot = CourierRobotWebAPI(
-                base_url="http://192.168.1.3:8090", 
-                verbose=True
-            )
+            # Initialize with automatic config loading and verbose mode
+            # CourierRobotWebAPI will automatically load URL from config file
+            # or use default fallback if config not found
+            self.courier_robot = CourierRobotWebAPI(verbose=True)
             
             # Test connection by getting status
             status_result = self.courier_robot.get_status()
@@ -252,35 +251,35 @@ class URWobjExtractServer(UROperateWobj):
             print("Robot is not initialized")
             return -1
         
-        if self.server2base_matrix is None:
-            print("Server coordinate system transformation matrix not loaded")
+        if self.rack_transformation_matrix_in_base is None:
+            print("Rack coordinate system transformation matrix not loaded")
             return -1
         
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
 
-        # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation_matrix = self.server2base_matrix[:3, :3]
-        server_rotation = R.from_matrix(server_rotation_matrix)
-        server_rotation_vector = server_rotation.as_rotvec()
+        # Extract rotation matrix from rack transformation matrix and convert to rotation vector
+        rack_rotation_matrix = self.rack_transformation_matrix_in_base[:3, :3]
+        rack_rotation = R.from_matrix(rack_rotation_matrix)
+        rack_rotation_vector = rack_rotation.as_rotvec()
         
-        # Create task frame using current position with server orientation
+        # Create task frame using TCP position with rack orientation
         task_frame = [
-            tcp_pose[0],               # x (current position)
+            tcp_pose[0],               # x (current TCP position)
             tcp_pose[1],               # y
             tcp_pose[2],               # z
-            server_rotation_vector[0], # rx (server orientation)
-            server_rotation_vector[1], # ry
-            server_rotation_vector[2]  # rz
+            rack_rotation_vector[0],   # rx (rack orientation)
+            rack_rotation_vector[1],   # ry
+            rack_rotation_vector[2]    # rz
         ]
         
-        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
+        print(f"[INFO] Task frame (rack coordinate system): {task_frame}")
         
         # Set force mode parameters
-        # In server coordinate system: Y- is pulling direction (away from rack)
-        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
-        wrench = [0, -70, 0, 0, 0, 0]  # -70N in server Y direction = pulling away from rack
+        # In rack coordinate system: Y- is pulling direction (away from rack)
+        selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
+        wrench = [0, -70, 0, 0, 0, 0]  # -70N in rack Y direction = pulling away from rack
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print(f"[INFO] Starting force control task to extract server {distance}m...")
@@ -293,14 +292,14 @@ class URWobjExtractServer(UROperateWobj):
             limits=limits,
             damping=0.1,
             end_type=3,  # Force-based termination
-            end_distance=[0.05, distance, 0, 0, 0, 0]
+            end_distance=[0, distance, 0, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
 
     def force_task_touch_handle(self,distance):
         """
-        Execute force control task to touch handle based on server coordinate system.
+        Execute force control task to touch handle based on rack coordinate system.
         
         Returns:
             int: Result code from force control task
@@ -309,35 +308,35 @@ class URWobjExtractServer(UROperateWobj):
             print("Robot is not initialized")
             return -1
         
-        if self.server2base_matrix is None:
-            print("Server coordinate system transformation matrix not loaded")
+        if self.rack_transformation_matrix_in_base is None:
+            print("Rack coordinate system transformation matrix not loaded")
             return -1
         
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
 
-        # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation_matrix = self.server2base_matrix[:3, :3]
-        server_rotation = R.from_matrix(server_rotation_matrix)
-        server_rotation_vector = server_rotation.as_rotvec()
+        # Extract rotation matrix from rack transformation matrix and convert to rotation vector
+        rack_rotation_matrix = self.rack_transformation_matrix_in_base[:3, :3]
+        rack_rotation = R.from_matrix(rack_rotation_matrix)
+        rack_rotation_vector = rack_rotation.as_rotvec()
         
-        # Create task frame using current position with server orientation
+        # Create task frame using TCP position with rack orientation
         task_frame = [
-            tcp_pose[0],               # x (current position)
+            tcp_pose[0],               # x (current TCP position)
             tcp_pose[1],               # y
             tcp_pose[2],               # z
-            server_rotation_vector[0], # rx (server orientation)
-            server_rotation_vector[1], # ry
-            server_rotation_vector[2]  # rz
+            rack_rotation_vector[0],   # rx (rack orientation)
+            rack_rotation_vector[1],   # ry
+            rack_rotation_vector[2]    # rz
         ]
         
-        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
+        print(f"[INFO] Task frame (rack coordinate system): {task_frame}")
         
         # Set force mode parameters
-        # In server coordinate system: Z- is downward (toward handle)
+        # In rack coordinate system: Z- is downward (toward handle)
         selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control only in Z direction
-        wrench = [0, 0, -25, 0, 0, 0]  # -25N in server Z direction = downward (toward handle)
+        wrench = [0, 0, -25, 0, 0, 0]  # -25N in rack Z direction = downward (toward handle)
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task to touch handle...")
@@ -484,37 +483,37 @@ class URWobjExtractServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 10: Courier robot up to transfer center of mass of server
-        print("\n" + "="*50)
-        print("Step 10: Lifting platform to transfer center of mass...")
-        print("="*50)
-        if self.courier_robot is None:
-            print("[ERROR] CourierRobotWebAPI is not initialized")
-            return -1
-        lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=350)
-        if not lift_result.get('success', False):
-            print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
-            return -1
+        # # Step 10: Courier robot up to transfer center of mass of server
+        # print("\n" + "="*50)
+        # print("Step 10: Lifting platform to transfer center of mass...")
+        # print("="*50)
+        # if self.courier_robot is None:
+        #     print("[ERROR] CourierRobotWebAPI is not initialized")
+        #     return -1
+        # lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=350)
+        # if not lift_result.get('success', False):
+        #     print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
+        #     return -1
 
-        # Step 11: Execute force control task to extract server completely
-        print("\n" + "="*50)
-        print("Step 11: Extracting server with force control...")
-        print("="*50)
-        result = self.force_task_extract_server(distance=0.30)
-        if result != 0:
-            print(f"[ERROR] Failed to extract server (error code: {result})")
-            return result
-        time.sleep(0.5)
+        # # Step 11: Execute force control task to extract server completely
+        # print("\n" + "="*50)
+        # print("Step 11: Extracting server with force control...")
+        # print("="*50)
+        # result = self.force_task_extract_server(distance=0.30)
+        # if result != 0:
+        #     print(f"[ERROR] Failed to extract server (error code: {result})")
+        #     return result
+        # time.sleep(0.5)
 
-        # Step 12: Move away from the server after extraction
-        print("\n" + "="*50)
-        print("Step 12: Moving away from the server...")
-        print("="*50)
-        result = self.movel_in_rack_frame([[0, 0, 0.20]])
-        if result != 0:
-            print(f"[ERROR] Failed to move away from server (error code: {result})")
-            return result
-        time.sleep(0.5)
+        # # Step 12: Move away from the server after extraction
+        # print("\n" + "="*50)
+        # print("Step 12: Moving away from the server...")
+        # print("="*50)
+        # result = self.movel_in_rack_frame([[0, 0, 0.20]])
+        # if result != 0:
+        #     print(f"[ERROR] Failed to move away from server (error code: {result})")
+        #     return result
+        # time.sleep(0.5)
 
         print("\n" + "="*70)
         print("EXTRACT SERVER SEQUENCE FINISHED SUCCESSFULLY")

@@ -151,11 +151,10 @@ class URWobjInsertServer(UROperateWobj):
         try:
             print('Initializing CourierRobotWebAPI...')
             
-            # Initialize with default URL and verbose mode
-            self.courier_robot = CourierRobotWebAPI(
-                base_url="http://192.168.1.3:8090", 
-                verbose=True
-            )
+            # Initialize with automatic config loading and verbose mode
+            # CourierRobotWebAPI will automatically load URL from config file
+            # or use default fallback if config not found
+            self.courier_robot = CourierRobotWebAPI(verbose=True)
             
             # Test connection by getting status
             status_result = self.courier_robot.get_status()

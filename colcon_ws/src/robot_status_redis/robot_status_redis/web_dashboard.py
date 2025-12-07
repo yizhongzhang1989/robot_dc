@@ -23,6 +23,7 @@ import pickle
 import base64
 import os
 import argparse
+import math
 
 try:
     from robot_status_redis.redis_backend import get_redis_backend, is_redis_available
@@ -92,6 +93,17 @@ class WebDashboard:
         logger.info(f"Access at: http://{self.host}:{self.port}")
         logger.info("=" * 60)
     
+    def _sanitize_value(self, value):
+        """Sanitize value to be JSON-serializable, converting NaN/Inf to None."""
+        if isinstance(value, float):
+            if math.isnan(value) or math.isinf(value):
+                return None
+        elif isinstance(value, (list, tuple)):
+            return [self._sanitize_value(v) for v in value]
+        elif isinstance(value, dict):
+            return {k: self._sanitize_value(v) for k, v in value.items()}
+        return value
+    
     def _process_status_dict(self, status_dict):
         """Process status dict to extract type and displayable content."""
         processed_status = {}
@@ -138,6 +150,9 @@ class WebDashboard:
                         else:
                             # Fall back to string representation
                             display_value = str(obj)
+                    
+                    # Sanitize the value to remove NaN/Inf
+                    display_value = self._sanitize_value(display_value)
                     
                     processed_status[namespace][key] = {
                         'type': type_str,
