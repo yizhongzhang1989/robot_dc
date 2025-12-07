@@ -194,6 +194,16 @@ class UR15WebNode(Node):
         self.last_joint_update = None
         self.last_tcp_update = None
         
+        # 30003 real-time data interface
+        self.rt_socket = None
+        self.rt_connected = False
+        self.rt_socket_lock = threading.Lock()
+        
+        # Cached real-time data from background thread
+        self.cached_joint_positions = None
+        self.cached_tcp_pose = None
+        self.cached_data_lock = threading.Lock()
+        
         # UR15 robot control
         self.ur15_robot = None
         self.freedrive_active = False
@@ -205,6 +215,14 @@ class UR15WebNode(Node):
         self.draw_keypoints_enabled = False
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
+        
+        # Initialize 30003 real-time data connection
+        self._init_rt_data_connection()
+        
+        # Start background thread to read real-time data
+        self.rt_thread_running = True
+        self.rt_thread = threading.Thread(target=self._rt_data_reader_thread, daemon=True)
+        self.rt_thread.start()
         
         # Child process management
         self.child_processes = []
@@ -411,6 +429,24 @@ class UR15WebNode(Node):
                 self.get_logger().info("Disconnected from UR15 robot")
             except Exception as e:
                 self.get_logger().error(f"Error disconnecting from robot: {e}")
+        
+        # Stop real-time data reader thread
+        self.rt_thread_running = False
+        if hasattr(self, 'rt_thread') and self.rt_thread and self.rt_thread.is_alive():
+            try:
+                self.rt_thread.join(timeout=2)
+                self.get_logger().info("Real-time data reader thread stopped")
+            except Exception as e:
+                self.get_logger().error(f"Error stopping RT thread: {e}")
+        
+        # Close 30003 connection
+        if self.rt_socket is not None:
+            try:
+                self.rt_socket.close()
+                self.rt_connected = False
+                self.get_logger().info("Disconnected from real-time data port 30003")
+            except Exception as e:
+                self.get_logger().error(f"Error closing port 30003: {e}")
     
     def _simplify_path(self, path):
         """Simplify path by replacing home directory with ~."""
@@ -442,6 +478,114 @@ class UR15WebNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error initializing UR15 connection: {e}")
             self.ur15_robot = None
+    
+    def _init_rt_data_connection(self):
+        """Initialize persistent connection to 30003 port for real-time data."""
+        try:
+            self.get_logger().info(f"Connecting to real-time data port 30003 at {self.ur15_ip}...")
+            self.rt_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Set timeout to 0.5s - robot sends at ~10Hz (100ms intervals)
+            # Timeout should be longer than packet interval to avoid false timeouts
+            self.rt_socket.settimeout(0.5)
+            self.rt_socket.connect((self.ur15_ip, 30003))
+            self.rt_connected = True
+            self.get_logger().info("Successfully connected to real-time data port 30003")
+        except Exception as e:
+            self.get_logger().warning(f"Failed to connect to port 30003: {e}")
+            self.rt_socket = None
+            self.rt_connected = False
+    
+    def _rt_data_reader_thread(self):
+        """Background thread to continuously read from 30003 and update cache."""
+        import struct
+        
+        self.get_logger().info("Real-time data reader thread started")
+        
+        while self.rt_thread_running:
+            if not self.rt_connected or not self.rt_socket:
+                time.sleep(0.1)
+                continue
+            
+            try:
+                with self.rt_socket_lock:
+                    # 30003 port packets start with 4-byte message size (should be 1060 or 1116)
+                    # Read the first 4 bytes to get packet size
+                    size_data = b''
+                    while len(size_data) < 4:
+                        try:
+                            chunk = self.rt_socket.recv(4 - len(size_data))
+                            if not chunk:
+                                self.get_logger().warning("Connection closed by robot")
+                                self.rt_connected = False
+                                break
+                            size_data += chunk
+                        except socket.timeout:
+                            continue
+                    
+                    if len(size_data) < 4:
+                        continue
+                    
+                    # Parse message size
+                    msg_size = struct.unpack('!I', size_data)[0]
+                    
+                    # Validate message size (typical sizes are 1060 or 1116)
+                    if msg_size < 1000 or msg_size > 2000:
+                        self.get_logger().warning(f"Invalid message size: {msg_size}, resync")
+                        continue
+                    
+                    # Read the rest of the packet
+                    data = size_data  # Include size in data
+                    while len(data) < msg_size:
+                        try:
+                            chunk = self.rt_socket.recv(msg_size - len(data))
+                            if not chunk:
+                                self.get_logger().warning("Connection closed during packet read")
+                                self.rt_connected = False
+                                break
+                            data += chunk
+                        except socket.timeout:
+                            continue
+                    
+                    if len(data) < msg_size:
+                        continue
+                    
+                    # Parse joint positions (bytes 252-299 from start of message)
+                    joint_positions = []
+                    for i in range(6):
+                        value = struct.unpack('!d', data[252 + i*8:252 + (i+1)*8])[0]
+                        joint_positions.append(value)
+                    
+                    # Parse TCP pose (bytes 444-491 from start of message)
+                    tcp_pose = []
+                    for i in range(6):
+                        value = struct.unpack('!d', data[444 + i*8:444 + (i+1)*8])[0]
+                        tcp_pose.append(value)
+                    
+                    # Update cache
+                    with self.cached_data_lock:
+                        self.cached_joint_positions = joint_positions
+                        self.cached_tcp_pose = tcp_pose
+                
+            except socket.timeout:
+                # Timeout is normal when no data available
+                pass
+            except Exception as e:
+                self.get_logger().warning(f"Error reading from port 30003: {e}")
+                self.rt_connected = False
+                time.sleep(1)  # Wait before retry
+                
+        self.get_logger().info("Real-time data reader thread stopped")
+    
+    def _read_rt_data(self, data_type):
+        """Read cached data from background thread."""
+        with self.cached_data_lock:
+            if data_type == "actual_joint_positions":
+                return self.cached_joint_positions
+            elif data_type == "actual_tcp_pose":
+                return self.cached_tcp_pose
+            else:
+                self.get_logger().error(f"Unknown data type: {data_type}")
+                return None
     
     def destroy_node(self):
         """Override destroy_node to clean up UR15 connection."""
@@ -741,20 +885,36 @@ class UR15WebNode(Node):
                 has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
                 has_extrinsic = self.cam2end_matrix is not None and self.target2base_matrix is not None
             
-            with self.robot_data_lock:
-                joint_positions = list(self.joint_positions) if self.joint_positions else []
-                tcp_pose = dict(self.tcp_pose) if self.tcp_pose else None
-                last_joint_update = self.last_joint_update
-                last_tcp_update = self.last_tcp_update
+            # Read real-time data from 30003 port
+            joint_positions_rad = self._read_rt_data("actual_joint_positions")
+            tcp_pose_raw = self._read_rt_data("actual_tcp_pose")
+            
+            # Convert joint positions from radians to degrees
+            joint_positions = []
+            if joint_positions_rad:
+                joint_positions = [j * 180.0 / np.pi for j in joint_positions_rad]
+            
+            # Convert TCP pose from meters and axis-angle to mm and quaternion-like format
+            tcp_pose = None
+            if tcp_pose_raw:
+                # tcp_pose_raw is [x, y, z, rx, ry, rz] in meters and radians (axis-angle)
+                # Convert to mm for position
+                tcp_pose = {
+                    'x': tcp_pose_raw[0] * 1000.0,  # m to mm
+                    'y': tcp_pose_raw[1] * 1000.0,
+                    'z': tcp_pose_raw[2] * 1000.0,
+                    'rx': tcp_pose_raw[3],  # Keep as axis-angle in radians
+                    'ry': tcp_pose_raw[4],
+                    'rz': tcp_pose_raw[5]
+                }
             
             with self.ur15_lock:
                 freedrive_active = self.freedrive_active
                 robot_connected = self.ur15_robot is not None
             
-            # Check if data is recent (within last 2 seconds)
-            current_time = time.time()
-            joint_data_valid = last_joint_update and (current_time - last_joint_update) < 2.0
-            tcp_data_valid = last_tcp_update and (current_time - last_tcp_update) < 2.0
+            # Data is always valid if we got it from 30003
+            joint_data_valid = joint_positions is not None and len(joint_positions) > 0
+            tcp_data_valid = tcp_pose is not None
             
             # Read board type from chessboard config
             board_type = None
@@ -789,7 +949,7 @@ class UR15WebNode(Node):
                 'joint_positions': joint_positions if joint_data_valid else [],
                 'tcp_pose': tcp_pose if tcp_data_valid else None,
                 'freedrive_active': freedrive_active,
-                'robot_connected': robot_connected,
+                'robot_connected': robot_connected and self.rt_connected,
                 'board_type': board_type,
                 'board_type_display': board_type_display,
                 'board_type_loaded': board_type_loaded

@@ -1128,8 +1128,8 @@ function updateStatus() {
         // Update TCP pose in Control Panel
         if (data.tcp_pose) {
             const pose = data.tcp_pose;
-            // Convert quaternion to axis-angle representation
-            const axisAngle = quaternionToAxisAngle(pose.qx, pose.qy, pose.qz, pose.qw);
+            // Data from 30003 port is already in axis-angle format (rx, ry, rz in radians)
+            // Convert radians to degrees for display
             
             // Update position values (only if not being edited)
             const tcpXElement = document.getElementById('tcpXValue');
@@ -1149,13 +1149,14 @@ function updateStatus() {
                 tcpZElement.value = pose.z.toFixed(1);
             }
             if (tcpRXElement && document.activeElement !== tcpRXElement) {
-                tcpRXElement.value = axisAngle.rx.toFixed(1);
+                // Convert from radians to degrees
+                tcpRXElement.value = (pose.rx * 180 / Math.PI).toFixed(1);
             }
             if (tcpRYElement && document.activeElement !== tcpRYElement) {
-                tcpRYElement.value = axisAngle.ry.toFixed(1);
+                tcpRYElement.value = (pose.ry * 180 / Math.PI).toFixed(1);
             }
             if (tcpRZElement && document.activeElement !== tcpRZElement) {
-                tcpRZElement.value = axisAngle.rz.toFixed(1);
+                tcpRZElement.value = (pose.rz * 180 / Math.PI).toFixed(1);
             }
         } else {
             // Set all TCP values to no data state (only if not being edited)
