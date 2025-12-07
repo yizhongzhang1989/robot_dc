@@ -467,7 +467,7 @@ class URWobjExtractServer(UROperateWobj):
         print("\n" + "="*50)
         print("Step 8: Extracting server with force control...")
         print("="*50)
-        result = self.force_task_extract_server(distance=0.50)
+        result = self.force_task_extract_server(distance=0.4)
         if result != 0:
             print(f"[ERROR] Failed to extract server (error code: {result})")
             return result
@@ -477,43 +477,43 @@ class URWobjExtractServer(UROperateWobj):
         print("\n" + "="*50)
         print("Step 9: Adjusting end effector height...")
         print("="*50)
-        result = self.movel_in_server_frame([[0, 0, 0.01]])
+        result = self.movel_in_server_frame([0, 0, 0.01])
         if result != 0:
             print(f"[ERROR] Failed to adjust end effector height (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # # Step 10: Courier robot up to transfer center of mass of server
-        # print("\n" + "="*50)
-        # print("Step 10: Lifting platform to transfer center of mass...")
-        # print("="*50)
-        # if self.courier_robot is None:
-        #     print("[ERROR] CourierRobotWebAPI is not initialized")
-        #     return -1
-        # lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=350)
-        # if not lift_result.get('success', False):
-        #     print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
-        #     return -1
+        # Step 10: Courier robot up to transfer center of mass of server
+        print("\n" + "="*50)
+        print("Step 10: Lifting platform to transfer center of mass...")
+        print("="*50)
+        if self.courier_robot is None:
+            print("[ERROR] CourierRobotWebAPI is not initialized")
+            return -1
+        lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=350)
+        if not lift_result.get('success', False):
+            print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
+            return -1
 
-        # # Step 11: Execute force control task to extract server completely
-        # print("\n" + "="*50)
-        # print("Step 11: Extracting server with force control...")
-        # print("="*50)
-        # result = self.force_task_extract_server(distance=0.30)
-        # if result != 0:
-        #     print(f"[ERROR] Failed to extract server (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 11: Execute force control task to extract server completely
+        print("\n" + "="*50)
+        print("Step 11: Extracting server with force control...")
+        print("="*50)
+        result = self.force_task_extract_server(distance=0.55)
+        if result != 0:
+            print(f"[ERROR] Failed to extract server (error code: {result})")
+            return result
+        time.sleep(0.5)
 
-        # # Step 12: Move away from the server after extraction
-        # print("\n" + "="*50)
-        # print("Step 12: Moving away from the server...")
-        # print("="*50)
-        # result = self.movel_in_rack_frame([[0, 0, 0.20]])
-        # if result != 0:
-        #     print(f"[ERROR] Failed to move away from server (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 12: Move away from the server after extraction
+        print("\n" + "="*50)
+        print("Step 12: Moving away from the server...")
+        print("="*50)
+        result = self.movel_in_rack_frame([0, 0, 0.20])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from server (error code: {result})")
+            return result
+        time.sleep(0.5)
 
         print("\n" + "="*70)
         print("EXTRACT SERVER SEQUENCE FINISHED SUCCESSFULLY")
