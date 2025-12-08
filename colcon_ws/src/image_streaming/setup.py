@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'image_streamer = image_streaming.image_streamer:main',
+            'find_femto_bolt = image_streaming.find_femto_bolt_video:main',
         ],
     },
 )
