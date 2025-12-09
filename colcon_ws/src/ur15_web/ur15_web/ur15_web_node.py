@@ -189,10 +189,8 @@ class UR15WebNode(Node):
         
         # Robot state data
         self.joint_positions = []
-        self.tcp_pose = None
         self.robot_data_lock = threading.Lock()
         self.last_joint_update = None
-        self.last_tcp_update = None
         
         # 30003 real-time data interface
         self.rt_socket = None
@@ -289,16 +287,6 @@ class UR15WebNode(Node):
         )
         
         self.get_logger().info("Subscribed to /joint_states topic")
-        
-        # Subscribe to TCP pose topic
-        self.tcp_pose_subscription = self.create_subscription(
-            PoseStamped,
-            '/tcp_pose_broadcaster/pose',
-            self.tcp_pose_callback,
-            10
-        )
-        
-        self.get_logger().info("Subscribed to /tcp_pose_broadcaster/pose topic")
         
         # Setup Flask app
         web_dir = os.path.join(get_package_share_directory('ur15_web'), 'web')
@@ -785,29 +773,7 @@ class UR15WebNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error processing joint states: {e}")
     
-    def tcp_pose_callback(self, msg):
-        """Callback function for receiving TCP pose."""
-        try:
-            with self.robot_data_lock:
-                pose = msg.pose
-                self.tcp_pose = {
-                    'x': pose.position.x * 1000.0,  # Convert to mm
-                    'y': pose.position.y * 1000.0,
-                    'z': pose.position.z * 1000.0,
-                    'qx': pose.orientation.x,
-                    'qy': pose.orientation.y,
-                    'qz': pose.orientation.z,
-                    'qw': pose.orientation.w
-                }
-                self.last_tcp_update = time.time()
-            
-            if not hasattr(self, '_first_tcp_logged'):
-                self.get_logger().info(f"First TCP pose received!")
-                self._first_tcp_logged = True
-                
-        except Exception as e:
-            self.get_logger().error(f"Error processing TCP pose: {e}")
-    
+
     def push_web_log(self, message, log_type='info'):
         """Push a message to the web log queue."""
         import time
@@ -4029,24 +3995,21 @@ class UR15WebNode(Node):
                 distortion_coefficients = self.distortion_coefficients.copy()
                 cam2end_matrix = self.cam2end_matrix.copy()
             
-            # Get current TCP pose
-            with self.robot_data_lock:
-                if self.tcp_pose is None:
-                    return None
-                x = self.tcp_pose['x'] / 1000.0  # Convert mm to m
-                y = self.tcp_pose['y'] / 1000.0
-                z = self.tcp_pose['z'] / 1000.0
-                qx = self.tcp_pose['qx']
-                qy = self.tcp_pose['qy']
-                qz = self.tcp_pose['qz']
-                qw = self.tcp_pose['qw']
+            # Get current TCP pose from 30003 port (real-time data)
+            tcp_pose_raw = self._read_rt_data("actual_tcp_pose")
+            if tcp_pose_raw is None:
+                return None
             
-            # Convert quaternion to rotation matrix
-            R = np.array([
-                [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qz*qw), 2*(qx*qz + qy*qw)],
-                [2*(qx*qy + qz*qw), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qx*qw)],
-                [2*(qx*qz - qy*qw), 2*(qy*qz + qx*qw), 1 - 2*(qx**2 + qy**2)]
-            ])
+            # tcp_pose_raw is [x, y, z, rx, ry, rz] in meters and radians (axis-angle)
+            x = tcp_pose_raw[0]  # Already in meters
+            y = tcp_pose_raw[1]
+            z = tcp_pose_raw[2]
+            rx = tcp_pose_raw[3]  # Axis-angle in radians
+            ry = tcp_pose_raw[4]
+            rz = tcp_pose_raw[5]
+            
+            # Convert axis-angle to rotation matrix
+            R = self._rotvec_to_matrix(rx, ry, rz)
             
             # Build end2base transformation matrix
             end2base_matrix = np.eye(4)

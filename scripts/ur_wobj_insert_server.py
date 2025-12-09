@@ -252,35 +252,35 @@ class URWobjInsertServer(UROperateWobj):
             print("Robot is not initialized")
             return -1
         
-        if self.server2base_matrix is None:
-            print("Server coordinate system transformation matrix not loaded")
+        if self.rack_transformation_matrix_in_base is None:
+            print("Rack coordinate system transformation matrix not loaded")
             return -1
         
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
 
-        # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation_matrix = self.server2base_matrix[:3, :3]
-        server_rotation = R.from_matrix(server_rotation_matrix)
-        server_rotation_vector = server_rotation.as_rotvec()
+        # Extract rotation matrix from rack transformation matrix and convert to rotation vector
+        rack_rotation_matrix = self.rack_transformation_matrix_in_base[:3, :3]
+        rack_rotation = R.from_matrix(rack_rotation_matrix)
+        rack_rotation_vector = rack_rotation.as_rotvec()
         
-        # Create task frame using current position with server orientation
+        # Create task frame using TCP position with rack orientation
         task_frame = [
-            tcp_pose[0],               # x (current position)
+            tcp_pose[0],               # x (current TCP position)
             tcp_pose[1],               # y
             tcp_pose[2],               # z
-            server_rotation_vector[0], # rx (server orientation)
-            server_rotation_vector[1], # ry
-            server_rotation_vector[2]  # rz
+            rack_rotation_vector[0],   # rx (rack orientation)
+            rack_rotation_vector[1],   # ry
+            rack_rotation_vector[2]    # rz
         ]
         
-        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
+        print(f"[INFO] Task frame (rack coordinate system): {task_frame}")
         
         # Set force mode parameters
-        # In server coordinate system: Y+ is pushing direction (into rack)
+        # In rack coordinate system: Y+ is pushing direction (into rack)
         selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
-        wrench = [0, 70, 0, 0, 0, 0]  # +70N in server Y direction = pushing into rack
+        wrench = [0, 70, 0, 0, 0, 0]  # +70N in rack Y direction = pushing into rack
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print(f"[INFO] Starting force control task to insert server {distance}m...")
@@ -300,7 +300,7 @@ class URWobjInsertServer(UROperateWobj):
 
     def force_task_touch_handle(self, distance):
         """
-        Execute force control task to align handle based on server coordinate system.
+        Execute force control task to align handle based on rack coordinate system.
         
         Returns:
             int: Result code from force control task
@@ -309,35 +309,35 @@ class URWobjInsertServer(UROperateWobj):
             print("Robot is not initialized")
             return -1
         
-        if self.server2base_matrix is None:
-            print("Server coordinate system transformation matrix not loaded")
+        if self.rack_transformation_matrix_in_base is None:
+            print("Rack coordinate system transformation matrix not loaded")
             return -1
         
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
 
-        # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation_matrix = self.server2base_matrix[:3, :3]
-        server_rotation = R.from_matrix(server_rotation_matrix)
-        server_rotation_vector = server_rotation.as_rotvec()
+        # Extract rotation matrix from rack transformation matrix and convert to rotation vector
+        rack_rotation_matrix = self.rack_transformation_matrix_in_base[:3, :3]
+        rack_rotation = R.from_matrix(rack_rotation_matrix)
+        rack_rotation_vector = rack_rotation.as_rotvec()
         
-        # Create task frame using current position with server orientation
+        # Create task frame using TCP position with rack orientation
         task_frame = [
-            tcp_pose[0],               # x (current position)
+            tcp_pose[0],               # x (current TCP position)
             tcp_pose[1],               # y
             tcp_pose[2],               # z
-            server_rotation_vector[0], # rx (server orientation)
-            server_rotation_vector[1], # ry
-            server_rotation_vector[2]  # rz
+            rack_rotation_vector[0],   # rx (rack orientation)
+            rack_rotation_vector[1],   # ry
+            rack_rotation_vector[2]    # rz
         ]
         
-        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
+        print(f"[INFO] Task frame (rack coordinate system): {task_frame}")
         
         # Set force mode parameters
-        # In server coordinate system: Z+ is upward (away from handle)
+        # In rack coordinate system: Z- is downward (toward handle)
         selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control only in Z direction
-        wrench = [0, 0, -25, 0, 0, 0]  # +25N in server Z direction = upward (away from handle)
+        wrench = [0, 0, -25, 0, 0, 0]  # -25N in rack Z direction = downward (toward handle)
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task to align handle...")
@@ -350,7 +350,7 @@ class URWobjInsertServer(UROperateWobj):
             limits=limits,
             damping=0.1,
             end_type=3,  # Force-based termination
-            end_distance=[0, 0, distance+0.01, 0, 0, 0]
+            end_distance=[0, 0, distance-0.03, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
@@ -367,9 +367,42 @@ class URWobjInsertServer(UROperateWobj):
         print("STARTING INSERT SERVER SEQUENCE")
         print("="*70)
         
-        # Step 1: Correct TCP pose
+        # Step 1: Initialize height of courier robot
         print("\n" + "="*50)
-        print("Step 1: Correcting TCP pose...")
+        print("Step 1: Initializing courier robot platform height...")
+        print("="*50)
+        if self.courier_robot is None:
+            print("[ERROR] CourierRobotWebAPI is not initialized")
+            return -1
+        time.sleep(0.5)
+        
+        result = self.courier_robot.pushrod_down()
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to lower pushrod: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(7)
+        
+        result = self.courier_robot.platform_down()
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to lower platform: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(10)
+        
+        result = self.courier_robot.pushrod_goto_height(target_height=20, mode='relative')
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to set pushrod height: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(0.5)
+
+        result = self.courier_robot.platform_hybrid_control(target_height=798, target_force=300)
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to set platform hybrid control: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(0.5)
+
+        # Step 2: Correct TCP pose
+        print("\n" + "="*50)
+        print("Step 2: Correcting TCP pose...")
         print("="*50)
         result = self.movel_to_correct_tcp_pose(
             tcp_x_to_rack=[-1, 0, 0],
@@ -382,23 +415,23 @@ class URWobjInsertServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 2: Move to target position to position before insertion
+        # Step 3: Move to target position to position before insertion
         print("\n" + "="*50)
-        print("Step 2: Moving to target position before insertion...")
+        print("Step 3: Moving to target position before insertion...")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 2, 3],
-            offset_in_rack=[0, -1.20, 0.20+self.tool_length]
+            offset_in_rack=[0, -1.25, 0.20+self.tool_length]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
             return result
         time.sleep(0.5)
 
-        # Step 3: Update server2base_matrix by vision positioning
+        # Step 4: Update server2base_matrix by vision positioning
         print("\n" + "="*50)
-        print("Step 3: Updating server coordinate system...")
+        print("Step 4: Updating server coordinate system...")
         print("="*50)
         
         result = self.update_server2base_by_positioning()
@@ -407,9 +440,9 @@ class URWobjInsertServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 4: Correct TCP pose again before insertion
+        # Step 5: Correct TCP pose again before insertion
         print("\n" + "="*50)
-        print("Step 4: Correcting TCP pose...")
+        print("Step 5: Correcting TCP pose...")
         print("="*50)
         result = self.movel_to_correct_tcp_pose(
             tcp_x_to_rack=[-1, 0, 0],
@@ -422,9 +455,9 @@ class URWobjInsertServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 5: Move to insert server position
+        # Step 6: Move to insert server position
         print("\n" + "="*50)
-        print("Step 5: Moving to insert server position...")
+        print("Step 6: Moving to insert server position...")
         print("="*50)
         
         distance = 0.06
@@ -432,25 +465,12 @@ class URWobjInsertServer(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 2, 3],
-            offset_in_rack=[0, -0.04, distance+self.tool_length]
+            offset_in_rack=[0, -0.045, distance+self.tool_length]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to insert position (error code: {result})")
             return result
         time.sleep(0.5)
-
-        # # Step 6: Courier robot platform down to prepare for insertion
-        # print("\n" + "="*50)
-        # print("Step 6: Lowering platform to prepare for insertion...")
-        # print("="*50)
-        # if self.courier_robot is None:
-        #     print("[ERROR] CourierRobotWebAPI is not initialized")
-        #     return -1
-        # # Lower platform to support server weight during insertion
-        # lift_result = self.courier_robot.platform_hybrid_control(target_height=750, target_force=200)
-        # if not lift_result.get('success', False):
-        #     print(f"[ERROR] Failed to lower platform: {lift_result.get('error', 'Unknown error')}")
-        #     return -1
 
         # Step 7: Execute force control task to align handle
         print("\n" + "="*50)
@@ -462,57 +482,57 @@ class URWobjInsertServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # # Step 8: Execute force control task to insert server partially
-        # print("\n" + "="*50)
-        # print("Step 8: Inserting server partially with force control...")
-        # print("="*50)
-        # result = self.force_task_insert_server(distance=0.30)
-        # if result != 0:
-        #     print(f"[ERROR] Failed to insert server partially (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 8: Execute force control task to insert server partially
+        print("\n" + "="*50)
+        print("Step 8: Inserting server partially with force control...")
+        print("="*50)
+        result = self.force_task_insert_server(distance=0.52)
+        if result != 0:
+            print(f"[ERROR] Failed to insert server partially (error code: {result})")
+            return result
+        time.sleep(0.5)
 
-        # # Step 9: Slightly adjust height of end effector
-        # print("\n" + "="*50)
-        # print("Step 9: Adjusting end effector height...")
-        # print("="*50)
-        # result = self.movel_in_server_frame([[0, 0, -0.01]])
-        # if result != 0:
-        #     print(f"[ERROR] Failed to adjust end effector height (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 9: Courier robot down to transfer server weight to rack
+        print("\n" + "="*50)
+        print("Step 9: Lowering platform to transfer server weight...")
+        print("="*50)
+        if self.courier_robot is None:
+            print("[ERROR] CourierRobotWebAPI is not initialized")
+            return -1
+        lift_result = self.courier_robot.platform_hybrid_control(target_height=780, target_force=350)
+        if not lift_result.get('success', False):
+            print(f"[ERROR] Failed to lower platform: {lift_result.get('error', 'Unknown error')}")
+            return -1
 
-        # # Step 10: Courier robot down to transfer server weight to rack
-        # print("\n" + "="*50)
-        # print("Step 10: Lowering platform to transfer server weight...")
-        # print("="*50)
-        # if self.courier_robot is None:
-        #     print("[ERROR] CourierRobotWebAPI is not initialized")
-        #     return -1
-        # lift_result = self.courier_robot.platform_hybrid_control(target_height=700, target_force=50)
-        # if not lift_result.get('success', False):
-        #     print(f"[ERROR] Failed to lower platform: {lift_result.get('error', 'Unknown error')}")
-        #     return -1
+        # Step 10: Slightly adjust height of end effector
+        print("\n" + "="*50)
+        print("Step 10: Adjusting end effector height...")
+        print("="*50)
+        result = self.movel_in_server_frame([0, -0.01, -0.01])
+        if result != 0:
+            print(f"[ERROR] Failed to adjust end effector height (error code: {result})")
+            return result
+        time.sleep(0.5)
 
-        # # Step 11: Execute force control task to insert server completely
-        # print("\n" + "="*50)
-        # print("Step 11: Inserting server completely with force control...")
-        # print("="*50)
-        # result = self.force_task_insert_server(distance=0.50)
-        # if result != 0:
-        #     print(f"[ERROR] Failed to insert server completely (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 11: Execute force control task to insert server completely
+        print("\n" + "="*50)
+        print("Step 11: Inserting server completely with force control...")
+        print("="*50)
+        result = self.force_task_insert_server(distance=0.60)
+        if result != 0:
+            print(f"[ERROR] Failed to insert server completely (error code: {result})")
+            return result
+        time.sleep(0.5)
 
-        # # Step 12: Move away from the server after insertion
-        # print("\n" + "="*50)
-        # print("Step 12: Moving away from the server...")
-        # print("="*50)
-        # result = self.movel_in_rack_frame([[0, 0, 0.20]])
-        # if result != 0:
-        #     print(f"[ERROR] Failed to move away from server (error code: {result})")
-        #     return result
-        # time.sleep(0.5)
+        # Step 12: Move away from the server after insertion
+        print("\n" + "="*50)
+        print("Step 12: Moving away from the server...")
+        print("="*50)
+        result = self.movel_in_rack_frame([0, 0, 0.20])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from server (error code: {result})")
+            return result
+        time.sleep(0.5)
 
         # # Step 13: Final platform down to default position
         # print("\n" + "="*50)
