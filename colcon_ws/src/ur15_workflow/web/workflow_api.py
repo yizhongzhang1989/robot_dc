@@ -32,25 +32,10 @@ except Exception as e:
     print("  Robot status endpoints will not be available")
 
 # Initialize UR15Robot for direct robot communication
+# Will be initialized after parsing command-line arguments
 ur15_robot = None
-try:
-    import sys
-    import os
-    # Add ur15_robot_arm package to path
-    colcon_src = Path(get_workspace_root()) / 'colcon_ws' / 'src'
-    ur15_pkg_path = colcon_src / 'ur15_robot_arm'
-    if ur15_pkg_path.exists():
-        sys.path.insert(0, str(ur15_pkg_path))
-    
-    from ur15_robot_arm.ur15 import UR15Robot
-    # Default UR15 connection parameters (can be overridden via env variables)
-    ur15_ip = os.environ.get('UR15_IP', '192.168.1.15')
-    ur15_port = int(os.environ.get('UR15_PORT', '30002'))
-    ur15_robot = UR15Robot(ur15_ip, ur15_port)
-    print(f"✓ UR15Robot initialized (IP: {ur15_ip}, Port: {ur15_port})")
-except Exception as e:
-    print(f"✗ Failed to initialize UR15Robot: {e}")
-    print("  Direct robot joint position endpoint will not be available")
+ur15_ip_arg = None
+ur15_port_arg = None
 
 
 @app.route('/api/workflow', methods=['POST'])
@@ -339,9 +324,36 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Workflow Config Center API Server')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host address')
     parser.add_argument('--port', type=int, default=8008, help='Port number')
+    parser.add_argument('--ur15-ip', type=str, default=None, help='UR15 robot IP address')
+    parser.add_argument('--ur15-port', type=int, default=30002, help='UR15 robot control port')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     args = parser.parse_args()
+    
+    # Initialize UR15Robot with command-line arguments
+    ur15_ip_arg = args.ur15_ip
+    ur15_port_arg = args.ur15_port
+    
+    if ur15_ip_arg:
+        try:
+            import sys
+            # Add ur15_robot_arm package to path
+            colcon_src = Path(get_workspace_root()) / 'colcon_ws' / 'src'
+            ur15_pkg_path = colcon_src / 'ur15_robot_arm'
+            if ur15_pkg_path.exists():
+                sys.path.insert(0, str(ur15_pkg_path))
+            
+            from ur15_robot_arm.ur15 import UR15Robot
+            # Update the global ur15_robot variable
+            ur15_robot = UR15Robot(ur15_ip_arg, ur15_port_arg)
+            # Update the module-level variable by accessing globals()
+            globals()['ur15_robot'] = ur15_robot
+            print(f"✓ UR15Robot initialized (IP: {ur15_ip_arg}, Port: {ur15_port_arg})")
+        except Exception as e:
+            print(f"✗ Failed to initialize UR15Robot: {e}")
+            print("  Direct robot joint position endpoint will not be available")
+    else:
+        print("⚠ UR15 IP not provided, direct robot joint position endpoint will not be available")
     
     print(f"Workflow API Server starting...")
     print(f"Workflow config directory: {WORKFLOW_CONFIG_DIR}")
