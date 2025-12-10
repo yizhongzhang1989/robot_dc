@@ -305,6 +305,112 @@
       </div>
     </div>
     
+    <!-- Row 3: Server ID (Left) + Hybrid Parameters (Right) -->
+    <div class="grid grid-cols-2 gap-4">
+      <!-- LEFT: Server ID Configuration -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
+        <h2 class="font-bold text-lg mb-3 text-green-700 flex items-center gap-2">
+          🆔 Server ID
+        </h2>
+        
+        <div class="space-y-3">
+          <!-- Current Server ID Display -->
+          <div class="bg-green-50 p-3 rounded">
+            <div class="text-sm text-gray-600">Current Server ID:</div>
+            <div class="text-3xl font-bold text-green-700 font-mono" id="currentServerId">—</div>
+          </div>
+          
+          <!-- Set Server ID -->
+          <div class="flex gap-2 items-center">
+            <label class="text-sm font-semibold text-gray-700 w-20">Set ID:</label>
+            <input type="number" id="serverIdInput" class="flex-1 px-3 py-2 text-sm border border-green-300 rounded focus:ring-2 focus:ring-green-400" step="1" min="0" placeholder="0">
+            <button id="setServerIdBtn" class="px-4 py-2 bg-green-500 text-white text-sm font-semibold rounded hover:bg-green-600 transition">SET</button>
+          </div>
+          
+          <!-- Calculated Positions Display -->
+          <div class="bg-gray-50 p-3 rounded space-y-1 text-sm">
+            <div class="font-semibold text-gray-700 mb-2">📍 Calculated Positions:</div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">High Position:</span>
+              <span id="hybridHighPos" class="font-mono font-bold text-blue-700">—</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Low Position:</span>
+              <span id="hybridLowPos" class="font-mono font-bold text-purple-700">—</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Step:</span>
+              <span id="currentHybridStep" class="font-mono font-bold text-cyan-700">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- RIGHT: Hybrid Parameters Configuration -->
+      <div class="bg-white rounded-lg shadow p-4 border-l-4 border-cyan-500">
+        <h2 class="font-bold text-lg mb-3 text-cyan-700 flex items-center gap-2">
+          ⚙️ Hybrid Parameters
+        </h2>
+        
+        <div class="space-y-3">
+          <!-- Current Parameters Display -->
+          <div class="bg-cyan-50 p-3 rounded space-y-1 text-sm">
+            <div class="font-semibold text-cyan-700 mb-2">Current Parameters:</div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">High Base:</span>
+              <span id="currentHighBase" class="font-mono font-bold text-cyan-700">—</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Low Base:</span>
+              <span id="currentLowBase" class="font-mono font-bold text-cyan-700">—</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Step:</span>
+              <span id="currentStep" class="font-mono font-bold text-cyan-700">—</span>
+            </div>
+          </div>
+          
+          <!-- High Base -->
+          <div class="flex gap-2 items-center">
+            <label class="text-sm font-semibold text-gray-700 w-28">High Base:</label>
+            <input type="number" id="hybridHighBaseInput" class="flex-1 px-3 py-2 text-sm border border-cyan-300 rounded focus:ring-2 focus:ring-cyan-400" step="0.1" placeholder="756.0">
+            <span class="text-xs text-gray-500 w-12">mm</span>
+          </div>
+          
+          <!-- Low Base -->
+          <div class="flex gap-2 items-center">
+            <label class="text-sm font-semibold text-gray-700 w-28">Low Base:</label>
+            <input type="number" id="hybridLowBaseInput" class="flex-1 px-3 py-2 text-sm border border-cyan-300 rounded focus:ring-2 focus:ring-cyan-400" step="0.1" placeholder="736.0">
+            <span class="text-xs text-gray-500 w-12">mm</span>
+          </div>
+          
+          <!-- Step -->
+          <div class="flex gap-2 items-center">
+            <label class="text-sm font-semibold text-gray-700 w-28">Step (per ID):</label>
+            <input type="number" id="hybridStepInput" class="flex-1 px-3 py-2 text-sm border border-cyan-300 rounded focus:ring-2 focus:ring-cyan-400" step="0.1" placeholder="48.0">
+            <span class="text-xs text-gray-500 w-12">mm</span>
+          </div>
+          
+          <!-- Apply Button -->
+          <button id="setHybridParamsBtn" class="w-full px-4 py-2 bg-cyan-500 text-white text-sm font-semibold rounded hover:bg-cyan-600 transition">
+            APPLY PARAMETERS
+          </button>
+          
+          <!-- Formula Display -->
+          <div class="text-xs text-gray-500 bg-cyan-50 p-2 rounded space-y-1">
+            <div class="font-semibold text-cyan-700">📐 Formulas:</div>
+            <div class="font-mono">high_pos = high_base + step × ID</div>
+            <div class="font-mono">low_pos = low_base + step × ID</div>
+          </div>
+          
+          <!-- Note -->
+          <div class="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+            ⚠️ Runtime only - changes not saved to config
+          </div>
+        </div>
+      </div>
+    </div>
+    
     <!-- ═══════════════════════════════════════════════════════════════ -->
     <!-- CALIBRATION SECTION -->
     <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -1067,6 +1173,89 @@ $('setForceLimitBtn').addEventListener('click', async ()=>{
     setTimeout(()=>$('cmdStatus').textContent='',3000);
   }catch(e){ $('cmdStatus').textContent='❌ Error: '+e.message; setTimeout(()=>$('cmdStatus').textContent='',3000); }
 });
+
+// Server ID and Hybrid Parameters
+$('setServerIdBtn').addEventListener('click', async ()=>{
+  const inputElem = $('serverIdInput');
+  const value = parseInt(inputElem.value);
+  
+  if(isNaN(value) || value < 0) {
+    $('cmdStatus').textContent='❌ Invalid server ID (must be >= 0)';
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+    return;
+  }
+  
+  $('cmdStatus').textContent=`⚙️ Setting server ID to ${value}...`;
+  try{
+    const r=await fetch('/api/server_config/set_server_id',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server_id: value})});
+    if(!r.ok){ $('cmdStatus').textContent='❌ Set server ID failed'; setTimeout(()=>$('cmdStatus').textContent='',3000); return; }
+    const resp=await r.json();
+    $('cmdStatus').textContent=`✅ Server ID set to ${resp.server_id}`;
+    updateServerConfig(); // Refresh display
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+  }catch(e){ $('cmdStatus').textContent='❌ Error: '+e.message; setTimeout(()=>$('cmdStatus').textContent='',3000); }
+});
+
+$('setHybridParamsBtn').addEventListener('click', async ()=>{
+  const highBase = parseFloat($('hybridHighBaseInput').value);
+  const lowBase = parseFloat($('hybridLowBaseInput').value);
+  const step = parseFloat($('hybridStepInput').value);
+  
+  const payload = {};
+  if(!isNaN(highBase)) payload.high_base = highBase;
+  if(!isNaN(lowBase)) payload.low_base = lowBase;
+  if(!isNaN(step)) payload.step = step;
+  
+  if(Object.keys(payload).length === 0) {
+    $('cmdStatus').textContent='❌ No valid parameters provided';
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+    return;
+  }
+  
+  $('cmdStatus').textContent=`⚙️ Updating hybrid parameters...`;
+  try{
+    const r=await fetch('/api/server_config/set_hybrid_params',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){ $('cmdStatus').textContent='❌ Set hybrid params failed'; setTimeout(()=>$('cmdStatus').textContent='',3000); return; }
+    const resp=await r.json();
+    $('cmdStatus').textContent=`✅ Hybrid parameters updated`;
+    // Clear inputs after successful set
+    $('hybridHighBaseInput').value = '';
+    $('hybridLowBaseInput').value = '';
+    $('hybridStepInput').value = '';
+    updateServerConfig(); // Refresh display
+    setTimeout(()=>$('cmdStatus').textContent='',3000);
+  }catch(e){ $('cmdStatus').textContent='❌ Error: '+e.message; setTimeout(()=>$('cmdStatus').textContent='',3000); }
+});
+
+async function updateServerConfig() {
+  try {
+    const resp = await fetch('/api/server_config');
+    if(!resp.ok) return;
+    const data = await resp.json();
+    
+    // Update server ID display (left card)
+    $('currentServerId').textContent = data.server_id;
+    
+    // Update current parameters display (right card)
+    $('currentHighBase').textContent = `${data.hybrid_params.high_base.toFixed(1)} mm`;
+    $('currentLowBase').textContent = `${data.hybrid_params.low_base.toFixed(1)} mm`;
+    $('currentStep').textContent = `${data.hybrid_params.step.toFixed(1)} mm`;
+    
+    // Update calculated positions display (left card)
+    $('hybridHighPos').textContent = `${data.hybrid_positions.high_pos.toFixed(1)} mm`;
+    $('hybridLowPos').textContent = `${data.hybrid_positions.low_pos.toFixed(1)} mm`;
+    $('currentHybridStep').textContent = `${data.hybrid_params.step.toFixed(1)} mm`;
+    
+    // DO NOT update input fields - let user edit them without interference
+  } catch(e) {
+    console.error('Failed to update server config:', e);
+  }
+}
+
+// Update server config every 2 seconds
+setInterval(updateServerConfig, 2000);
+// Initial load
+updateServerConfig();
 
 async function updateCalibrationSamples() {
   try {

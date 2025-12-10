@@ -68,6 +68,10 @@ def generate_launch_description():
     web_listen_host_default = get_config_value('lift_robot.web.listen_host', '0.0.0.0')
     web_sensor_topic_default = get_config_value('lift_robot.web.sensor_topic', '/draw_wire_sensor/data')
     web_delay_default = get_config_value('lift_robot.web.launch_delay', '5.5')
+    web_server_id_default = get_config_value('lift_robot.web.server_id', '0')
+    web_hybrid_high_base_default = get_config_value('lift_robot.web.hybrid_params.high_base', '756.0')
+    web_hybrid_low_base_default = get_config_value('lift_robot.web.hybrid_params.low_base', '736.0')
+    web_hybrid_step_default = get_config_value('lift_robot.web.hybrid_params.step', '48.0')
     
     print(f"[lift_robot_bringup] Loaded config defaults:")
     print(f"  Modbus: port={modbus_port_default}, baudrate={modbus_baudrate_default}, timeout={modbus_timeout_default}s")
@@ -76,6 +80,7 @@ def generate_launch_description():
     print(f"  Force Right: device_id={force_right_device_id_default}, interval={force_right_interval_default}, delay={force_right_delay_default}")
     print(f"  Force Left: device_id={force_left_device_id_default}, interval={force_left_interval_default}, delay={force_left_delay_default}")
     print(f"  Web: port={web_port_default}, enabled={web_enabled_default}, delay={web_delay_default}")
+    print(f"  Web Hybrid: server_id={web_server_id_default}, high_base={web_hybrid_high_base_default}, low_base={web_hybrid_low_base_default}, step={web_hybrid_step_default}")
     
     # Launch arguments - Modbus Driver
     modbus_port_arg = DeclareLaunchArgument(
@@ -154,6 +159,14 @@ def generate_launch_description():
         'web_sensor_topic', default_value=web_sensor_topic_default, description='Web sensor topic')
     web_delay_arg = DeclareLaunchArgument(
         'web_delay', default_value=web_delay_default, description='Web interface launch delay (s)')
+    web_server_id_arg = DeclareLaunchArgument(
+        'web_server_id', default_value=web_server_id_default, description='Server ID for hybrid control')
+    web_hybrid_high_base_arg = DeclareLaunchArgument(
+        'web_hybrid_high_base', default_value=web_hybrid_high_base_default, description='Hybrid high position base height (mm)')
+    web_hybrid_low_base_arg = DeclareLaunchArgument(
+        'web_hybrid_low_base', default_value=web_hybrid_low_base_default, description='Hybrid low position base height (mm)')
+    web_hybrid_step_arg = DeclareLaunchArgument(
+        'web_hybrid_step', default_value=web_hybrid_step_default, description='Hybrid step distance per ID (mm)')
     # Paths to launch files
     modbus_path = os.path.join(
         get_package_share_directory('modbus_driver'),
@@ -270,7 +283,11 @@ def generate_launch_description():
                 'port': LaunchConfiguration('web_port'),
                 'host': LaunchConfiguration('web_host'),
                 'listen_host': LaunchConfiguration('web_listen_host'),
-                'sensor_topic': LaunchConfiguration('web_sensor_topic')
+                'sensor_topic': LaunchConfiguration('web_sensor_topic'),
+                'server_id': LaunchConfiguration('web_server_id'),
+                'hybrid_high_base': LaunchConfiguration('web_hybrid_high_base'),
+                'hybrid_low_base': LaunchConfiguration('web_hybrid_low_base'),
+                'hybrid_step': LaunchConfiguration('web_hybrid_step')
             }.items()
         )],
         condition=IfCondition(LaunchConfiguration('web_enabled'))
@@ -316,6 +333,10 @@ def generate_launch_description():
         web_listen_host_arg,
         web_sensor_topic_arg,
         web_delay_arg,
+        web_server_id_arg,
+        web_hybrid_high_base_arg,
+        web_hybrid_low_base_arg,
+        web_hybrid_step_arg,
         # Launch actions
         modbus_launch,
         lift_robot_launch,

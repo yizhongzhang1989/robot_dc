@@ -292,3 +292,10 @@ lift_robot:
       left_raw: "/force_sensor_left/raw"
     launch_delay: 5.5         # Delay after modbus driver ready (seconds)
     enabled: true             # Launch web interface
+    
+    # Server and Hybrid Control Configuration
+    server_id: 0              # Server ID for hybrid control calculations
+    hybrid_params:
+      high_base: 756.0        # Base height for high position (mm)
+      low_base: 736.0         # Base height for low position (mm)
+      step: 48.0              # Step distance between different IDs (mm per ID)

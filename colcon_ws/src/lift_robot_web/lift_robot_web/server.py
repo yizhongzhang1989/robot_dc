@@ -23,8 +23,17 @@ class LiftRobotWeb(Node):
         super().__init__('lift_robot_web_node')
         self.declare_parameter('port', 8090)
         self.declare_parameter('sensor_topic', '/draw_wire_sensor/data')
+        self.declare_parameter('server_id', 0)
+        self.declare_parameter('hybrid_high_base', 756.0)
+        self.declare_parameter('hybrid_low_base', 736.0)
+        self.declare_parameter('hybrid_step', 48.0)
+        
         self.port = self.get_parameter('port').value
         self.sensor_topic = self.get_parameter('sensor_topic').value
+        self.server_id = self.get_parameter('server_id').value
+        self.hybrid_high_base = self.get_parameter('hybrid_high_base').value
+        self.hybrid_low_base = self.get_parameter('hybrid_low_base').value
+        self.hybrid_step = self.get_parameter('hybrid_step').value
 
         # Portable config directory resolution
         env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
@@ -538,7 +547,92 @@ def run_fastapi_server(port):
                 }
             if not response:
                 return JSONResponse({'error': 'no status data available'}, status_code=503)
+            
+            # Add server_id and hybrid parameters to response
+            response['server_id'] = lift_robot_node.server_id
+            response['hybrid_params'] = {
+                'high_base': lift_robot_node.hybrid_high_base,
+                'low_base': lift_robot_node.hybrid_low_base,
+                'step': lift_robot_node.hybrid_step
+            }
+            response['hybrid_positions'] = {
+                'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
+            }
+            
             return response
+        
+        # Server ID and Hybrid Control API
+        @app.get('/api/server_config')
+        def get_server_config():
+            """Get server ID and hybrid control configuration"""
+            return {
+                'server_id': lift_robot_node.server_id,
+                'hybrid_params': {
+                    'high_base': lift_robot_node.hybrid_high_base,
+                    'low_base': lift_robot_node.hybrid_low_base,
+                    'step': lift_robot_node.hybrid_step
+                },
+                'hybrid_positions': {
+                    'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                    'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
+                }
+            }
+        
+        @app.post('/api/server_config/set_server_id')
+        async def set_server_id(payload: dict):
+            """Set server ID (runtime only, does not persist to config)"""
+            server_id = payload.get('server_id')
+            if server_id is None:
+                return JSONResponse({'success': False, 'error': 'Missing server_id field'}, status_code=400)
+            try:
+                lift_robot_node.server_id = int(server_id)
+                lift_robot_node.get_logger().info(f"Server ID updated to: {lift_robot_node.server_id}")
+                return {
+                    'success': True,
+                    'server_id': lift_robot_node.server_id,
+                    'hybrid_positions': {
+                        'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                        'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
+                    }
+                }
+            except (ValueError, TypeError) as e:
+                return JSONResponse({'success': False, 'error': f'Invalid server_id: {e}'}, status_code=400)
+        
+        @app.post('/api/server_config/set_hybrid_params')
+        async def set_hybrid_params(payload: dict):
+            """Set hybrid control parameters (runtime only, does not persist to config)"""
+            high_base = payload.get('high_base')
+            low_base = payload.get('low_base')
+            step = payload.get('step')
+            
+            try:
+                if high_base is not None:
+                    lift_robot_node.hybrid_high_base = float(high_base)
+                if low_base is not None:
+                    lift_robot_node.hybrid_low_base = float(low_base)
+                if step is not None:
+                    lift_robot_node.hybrid_step = float(step)
+                
+                lift_robot_node.get_logger().info(
+                    f"Hybrid params updated: high_base={lift_robot_node.hybrid_high_base}, "
+                    f"low_base={lift_robot_node.hybrid_low_base}, step={lift_robot_node.hybrid_step}"
+                )
+                
+                return {
+                    'success': True,
+                    'hybrid_params': {
+                        'high_base': lift_robot_node.hybrid_high_base,
+                        'low_base': lift_robot_node.hybrid_low_base,
+                        'step': lift_robot_node.hybrid_step
+                    },
+                    'hybrid_positions': {
+                        'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                        'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
+                    }
+                }
+            except (ValueError, TypeError) as e:
+                return JSONResponse({'success': False, 'error': f'Invalid parameter value: {e}'}, status_code=400)
         
         # Calibration API endpoints
         @app.post('/api/calibration/add_sample')
