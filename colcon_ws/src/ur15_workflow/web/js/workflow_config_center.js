@@ -1,9 +1,10 @@
 // Workflow Config Center JavaScript Functions
 
-// Get API base URL - dynamically adapt to current hostname
+// Get API base URL - dynamically adapt to current hostname and port
 function getApiBaseUrl() {
-    const hostname = window.location.hostname;
-    return `http://${hostname}:8008`;
+    // Use the same origin (protocol + hostname + port) as the current page
+    // This way the API calls go to the same server that served the page
+    return window.location.origin;
 }
 
 // Load workflow templates
