@@ -80,6 +80,8 @@ class UR15WebNode(Node):
         self.declare_parameter('calib_data_dir', '/tmp/ur15_cam_calibration_data')
         self.declare_parameter('calib_result_dir', '/tmp/ur15_cam_calibration_result')
         self.declare_parameter('chessboard_config', '/tmp/ur15_cam_calibration_data/chessboard_config.json')
+        self.declare_parameter('image_labeling_port', 8007)
+        self.declare_parameter('workflow_config_center_port', 8008)
         
         # Get parameters
         self.camera_topic = self.get_parameter('camera_topic').value
@@ -90,6 +92,8 @@ class UR15WebNode(Node):
         self.calibration_data_dir = self.get_parameter('calib_data_dir').value
         self.calibration_result_dir = self.get_parameter('calib_result_dir').value
         self.chessboard_config = self.get_parameter('chessboard_config').value
+        self.image_labeling_port = self.get_parameter('image_labeling_port').value
+        self.workflow_config_center_port = self.get_parameter('workflow_config_center_port').value
         
         # Use only the specified port, clear it if occupied
         try:
@@ -1092,7 +1096,7 @@ class UR15WebNode(Node):
             
             # Use the same hostname as the request to build workflow config center URL
             host = request.host.split(':')[0]  # Extract hostname without port
-            workflow_url = f'http://{host}:8008'
+            workflow_url = f'http://{host}:{self.workflow_config_center_port}'
             
             self.get_logger().info(f"Redirecting to workflow config center: {workflow_url}")
             
@@ -1154,7 +1158,7 @@ class UR15WebNode(Node):
                 encoded_image_path = quote(image_path)
                 
                 # Build labeling URL with optional labels parameter
-                labeling_url = f'http://{host}:8007?imageUrl={image_url}&imagePath={encoded_image_path}'
+                labeling_url = f'http://{host}:{self.image_labeling_port}?imageUrl={image_url}&imagePath={encoded_image_path}'
                 
                 # If JSON file exists, add labelsUrl parameter
                 if os.path.exists(json_path):
@@ -1653,6 +1657,43 @@ class UR15WebNode(Node):
                 
                 # Set to robot_status (robot_status_redis doesn't need node parameter)
                 if set_to_status('ur15', 'rack_operating_unit_id', operating_unit):
+                    # Calculate initial server2base as the unit position on the rack
+                    try:
+                        # Get rack2base_matrix from robot_status
+                        rack2base_matrix = self.status_client.get_status('ur15', 'rack2base_matrix')
+                        if rack2base_matrix is None:
+                            self.get_logger().warning("rack2base_matrix not found in robot_status, cannot calculate server2base")
+                        elif self.server_frame_generator is None:
+                            self.get_logger().warning("server_frame_generator not initialized, cannot calculate server2base")
+                        else:
+                            # Generate server frame in rack coordinate system
+                            self.get_logger().info(f"Generating server frame for unit {operating_unit} in rack coordinate system...")
+                            server_frame_in_rack = self.server_frame_generator.generate_server_frame_in_rack(operating_unit)
+                            
+                            if server_frame_in_rack is not None:
+                                # Extract server2rack transformation matrix
+                                server2rack = server_frame_in_rack['target_server_transformation_matrix_in_rack']
+                                
+                                # Convert rack2base to numpy array
+                                rack2base = np.array(rack2base_matrix)
+                                
+                                # Calculate server2base = rack2base @ server2rack
+                                server2base = rack2base @ server2rack
+                                
+                                # Upload server2base_matrix to robot_status
+                                if set_to_status('ur15', 'server2base_matrix', server2base):
+                                    server_position = server2base[:3, 3]
+                                    self.get_logger().info(f"Successfully calculated and set server2base_matrix for unit {operating_unit}")
+                                    self.get_logger().info(f"Server position in base: ({server_position[0]:.6f}, {server_position[1]:.6f}, {server_position[2]:.6f})")
+                                else:
+                                    self.get_logger().warning("Failed to set server2base_matrix to robot_status")
+                            else:
+                                self.get_logger().warning(f"Failed to generate server frame for unit {operating_unit}")
+                    except Exception as e:
+                        self.get_logger().error(f"Error calculating server2base: {e}")
+                        import traceback
+                        traceback.print_exc()
+
                     self.get_logger().info(f"Successfully set rack_operating_unit_id to robot_status: {operating_unit}")
                     return jsonify({
                         'success': True,

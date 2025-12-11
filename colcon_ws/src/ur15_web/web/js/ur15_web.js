@@ -5,6 +5,9 @@ let validationActive = false;
 let cornerDetectionEnabled = false;
 let currentOperationPath = ''; // Store the full operation path
 
+// Rack position management
+let selectedRack = null;
+
 // Robot state update throttling
 let lastRobotStateUpdate = 0;
 let pendingRobotStateUpdate = null;
