@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager Interface</title>
+    <script src="tailwind.js"></script>
+    <style>
+        /* Status Bar Styles */
+        .status-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 2px solid #e5e7eb;
+            border-radius: 0;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+            padding: 0.75rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 0.75rem;
+        }
+        
+        /* Add padding to body to prevent content from being hidden under fixed status bar */
+        body {
+            padding-top: 120px;
+        }
+        
+        .status-bar-title {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-family: 'Inter', 'SF Pro Display', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #374151;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 0.5rem 0.4rem;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        
+        .status-bar-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .status-bar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .status-bar-item {
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 6px;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            transition: all 0.2s;
+            position: relative;
+            min-height: 60px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .status-bar-item:hover {
+            background: rgba(255, 255, 255, 0.95);
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-bar-label {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+            font-weight: 500;
+            color: #64748b;
+            font-size: 0.7rem;
+            line-height: 1;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .status-bar-value {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+            font-weight: 700;
+            color: #1e293b;
+            font-size: 1rem;
+            text-align: left;
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            line-height: 1.2;
+        }
+        
+        .status-bar-value.connected {
+            color: #10b981 !important;
+        }
+        
+        .status-bar-value.disconnected {
+            color: #ef4444 !important;
+        }
+        
+        .status-bar-value.warning {
+            color: #f59e0b !important;
+        }
+        
+        .status-bar-value.orange {
+            color: #fb923c !important;
+        }
+        
+        .status-bar-value.blue {
+            color: #3b82f6 !important;
+        }
+        
+        /* Clickable item styles */
+        .status-bar-item.clickable {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .status-bar-item.clickable:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .status-bar-item.clickable:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Row layout */
+        .status-bar-grid-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .status-bar-grid-row:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-full font-sans">
+    <!-- Status Bar (Fixed at top) -->
+    <div class="max-w-full px-4">
+        <div class="status-bar">
+            <div class="status-bar-title">
+                Status
+            </div>
+            <div class="status-bar-content">
+                <div class="status-bar-grid-row">
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">RTDE Connection</div>
+                        <div id="statusBarRtdeConnection" class="status-bar-value warning">Connecting...</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">UR15 System Status</div>
+                        <div id="statusBarRobotMode" class="status-bar-value warning">Connecting...</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">UR15 Safety Status</div>
+                        <div id="statusBarSafetyMode" class="status-bar-value warning">Connecting...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content Area -->
+    <div class="max-w-7xl mx-auto px-4">
+        <div class="text-center py-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">🤖 Task Manager</h1>
+            <p class="text-gray-600 text-lg">Robot Task Management Interface</p>
+        </div>
+        
+        <!-- Content will be added here -->
+    </div>
+    
+    <!-- JavaScript -->
+    <script src="/js/task_manager.js"></script>
+</body>
+</html>
