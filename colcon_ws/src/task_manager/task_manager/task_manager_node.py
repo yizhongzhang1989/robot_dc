@@ -7,6 +7,7 @@ import os
 import threading
 import time
 from ament_index_python.packages import get_package_share_directory
+from common.config_manager import ConfigManager
 
 # Import RTDE for robot status
 try:
@@ -28,6 +29,27 @@ class TaskManagerNode(Node):
         self.completed_tasks = 0
         self.system_status = 'Ready'
         self.robot_connection = 'Disconnected'
+        
+        # Load configuration
+        self.config = ConfigManager()
+        ur15_config = self.config.get_robot('ur15')
+        amr_config = self.config.get('amr')
+        lift_robot_config = self.config.get('lift_robot')
+        services_config = self.config.get('services')
+        shared_config = self.config.get('shared')
+        
+        self.ur15_web_port = ur15_config.get('web.port', 8030)
+        self.amr_web_port = amr_config.get('web.port', 5000)
+        self.courier_web_host = lift_robot_config.get('web.host', '192.168.1.3')
+        self.courier_web_port = lift_robot_config.get('web.port', 8090)
+        
+        # Service URLs
+        self.robot_status_port = services_config.get('robot_status_redis', {}).get('web', {}).get('port', 8005)
+        self.positioning_3d_port = services_config.get('positioning_3d', {}).get('port', 8004)
+        self.camcalib_web_port = services_config.get('camcalib_web', {}).get('port', 8006)
+        self.image_labeling_port = services_config.get('image_labeling', {}).get('port', 8007)
+        self.workflow_config_port = services_config.get('workflow_config_center', {}).get('port', 8008)
+        self.ffpp_server_url = shared_config.get('network', {}).get('ffpp_server', {}).get('url', 'http://msraig-ubuntu-4.guest.corp.microsoft.com:8001')
         
         # RTDE connection for robot_mode and safety_mode
         self.rtde_connection = None
@@ -101,6 +123,24 @@ class TaskManagerNode(Node):
                 'pending_tasks': self.pending_tasks,
                 'completed_tasks': self.completed_tasks,
                 'robot_connection': self.robot_connection
+            })
+        
+        @self.app.route('/api/web_urls')
+        def get_web_urls():
+            """API endpoint to get web interface URLs"""
+            # Use localhost for services running on same machine
+            localhost = 'localhost'
+            return jsonify({
+                'success': True,
+                'ur15_web_url': f'http://msra-yizhong.guest.corp.microsoft.com:{self.ur15_web_port}/',
+                'amr_web_url': f'http://msra-yizhong.guest.corp.microsoft.com:{self.amr_web_port}/',
+                'courier_web_url': f'http://{self.courier_web_host}:{self.courier_web_port}',
+                'robot_status_url': f'http://{localhost}:{self.robot_status_port}',
+                'positioning_3d_url': f'http://{localhost}:{self.positioning_3d_port}',
+                'camcalib_web_url': f'http://{localhost}:{self.camcalib_web_port}',
+                'image_labeling_url': f'http://{localhost}:{self.image_labeling_port}',
+                'workflow_config_url': f'http://{localhost}:{self.workflow_config_port}',
+                'ffpp_server_url': self.ffpp_server_url
             })
         
         @self.app.route('/api/robot_status')
