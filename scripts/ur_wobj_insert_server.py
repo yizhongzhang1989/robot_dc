@@ -156,6 +156,8 @@ class URWobjInsertServer(UROperateWobj):
             # or use default fallback if config not found
             self.courier_robot = CourierRobotWebAPI(verbose=True)
             
+            res = self.courier_robot.set_server_id(self.server_index)
+
             # Test connection by getting status
             status_result = self.courier_robot.get_status()
             if status_result.get('success', False):
