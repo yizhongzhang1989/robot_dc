@@ -18,6 +18,9 @@ class CourierRobotWebAPI:
     Provides all control functions available in the web interface
     """
     
+    # Class variable to track if initialization message has been printed
+    _initialization_logged = False
+    
     @staticmethod
     def _load_config_url():
         """
@@ -63,9 +66,9 @@ class CourierRobotWebAPI:
             base_url = self._load_config_url()
             if base_url is None:
                 base_url = "http://192.168.1.3:8090"  # Hardcoded fallback
-                if verbose:
+                if verbose and not CourierRobotWebAPI._initialization_logged:
                     print(f"⚠️  Config file not found, using default URL: {base_url}")
-            elif verbose:
+            elif verbose and not CourierRobotWebAPI._initialization_logged:
                 print(f"📄 Loaded URL from config: {base_url}")
         
         self.base_url = base_url
@@ -73,8 +76,11 @@ class CourierRobotWebAPI:
         self.background_task = None  # Track background task thread
         self.background_task_lock = threading.Lock()
         self.reset_flag = False  # Flag to signal background tasks to abort
-        if verbose:
+        
+        # Only print initialization message once per session
+        if verbose and not CourierRobotWebAPI._initialization_logged:
             print(f"📡 CourierRobot initialized with base URL: {base_url}")
+            CourierRobotWebAPI._initialization_logged = True
     
     def _send_command(self, target, command, **kwargs):
         """

@@ -196,6 +196,49 @@ class TaskManagerNode(Node):
                 'rtde_data': rtde_data if rtde_connected else {}
             })
         
+        @self.app.route('/api/courier_robot_status')
+        def get_courier_robot_status():
+            """API endpoint to get courier robot status from courier_robot_webapi.py"""
+            try:
+                # Import the CourierRobotWebAPI class using common workspace utils
+                import sys
+                from common.workspace_utils import get_scripts_directory
+                
+                # Get the scripts directory path
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    raise RuntimeError("Could not find scripts directory")
+                
+                if scripts_dir not in sys.path:
+                    sys.path.insert(0, scripts_dir)
+                
+                from courier_robot_webapi import CourierRobotWebAPI
+                
+                # Create an instance and get status
+                courier_api = CourierRobotWebAPI()
+                status_data = courier_api.get_status()
+                
+                return jsonify(status_data)
+                
+            except Exception as e:
+                self.get_logger().error(f"Error fetching courier robot status: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': str(e),
+                    'platform': {
+                        'task_state': 'Error',
+                        'movement_state': 'Error',
+                        'control_mode': 'Error',
+                        'force_limit_status': 'Error'
+                    },
+                    'pushrod': {
+                        'task_state': 'Error',
+                        'movement_state': 'Error'
+                    },
+                    'sensors': {},
+                    'server_id': 'N/A'
+                })
+
         @self.app.route('/api/device_connections')
         def get_device_connections():
             """API endpoint to get device connection status"""

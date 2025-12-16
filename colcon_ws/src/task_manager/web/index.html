@@ -756,6 +756,105 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Courier Robot Monitor -->
+                <div class="panel-with-title mt-4">
+                    <div class="panel-title">
+                        Courier Robot Monitor
+                    </div>
+                    <div class="panel-content">
+                        <div style="max-height: 300px; overflow-y: auto; padding-right: 4px; width: 100%;">
+                            
+                            <!-- System Information Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">ℹ️ System Information</h4>
+                                <div class="grid grid-cols-5 gap-2 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Task State</div>
+                                        <div id="platformTaskState" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Target Server ID</div>
+                                        <div id="courierServerId" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Frequency</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierFrequency" class="text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">Hz</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Max Force Limit</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierMaxForceLimit" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Force Limit Status</div>
+                                        <div id="platformForceLimitStatus" class="font-mono text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Component Status Section -->
+                            <div class="mb-4">
+                                <h4 class="text-base font-bold text-gray-800 mb-3 tracking-wide uppercase text-sm">⚙️ Component Status</h4>
+                                <div class="grid grid-cols-3 gap-2 text-sm">
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Platform State</div>
+                                        <div id="platformMovementState" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Pushrod State</div>
+                                        <div id="pushrodMovementState" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Control Mode</div>
+                                        <div id="platformControlMode" class="font-mono text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sensor Data Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">📊 Sensor Data</h4>
+                                <div class="grid grid-cols-4 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Current Height</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierHeight" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">mm</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Left Force</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierLeftForce" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Right Force</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierRightForce" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Combined Force</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierCombinedForce" class="text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize robot monitor
     initializeRobotMonitor();
     
+    // Initialize courier robot monitor
+    initializeCourierRobotMonitor();
+
     // Immediately fetch robot status multiple times for fast initial display
     fetchRobotStatus();
     setTimeout(() => fetchRobotStatus(), 100);
@@ -18,6 +21,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Fetch RTDE data for monitor
     fetchRtdeData();
+    
+    // Fetch courier robot status for monitor
+    fetchCourierRobotStatus();
     
     // Check device connections
     checkDeviceConnections();
@@ -70,28 +76,7 @@ function getCurrentTime() {
     return now.toLocaleTimeString('en-US', { hour12: false });
 }
 
-// Start periodic status updates
-function startPeriodicUpdates() {
-    // Fetch robot status every 100ms for fast updates
-    setInterval(() => {
-        fetchRobotStatus();
-    }, 100);
-    
-    // Fetch RTDE data every 500ms for robot monitor
-    setInterval(() => {
-        fetchRtdeData();
-    }, 500);
-    
-    // Check device connections every 5 seconds (reduced frequency)
-    setInterval(() => {
-        checkDeviceConnections();
-    }, 5000);
-    
-    // Check web services status every 5 seconds
-    setInterval(() => {
-        checkWebServicesStatus();
-    }, 5000);
-}
+// Removed duplicate function - merged into the main startPeriodicUpdates function
 
 // Fetch system status from backend
 async function fetchSystemStatus() {
@@ -451,16 +436,16 @@ function updateRobotMonitor(rtdeData) {
         // Robot Status
         if (rtdeData.robot_mode !== undefined) {
             const robotModes = {
-                '-1': 'NO_CONTROLLER',
-                '0': 'DISCONNECTED',
-                '1': 'CONFIRM_SAFETY',
-                '2': 'BOOTING',
-                '3': 'POWER_OFF',
-                '4': 'POWER_ON',
-                '5': 'IDLE',
-                '6': 'BACKDRIVE',
-                '7': 'RUNNING',
-                '8': 'UPDATING_FIRMWARE'
+                '-1': 'No controller',
+                '0': 'Disconnected',
+                '1': 'Confirm safety',
+                '2': 'Booting',
+                '3': 'Power off',
+                '4': 'Power on',
+                '5': 'Idle',
+                '6': 'Backdrive',
+                '7': 'Running',
+                '8': 'Updating firmware'
             };
             const modeText = robotModes[rtdeData.robot_mode.toString()] || `Unknown(${rtdeData.robot_mode})`;
             updateMonitorField('robotMode', modeText);
@@ -759,11 +744,20 @@ function updateQuickNavServiceStatus(serviceName, isOnline) {
 function startPeriodicUpdates() {
     console.log('Starting periodic updates...');
     
-    // Update robot status every 2 seconds
+    // Fetch robot status every 100ms for fast updates
     setInterval(() => {
         fetchRobotStatus();
+    }, 100);
+    
+    // Fetch RTDE data every 500ms for robot monitor
+    setInterval(() => {
         fetchRtdeData();
-    }, 2000);
+    }, 500);
+    
+    // Fetch courier robot status every 200ms for courier robot monitor
+    setInterval(() => {
+        fetchCourierRobotStatus();
+    }, 200);
     
     // Update device connections every 5 seconds
     setInterval(() => {
@@ -831,6 +825,190 @@ async function testServiceStatus(serviceName, serviceUrl) {
         updateQuickNavServiceStatus(serviceName, true);
     } catch (error) {
         updateQuickNavServiceStatus(serviceName, false);
+    }
+}
+
+// Courier Robot Monitor Functions
+function initializeCourierRobotMonitor() {
+    
+    // Initialize all courier monitor fields with default values
+    const courierFields = [
+        'platformTaskState', 'platformMovementState', 'platformControlMode', 'platformForceLimitStatus',
+        'pushrodMovementState',
+        'courierHeight', 'courierLeftForce', 'courierRightForce', 'courierCombinedForce',
+        'courierServerId', 'courierFrequency', 'courierMaxForceLimit'
+    ];
+    
+    courierFields.forEach(fieldId => {
+        const element = document.getElementById(fieldId);
+        if (element) {
+            element.textContent = '--';
+        }
+    });
+}
+
+// Fetch courier robot status from the courier robot web API
+async function fetchCourierRobotStatus() {
+    try {
+        // Use the courier robot web API endpoint
+        const response = await fetch('/api/courier_robot_status');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                updateCourierRobotMonitor(data);
+            } else {
+                console.log('Courier robot status fetch failed or no data available');
+                clearCourierRobotMonitorData();
+            }
+        } else {
+            console.error('Failed to fetch courier robot status:', response.status);
+            clearCourierRobotMonitorData();
+        }
+    } catch (error) {
+        console.error('Error fetching courier robot status:', error);
+        clearCourierRobotMonitorData();
+    }
+}
+
+// Update courier robot monitor display
+function updateCourierRobotMonitor(data) {
+    try {
+        // Update Platform Status
+        if (data.platform) {
+            // Handle platform task state with color coding
+            const platformTaskElement = document.getElementById('platformTaskState');
+            if (platformTaskElement && data.platform.task_state) {
+                platformTaskElement.textContent = data.platform.task_state;
+                
+                // Color coding based on task state
+                if (data.platform.task_state === 'completed') {
+                    platformTaskElement.className = 'font-mono text-green-600 font-bold';
+                } else if (data.platform.task_state === 'running') {
+                    platformTaskElement.className = 'font-mono text-red-600 font-bold';
+                } else {
+                    platformTaskElement.className = 'font-mono text-blue-600 font-bold';
+                }
+            } else if (platformTaskElement) {
+                platformTaskElement.textContent = '--';
+                platformTaskElement.className = 'font-mono text-blue-600 font-bold';
+            }
+            
+            // Handle platform movement state with color coding
+            const platformMovementElement = document.getElementById('platformMovementState');
+            if (platformMovementElement && data.platform.movement_state) {
+                platformMovementElement.textContent = data.platform.movement_state;
+                
+                // Color coding based on movement state (same as pushrod)
+                if (data.platform.movement_state === 'stop') {
+                    platformMovementElement.className = 'font-mono text-red-600 font-bold';
+                } else if (data.platform.movement_state === 'up') {
+                    platformMovementElement.className = 'font-mono text-orange-600 font-bold';
+                } else if (data.platform.movement_state === 'down') {
+                    platformMovementElement.className = 'font-mono text-green-600 font-bold';
+                } else {
+                    platformMovementElement.className = 'font-mono text-green-600 font-bold';
+                }
+            } else if (platformMovementElement) {
+                platformMovementElement.textContent = '--';
+                platformMovementElement.className = 'font-mono text-green-600 font-bold';
+            }
+            
+            updateCourierMonitorField('platformControlMode', data.platform.control_mode);
+            
+            // Handle force limit status with color coding
+            const forceLimitElement = document.getElementById('platformForceLimitStatus');
+            if (forceLimitElement && data.platform.force_limit_status) {
+                forceLimitElement.textContent = data.platform.force_limit_status;
+                
+                // Color coding based on force limit status
+                if (data.platform.force_limit_status === 'ok') {
+                    forceLimitElement.className = 'font-mono text-green-600 font-bold';
+                } else if (data.platform.force_limit_status === 'exceeded') {
+                    forceLimitElement.className = 'font-mono text-red-600 font-bold';
+                } else if (data.platform.force_limit_status === 'disabled') {
+                    forceLimitElement.className = 'font-mono text-orange-600 font-bold';
+                } else {
+                    forceLimitElement.className = 'font-mono text-purple-600 font-bold';
+                }
+            }
+            
+            updateCourierMonitorField('courierMaxForceLimit', 
+                data.platform.max_force_limit !== undefined ? 
+                data.platform.max_force_limit.toFixed(1) : '--');
+        }
+        
+        // Update Pushrod Status
+        if (data.pushrod) {
+            
+            // Handle pushrod movement state with color coding
+            const pushrodMovementElement = document.getElementById('pushrodMovementState');
+            if (pushrodMovementElement && data.pushrod.movement_state) {
+                pushrodMovementElement.textContent = data.pushrod.movement_state;
+                
+                // Color coding based on movement state
+                if (data.pushrod.movement_state === 'stop') {
+                    pushrodMovementElement.className = 'font-mono text-red-600 font-bold';
+                } else if (data.pushrod.movement_state === 'up') {
+                    pushrodMovementElement.className = 'font-mono text-orange-600 font-bold';
+                } else if (data.pushrod.movement_state === 'down') {
+                    pushrodMovementElement.className = 'font-mono text-green-600 font-bold';
+                } else {
+                    pushrodMovementElement.className = 'font-mono text-green-600 font-bold';
+                }
+            } else if (pushrodMovementElement) {
+                pushrodMovementElement.textContent = '--';
+                pushrodMovementElement.className = 'font-mono text-green-600 font-bold';
+            }
+        }
+        
+        // Update Sensor Data
+        if (data.sensors) {
+            updateCourierMonitorField('courierHeight', 
+                data.sensors.height !== undefined && data.sensors.height !== null ? 
+                data.sensors.height.toFixed(1) : '--');
+            updateCourierMonitorField('courierLeftForce', 
+                data.sensors.left_force !== undefined && data.sensors.left_force !== null ? 
+                data.sensors.left_force.toFixed(2) : '--');
+            updateCourierMonitorField('courierRightForce', 
+                data.sensors.right_force !== undefined && data.sensors.right_force !== null ? 
+                data.sensors.right_force.toFixed(2) : '--');
+            updateCourierMonitorField('courierCombinedForce', 
+                data.sensors.combined_force !== undefined && data.sensors.combined_force !== null ? 
+                data.sensors.combined_force.toFixed(2) : '--');
+            updateCourierMonitorField('courierFrequency', 
+                data.sensors.freq_hz !== undefined && data.sensors.freq_hz !== null ? 
+                data.sensors.freq_hz.toFixed(1) : '--');
+        }
+        
+        // Update System Information
+        updateCourierMonitorField('courierServerId', 
+            data.server_id !== undefined ? data.server_id : '--');
+        
+    } catch (error) {
+        console.error('Error updating courier robot monitor:', error);
+        clearCourierRobotMonitorData();
+    }
+}
+
+// Clear courier robot monitor data when connection fails
+function clearCourierRobotMonitorData() {
+    const courierFields = [
+        'platformTaskState', 'platformMovementState', 'platformControlMode', 'platformForceLimitStatus',
+        'pushrodMovementState',
+        'courierHeight', 'courierLeftForce', 'courierRightForce', 'courierCombinedForce',
+        'courierServerId', 'courierFrequency', 'courierMaxForceLimit'
+    ];
+    
+    courierFields.forEach(fieldId => {
+        updateCourierMonitorField(fieldId, '--');
+    });
+}
+
+// Helper function to update courier monitor fields
+function updateCourierMonitorField(fieldId, value) {
+    const element = document.getElementById(fieldId);
+    if (element) {
+        element.textContent = value || '--';
     }
 }
 
