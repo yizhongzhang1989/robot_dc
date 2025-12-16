@@ -1128,6 +1128,9 @@ def interactive_mode(robot):
       help, h, ?        - Show this help
       quit, exit, q     - Exit interactive mode
     
+    Server Configuration:
+      setid <id>        - Set server ID (updates high_pos/low_pos), e.g., 'setid 15'
+    
     Platform Height Control:
       goto <height>     - Go to height (mm), e.g., 'goto 900' (runs in background, can be interrupted)
       g <height>        - Short form of goto
