@@ -1202,6 +1202,17 @@ def interactive_mode(robot):
             elif command in ['sensor', 'sn']:
                 robot.get_sensor_data()
             
+            # Server ID configuration
+            elif command == 'setid':
+                if len(parts) < 2:
+                    print("❌ Usage: setid <id>")
+                else:
+                    try:
+                        server_id = int(parts[1])
+                        robot.set_server_id(server_id)
+                    except ValueError:
+                        print("❌ Invalid server ID value")
+            
             # Platform height control
             elif command in ['goto', 'g', 'goto!', 'g!']:
                 if len(parts) < 2:
