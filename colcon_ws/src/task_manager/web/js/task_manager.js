@@ -7,14 +7,26 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize status bar
     initializeStatusBar();
     
+    // Initialize robot monitor
+    initializeRobotMonitor();
+    
     // Immediately fetch robot status multiple times for fast initial display
     fetchRobotStatus();
     setTimeout(() => fetchRobotStatus(), 100);
     setTimeout(() => fetchRobotStatus(), 300);
     setTimeout(() => fetchRobotStatus(), 500);
     
-    // Check web services status
-    checkWebServicesStatus();
+    // Fetch RTDE data for monitor
+    fetchRtdeData();
+    
+    // Check device connections
+    checkDeviceConnections();
+    
+    // Initialize Quick Navigation status
+    initializeQuickNavStatus();
+    
+    // Immediately check service statuses for faster initial display
+    updateAllServiceStatuses();
     
     // Setup button click handlers
     setupButtonHandlers();
@@ -64,6 +76,16 @@ function startPeriodicUpdates() {
     setInterval(() => {
         fetchRobotStatus();
     }, 100);
+    
+    // Fetch RTDE data every 500ms for robot monitor
+    setInterval(() => {
+        fetchRtdeData();
+    }, 500);
+    
+    // Check device connections every 5 seconds (reduced frequency)
+    setInterval(() => {
+        checkDeviceConnections();
+    }, 5000);
     
     // Check web services status every 5 seconds
     setInterval(() => {
@@ -371,6 +393,444 @@ async function checkWebService(url, elementId, serviceName) {
             element.textContent = 'Disconnected';
             element.className = 'status-bar-value disconnected';
         }
+    }
+}
+
+// UR15 Robot Monitor Functions
+function initializeRobotMonitor() {
+    console.log('Initializing UR15 Robot Monitor...');
+    
+    // Initialize all monitor fields with default values
+    const fields = [
+        'robotMode', 'safetyMode', 'runtimeState', 'speedScaling',
+        'tcpPosX', 'tcpPosY', 'tcpPosZ', 'tcpRotX', 'tcpRotY', 'tcpRotZ',
+        'joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6',
+        'mainVoltage', 'robotCurrent', 'toolTemperature', 'tcpForceScalar',
+        'digitalInputBits', 'digitalOutputBits', 'analogInput0', 'analogInput1',
+        'tcpLinearSpeed', 'tcpAngularSpeed',
+        'jointVel1', 'jointVel2', 'jointVel3', 'jointVel4', 'jointVel5', 'jointVel6',
+        'jointCur1', 'jointCur2', 'jointCur3', 'jointCur4', 'jointCur5', 'jointCur6',
+        'jointTemp1', 'jointTemp2', 'jointTemp3', 'jointTemp4', 'jointTemp5', 'jointTemp6',
+        'toolAnalogInput0', 'toolAnalogInput1', 'toolOutputVoltage', 'toolOutputCurrent',
+        'payloadMass', 'actualMomentum', 'actualExecutionTime', 'targetExecutionTime'
+    ];
+    
+    fields.forEach(fieldId => {
+        const element = document.getElementById(fieldId);
+        if (element) {
+            element.textContent = '--';
+        }
+    });
+}
+
+// Fetch RTDE data from backend
+async function fetchRtdeData() {
+    try {
+        const response = await fetch('/api/rtde_data');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.rtde_data) {
+                updateRobotMonitor(data.rtde_data);
+            } else {
+                console.log('RTDE data fetch failed or no data available');
+                clearRobotMonitorData();
+            }
+        } else {
+            console.error('Failed to fetch RTDE data:', response.status);
+            clearRobotMonitorData();
+        }
+    } catch (error) {
+        console.error('Error fetching RTDE data:', error);
+        clearRobotMonitorData();
+    }
+}
+
+// Update robot monitor display
+function updateRobotMonitor(rtdeData) {
+    try {
+        // Robot Status
+        if (rtdeData.robot_mode !== undefined) {
+            const robotModes = {
+                '-1': 'NO_CONTROLLER',
+                '0': 'DISCONNECTED',
+                '1': 'CONFIRM_SAFETY',
+                '2': 'BOOTING',
+                '3': 'POWER_OFF',
+                '4': 'POWER_ON',
+                '5': 'IDLE',
+                '6': 'BACKDRIVE',
+                '7': 'RUNNING',
+                '8': 'UPDATING_FIRMWARE'
+            };
+            const modeText = robotModes[rtdeData.robot_mode.toString()] || `Unknown(${rtdeData.robot_mode})`;
+            updateMonitorField('robotMode', modeText);
+        }
+        
+        if (rtdeData.safety_mode !== undefined) {
+            const safetyModes = {
+                '1': 'Normal',
+                '2': 'Reduced',
+                '3': 'Protective Stop',
+                '4': 'Recovery',
+                '5': 'Safeguard Stop',
+                '6': 'System Emergency Stop',
+                '7': 'Robot Emergency Stop',
+                '8': 'Emergency Stop',
+                '9': 'Violation',
+                '10': 'Fault',
+                '11': 'Validate Stop'
+            };
+            const safetyText = safetyModes[rtdeData.safety_mode.toString()] || `Unknown(${rtdeData.safety_mode})`;
+            updateMonitorField('safetyMode', safetyText);
+        }
+        
+        if (rtdeData.runtime_state !== undefined) {
+            const runtimeStates = {
+                '0': 'Stopping',
+                '1': 'Stopped',
+                '2': 'Playing',
+                '3': 'Pausing',
+                '4': 'Paused',
+                '5': 'Resuming'
+            };
+            const runtimeText = runtimeStates[rtdeData.runtime_state.toString()] || `Unknown(${rtdeData.runtime_state})`;
+            updateMonitorField('runtimeState', runtimeText);
+        }
+        
+        if (rtdeData.speed_scaling !== undefined) {
+            updateMonitorField('speedScaling', `${(rtdeData.speed_scaling * 100).toFixed(1)}%`);
+        }
+        
+        // TCP Position
+        if (rtdeData.actual_TCP_pose && Array.isArray(rtdeData.actual_TCP_pose) && rtdeData.actual_TCP_pose.length >= 6) {
+            updateMonitorField('tcpPosX', rtdeData.actual_TCP_pose[0].toFixed(4));
+            updateMonitorField('tcpPosY', rtdeData.actual_TCP_pose[1].toFixed(4));
+            updateMonitorField('tcpPosZ', rtdeData.actual_TCP_pose[2].toFixed(4));
+            updateMonitorField('tcpRotX', rtdeData.actual_TCP_pose[3].toFixed(4));
+            updateMonitorField('tcpRotY', rtdeData.actual_TCP_pose[4].toFixed(4));
+            updateMonitorField('tcpRotZ', rtdeData.actual_TCP_pose[5].toFixed(4));
+        }
+        
+        // Joint Positions (convert from radians to degrees)
+        if (rtdeData.actual_q && Array.isArray(rtdeData.actual_q) && rtdeData.actual_q.length >= 6) {
+            const jointIds = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'];
+            for (let i = 0; i < 6; i++) {
+                const degrees = (rtdeData.actual_q[i] * 180 / Math.PI).toFixed(1);
+                updateMonitorField(jointIds[i], degrees);
+            }
+        }
+        
+        // Power and Temperature
+        if (rtdeData.actual_main_voltage !== undefined) {
+            updateMonitorField('mainVoltage', rtdeData.actual_main_voltage.toFixed(1));
+        }
+        
+        if (rtdeData.actual_robot_current !== undefined) {
+            updateMonitorField('robotCurrent', rtdeData.actual_robot_current.toFixed(2));
+        }
+        
+        if (rtdeData.tool_temperature !== undefined) {
+            updateMonitorField('toolTemperature', rtdeData.tool_temperature.toFixed(1));
+        }
+        
+        if (rtdeData.tcp_force_scalar !== undefined) {
+            updateMonitorField('tcpForceScalar', rtdeData.tcp_force_scalar.toFixed(1));
+        }
+        
+        // I/O Status
+        if (rtdeData.actual_digital_input_bits !== undefined) {
+            updateMonitorField('digitalInputBits', `0b${rtdeData.actual_digital_input_bits.toString(2).padStart(8, '0')}`);
+        }
+        
+        if (rtdeData.actual_digital_output_bits !== undefined) {
+            updateMonitorField('digitalOutputBits', `0b${rtdeData.actual_digital_output_bits.toString(2).padStart(8, '0')}`);
+        }
+        
+        if (rtdeData.standard_analog_input0 !== undefined) {
+            updateMonitorField('analogInput0', rtdeData.standard_analog_input0.toFixed(3));
+        }
+        
+        if (rtdeData.standard_analog_input1 !== undefined) {
+            updateMonitorField('analogInput1', rtdeData.standard_analog_input1.toFixed(3));
+        }
+        
+        // TCP Speed
+        if (rtdeData.actual_TCP_speed && Array.isArray(rtdeData.actual_TCP_speed) && rtdeData.actual_TCP_speed.length >= 6) {
+            const linearSpeed = Math.sqrt(
+                rtdeData.actual_TCP_speed[0]**2 + 
+                rtdeData.actual_TCP_speed[1]**2 + 
+                rtdeData.actual_TCP_speed[2]**2
+            );
+            const angularSpeed = Math.sqrt(
+                rtdeData.actual_TCP_speed[3]**2 + 
+                rtdeData.actual_TCP_speed[4]**2 + 
+                rtdeData.actual_TCP_speed[5]**2
+            );
+            updateMonitorField('tcpLinearSpeed', linearSpeed.toFixed(4));
+            updateMonitorField('tcpAngularSpeed', angularSpeed.toFixed(4));
+        }
+        
+        // Joint Velocities
+        if (rtdeData.actual_qd && Array.isArray(rtdeData.actual_qd) && rtdeData.actual_qd.length >= 6) {
+            const jointVelIds = ['jointVel1', 'jointVel2', 'jointVel3', 'jointVel4', 'jointVel5', 'jointVel6'];
+            for (let i = 0; i < 6; i++) {
+                updateMonitorField(jointVelIds[i], rtdeData.actual_qd[i].toFixed(3));
+            }
+        }
+        
+        // Joint Currents
+        if (rtdeData.actual_current && Array.isArray(rtdeData.actual_current) && rtdeData.actual_current.length >= 6) {
+            const jointCurIds = ['jointCur1', 'jointCur2', 'jointCur3', 'jointCur4', 'jointCur5', 'jointCur6'];
+            for (let i = 0; i < 6; i++) {
+                updateMonitorField(jointCurIds[i], rtdeData.actual_current[i].toFixed(2));
+            }
+        }
+        
+        // Joint Temperatures
+        if (rtdeData.joint_temperatures && Array.isArray(rtdeData.joint_temperatures) && rtdeData.joint_temperatures.length >= 6) {
+            const jointTempIds = ['jointTemp1', 'jointTemp2', 'jointTemp3', 'jointTemp4', 'jointTemp5', 'jointTemp6'];
+            for (let i = 0; i < 6; i++) {
+                updateMonitorField(jointTempIds[i], rtdeData.joint_temperatures[i].toFixed(1));
+            }
+        }
+        
+        // Tool Data
+        if (rtdeData.tool_analog_input0 !== undefined) {
+            updateMonitorField('toolAnalogInput0', rtdeData.tool_analog_input0.toFixed(3));
+        }
+        
+        if (rtdeData.tool_analog_input1 !== undefined) {
+            updateMonitorField('toolAnalogInput1', rtdeData.tool_analog_input1.toFixed(3));
+        }
+        
+        if (rtdeData.tool_output_voltage !== undefined) {
+            updateMonitorField('toolOutputVoltage', rtdeData.tool_output_voltage.toFixed(1));
+        }
+        
+        if (rtdeData.tool_output_current !== undefined) {
+            updateMonitorField('toolOutputCurrent', rtdeData.tool_output_current.toFixed(1));
+        }
+        
+        // Payload Information
+        if (rtdeData.payload !== undefined) {
+            updateMonitorField('payloadMass', rtdeData.payload.toFixed(3));
+        }
+        
+        if (rtdeData.actual_momentum !== undefined) {
+            updateMonitorField('actualMomentum', rtdeData.actual_momentum.toFixed(4));
+        }
+        
+        // Execution Time
+        if (rtdeData.actual_execution_time !== undefined) {
+            updateMonitorField('actualExecutionTime', rtdeData.actual_execution_time.toFixed(2));
+        }
+        
+        if (rtdeData.target_execution_time !== undefined) {
+            updateMonitorField('targetExecutionTime', rtdeData.target_execution_time.toFixed(2));
+        }
+        
+    } catch (error) {
+        console.error('Error updating robot monitor:', error);
+    }
+}
+
+// Helper function to update a monitor field
+function updateMonitorField(fieldId, value) {
+    const element = document.getElementById(fieldId);
+    if (element) {
+        element.textContent = value;
+    }
+}
+
+// Clear robot monitor data (show -- for all fields)
+function clearRobotMonitorData() {
+    const fields = [
+        'robotMode', 'safetyMode', 'runtimeState', 'speedScaling',
+        'tcpPosX', 'tcpPosY', 'tcpPosZ', 'tcpRotX', 'tcpRotY', 'tcpRotZ',
+        'joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6',
+        'mainVoltage', 'robotCurrent', 'toolTemperature', 'tcpForceScalar',
+        'digitalInputBits', 'digitalOutputBits', 'analogInput0', 'analogInput1',
+        'tcpLinearSpeed', 'tcpAngularSpeed',
+        'jointVel1', 'jointVel2', 'jointVel3', 'jointVel4', 'jointVel5', 'jointVel6',
+        'jointCur1', 'jointCur2', 'jointCur3', 'jointCur4', 'jointCur5', 'jointCur6',
+        'jointTemp1', 'jointTemp2', 'jointTemp3', 'jointTemp4', 'jointTemp5', 'jointTemp6',
+        'toolAnalogInput0', 'toolAnalogInput1', 'toolOutputVoltage', 'toolOutputCurrent',
+        'payloadMass', 'actualMomentum', 'actualExecutionTime', 'targetExecutionTime'
+    ];
+    
+    fields.forEach(fieldId => {
+        updateMonitorField(fieldId, '--');
+    });
+}
+
+// Check device connections
+async function checkDeviceConnections() {
+    try {
+        const response = await fetch('/api/device_connections');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                updateConnectionStatus('statusBarUR15Connection', data.connections.ur15, 'UR15');
+                updateConnectionStatus('statusBarCourierConnection', data.connections.courier, 'Courier');
+                updateConnectionStatus('statusBarAMRConnection', data.connections.amr, 'AMR');
+            } else {
+                console.error('Device connections check failed:', data.message);
+                updateConnectionStatus('statusBarUR15Connection', false, 'UR15');
+                updateConnectionStatus('statusBarCourierConnection', false, 'Courier');
+                updateConnectionStatus('statusBarAMRConnection', false, 'AMR');
+            }
+        } else {
+            console.error('Failed to fetch device connections:', response.status);
+        }
+    } catch (error) {
+        console.error('Error checking device connections:', error);
+        // Set all to disconnected on error
+        updateConnectionStatus('statusBarUR15Connection', false, 'UR15');
+        updateConnectionStatus('statusBarCourierConnection', false, 'Courier');
+        updateConnectionStatus('statusBarAMRConnection', false, 'AMR');
+    }
+}
+
+// Update connection status display
+function updateConnectionStatus(elementId, isConnected, deviceName) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        if (isConnected) {
+            element.textContent = 'Connected';
+            element.className = 'status-bar-value connected';
+        } else {
+            element.textContent = 'Disconnected';
+            element.className = 'status-bar-value disconnected';
+        }
+    }
+    
+    // Update Quick Navigation status indicators
+    updateQuickNavStatus(deviceName, isConnected);
+}
+
+// Update Quick Navigation status indicators (only for device connections)
+function updateQuickNavStatus(deviceName, isConnected) {
+    // This function is no longer used for Quick Navigation
+    // Quick Navigation now uses web service status checks
+}
+
+// Initialize Quick Navigation status indicators
+function initializeQuickNavStatus() {
+    // Set all to checking status initially
+    const services = ['UR15', 'AMR', 'Courier', 'Redis', 'Positioning', 'Labeling', 'Workflow', 'FFPP'];
+    
+    services.forEach(service => {
+        const indicatorId = 'statusIndicator' + service;
+        const textId = 'statusText' + service;
+        
+        const indicator = document.getElementById(indicatorId);
+        const text = document.getElementById(textId);
+        
+        if (indicator && text) {
+            indicator.className = 'w-3 h-3 rounded-full bg-yellow-500';
+            text.textContent = 'Checking';
+            text.className = 'text-sm text-yellow-600 font-medium';
+        }
+    });
+}
+
+// Update Quick Navigation service status
+function updateQuickNavServiceStatus(serviceName, isOnline) {
+    const indicatorId = 'statusIndicator' + serviceName;
+    const textId = 'statusText' + serviceName;
+    
+    const indicator = document.getElementById(indicatorId);
+    const text = document.getElementById(textId);
+    
+    if (indicator && text) {
+        if (isOnline) {
+            indicator.className = 'w-3 h-3 rounded-full bg-green-500';
+            text.textContent = 'Online';
+            text.className = 'text-sm text-green-600 font-medium';
+        } else {
+            indicator.className = 'w-3 h-3 rounded-full bg-red-500';
+            text.textContent = 'Offline';
+            text.className = 'text-sm text-red-600 font-medium';
+        }
+    }
+}
+
+// Start periodic updates
+function startPeriodicUpdates() {
+    console.log('Starting periodic updates...');
+    
+    // Update robot status every 2 seconds
+    setInterval(() => {
+        fetchRobotStatus();
+        fetchRtdeData();
+    }, 2000);
+    
+    // Update device connections every 5 seconds
+    setInterval(() => {
+        checkDeviceConnections();
+    }, 5000);
+    
+    // Update web services status every 5 seconds
+    setInterval(() => {
+        updateAllServiceStatuses();
+    }, 5000);
+    
+    // Update system status every 3 seconds
+    setInterval(() => {
+        fetchSystemStatus();
+    }, 3000);
+}
+
+// Update all service statuses for Quick Navigation
+async function updateAllServiceStatuses() {
+    try {
+        // Get the web URLs to test service availability
+        const response = await fetch('/api/web_urls');
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Test all services in parallel for faster response
+            const serviceChecks = [
+                testServiceStatus('UR15', data.ur15_web_url),
+                testServiceStatus('AMR', data.amr_web_url),
+                testServiceStatus('Courier', data.courier_web_url),
+                testServiceStatus('Redis', data.robot_status_url),
+                testServiceStatus('Positioning', data.positioning_3d_url),
+                testServiceStatus('Labeling', data.image_labeling_url),
+                testServiceStatus('Workflow', data.workflow_config_url),
+                testServiceStatus('FFPP', data.ffpp_server_url)
+            ];
+            
+            // Wait for all checks to complete (or timeout)
+            await Promise.allSettled(serviceChecks);
+        }
+    } catch (error) {
+        console.error('Error checking service statuses:', error);
+    }
+}
+
+// Test individual service status
+async function testServiceStatus(serviceName, serviceUrl) {
+    try {
+        if (!serviceUrl) {
+            updateQuickNavServiceStatus(serviceName, false);
+            return;
+        }
+        
+        // Simple fetch to test if service is responding
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
+        
+        const response = await fetch(serviceUrl, {
+            method: 'HEAD', // Use HEAD to minimize data transfer
+            signal: controller.signal,
+            mode: 'no-cors' // Allow cross-origin requests
+        });
+        
+        clearTimeout(timeoutId);
+        updateQuickNavServiceStatus(serviceName, true);
+    } catch (error) {
+        updateQuickNavServiceStatus(serviceName, false);
     }
 }
 

@@ -27,7 +27,7 @@
         
         /* Add padding to body to prevent content from being hidden under fixed status bar */
         body {
-            padding-top: 180px;
+            padding-top: 120px;
         }
         
         .status-bar-title {
@@ -191,7 +191,7 @@
             min-width: 0;
             background: transparent;
             border-radius: 6px;
-            padding: 1rem;
+            padding: 0.5rem 1rem;
             display: flex;
         }
     </style>
@@ -206,93 +206,554 @@
             <div class="status-bar-content">
                 <div class="status-bar-grid-row">
                     <div class="status-bar-item">
-                        <div class="status-bar-label">UR15 Controller</div>
-                        <div id="statusBarRobotMode" class="status-bar-value warning">Checking...</div>
+                        <div class="status-bar-label">UR15 Connection</div>
+                        <div id="statusBarUR15Connection" class="status-bar-value warning">Checking...</div>
                     </div>
                     <div class="status-bar-item">
-                        <div class="status-bar-label">UR15 Safety Status</div>
-                        <div id="statusBarSafetyMode" class="status-bar-value warning">Checking...</div>
+                        <div class="status-bar-label">Courier Connection</div>
+                        <div id="statusBarCourierConnection" class="status-bar-value warning">Checking...</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">AMR Connection</div>
+                        <div id="statusBarAMRConnection" class="status-bar-value warning">Checking...</div>
                     </div>
                     <div class="status-bar-item">
                         <div class="status-bar-label">UR15 RTDE Status</div>
                         <div id="statusBarRtdeConnection" class="status-bar-value warning">Checking...</div>
-                    </div>
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">UR15 Web</div>
-                        <div id="statusBarUR15Web" class="status-bar-value warning">Checking...</div>
-                    </div>
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">Courier Web</div>
-                        <div id="statusBarCourierWeb" class="status-bar-value warning">Checking...</div>
-                    </div>
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">AMR Web</div>
-                        <div id="statusBarAMRWeb" class="status-bar-value warning">Checking...</div>
-                    </div>
-                </div>
-                <div class="status-bar-grid-row">
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">Redis Service</div>
-                        <div id="statusBarRedisService" class="status-bar-value warning">Checking...</div>
-                    </div>
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">Positioning Service</div>
-                        <div id="statusBarPositioningService" class="status-bar-value warning">Checking...</div>
-                    </div>
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">Calibration Service</div>
-                        <div id="statusBarCalibrationService" class="status-bar-value warning">Checking...</div>
-                    </div>
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">Labeling Service</div>
-                        <div id="statusBarLabelingService" class="status-bar-value warning">Checking...</div>
-                    </div>
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">Workflow Service</div>
-                        <div id="statusBarWorkflowConfig" class="status-bar-value warning">Checking...</div>
-                    </div>
-                    <div class="status-bar-item">
-                        <div class="status-bar-label">FFPP Server</div>
-                        <div id="statusBarFFPPServer" class="status-bar-value warning">Checking...</div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
     
-    <!-- Quick Navigation Area -->
-    <div class="max-w-7xl ml-4 mr-auto px-4 mb-6">
-        <div class="w-1/2">
-            <div class="panel-with-title">
-                <div class="panel-title">
-                    Quick Navigation
+    <!-- Quick Navigation Area and Robot Monitor -->
+    <div class="w-full px-4">
+        <div class="flex gap-4">
+            <!-- Quick Navigation (left half) -->
+            <div class="w-1/3">
+                <div class="panel-with-title">
+                    <div class="panel-title">
+                        Quick Navigation
+                    </div>
+                    <div class="panel-content">
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem; width: 100%;">
+                            <!-- UR15 Dashboard Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnUR15" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    UR15 Dashboard
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorUR15"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextUR15">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- AMR Dashboard Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnAMR" class="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    AMR Dashboard
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorAMR"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextAMR">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Courier Dashboard Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnCourier" class="flex-1 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    Courier Dashboard
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorCourier"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextCourier">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Robot Status Redis Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnRobotStatus" class="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    Robot Status Redis
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorRedis"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextRedis">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Positioning Service Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnPositioning" class="flex-1 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    Positioning Service
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorPositioning"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextPositioning">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Labeling Service Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnLabeling" class="flex-1 px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    Labeling Service
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorLabeling"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextLabeling">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Workflow Service Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnWorkflow" class="flex-1 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    Workflow Service
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorWorkflow"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextWorkflow">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- FFPP Server Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnFFPP" class="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    FFPP Server
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorFFPP"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextFFPP">Checking</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="panel-content">
-                    <div style="display: flex; flex-direction: column; gap: 0.75rem; width: 100%;">
-                        <button id="btnUR15" class="w-full px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5">
-                            UR15 Dashboard
-                        </button>
-                        <button id="btnAMR" class="w-full px-6 py-2 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5">
-                            AMR Dashboard
-                        </button>
-                        <button id="btnCourier" class="w-full px-6 py-2 bg-purple-500 hover:bg-purple-600 text-white font-semibold rounded-lg shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5">
-                            Courier Dashboard
-                        </button>
-                        <button id="btnRobotStatus" class="w-full px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5">
-                            Robot Status Redis
-                        </button>
-                        <button id="btnPositioning" class="w-full px-6 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-lg shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5">
-                            Positioning Service
-                        </button>
-                        <button id="btnLabeling" class="w-full px-6 py-2 bg-pink-500 hover:bg-pink-600 text-white font-semibold rounded-lg shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5">
-                            Labeling Service
-                        </button>
-                        <button id="btnWorkflow" class="w-full px-6 py-2 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-lg shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5">
-                            Workflow Service
-                        </button>
-                        <button id="btnFFPP" class="w-full px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5">
-                            FFPP Server
-                        </button>
+            </div>
+
+            <!-- UR15 Robot Monitor (right half) -->
+            <div class="w-2/3">
+                <div class="panel-with-title">
+                    <div class="panel-title">
+                        UR15 Robot Monitor
+                    </div>
+                    <div class="panel-content">
+                        <div style="max-height: 400px; overflow-y: auto; padding-right: 4px; width: 100%;">
+                            
+                            <!-- Robot Status Section -->
+                            <div class="mb-4">
+                                <h4 class="text-base font-bold text-gray-800 mb-3 tracking-wide uppercase text-sm">📊 System Status</h4>
+                                <div class="grid grid-cols-4 gap-2 text-sm">
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Controller State</div>
+                                        <div id="robotMode" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Safety Mode</div>
+                                        <div id="safetyMode" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Program State</div>
+                                        <div id="runtimeState" class="font-mono text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Speed Scaling</div>
+                                        <div id="speedScaling" class="font-mono text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- TCP Pose Section -->
+                            <div class="mb-4">
+                                <h4 class="text-base font-bold text-gray-800 mb-2 tracking-wide uppercase text-sm">📍 TCP Pose</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">X</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpPosX" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">m</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Y</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpPosY" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">m</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Z</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpPosZ" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">m</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">RX</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpRotX" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">RY</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpRotY" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">RZ</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpRotZ" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Joint Positions Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🦾 Joint Angles</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J1</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint1" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J2</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint2" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J3</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint3" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J4</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint4" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J5</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint5" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J6</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint6" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Power and Temperature Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🔋 Power & Temperature</h4>
+                                <div class="grid grid-cols-4 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Main Voltage</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="mainVoltage" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">V</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Robot Current</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="robotCurrent" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Temperature</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="toolTemperature" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">TCP Force Scalar</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpForceScalar" class="text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- I/O Status Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🔌 I/O Status</h4>
+                                <div class="grid grid-cols-4 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Digital Input</div>
+                                        <div id="digitalInputBits" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Digital Output</div>
+                                        <div id="digitalOutputBits" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Analog Input 0</div>
+                                        <div id="analogInput0" class="font-mono text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Analog Input 1</div>
+                                        <div id="analogInput1" class="font-mono text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- TCP Speed Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🚀 TCP Speed</h4>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Linear Speed</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpLinearSpeed" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">m/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Angular Speed</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpAngularSpeed" class="text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Joint Velocities Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">⚙️ Joint Velocities</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J1</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel1" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J2</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel2" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J3</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel3" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J4</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel4" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J5</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel5" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J6</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel6" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Joint Currents Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">⚡ Joint Currents</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J1</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur1" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J2</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur2" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J3</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur3" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J4</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur4" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J5</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur5" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J6</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur6" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Joint Temperatures Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🌡 Joint Temperatures</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J1</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp1" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J2</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp2" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J3</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp3" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J4</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp4" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J5</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp5" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J6</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp6" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tool Data Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">📋 Tool Data</h4>
+                                <div class="grid grid-cols-4 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Analog Input 0</div>
+                                        <div id="toolAnalogInput0" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Analog Input 1</div>
+                                        <div id="toolAnalogInput1" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Output Voltage</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="toolOutputVoltage" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">V</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Output Current</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="toolOutputCurrent" class="text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">mA</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Payload Information Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🔩 Payload Information</h4>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Payload Mass</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="payloadMass" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">kg</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Actual Momentum</div>
+                                        <div id="actualMomentum" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Execution Time Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">⏰ Execution Time</h4>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Actual Time</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="actualExecutionTime" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">ms</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Target Time</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="targetExecutionTime" class="text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">ms</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
                     </div>
                 </div>
             </div>

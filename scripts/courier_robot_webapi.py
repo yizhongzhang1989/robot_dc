@@ -144,7 +144,10 @@ class CourierRobotWebAPI:
                     "pushrod": {
                         'task_state': status_data.get('pushrod', {}).get('task_state'),
                         'movement_state': status_data.get('pushrod', {}).get('movement_state')
-                    }
+                    },
+                    "server_id": status_data.get('server_id', 0),
+                    "hybrid_params": status_data.get('hybrid_params', {}),
+                    "hybrid_positions": status_data.get('hybrid_positions', {})
                 }
                 
                 # Calculate force_limit_status (3 states: 'ok', 'exceeded', 'disabled')
@@ -246,6 +249,116 @@ class CourierRobotWebAPI:
         except Exception as e:
             if self.verbose:
                 print(f"❌ Failed to get sensor data: {e}")
+            return {"success": False, "error": str(e)}
+    
+    # ==================== Server Configuration ====================
+    
+    def get_server_config(self):
+        """
+        Get server ID and hybrid control configuration
+        
+        Returns:
+            dict with success, server_id, hybrid_params, and calculated hybrid_positions
+        """
+        try:
+            url = f"{self.base_url}/api/server_config"
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                result = {"success": True, **data}
+                
+                if self.verbose:
+                    print("\n⚙️  Server Configuration:")
+                    print(f"   Server ID: {data['server_id']}")
+                    print(f"   Hybrid Params:")
+                    print(f"      High Base: {data['hybrid_params']['high_base']:.1f} mm")
+                    print(f"      Low Base: {data['hybrid_params']['low_base']:.1f} mm")
+                    print(f"      Step: {data['hybrid_params']['step']:.1f} mm/ID")
+                    print(f"   Calculated Positions:")
+                    print(f"      High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"      Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
+                
+                return result
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            if self.verbose:
+                print(f"❌ Failed to get server config: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def set_server_id(self, server_id):
+        """
+        Set server ID (runtime only, does not persist to config)
+        
+        Args:
+            server_id: Integer server ID
+        
+        Returns:
+            dict with success status and updated configuration
+        """
+        try:
+            url = f"{self.base_url}/api/server_config/set_server_id"
+            payload = {'server_id': server_id}
+            response = requests.post(url, json=payload, timeout=2)
+            
+            if response.status_code == 200:
+                data = response.json()
+                result = {"success": True, **data}
+                
+                if self.verbose:
+                    print(f"\n✅ Server ID updated to: {data['server_id']}")
+                    print(f"   New High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"   New Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
+                
+                return result
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            if self.verbose:
+                print(f"❌ Failed to set server ID: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def set_hybrid_params(self, high_base=None, low_base=None, step=None):
+        """
+        Set hybrid control parameters (runtime only, does not persist to config)
+        
+        Args:
+            high_base: Base height for high position (mm), optional
+            low_base: Base height for low position (mm), optional
+            step: Step distance per ID (mm), optional
+        
+        Returns:
+            dict with success status and updated configuration
+        """
+        try:
+            url = f"{self.base_url}/api/server_config/set_hybrid_params"
+            payload = {}
+            if high_base is not None:
+                payload['high_base'] = high_base
+            if low_base is not None:
+                payload['low_base'] = low_base
+            if step is not None:
+                payload['step'] = step
+            
+            response = requests.post(url, json=payload, timeout=2)
+            
+            if response.status_code == 200:
+                data = response.json()
+                result = {"success": True, **data}
+                
+                if self.verbose:
+                    print(f"\n✅ Hybrid parameters updated:")
+                    params = data['hybrid_params']
+                    print(f"   High Base: {params['high_base']:.1f} mm")
+                    print(f"   Low Base: {params['low_base']:.1f} mm")
+                    print(f"   Step: {params['step']:.1f} mm/ID")
+                    print(f"   Calculated Positions:")
+                    print(f"      High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"      Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
+                
+                return result
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            if self.verbose:
+                print(f"❌ Failed to set hybrid params: {e}")
             return {"success": False, "error": str(e)}
     
     # ==================== Platform Manual Control ====================
@@ -538,7 +651,7 @@ class CourierRobotWebAPI:
         Platform hybrid control (height OR force, whichever reached first) (BLOCKING by default)
         
         Args:
-            target_height: Target height in mm
+            target_height: Target height in mm, or 'high_pos'/'low_pos' to use calculated hybrid positions
             target_force: Target force in Newtons
             wait: If True, wait for completion before returning (default: True)
                   If False (non-blocking), will auto-stop previous task if running
@@ -547,6 +660,27 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
+        # Resolve special height values (high_pos/low_pos)
+        if isinstance(target_height, str):
+            if target_height.lower() in ['high_pos', 'high']:
+                config = self.get_server_config()
+                if config.get('success'):
+                    target_height = config['hybrid_positions']['high_pos']
+                    if self.verbose:
+                        print(f"🔄 Resolved 'high_pos' to {target_height:.1f} mm")
+                else:
+                    return {'success': False, 'error': 'Failed to get server config for high_pos'}
+            elif target_height.lower() in ['low_pos', 'low']:
+                config = self.get_server_config()
+                if config.get('success'):
+                    target_height = config['hybrid_positions']['low_pos']
+                    if self.verbose:
+                        print(f"🔄 Resolved 'low_pos' to {target_height:.1f} mm")
+                else:
+                    return {'success': False, 'error': 'Failed to get server config for low_pos'}
+            else:
+                return {'success': False, 'error': f"Invalid height value: {target_height}. Use numeric value or 'high_pos'/'low_pos'"}
+        
         # Check if platform is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
@@ -1005,8 +1139,9 @@ def interactive_mode(robot):
       fdown <force>     - Force control down (N), e.g., 'fdown 30' (background)
       fup! <force>      - Non-blocking force up
       fdown! <force>    - Non-blocking force down
-      hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50' (background)
+      hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50' or 'hybrid high_pos 200' (background)
       hybrid! <h> <f>   - Non-blocking hybrid control
+                          <h> can be: numeric height (mm), 'high_pos', 'high', 'low_pos', or 'low'
     
     Platform Manual Control:
       up                - Manual up (use 'stop' to stop)
@@ -1113,10 +1248,16 @@ def interactive_mode(robot):
             
             elif command in ['hybrid', 'hybrid!']:
                 if len(parts) < 3:
-                    print("❌ Usage: hybrid <height> <force> or hybrid! <height> <force> (non-blocking)")
+                    print("❌ Usage: hybrid <height|high_pos|low_pos> <force> or hybrid! <height|high_pos|low_pos> <force> (non-blocking)")
                 else:
                     try:
-                        height = float(parts[1])
+                        # height can be numeric or string ('high_pos', 'low_pos')
+                        height_str = parts[1]
+                        if height_str.lower() in ['high_pos', 'high', 'low_pos', 'low']:
+                            height = height_str  # Pass string directly
+                        else:
+                            height = float(height_str)  # Parse as numeric
+                        
                         force = float(parts[2])
                         wait = not command.endswith('!')
                         if wait:
@@ -1126,7 +1267,7 @@ def interactive_mode(robot):
                             # Non-blocking mode: execute directly
                             robot.platform_hybrid_control(height, force, wait=False)
                     except ValueError:
-                        print("❌ Invalid height or force value")
+                        print("❌ Invalid force value")
             
             # Platform manual control
             elif command == 'up':
