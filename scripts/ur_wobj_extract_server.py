@@ -448,7 +448,7 @@ class URWobjExtractServer(UROperateWobj):
         if self.courier_robot is None:
             print("[ERROR] CourierRobotWebAPI is not initialized")
             return -1
-        lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=125)
+        lift_result = self.courier_robot.platform_hybrid_control(target_height='low_pos', target_force=125)
         if not lift_result.get('success', False):
             print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
             return -1
@@ -490,7 +490,7 @@ class URWobjExtractServer(UROperateWobj):
         if self.courier_robot is None:
             print("[ERROR] CourierRobotWebAPI is not initialized")
             return -1
-        lift_result = self.courier_robot.platform_hybrid_control(target_height=800, target_force=350)
+        lift_result = self.courier_robot.platform_hybrid_control(target_height='high_pos', target_force=350)
         if not lift_result.get('success', False):
             print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
             return -1

@@ -394,7 +394,7 @@ class URWobjInsertServer(UROperateWobj):
             return -1
         time.sleep(0.5)
 
-        result = self.courier_robot.platform_hybrid_control(target_height=798, target_force=300)
+        result = self.courier_robot.platform_hybrid_control(target_height='high_pos', target_force=300)
         if not result.get('success', False):
             print(f"[ERROR] Failed to set platform hybrid control: {result.get('error', 'Unknown error')}")
             return -1
@@ -499,7 +499,7 @@ class URWobjInsertServer(UROperateWobj):
         if self.courier_robot is None:
             print("[ERROR] CourierRobotWebAPI is not initialized")
             return -1
-        lift_result = self.courier_robot.platform_hybrid_control(target_height=780, target_force=350)
+        lift_result = self.courier_robot.platform_hybrid_control(target_height='low_pos', target_force=350)
         if not lift_result.get('success', False):
             print(f"[ERROR] Failed to lower platform: {lift_result.get('error', 'Unknown error')}")
             return -1
