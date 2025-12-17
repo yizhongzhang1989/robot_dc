@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>task_manager</name>
+  <name>system_monitor</name>
   <version>0.1.0</version>
-  <description>Task Manager Web Interface for robot task management and monitoring</description>
+  <description>System Monitor Web Interface for robot system monitoring and management</description>
   <maintainer email="yizhongzhang1989@gmail.com">yizhongzhang1989</maintainer>
   <license>MIT</license>
 

@@ -43,10 +43,10 @@ class AMRController:
         self.config = None
         
         # Load configuration and initialize controller
-        self._load_config_From_file()
+        self._load_amr_config_from_files()
         self._initialize_amr()
     
-    def _load_config_From_file(self):
+    def _load_amr_config_from_files(self):
         """
         Private method to load AMR configuration from robot_config.yaml.
         """
@@ -88,10 +88,6 @@ class AMRController:
         """
         Private method to initialize the AMR controller.
         """
-        print("="*60)
-        print("🤖 AMR Controller - Initializing")
-        print("="*60)
-        
         # Initialize AMR controller
         self.amr_controller = DCDemo2025WebAPIController(self.amr_web_api_url)
         
@@ -112,8 +108,9 @@ class AMRController:
             bool: True if connected, False otherwise
         """
         return self.amr_controller.is_connected() if self.amr_controller else False
-    
-    def amr_back_to_home(self):
+
+# ================================ Methods for Basic AMR Movements =========================================
+    def amr_move_to_home_position(self):
         """
         Move AMR to home position (LM2).
         
@@ -134,7 +131,7 @@ class AMRController:
         
         return result
     
-    def smalltest(self):
+    def amr_execute_small_test_trajectory(self):
         """
         Execute small test trajectory.
         
@@ -155,7 +152,7 @@ class AMRController:
         
         return result
     
-    def looptest(self):
+    def amr_execute_loop_test_trajectory(self):
         """
         Execute loop test trajectory.
         
@@ -176,7 +173,44 @@ class AMRController:
         
         return result
     
-    def arm_dock2rack(self):
+    def amr_move_to_target_position(self, target_id, wait=True):
+        """
+        Move AMR to a specific landmark or position.
+        """
+        print(f"\n📍 AMR Move to Target: {target_id}")
+        print(f"   Moving to target: {target_id}...")
+        
+        result = self.amr_controller.goto(target_id=target_id, wait=wait)
+        
+        if result.get('success', False):
+            print(f"✅ Successfully reached target: {target_id}")
+            if 'task_id' in result:
+                print(f"   Task ID: {result['task_id']}")
+        else:
+            print(f"❌ Failed to reach target {target_id}: {result.get('message', 'Unknown error')}")
+        
+        return result
+    
+    def amr_navigate_bytrajectory(self, trajectory, wait=True):
+        """
+        Execute a custom trajectory.
+        """
+        print(f"\n🚀 AMR Navigate: {trajectory}")
+        print(f"   Executing trajectory: {trajectory}...")
+        
+        result = self.amr_controller.navigate(trajectory=trajectory, wait=wait)
+        
+        if result.get('success', False):
+            print(f"✅ Successfully completed trajectory: {trajectory}")
+            if 'task_id' in result:
+                print(f"   Task ID: {result['task_id']}")
+        else:
+            print(f"❌ Failed to complete trajectory {trajectory}: {result.get('message', 'Unknown error')}")
+        
+        return result
+
+# ================================ Methods for Arm Trajectories =========================================
+    def amr_move_arm_from_dock_to_rack(self):
         """
         Execute arm dock to rack trajectory.
         
@@ -197,7 +231,7 @@ class AMRController:
         
         return result
     
-    def arm_rack2side(self):
+    def amr_move_arm_from_rack_to_side(self):
         """
         Execute arm rack to side trajectory.
         
@@ -218,7 +252,7 @@ class AMRController:
         
         return result
     
-    def arm_side2rack(self):
+    def amr_move_arm_from_side_to_rack(self):
         """
         Execute arm side to rack trajectory.
         
@@ -239,7 +273,7 @@ class AMRController:
         
         return result
     
-    def arm_rack2dock(self):
+    def amr_move_arm_from_rack_to_dock(self):
         """
         Execute arm rack to dock trajectory.
         
@@ -260,7 +294,7 @@ class AMRController:
         
         return result
     
-    def arm_dock2side(self):
+    def amr_move_arm_from_dock_to_side(self):
         """
         Execute arm dock to side trajectory.
         
@@ -281,7 +315,7 @@ class AMRController:
         
         return result
     
-    def arm_side2dock(self):
+    def amr_move_arm_from_side_to_dock(self):
         """
         Execute arm side to dock trajectory.
         
@@ -301,15 +335,16 @@ class AMRController:
             print(f"❌ Failed to complete arm_side2dock trajectory: {result.get('message', 'Unknown error')}")
         
         return result
-    
-    def courier_dock2rack1(self):
+
+# ================================= Methods for Courier Robot Trajectories =========================================  
+    def amr_move_courier_from_dock_to_extraction_position(self):
         """
-        Execute courier dock to rack1 trajectory.
+        Execute courier dock1 to rack trajectory.
         
         Returns:
             dict: Result dictionary with success status and optional task_id
         """
-        print("\n📮 AMR Courier Dock to Rack1")
+        print("\n📮 AMR Courier Dock to Extraction Position")
         print("   Executing 'courier_dock2rack1' trajectory...")
         
         result = self.amr_controller.navigate(trajectory="courier_dock2rack1", wait=True)
@@ -323,14 +358,14 @@ class AMRController:
         
         return result
     
-    def courier_dock2rack2(self):
+    def amr_move_courier_from_dock_to_insertion_position(self):
         """
-        Execute courier dock to rack2 trajectory.
+        Execute courier dock2 to rack trajectory.
         
         Returns:
             dict: Result dictionary with success status and optional task_id
         """
-        print("\n📮 AMR Courier Dock to Rack2")
+        print("\n📮 AMR Courier Dock to Insertion Position")
         print("   Executing 'courier_dock2rack2' trajectory...")
         
         result = self.amr_controller.navigate(trajectory="courier_dock2rack2", wait=True)
@@ -344,14 +379,11 @@ class AMRController:
         
         return result
     
-    def courier_rack2dock1(self):
+    def amr_move_courier_from_extraction_position_to_dock(self):
         """
-        Execute courier rack1 to dock trajectory.
-        
-        Returns:
-            dict: Result dictionary with success status and optional task_id
+        Execute courier rack to dock1 trajectory (position for extraction).
         """
-        print("\n📮 AMR Courier Rack1 to Dock")
+        print("\n📮 AMR Courier Extraction Position to Dock")
         print("   Executing 'courier_rack2dock1' trajectory...")
         
         result = self.amr_controller.navigate(trajectory="courier_rack2dock1", wait=True)
@@ -365,14 +397,11 @@ class AMRController:
         
         return result
     
-    def courier_rack2dock2(self):
+    def amr_move_courier_from_insertion_position_to_dock(self):
         """
-        Execute courier rack2 to dock trajectory.
-        
-        Returns:
-            dict: Result dictionary with success status and optional task_id
+        Execute courier rack to dock2 trajectory (position for insertion).
         """
-        print("\n📮 AMR Courier Rack2 to Dock")
+        print("\n📮 AMR Courier Insertion Position to Dock")
         print("   Executing 'courier_rack2dock2' trajectory...")
         
         result = self.amr_controller.navigate(trajectory="courier_rack2dock2", wait=True)
@@ -386,58 +415,6 @@ class AMRController:
         
         return result
     
-    def amr_go_to_target(self, target_id, wait=True):
-        """
-        Navigate to a specific landmark or position.
-        
-        Args:
-            target_id (str): Target landmark ID (e.g., "LM2")
-            wait (bool): Whether to wait for completion (blocking)
-            
-        Returns:
-            dict: Result dictionary with success status and optional task_id
-        """
-        print(f"\n📍 AMR Goto: {target_id}")
-        print(f"   Navigating to target: {target_id}...")
-        
-        result = self.amr_controller.goto(target_id=target_id, wait=wait)
-        
-        if result.get('success', False):
-            print(f"✅ Successfully reached target: {target_id}")
-            if 'task_id' in result:
-                print(f"   Task ID: {result['task_id']}")
-        else:
-            print(f"❌ Failed to reach target {target_id}: {result.get('message', 'Unknown error')}")
-        
-        return result
-    
-    def amr_navigate_to(self, trajectory, wait=True):
-        """
-        Execute a custom trajectory.
-        
-        Args:
-            trajectory (str): Trajectory name
-            wait (bool): Whether to wait for completion (blocking)
-            
-        Returns:
-            dict: Result dictionary with success status and optional task_id
-        """
-        print(f"\n🚀 AMR Navigate: {trajectory}")
-        print(f"   Executing trajectory: {trajectory}...")
-        
-        result = self.amr_controller.navigate(trajectory=trajectory, wait=wait)
-        
-        if result.get('success', False):
-            print(f"✅ Successfully completed trajectory: {trajectory}")
-            if 'task_id' in result:
-                print(f"   Task ID: {result['task_id']}")
-        else:
-            print(f"❌ Failed to complete trajectory {trajectory}: {result.get('message', 'Unknown error')}")
-        
-        return result
-
-
-
 def main():
     """
     Main entry point for the AMR control script.

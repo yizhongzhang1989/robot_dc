@@ -19,11 +19,11 @@ except ImportError as e:
     print(f"Warning: RTDE library not available: {e}")
     RTDE_AVAILABLE = False
 
-class TaskManagerNode(Node):
+class SystemMonitorNode(Node):
     def __init__(self):
-        super().__init__('task_manager_node')
+        super().__init__('system_monitor_node')
         
-        self.get_logger().info('Task Manager Node starting...')
+        self.get_logger().info('System Monitor Node starting...')
         
         # Task statistics
         self.active_tasks = 0
@@ -70,7 +70,7 @@ class TaskManagerNode(Node):
         
         # Get package share directory for web files
         try:
-            self.package_share_directory = get_package_share_directory('task_manager')
+            self.package_share_directory = get_package_share_directory('system_monitor')
             self.web_dir = os.path.join(self.package_share_directory, 'web')
             self.get_logger().info(f'Web directory: {self.web_dir}')
         except Exception as e:
@@ -519,7 +519,7 @@ class TaskManagerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     
-    node = TaskManagerNode()
+    node = SystemMonitorNode()
     
     try:
         rclpy.spin(node)

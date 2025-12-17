@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-package_name = 'task_manager'
+package_name = 'system_monitor'
 
 setup(
     name=package_name,
@@ -20,12 +20,12 @@ setup(
     zip_safe=True,
     maintainer='yizhongzhang1989',
     maintainer_email='yizhongzhang1989@gmail.com',
-    description='Task Manager Web Interface for robot task management and monitoring',
+    description='System Monitor Web Interface for robot system monitoring and management',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'task_manager_node = task_manager.task_manager_node:main',
+            'system_monitor_node = system_monitor.system_monitor_node:main',
         ],
     },
 )
