@@ -134,16 +134,17 @@ class CourierRobotWebAPI:
                 status_data = status_response.json()
                 
                 # Extract only essential status fields for external API users
+                platform_data = status_data.get('platform', {})
                 result = {
                     "success": True,
+                    # Top-level task state (shared by platform and pushrod)
+                    "task_state": platform_data.get('task_state'),
                     "platform": {
-                        'task_state': status_data.get('platform', {}).get('task_state'),
-                        'movement_state': status_data.get('platform', {}).get('movement_state'),
-                        'control_mode': status_data.get('platform', {}).get('control_mode'),
-                        'max_force_limit': status_data.get('platform', {}).get('max_force_limit', 0.0)
+                        'movement_state': platform_data.get('movement_state'),
+                        'control_mode': platform_data.get('control_mode'),
+                        'max_force_limit': platform_data.get('max_force_limit', 0.0)
                     },
                     "pushrod": {
-                        'task_state': status_data.get('pushrod', {}).get('task_state'),
                         'movement_state': status_data.get('pushrod', {}).get('movement_state')
                     },
                     "server_id": status_data.get('server_id', 0),
@@ -152,7 +153,6 @@ class CourierRobotWebAPI:
                 }
                 
                 # Calculate force_limit_status (3 states: 'ok', 'exceeded', 'disabled')
-                platform_data = status_data.get('platform', {})
                 force_sensor_error = platform_data.get('force_sensor_error', False)
                 force_limit_exceeded = platform_data.get('force_limit_exceeded', False)
                 
@@ -203,9 +203,10 @@ class CourierRobotWebAPI:
         Returns:
             dict with simplified status for external API users:
             - success: bool
-            - platform: {task_state, movement_state, control_mode}
-            - pushrod: {task_state, movement_state}
-            - sensors: {height, forces, frequencies}
+            - task_state: unified task state (idle/running/completed/emergency_stop)
+            - platform: {movement_state, control_mode, force_limit_status}
+            - pushrod: {movement_state}
+            - sensors: {height, forces, frequencies, errors}
         """
         result = self._get_status()
         
@@ -371,16 +372,16 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if self.verbose:
-                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                    print(f"❌ Robot is busy (state: {task_state}), command rejected")
                 return {
                     'success': False,
-                    'error': f'Platform is busy (state: {platform_state})',
+                    'error': f'Robot is busy (state: {task_state})',
                     'status': status
                 }
         
@@ -406,16 +407,16 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if self.verbose:
-                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                    print(f"❌ Robot is busy (state: {task_state}), command rejected")
                 return {
                     'success': False,
-                    'error': f'Platform is busy (state: {platform_state})',
+                    'error': f'Robot is busy (state: {task_state})',
                     'status': status
                 }
         
@@ -468,24 +469,24 @@ class CourierRobotWebAPI:
             Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Platform is busy (state: {platform_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.platform_stop()
         
         if self.verbose:
@@ -534,24 +535,24 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Platform is busy (state: {platform_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.platform_stop()
         
         if self.verbose:
@@ -596,24 +597,24 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Platform is busy (state: {platform_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.platform_stop()
         
         if self.verbose:
@@ -682,24 +683,24 @@ class CourierRobotWebAPI:
             else:
                 return {'success': False, 'error': f"Invalid height value: {target_height}. Use numeric value or 'high_pos'/'low_pos'"}
         
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Platform is busy (state: {platform_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.platform_stop()
         
         if self.verbose:
@@ -741,16 +742,16 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if pushrod is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            pushrod_state = status.get('pushrod', {}).get('task_state', 'unknown')
-            if pushrod_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if self.verbose:
-                    print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
+                    print(f"❌ Robot is busy (state: {task_state}), command rejected")
                 return {
                     'success': False,
-                    'error': f'Pushrod is busy (state: {pushrod_state})',
+                    'error': f'Robot is busy (state: {task_state})',
                     'status': status
                 }
         
@@ -776,16 +777,16 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if pushrod is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            pushrod_state = status.get('pushrod', {}).get('task_state', 'unknown')
-            if pushrod_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if self.verbose:
-                    print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
+                    print(f"❌ Robot is busy (state: {task_state}), command rejected")
                 return {
                     'success': False,
-                    'error': f'Pushrod is busy (state: {pushrod_state})',
+                    'error': f'Robot is busy (state: {task_state})',
                     'status': status
                 }
         
@@ -839,24 +840,24 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if pushrod is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            pushrod_state = status.get('pushrod', {}).get('task_state', 'unknown')
-            if pushrod_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Pushrod is busy (state: {pushrod_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Pushrod is busy (state: {pushrod_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.pushrod_stop()
         
         if self.verbose:
