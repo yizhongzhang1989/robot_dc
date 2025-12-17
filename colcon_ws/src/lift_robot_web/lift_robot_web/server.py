@@ -24,14 +24,16 @@ class LiftRobotWeb(Node):
         self.declare_parameter('port', 8090)
         self.declare_parameter('sensor_topic', '/draw_wire_sensor/data')
         self.declare_parameter('server_id', 0)
-        self.declare_parameter('hybrid_high_base', 756.0)
-        self.declare_parameter('hybrid_low_base', 736.0)
-        self.declare_parameter('hybrid_step', 48.0)
+        self.declare_parameter('hybrid_high_base', 133.7)
+        self.declare_parameter('hybrid_middle_base', 128.7)
+        self.declare_parameter('hybrid_low_base', 113.7)
+        self.declare_parameter('hybrid_step', 44.45)
         
         self.port = self.get_parameter('port').value
         self.sensor_topic = self.get_parameter('sensor_topic').value
         self.server_id = self.get_parameter('server_id').value
         self.hybrid_high_base = self.get_parameter('hybrid_high_base').value
+        self.hybrid_middle_base = self.get_parameter('hybrid_middle_base').value
         self.hybrid_low_base = self.get_parameter('hybrid_low_base').value
         self.hybrid_step = self.get_parameter('hybrid_step').value
 
@@ -501,13 +503,16 @@ def run_fastapi_server(port):
             """Get current platform and pushrod task status"""
             response = {}
             if lift_robot_node.platform_status:
+                # Top-level unified task state (shared by platform and pushrod)
+                response['task_state'] = lift_robot_node.platform_status.get('task_state', 'unknown')
+                response['task_type'] = lift_robot_node.platform_status.get('task_type')
+                response['task_start_time'] = lift_robot_node.platform_status.get('task_start_time')
+                response['task_end_time'] = lift_robot_node.platform_status.get('task_end_time')
+                response['task_duration'] = lift_robot_node.platform_status.get('task_duration')
+                response['completion_reason'] = lift_robot_node.platform_status.get('completion_reason')
+                
+                # Platform-specific fields (no task_state here)
                 response['platform'] = {
-                    'task_state': lift_robot_node.platform_status.get('task_state', 'unknown'),
-                    'task_type': lift_robot_node.platform_status.get('task_type'),
-                    'task_start_time': lift_robot_node.platform_status.get('task_start_time'),
-                    'task_end_time': lift_robot_node.platform_status.get('task_end_time'),
-                    'task_duration': lift_robot_node.platform_status.get('task_duration'),
-                    'completion_reason': lift_robot_node.platform_status.get('completion_reason'),
                     'control_mode': lift_robot_node.platform_status.get('control_mode'),
                     'movement_state': lift_robot_node.platform_status.get('movement_state'),
                     'current_height': lift_robot_node.platform_status.get('current_height'),
@@ -530,16 +535,8 @@ def run_fastapi_server(port):
                     'range_scan_low_height': lift_robot_node.platform_status.get('range_scan_low_height'),
                     'range_scan_high_height': lift_robot_node.platform_status.get('range_scan_high_height'),
                 }
-            # Pushrod status: shares same task_state/movement_state as platform
-            # (both controlled by same lift_robot_node, use same state variables)
-            if lift_robot_node.platform_status:
+                # Pushrod-specific fields (no task_state here, shares top-level state)
                 response['pushrod'] = {
-                    'task_state': lift_robot_node.platform_status.get('task_state', 'unknown'),
-                    'task_type': lift_robot_node.platform_status.get('task_type'),
-                    'task_start_time': lift_robot_node.platform_status.get('task_start_time'),
-                    'task_end_time': lift_robot_node.platform_status.get('task_end_time'),
-                    'task_duration': lift_robot_node.platform_status.get('task_duration'),
-                    'completion_reason': lift_robot_node.platform_status.get('completion_reason'),
                     'control_mode': lift_robot_node.platform_status.get('control_mode'),
                     'movement_state': lift_robot_node.platform_status.get('movement_state'),
                     'current_height': lift_robot_node.platform_status.get('current_height'),
@@ -552,11 +549,13 @@ def run_fastapi_server(port):
             response['server_id'] = lift_robot_node.server_id
             response['hybrid_params'] = {
                 'high_base': lift_robot_node.hybrid_high_base,
+                'middle_base': lift_robot_node.hybrid_middle_base,
                 'low_base': lift_robot_node.hybrid_low_base,
                 'step': lift_robot_node.hybrid_step
             }
             response['hybrid_positions'] = {
                 'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                'middle_pos': lift_robot_node.hybrid_middle_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
                 'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
             }
             
@@ -570,11 +569,13 @@ def run_fastapi_server(port):
                 'server_id': lift_robot_node.server_id,
                 'hybrid_params': {
                     'high_base': lift_robot_node.hybrid_high_base,
+                    'middle_base': lift_robot_node.hybrid_middle_base,
                     'low_base': lift_robot_node.hybrid_low_base,
                     'step': lift_robot_node.hybrid_step
                 },
                 'hybrid_positions': {
                     'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                    'middle_pos': lift_robot_node.hybrid_middle_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
                     'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
                 }
             }
@@ -593,6 +594,7 @@ def run_fastapi_server(port):
                     'server_id': lift_robot_node.server_id,
                     'hybrid_positions': {
                         'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                        'middle_pos': lift_robot_node.hybrid_middle_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
                         'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
                     }
                 }
@@ -603,12 +605,15 @@ def run_fastapi_server(port):
         async def set_hybrid_params(payload: dict):
             """Set hybrid control parameters (runtime only, does not persist to config)"""
             high_base = payload.get('high_base')
+            middle_base = payload.get('middle_base')
             low_base = payload.get('low_base')
             step = payload.get('step')
             
             try:
                 if high_base is not None:
                     lift_robot_node.hybrid_high_base = float(high_base)
+                if middle_base is not None:
+                    lift_robot_node.hybrid_middle_base = float(middle_base)
                 if low_base is not None:
                     lift_robot_node.hybrid_low_base = float(low_base)
                 if step is not None:
@@ -616,6 +621,7 @@ def run_fastapi_server(port):
                 
                 lift_robot_node.get_logger().info(
                     f"Hybrid params updated: high_base={lift_robot_node.hybrid_high_base}, "
+                    f"middle_base={lift_robot_node.hybrid_middle_base}, "
                     f"low_base={lift_robot_node.hybrid_low_base}, step={lift_robot_node.hybrid_step}"
                 )
                 
@@ -623,11 +629,13 @@ def run_fastapi_server(port):
                     'success': True,
                     'hybrid_params': {
                         'high_base': lift_robot_node.hybrid_high_base,
+                        'middle_base': lift_robot_node.hybrid_middle_base,
                         'low_base': lift_robot_node.hybrid_low_base,
                         'step': lift_robot_node.hybrid_step
                     },
                     'hybrid_positions': {
                         'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                        'middle_pos': lift_robot_node.hybrid_middle_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
                         'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
                     }
                 }

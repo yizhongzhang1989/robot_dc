@@ -21,7 +21,7 @@ def interactive_mode(robot):
       quit, exit, q     - Exit interactive mode
     
     Server Configuration:
-      setid <id>        - Set server ID (updates high_pos/low_pos), e.g., 'setid 15'
+      setid <id>        - Set server ID (updates high_pos/middle_pos/low_pos), e.g., 'setid 15'
     
     Platform Height Control:
       goto <height>     - Go to height (mm), e.g., 'goto 900' (runs in background, can be interrupted)
@@ -34,9 +34,9 @@ def interactive_mode(robot):
       fdown <force>     - Force control down (N), e.g., 'fdown 30' (background)
       fup! <force>      - Non-blocking force up
       fdown! <force>    - Non-blocking force down
-      hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50' or 'hybrid high_pos 200' (background)
+      hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50' or 'hybrid middle_pos 200' (background)
       hybrid! <h> <f>   - Non-blocking hybrid control
-                          <h> can be: numeric height (mm), 'high_pos', 'high', 'low_pos', or 'low'
+                          <h> can be: numeric height (mm), 'high_pos', 'high', 'middle_pos', 'middle', 'mid', 'low_pos', or 'low'
     
     Platform Manual Control:
       up                - Manual up (use 'stop' to stop)
@@ -154,12 +154,12 @@ def interactive_mode(robot):
             
             elif command in ['hybrid', 'hybrid!']:
                 if len(parts) < 3:
-                    print("❌ Usage: hybrid <height|high_pos|low_pos> <force> or hybrid! <height|high_pos|low_pos> <force> (non-blocking)")
+                    print("❌ Usage: hybrid <height|high_pos|middle_pos|low_pos> <force> or hybrid! <height|high_pos|middle_pos|low_pos> <force> (non-blocking)")
                 else:
                     try:
-                        # height can be numeric or string ('high_pos', 'low_pos')
+                        # height can be numeric or string ('high_pos', 'middle_pos', 'low_pos')
                         height_str = parts[1]
-                        if height_str.lower() in ['high_pos', 'high', 'low_pos', 'low']:
+                        if height_str.lower() in ['high_pos', 'high', 'middle_pos', 'middle', 'mid', 'low_pos', 'low']:
                             height = height_str  # Pass string directly
                         else:
                             height = float(height_str)  # Parse as numeric

@@ -134,15 +134,15 @@ class CourierRobotWebAPI:
                 status_data = status_response.json()
                 
                 # Extract only essential status fields for external API users
-                platform_data = status_data.get('platform', {})
+                # Note: task_state is now at top level (not in platform/pushrod)
                 result = {
                     "success": True,
                     # Top-level task state (shared by platform and pushrod)
-                    "task_state": platform_data.get('task_state'),
+                    "task_state": status_data.get('task_state'),
                     "platform": {
-                        'movement_state': platform_data.get('movement_state'),
-                        'control_mode': platform_data.get('control_mode'),
-                        'max_force_limit': platform_data.get('max_force_limit', 0.0)
+                        'movement_state': status_data.get('platform', {}).get('movement_state'),
+                        'control_mode': status_data.get('platform', {}).get('control_mode'),
+                        'max_force_limit': status_data.get('platform', {}).get('max_force_limit', 0.0)
                     },
                     "pushrod": {
                         'movement_state': status_data.get('pushrod', {}).get('movement_state')
@@ -153,6 +153,7 @@ class CourierRobotWebAPI:
                 }
                 
                 # Calculate force_limit_status (3 states: 'ok', 'exceeded', 'disabled')
+                platform_data = status_data.get('platform', {})
                 force_sensor_error = platform_data.get('force_sensor_error', False)
                 force_limit_exceeded = platform_data.get('force_limit_exceeded', False)
                 
@@ -274,10 +275,12 @@ class CourierRobotWebAPI:
                     print(f"   Server ID: {data['server_id']}")
                     print(f"   Hybrid Params:")
                     print(f"      High Base: {data['hybrid_params']['high_base']:.1f} mm")
+                    print(f"      Middle Base: {data['hybrid_params']['middle_base']:.1f} mm")
                     print(f"      Low Base: {data['hybrid_params']['low_base']:.1f} mm")
                     print(f"      Step: {data['hybrid_params']['step']:.1f} mm/ID")
                     print(f"   Calculated Positions:")
                     print(f"      High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"      Middle Position: {data['hybrid_positions']['middle_pos']:.1f} mm")
                     print(f"      Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
                 
                 return result
@@ -309,6 +312,7 @@ class CourierRobotWebAPI:
                 if self.verbose:
                     print(f"\n✅ Server ID updated to: {data['server_id']}")
                     print(f"   New High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"   New Middle Position: {data['hybrid_positions']['middle_pos']:.1f} mm")
                     print(f"   New Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
                 
                 return result
@@ -318,12 +322,13 @@ class CourierRobotWebAPI:
                 print(f"❌ Failed to set server ID: {e}")
             return {"success": False, "error": str(e)}
     
-    def set_hybrid_params(self, high_base=None, low_base=None, step=None):
+    def set_hybrid_params(self, high_base=None, middle_base=None, low_base=None, step=None):
         """
         Set hybrid control parameters (runtime only, does not persist to config)
         
         Args:
             high_base: Base height for high position (mm), optional
+            middle_base: Base height for middle position (mm), optional
             low_base: Base height for low position (mm), optional
             step: Step distance per ID (mm), optional
         
@@ -335,6 +340,8 @@ class CourierRobotWebAPI:
             payload = {}
             if high_base is not None:
                 payload['high_base'] = high_base
+            if middle_base is not None:
+                payload['middle_base'] = middle_base
             if low_base is not None:
                 payload['low_base'] = low_base
             if step is not None:
@@ -350,10 +357,12 @@ class CourierRobotWebAPI:
                     print(f"\n✅ Hybrid parameters updated:")
                     params = data['hybrid_params']
                     print(f"   High Base: {params['high_base']:.1f} mm")
+                    print(f"   Middle Base: {params['middle_base']:.1f} mm")
                     print(f"   Low Base: {params['low_base']:.1f} mm")
                     print(f"   Step: {params['step']:.1f} mm/ID")
                     print(f"   Calculated Positions:")
                     print(f"      High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"      Middle Position: {data['hybrid_positions']['middle_pos']:.1f} mm")
                     print(f"      Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
                 
                 return result
@@ -502,7 +511,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='platform', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -568,7 +577,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='platform', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -630,7 +639,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='platform', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -653,7 +662,7 @@ class CourierRobotWebAPI:
         Platform hybrid control (height OR force, whichever reached first) (BLOCKING by default)
         
         Args:
-            target_height: Target height in mm, or 'high_pos'/'low_pos' to use calculated hybrid positions
+            target_height: Target height in mm, or 'high_pos'/'middle_pos'/'low_pos' to use calculated hybrid positions
             target_force: Target force in Newtons
             wait: If True, wait for completion before returning (default: True)
                   If False (non-blocking), will auto-stop previous task if running
@@ -662,7 +671,7 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Resolve special height values (high_pos/low_pos)
+        # Resolve special height values (high_pos/middle_pos/low_pos)
         if isinstance(target_height, str):
             if target_height.lower() in ['high_pos', 'high']:
                 config = self.get_server_config()
@@ -672,6 +681,14 @@ class CourierRobotWebAPI:
                         print(f"🔄 Resolved 'high_pos' to {target_height:.1f} mm")
                 else:
                     return {'success': False, 'error': 'Failed to get server config for high_pos'}
+            elif target_height.lower() in ['middle_pos', 'middle', 'mid']:
+                config = self.get_server_config()
+                if config.get('success'):
+                    target_height = config['hybrid_positions']['middle_pos']
+                    if self.verbose:
+                        print(f"🔄 Resolved 'middle_pos' to {target_height:.1f} mm")
+                else:
+                    return {'success': False, 'error': 'Failed to get server config for middle_pos'}
             elif target_height.lower() in ['low_pos', 'low']:
                 config = self.get_server_config()
                 if config.get('success'):
@@ -681,7 +698,7 @@ class CourierRobotWebAPI:
                 else:
                     return {'success': False, 'error': 'Failed to get server config for low_pos'}
             else:
-                return {'success': False, 'error': f"Invalid height value: {target_height}. Use numeric value or 'high_pos'/'low_pos'"}
+                return {'success': False, 'error': f"Invalid height value: {target_height}. Use numeric value or 'high_pos'/'middle_pos'/'low_pos'"}
         
         # Check if robot is idle or completed before sending command
         status = self._get_status()
@@ -717,7 +734,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='platform', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -875,7 +892,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='pushrod', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -969,12 +986,11 @@ class CourierRobotWebAPI:
             return True
     
     
-    def _wait_for_completion(self, target='platform', timeout=300, poll_interval=0.1):
+    def _wait_for_completion(self, timeout=300, poll_interval=0.1):
         """
-        Internal method: Wait for platform or pushrod task to complete
+        Internal method: Wait for task to complete
         
         Args:
-            target: 'platform' or 'pushrod'
             timeout: Maximum wait time in seconds
             poll_interval: Status polling interval in seconds (default: 0.1s = 10Hz)
             
@@ -983,7 +999,7 @@ class CourierRobotWebAPI:
         """
         start_time = time.time()
         if self.verbose:
-            print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
+            print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
         
         # Temporarily disable verbose to avoid spamming status output during polling
         original_verbose = self.verbose
@@ -1006,8 +1022,8 @@ class CourierRobotWebAPI:
                     return {"success": False, "error": "Aborted by reset"}
                 
                 status_result = self._get_status()
-                if status_result['success'] and target in status_result:
-                    task_state = status_result[target].get('task_state', 'unknown')
+                if status_result['success']:
+                    task_state = status_result.get('task_state', 'unknown')
                     
                     # Check if task is running - new task has started
                     if task_state in ['running', 'executing']:
@@ -1022,8 +1038,8 @@ class CourierRobotWebAPI:
                         if completed_first_seen is None:
                             completed_first_seen = time.time()
                         elif time.time() - completed_first_seen >= completed_stable_threshold:
-                            # Been 'completed' for >= 1s, likely already at target (not a new task)
-                            full_data = status_result.get('_full_data', {}).get(target, {})
+                            # Been 'completed' for >= threshold, likely already at target (not a new task)
+                            full_data = status_result.get('_full_data', {})
                             reason = full_data.get('completion_reason', 'unknown')
                             
                             if original_verbose:
@@ -1057,12 +1073,12 @@ class CourierRobotWebAPI:
                 
                 status_result = self._get_status()
                 
-                if status_result['success'] and target in status_result:
-                    task_state = status_result[target].get('task_state', 'unknown')
+                if status_result['success']:
+                    task_state = status_result.get('task_state', 'unknown')
                     
                     if task_state == 'completed':
                         # Try to get from full data if available
-                        full_data = status_result.get('_full_data', {}).get(target, {})
+                        full_data = status_result.get('_full_data', {})
                         reason = full_data.get('completion_reason', 'unknown')
                         duration = full_data.get('task_duration', 0)
                         if original_verbose:
@@ -1082,7 +1098,7 @@ class CourierRobotWebAPI:
                         }
                     elif task_state == 'emergency_stop':
                         # Try to get from full data if available
-                        full_data = status_result.get('_full_data', {}).get(target, {})
+                        full_data = status_result.get('_full_data', {})
                         reason = full_data.get('completion_reason', 'unknown')
                         if original_verbose:
                             print(f"🚨 EMERGENCY STOP: {reason}")
