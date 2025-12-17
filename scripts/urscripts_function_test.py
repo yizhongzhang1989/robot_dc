@@ -199,8 +199,8 @@ def main():
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
-        # #  2.1 move to task pose
-        # res = robot.movej([-0.6656, -1.772, -1.250, -1.522, 1.635, -0.6822], a=0.5, v=0.3)
+        #  2.1 move to task pose
+        # res = robot.movej([3.6811, -1.4301, 1.9232, -2.0735, -1.5567, 5.7845], a=0.5, v=0.3)
         # print(f"MoveJ result: {res}")
         # time.sleep(1)
 
@@ -219,19 +219,22 @@ def main():
         # if joints:
         #     print(f"Target joint positions (rad): {joints}")
 
-        # 5. get actual TCP pose and joint positions
-        actual_pose = robot.get_actual_tcp_pose()
-        actual_joints = robot.get_actual_joint_positions()
-        if actual_pose:
-            print(f"Actual tcp pose (m, rad): {actual_pose}")
-        if actual_joints:
-            # print(f"Actual joint positions (rad): {actual_joints}")
-            print(f"Actual joint positions (deg): {[j*180/3.1415926 for j in actual_joints]}")
+        # # 5. get actual TCP pose and joint positions
+        # actual_pose = robot.get_actual_tcp_pose()
+        # actual_joints = robot.get_actual_joint_positions()
+        # if actual_pose:
+        #     print(f"Actual tcp pose (m, rad): {actual_pose}")
+        # if actual_joints:
+        #     # print(f"Actual joint positions (rad): {actual_joints}")
+        #     print(f"Actual joint positions (deg): {[j*180/3.1415926 for j in actual_joints]}")
 
-        # # # 5.1 Test movel function
+        # # 5.1 Test movel function
         # actual_pose = robot.get_actual_tcp_pose()
         # actual_pose[0] -= 0.05  # Move 5 cm in X direction
+        # actual_pose = [0.49623,0.50446,0.39298,3.041,-0.842,0.001]
+        # actual_pose = [0.52894,0.34015,0.87329,1.975,2.471,0.002]
         # res = robot.movel(actual_pose, a=0.2, v=0.1)
+        # time.sleep(1)
 
         # # 6. move tcp
         # res = robot.move_tcp([0.05, 0.0, 0.0, 0.0, 0.0, 0.0], a=0.2, v=0.1)
@@ -294,9 +297,9 @@ def main():
         lock_command = [0x53, 0x26, 0x01, 0x01, 0x01, 0x3A, 0xD4]
         unlock_command = [0x53, 0x26, 0x01, 0x01, 0x02, 0x7A, 0xD5]
         status_command = [0x53, 0x26, 0x02, 0x01, 0x01, 0xCA, 0xD4]
-        # # res = robot.socket_open('192.168.1.15',54321)
-        # # res = robot.socket_send_all('192.168.1.15', 54321, lock_command, socket_name='socket_0')
-        # # print(f"RS485 Lock command result: {res}")
+        res = robot.socket_open('192.168.1.15',54321)
+        res = robot.socket_send_all('192.168.1.15', 54321, lock_command, socket_name='socket_0')
+        print(f"RS485 Lock command result: {res}")
 
         # # or Directly use socket to send and receive data
         # rs485_socket.sendall(bytes(status_command))

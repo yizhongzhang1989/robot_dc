@@ -16,7 +16,7 @@ class UROperateTools:
         self._setup_paths()
         
         # Load config parameters if not provided
-        config_params = self._load_robot_parameters_from_config()
+        config_params = self._load_ur15_config_from_file()
         
         # =========================== Configurable Parameters ===========================
         self.robot_ip = robot_ip if robot_ip is not None else config_params['robot_ip']
@@ -45,8 +45,8 @@ class UROperateTools:
         self._initialize_robot_status_client()
     
     # ================================== Private Helper Methods ==================================
-    def _load_robot_parameters_from_config(self):
-        """Load robot parameters from config file"""
+    def _load_ur15_config_from_file(self):
+        """Load UR15 robot IP and port from robot_config.yaml file"""
         # Default parameters
         default_params = {
             'robot_ip': '192.168.1.15',
@@ -65,14 +65,19 @@ class UROperateTools:
                     import yaml
                     with open(config_path, 'r') as f:
                         config = yaml.safe_load(f)
-                        if 'robot' in config:
-                            robot_config = config['robot']
-                            default_params['robot_ip'] = robot_config.get('ip', default_params['robot_ip'])
-                            default_params['robot_port'] = robot_config.get('port', default_params['robot_port'])
+                        if 'ur15' in config and 'robot' in config['ur15']:
+                            ur15_config = config['ur15']['robot']
+                            default_params['robot_ip'] = ur15_config.get('ip', default_params['robot_ip'])
+                            if 'ports' in ur15_config and 'control' in ur15_config['ports']:
+                                default_params['robot_port'] = ur15_config['ports']['control']
         except Exception as e:
-            print(f"Warning: Could not load config file, using defaults: {e}")
+            print(f"Warning: Could not load UR15 config from file, using defaults: {e}")
         
         return default_params
+
+    def _load_robot_parameters_from_config(self):
+        """Load robot parameters from config file (deprecated, use _load_ur15_config_from_file)"""
+        return self._load_ur15_config_from_file()
     
     def _setup_paths(self):
         """Setup directory paths for script, dataset, data and results"""
@@ -172,7 +177,7 @@ class UROperateTools:
             print(f"✗ Exception during rs485_lock: {e}")
             return False
 
-    
+# ================================== Tool Operation Methods ==================================
     def movej_from_task_to_tools(self):
         """
         Move robot joints through predefined waypoints from task position to tools area
@@ -212,8 +217,6 @@ class UROperateTools:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
                     return False
                 
-                print(f"✓ Reached waypoint {i}")
-                
                 # Add small delay between movements for stability
                 time.sleep(0.5)
             
@@ -230,7 +233,7 @@ class UROperateTools:
         Uses 7 predefined joint positions in reverse order for safe trajectory planning
         """
         if not self.robot:
-            print("✗ Robot not connected, cannot execute movej_from_tool_to_task")
+            print("✗ Robot not connected, cannot execute movel_from_tool_to_task")
             return False
         
         # Define the 7 waypoints in degrees (reverse order from tools to task)
@@ -250,7 +253,7 @@ class UROperateTools:
             waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
             waypoints_radians.append(waypoint_rad)
         
-        print("Starting movej_from_tool_to_task trajectory...")
+        print("Starting movel_from_tool_to_task trajectory...")
         
         try:
             for i, waypoint in enumerate(waypoints_radians, 1):
@@ -263,51 +266,45 @@ class UROperateTools:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
                     return False
                 
-                print(f"✓ Reached waypoint {i}")
-                
                 # Add small delay between movements for stability
                 time.sleep(0.5)
             
-            print("✓ Successfully completed movej_from_tool_to_task trajectory")
+            print("✓ Successfully completed movel_from_tool_to_task trajectory")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during movej_from_tool_to_task: {e}")
+            print(f"✗ Exception during movel_from_tool_to_task: {e}")
             return False
     
-    def movej_from_tool_to_get_tool1(self):
+    def movel_from_tool_to_get_tool_pushpull(self):
         """
-        Move robot using joint movements to get tool1 from tool storage area
-        Uses 4 predefined joint positions with movej for precise tool pickup
+        Move robot using linear movements to get tool_pushpull from tool storage area
+        Uses 4 predefined Cartesian positions (xyz + rotation vector) with movel for precise tool pickup
+        Position format: [x, y, z, rx, ry, rz] in meters and radians
         """
         if not self.robot:
-            print("✗ Robot not connected, cannot execute movej_from_tool_to_get_tool1")
+            print("✗ Robot not connected, cannot execute movel_from_tool_to_get_tool_pushpull")
             return False
         
-        # Define the 4 waypoints in degrees for tool1 pickup sequence
-        waypoints_degrees = [
-            [210.91, -81.94, 110.19, -118.80, -89.19, 331.43],  # Waypoint 1 (approach tool1)
-            [210.91, -77.77, 115.46, -128.24, -89.17, 331.45],  # Waypoint 2 (align with tool1)
-            [219.33, -70.01, 104.34, -124.95, -89.18, 339.90],  # Waypoint 3 (engage tool1)
-            [219.37, -78.10, 83.67, -96.18, -89.25, 339.80]     # Waypoint 4 (secure tool1)
+        # Define the 4 waypoints in Cartesian space (meters + radians)
+        # Format: [x, y, z, rx, ry, rz]
+        waypoints_cartesian = [
+            [0.49623, 0.50446, 0.47265, 3.041, -0.842, 0.001],  # Waypoint 1 (approach tool_pushpull)
+            [0.49623, 0.50446, 0.39298, 3.041, -0.842, 0.001],  # Waypoint 2 (align with tool_pushpull)
+            [0.49623, 0.63619, 0.39298, 3.041, -0.842, 0.001],  # Waypoint 3 (engage tool_pushpull)
+            [0.49623, 0.63619, 0.65947, 3.041, -0.842, 0.001]   # Waypoint 4 (secure tool_pushpull)
         ]
         
-        # Convert degrees to radians
-        waypoints_radians = []
-        for waypoint in waypoints_degrees:
-            waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
-            waypoints_radians.append(waypoint_rad)
-        
-        print("Starting movej_from_tool_to_get_tool1 trajectory...")
+        print("Starting movel_from_tool_to_get_tool_pushpull trajectory with movel...")
         
         try:
             # Execute first two waypoints
             print("Executing first phase: approach and align...")
-            for i, waypoint in enumerate(waypoints_radians[:2], 1):
-                print(f"Moving to waypoint {i}/2 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[:2], 1):
+                print(f"Moving to waypoint {i}/2 in getting tool_pushpull...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
@@ -328,61 +325,55 @@ class UROperateTools:
             
             # Execute last two waypoints
             print("Executing second phase: engage and secure tool...")
-            for i, waypoint in enumerate(waypoints_radians[2:], 3):
-                print(f"Moving to waypoint {i}/4 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[2:], 3):
+                print(f"Moving to waypoint {i}/4 in getting tool_pushpull...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
                     return False
                 
-                print(f"✓ Reached waypoint {i}")
-                
                 # Add small delay between movements for stability
                 time.sleep(0.8)
             
-            print("✓ Successfully completed movej_from_tool_to_get_tool1 trajectory")
+            print("✓ Successfully completed movel_from_tool_to_get_tool_pushpull trajectory")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during movej_from_tool_to_get_tool1: {e}")
+            print(f"✗ Exception during movel_from_tool_to_get_tool_pushpull: {e}")
             return False
     
-    def movej_from_tool_to_return_tool1(self):
+    def movel_from_tool_to_return_tool_pushpull(self):
         """
-        Move robot using joint movements to return tool1 to tool storage area
-        Uses 4 predefined positions in reverse order with movel for precise tool placement
+        Move robot using linear movements to return tool_pushpull to tool storage area
+        Uses 4 predefined Cartesian positions (xyz + rotation vector) in reverse order with movel for precise tool placement
+        Position format: [x, y, z, rx, ry, rz] in meters and radians
         """
         if not self.robot:
-            print("✗ Robot not connected, cannot execute movej_from_tool_to_return_tool1")
+            print("✗ Robot not connected, cannot execute movel_from_tool_to_return_tool_pushpull")
             return False
         
-        # Define the 4 waypoints in reverse order for tool1 return sequence
-        waypoints_raw = [
-            [219.37, -78.10, 83.67, -96.18, -89.25, 339.80],     # Waypoint 1 (from elevated position)
-            [219.33, -70.01, 104.34, -124.95, -89.18, 339.90],  # Waypoint 2 (approach insertion)
-            [210.91, -77.77, 115.46, -128.24, -89.17, 331.45],  # Waypoint 3 (insertion position)
-            [210.91, -81.94, 110.19, -118.80, -89.19, 331.43]   # Waypoint 4 (final storage position)
+        # Define the 4 waypoints in Cartesian space (meters + radians) - reverse order of get_tool_pushpull
+        # Format: [x, y, z, rx, ry, rz]
+        waypoints_cartesian = [
+            [0.49623, 0.63619, 0.65947, 3.041, -0.842, 0.001],   # Waypoint 1 (from elevated position)
+            [0.49623, 0.63619, 0.39298, 3.041, -0.842, 0.001],   # Waypoint 2 (approach release)
+            [0.49623, 0.50446, 0.39298, 3.041, -0.842, 0.001],   # Waypoint 3 (release position)
+            [0.49623, 0.50446, 0.47265, 3.041, -0.842, 0.001]    # Waypoint 4 (final position)
         ]
         
-        # Convert units: xyz from mm to m, rotation from degrees to radians
-        waypoints_converted = []
-        for waypoint in waypoints_raw:
-            waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
-            waypoints_converted.append(waypoint_rad)
-        
-        print("Starting movej_from_tool_to_return_tool1 trajectory...")
+        print("Starting movel_from_tool_to_return_tool_pushpull trajectory with movel...")
         
         try:
             # Execute first two waypoints (return approach)
             print("Executing first phase: return approach...")
-            for i, waypoint in enumerate(waypoints_converted[:2], 1):
-                print(f"Moving to waypoint {i}/2 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[:2], 1):
+                print(f"Moving to waypoint {i}/2 in returning tool_pushpull...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
@@ -395,69 +386,76 @@ class UROperateTools:
             
             print("✓ Completed first phase")
             
-            # Execute RS485 unlock command between phases
+            # Execute third waypoint (release position)
+            print("Executing second phase: moving to release position...")
+            waypoint = waypoints_cartesian[2]
+            print(f"Moving to waypoint 3/4 in returning tool_pushpull...")
+            
+            result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
+            
+            if result != 0:
+                print(f"✗ Failed to move to waypoint 3, error code: {result}")
+                return False
+            
+            print(f"✓ Reached waypoint 3")
+            time.sleep(0.8)
+            
+            # Execute RS485 unlock command between step 3 and 4
             unlock_result = self.rs485_unlock()
             if not unlock_result:
                 print("✗ Failed to execute RS485 unlock command")
                 return False
             
-            # Execute last two waypoints (tool release and final position)
-            print("Executing second phase: tool release and final positioning...")
-            for i, waypoint in enumerate(waypoints_converted[2:], 3):
-                print(f"Moving to waypoint {i}/4 using movej...")
-                
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
-                
-                if result != 0:
-                    print(f"✗ Failed to move to waypoint {i}, error code: {result}")
-                    return False
-                
-                print(f"✓ Reached waypoint {i}")
-                
-                # Add small delay between movements for stability
-                time.sleep(0.8)
+            # Execute final waypoint
+            print("Executing final phase: moving to final position...")
+            waypoint = waypoints_cartesian[3]
+            print(f"Moving to waypoint 4/4 using movel...")
             
-            print("✓ Successfully completed movej_from_tool_to_return_tool1 trajectory")
+            result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
+            
+            if result != 0:
+                print(f"✗ Failed to move to waypoint 4, error code: {result}")
+                return False
+            
+            print(f"✓ Reached waypoint 4")
+            time.sleep(0.8)
+            
+            print("✓ Successfully completed movel_from_tool_to_return_tool_pushpull trajectory")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during movej_from_tool_to_return_tool1: {e}")
+            print(f"✗ Exception during movel_from_tool_to_return_tool_pushpull: {e}")
             return False
     
-    def movej_from_tool_to_get_tool2(self):
+    def movel_from_tool_to_get_tool_rotate(self):
         """
-        Move robot using joint movements to get tool2 from tool storage area
-        Uses 4 predefined positions with movel for precise tool pickup
+        Move robot using linear movements to get tool_rotate from tool storage area
+        Uses 4 predefined Cartesian positions (xyz + rotation vector) with movel for precise tool pickup
+        Position format: [x, y, z, rx, ry, rz] in meters and radians
         """
         if not self.robot:
-            print("✗ Robot not connected, cannot execute movej_from_tool_to_get_tool2")
+            print("✗ Robot not connected, cannot execute movel_from_tool_to_get_tool_rotate")
             return False
         
-        # Define the 4 waypoints with xyz in mm and rotation in degrees for tool2 pickup sequence
-        waypoints_raw = [
-            [203.56, -74.67, 100.07, -115.64, -89.93, 54.85],  # Waypoint 1 (approach tool2)
-            [203.53, -70.65, 105.63, -125.27, -89.90, 54.88],  # Waypoint 2 (align with tool2)
-            [200.52, -63.71, 94.21, -119.93, -89.81, 55.05],   # Waypoint 3 (engage tool2)
-            [200.52, -70.53, 67.11, -86.01, -89.88, 54.89]     # Waypoint 4 (secure tool2)
+        # Define the 4 waypoints in Cartesian space (meters + radians)
+        # Format: [x, y, z, rx, ry, rz]
+        waypoints_cartesian = [
+            [0.64116, 0.47126, 0.47795, 1.532, -2.748, 0.009],  # Waypoint 1 (approach tool_rotate)
+            [0.64116, 0.47126, 0.38944, 1.532, -2.748, 0.009],  # Waypoint 2 (align with tool_rotate)
+            [0.75134, 0.46889, 0.39128, 1.448, -2.777, 0.005],  # Waypoint 3 (engage tool_rotate)
+            [0.75134, 0.46889, 0.71440, 1.448, -2.777, 0.005]   # Waypoint 4 (secure tool_rotate)
         ]
         
-        # Convert units: xyz from mm to m, rotation from degrees to radians
-        waypoints_converted = []
-        for waypoint in waypoints_raw:
-            waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
-            waypoints_converted.append(waypoint_rad)
-        
-        print("Starting movej_from_tool_to_get_tool2 trajectory...")
+        print("Starting movel_from_tool_to_get_tool_rotate trajectory with movel...")
         
         try:
             # Execute first two waypoints
             print("Executing first phase: approach and align...")
-            for i, waypoint in enumerate(waypoints_converted[:2], 1):
-                print(f"Moving to waypoint {i}/2 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[:2], 1):
+                print(f"Moving to waypoint {i}/2 in getting tool_rotate...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
@@ -478,11 +476,11 @@ class UROperateTools:
             
             # Execute last two waypoints
             print("Executing second phase: engage and secure tool...")
-            for i, waypoint in enumerate(waypoints_converted[2:], 3):
-                print(f"Moving to waypoint {i}/4 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[2:], 3):
+                print(f"Moving to waypoint {i}/4 in getting tool_rotate...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
@@ -493,46 +491,42 @@ class UROperateTools:
                 # Add small delay between movements for stability
                 time.sleep(0.8)
             
-            print("✓ Successfully completed movej_from_tool_to_get_tool2 trajectory")
+            print("✓ Successfully completed movel_from_tool_to_get_tool_rotate trajectory")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during movej_from_tool_to_get_tool2: {e}")
+            print(f"✗ Exception during movel_from_tool_to_get_tool_rotate: {e}")
             return False
     
-    def movej_from_tool_to_return_tool2(self):
+    def movel_from_tool_to_return_tool_rotate(self):
         """
-        Move robot using joint movements to return tool2 to tool storage area
-        Uses 4 predefined positions in reverse order with movel for precise tool placement
+        Move robot using linear movements to return tool_rotate to tool storage area
+        Uses 4 predefined Cartesian positions (xyz + rotation vector) in reverse order with movel for precise tool placement
+        Position format: [x, y, z, rx, ry, rz] in meters and radians
         """
         if not self.robot:
-            print("✗ Robot not connected, cannot execute movej_from_tool_to_return_tool2")
+            print("✗ Robot not connected, cannot execute movel_from_tool_to_return_tool_rotate")
             return False
         
-        # Define the 4 waypoints in reverse order for tool2 return sequence
-        waypoints_raw = [
-            [200.52, -70.53, 67.11, -86.01, -89.88, 54.89],     # Waypoint 1 (from elevated position)
-            [200.52, -63.71, 94.21, -119.93, -89.81, 55.05],   # Waypoint 2 (approach insertion)
-            [203.53, -70.65, 105.63, -125.27, -89.90, 54.88],  # Waypoint 3 (insertion position)
-            [203.56, -74.67, 100.07, -115.64, -89.93, 54.85]   # Waypoint 4 (final storage position)
+        # Define the 4 waypoints in Cartesian space (meters + radians) - reverse order of get_tool_rotate
+        # Format: [x, y, z, rx, ry, rz]
+        waypoints_cartesian = [
+            [0.75134, 0.46889, 0.71440, 1.448, -2.777, 0.005],   # Waypoint 1 (from elevated position)
+            [0.75134, 0.46889, 0.39128, 1.448, -2.777, 0.005],   # Waypoint 2 (approach release)
+            [0.64116, 0.47126, 0.38944, 1.532, -2.748, 0.009],   # Waypoint 3 (release position)
+            [0.64116, 0.47126, 0.47795, 1.532, -2.748, 0.009]    # Waypoint 4 (final position)
         ]
         
-        # Convert units: xyz from mm to m, rotation from degrees to radians
-        waypoints_converted = []
-        for waypoint in waypoints_raw:
-            waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
-            waypoints_converted.append(waypoint_rad)
-        
-        print("Starting movej_from_tool_to_return_tool2 trajectory...")
+        print("Starting movel_from_tool_to_return_tool_rotate trajectory with movel...")
         
         try:
             # Execute first two waypoints (return approach)
             print("Executing first phase: return approach...")
-            for i, waypoint in enumerate(waypoints_converted[:2], 1):
-                print(f"Moving to waypoint {i}/2 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[:2], 1):
+                print(f"Moving to waypoint {i}/2 in returning tool_rotate...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
@@ -545,69 +539,76 @@ class UROperateTools:
             
             print("✓ Completed first phase")
             
-            # Execute RS485 unlock command between phases
+            # Execute third waypoint (release position)
+            print("Executing second phase: moving to release position...")
+            waypoint = waypoints_cartesian[2]
+            print(f"Moving to waypoint 3/4 in returning tool_rotate...")
+            
+            result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
+            
+            if result != 0:
+                print(f"✗ Failed to move to waypoint 3, error code: {result}")
+                return False
+            
+            print(f"✓ Reached waypoint 3")
+            time.sleep(0.8)
+            
+            # Execute RS485 unlock command between step 3 and 4
             unlock_result = self.rs485_unlock()
             if not unlock_result:
                 print("✗ Failed to execute RS485 unlock command")
                 return False
             
-            # Execute last two waypoints (tool release and final position)
-            print("Executing second phase: tool release and final positioning...")
-            for i, waypoint in enumerate(waypoints_converted[2:], 3):
-                print(f"Moving to waypoint {i}/4 using movej...")
-                
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
-                
-                if result != 0:
-                    print(f"✗ Failed to move to waypoint {i}, error code: {result}")
-                    return False
-                
-                print(f"✓ Reached waypoint {i}")
-                
-                # Add small delay between movements for stability
-                time.sleep(0.8)
+            # Execute final waypoint
+            print("Executing final phase: moving to final position...")
+            waypoint = waypoints_cartesian[3]
+            print(f"Moving to waypoint 4/4 using movel...")
             
-            print("✓ Successfully completed movej_from_tool_to_return_tool2 trajectory")
+            result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
+            
+            if result != 0:
+                print(f"✗ Failed to move to waypoint 4, error code: {result}")
+                return False
+            
+            print(f"✓ Reached waypoint 4")
+            time.sleep(0.8)
+            
+            print("✓ Successfully completed movel_from_tool_to_return_tool_rotate trajectory")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during movej_from_tool_to_return_tool2: {e}")
+            print(f"✗ Exception during movel_from_tool_to_return_tool_rotate: {e}")
             return False
     
-    def movej_from_tool_to_get_tool3(self):
+    def movel_from_tool_to_get_tool_extract(self):
         """
-        Move robot using joint movements to get tool3 from tool storage area
-        Uses 4 predefined positions with movel for precise tool pickup
+        Move robot using linear movements to get tool_extract from tool storage area
+        Uses 4 predefined Cartesian positions (xyz + rotation vector) with movel for precise tool pickup
+        Position format: [x, y, z, rx, ry, rz] in meters and radians
         """
         if not self.robot:
-            print("✗ Robot not connected, cannot execute movej_from_tool_to_get_tool3")
+            print("✗ Robot not connected, cannot execute movel_from_tool_to_get_tool_extract")
             return False
         
-        # Define the 4 waypoints with xyz in mm and rotation in degrees for tool3 pickup sequence
-        waypoints_raw = [
-            [197.17, -79.71, 103.71, -114.08, -90.04, 51.10],  # Waypoint 1 (approach tool3)
-            [197.14, -74.58, 111.04, -126.54, -90.01, 51.14],  # Waypoint 2 (align with tool3)
-            [194.58, -65.79, 97.71, -122.01, -89.92, 48.58],   # Waypoint 3 (engage tool3)
-            [194.60, -73.07, 77.41, -94.44, -89.98, 48.46]     # Waypoint 4 (secure tool3)
+        # Define the 4 waypoints in Cartesian space (meters + radians)
+        # Format: [x, y, z, rx, ry, rz]
+        waypoints_cartesian = [
+            [0.64134, 0.38184, 0.50183, 1.466, -2.779, 0.011],  # Waypoint 1 (approach tool_extract)
+            [0.64134, 0.38184, 0.39193, 1.466, -2.779, 0.011],  # Waypoint 2 (align with tool_extract)
+            [0.77048, 0.38184, 0.39193, 1.466, -2.779, 0.011],  # Waypoint 3 (engage tool_extract)
+            [0.77048, 0.38184, 0.65495, 1.466, -2.779, 0.011]   # Waypoint 4 (secure tool_extract)
         ]
         
-        # Convert units: xyz from mm to m, rotation from degrees to radians
-        waypoints_converted = []
-        for waypoint in waypoints_raw:
-            waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
-            waypoints_converted.append(waypoint_rad)
-        
-        print("Starting movej_from_tool_to_get_tool3 trajectory...")
+        print("Starting movel_from_tool_to_get_tool_extract trajectory with movel...")
         
         try:
             # Execute first two waypoints
             print("Executing first phase: approach and align...")
-            for i, waypoint in enumerate(waypoints_converted[:2], 1):
-                print(f"Moving to waypoint {i}/2 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[:2], 1):
+                print(f"Moving to waypoint {i}/2 in getting tool_extract...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
@@ -628,11 +629,11 @@ class UROperateTools:
             
             # Execute last two waypoints
             print("Executing second phase: engage and secure tool...")
-            for i, waypoint in enumerate(waypoints_converted[2:], 3):
-                print(f"Moving to waypoint {i}/4 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[2:], 3):
+                print(f"Moving to waypoint {i}/4 in getting tool_extract...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
@@ -643,46 +644,42 @@ class UROperateTools:
                 # Add small delay between movements for stability
                 time.sleep(0.8)
             
-            print("✓ Successfully completed movej_from_tool_to_get_tool3 trajectory")
+            print("✓ Successfully completed movel_from_tool_to_get_tool_extract trajectory")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during movej_from_tool_to_get_tool3: {e}")
+            print(f"✗ Exception during movel_from_tool_to_get_tool_extract: {e}")
             return False
     
-    def movej_from_tool_to_return_tool3(self):
+    def movel_from_tool_to_return_tool_extract(self):
         """
-        Move robot using joint movements to return tool3 to tool storage area
-        Uses 4 predefined positions in reverse order with movel for precise tool placement
+        Move robot using linear movements to return tool_extract to tool storage area
+        Uses 4 predefined Cartesian positions (xyz + rotation vector) in reverse order with movel for precise tool placement
+        Position format: [x, y, z, rx, ry, rz] in meters and radians
         """
         if not self.robot:
-            print("✗ Robot not connected, cannot execute movej_from_tool_to_return_tool3")
+            print("✗ Robot not connected, cannot execute movel_from_tool_to_return_tool_extract")
             return False
         
-        # Define the 4 waypoints in reverse order for tool3 return sequence
-        waypoints_raw = [
-            [194.60, -73.07, 77.41, -94.44, -89.98, 48.46],     # Waypoint 1 (from elevated position)
-            [194.58, -65.79, 97.71, -122.01, -89.92, 48.58],   # Waypoint 2 (approach insertion)
-            [197.14, -74.58, 111.04, -126.54, -90.01, 51.14],  # Waypoint 3 (insertion position)
-            [197.17, -79.71, 103.71, -114.08, -90.04, 51.10]   # Waypoint 4 (final storage position)
+        # Define the 4 waypoints in Cartesian space (meters + radians) - reverse order of get_tool_extract
+        # Format: [x, y, z, rx, ry, rz]
+        waypoints_cartesian = [
+            [0.77048, 0.38184, 0.65495, 1.466, -2.779, 0.011],   # Waypoint 1 (from elevated position)
+            [0.77048, 0.38184, 0.39193, 1.466, -2.779, 0.011],   # Waypoint 2 (approach release)
+            [0.64134, 0.38184, 0.39193, 1.466, -2.779, 0.011],   # Waypoint 3 (release position)
+            [0.64134, 0.38184, 0.50183, 1.466, -2.779, 0.011]    # Waypoint 4 (final position)
         ]
         
-        # Convert units: xyz from mm to m, rotation from degrees to radians
-        waypoints_converted = []
-        for waypoint in waypoints_raw:
-            waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
-            waypoints_converted.append(waypoint_rad)
-        
-        print("Starting movej_from_tool_to_return_tool3 trajectory...")
+        print("Starting movel_from_tool_to_return_tool_extract trajectory with movel...")
         
         try:
             # Execute first two waypoints (return approach)
             print("Executing first phase: return approach...")
-            for i, waypoint in enumerate(waypoints_converted[:2], 1):
-                print(f"Moving to waypoint {i}/2 using movej...")
+            for i, waypoint in enumerate(waypoints_cartesian[:2], 1):
+                print(f"Moving to waypoint {i}/2 in returning tool_extract...")
                 
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
                 
                 if result != 0:
                     print(f"✗ Failed to move to waypoint {i}, error code: {result}")
@@ -695,48 +692,59 @@ class UROperateTools:
             
             print("✓ Completed first phase")
             
-            # Execute RS485 unlock command between phases
+            # Execute third waypoint (release position)
+            print("Executing second phase: moving to release position...")
+            waypoint = waypoints_cartesian[2]
+            print(f"Moving to waypoint 3/4 in returning tool_extract...")
+            
+            result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
+            
+            if result != 0:
+                print(f"✗ Failed to move to waypoint 3, error code: {result}")
+                return False
+            
+            print(f"✓ Reached waypoint 3")
+            time.sleep(0.8)
+            
+            # Execute RS485 unlock command between step 3 and 4
             unlock_result = self.rs485_unlock()
             if not unlock_result:
                 print("✗ Failed to execute RS485 unlock command")
                 return False
             
-            # Execute last two waypoints (tool release and final position)
-            print("Executing second phase: tool release and final positioning...")
-            for i, waypoint in enumerate(waypoints_converted[2:], 3):
-                print(f"Moving to waypoint {i}/4 using movej...")
-                
-                # Execute joint movement
-                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
-                
-                if result != 0:
-                    print(f"✗ Failed to move to waypoint {i}, error code: {result}")
-                    return False
-                
-                print(f"✓ Reached waypoint {i}")
-                
-                # Add small delay between movements for stability
-                time.sleep(0.8)
+            # Execute final waypoint
+            print("Executing final phase: moving to final position...")
+            waypoint = waypoints_cartesian[3]
+            print(f"Moving to waypoint 4/4 using movel...")
             
-            print("✓ Successfully completed movej_from_tool_to_return_tool3 trajectory")
+            result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
+            
+            if result != 0:
+                print(f"✗ Failed to move to waypoint 4, error code: {result}")
+                return False
+            
+            print(f"✓ Reached waypoint 4")
+            time.sleep(0.8)
+            
+            print("✓ Successfully completed movel_from_tool_to_return_tool_extract trajectory")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during movej_from_tool_to_return_tool3: {e}")
+            print(f"✗ Exception during movel_from_tool_to_return_tool_extract: {e}")
             return False
     
-    def get_tool_from_task(self, tool_name):
+    def get_tool_from_task_position(self, tool_name):
         """
         Complete workflow to get a tool from task position
         Executes: task->tools->get_tool->task
         
         Args:
-            tool_name (str): Name of the tool ('tool1', 'tool2', or 'tool3')
+            tool_name (str): Name of the tool ('tool_pushpull', 'tool_rotate', or 'tool_extract')
         """
-        print(f"Starting get_tool_from_task workflow for {tool_name}...")
+        print(f"Starting get_tool_from_task_position workflow for {tool_name}...")
         
         # Validate tool name
-        valid_tools = ['tool1', 'tool2', 'tool3']
+        valid_tools = ['tool_pushpull', 'tool_rotate', 'tool_extract']
         if tool_name not in valid_tools:
             print(f"✗ Invalid tool name '{tool_name}'. Valid tools: {valid_tools}")
             return False
@@ -750,7 +758,7 @@ class UROperateTools:
             
             # Step 2: Get the specified tool
             print(f"Step 2: Getting {tool_name}...")
-            get_method_name = f"movej_from_tool_to_get_{tool_name}"
+            get_method_name = f"movel_from_tool_to_get_{tool_name}"
             if hasattr(self, get_method_name):
                 get_method = getattr(self, get_method_name)
                 if not get_method():
@@ -766,25 +774,25 @@ class UROperateTools:
                 print("✗ Failed to return to task position")
                 return False
             
-            print(f"✓ Successfully completed get_tool_from_task workflow for {tool_name}")
+            print(f"✓ Successfully completed get_tool_from_task_position workflow for {tool_name}")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during get_tool_from_task: {e}")
+            print(f"✗ Exception during get_tool_from_task_position: {e}")
             return False
     
-    def return_tool_from_task(self, tool_name):
+    def return_tool_from_task_position(self, tool_name):
         """
         Complete workflow to return a tool from task position
         Executes: task->tools->return_tool->task
         
         Args:
-            tool_name (str): Name of the tool ('tool1', 'tool2', or 'tool3')
+            tool_name (str): Name of the tool ('tool_pushpull', 'tool_rotate', or 'tool_extract')
         """
-        print(f"Starting return_tool_from_task workflow for {tool_name}...")
+        print(f"Starting return_tool_from_task_position workflow for {tool_name}...")
         
         # Validate tool name
-        valid_tools = ['tool1', 'tool2', 'tool3']
+        valid_tools = ['tool_pushpull', 'tool_rotate', 'tool_extract']
         if tool_name not in valid_tools:
             print(f"✗ Invalid tool name '{tool_name}'. Valid tools: {valid_tools}")
             return False
@@ -798,7 +806,7 @@ class UROperateTools:
             
             # Step 2: Return the specified tool
             print(f"Step 2: Returning {tool_name}...")
-            return_method_name = f"movej_from_tool_to_return_{tool_name}"
+            return_method_name = f"movel_from_tool_to_return_{tool_name}"
             if hasattr(self, return_method_name):
                 return_method = getattr(self, return_method_name)
                 if not return_method():
@@ -814,11 +822,11 @@ class UROperateTools:
                 print("✗ Failed to return to task position")
                 return False
             
-            print(f"✓ Successfully completed return_tool_from_task workflow for {tool_name}")
+            print(f"✓ Successfully completed return_tool_from_task_position workflow for {tool_name}")
             return True
             
         except Exception as e:
-            print(f"✗ Exception during return_tool_from_task: {e}")
+            print(f"✗ Exception during return_tool_from_task_position: {e}")
             return False
 
 if __name__ == "__main__":
@@ -831,7 +839,9 @@ if __name__ == "__main__":
     
     # Initialize UROperateTools
     ur_tools = UROperateTools(robot_ip=args.robot_ip, robot_port=args.robot_port)
-    ur_tools.get_tool_from_task('tool1')
 
     print("UROperateTools initialized successfully")
     print("Ready for tool operations...")
+
+    ur_tools.get_tool_from_task_position('tool_pushpull')
+    ur_tools.return_tool_from_task_position('tool_pushpull')
