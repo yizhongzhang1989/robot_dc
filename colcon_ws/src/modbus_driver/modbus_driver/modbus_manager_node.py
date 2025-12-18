@@ -66,6 +66,7 @@ class ModbusManagerNode(Node):
         # Declare and get parameters
         self.declare_parameter('port', 'auto')
         self.declare_parameter('baudrate', 115200)
+        self.declare_parameter('timeout', 0.03)  # Default 30ms timeout
         self.declare_parameter('enable_dashboard', False)
         self.declare_parameter('dashboard_host', '0.0.0.0')
         self.declare_parameter('dashboard_port', 5000)
@@ -73,6 +74,7 @@ class ModbusManagerNode(Node):
         
         requested_port = self.get_parameter('port').value
         baudrate = self.get_parameter('baudrate').value
+        timeout = float(self.get_parameter('timeout').value)
         enable_dashboard = self.get_parameter('enable_dashboard').value
         dashboard_host = self.get_parameter('dashboard_host').value
         dashboard_port = self.get_parameter('dashboard_port').value
@@ -80,10 +82,12 @@ class ModbusManagerNode(Node):
         
         # Auto-detect serial port if needed
         port = self.auto_detect_serial_port(requested_port)
-        self.get_logger().info(f"Using serial port: {port} (baudrate: {baudrate})")
+        self.get_logger().info(f"Using serial port: {port} (baudrate: {baudrate}, timeout: {timeout*1000:.1f}ms)")
 
-        # Initialize Modbus RTU client
-        self.client = ModbusSerialClient(port=port, baudrate=baudrate, timeout=1)
+        # Initialize Modbus RTU client with configurable timeout
+        # Normal Modbus RTU response: 10-20ms; default 30ms allows margin while preventing long blocks
+        # Timeout triggers emergency reset for hardware failure detection
+        self.client = ModbusSerialClient(port=port, baudrate=baudrate, timeout=timeout)
         self.lock = threading.Lock()
 
         if not self.client.connect():

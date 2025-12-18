@@ -23,8 +23,19 @@ class LiftRobotWeb(Node):
         super().__init__('lift_robot_web_node')
         self.declare_parameter('port', 8090)
         self.declare_parameter('sensor_topic', '/draw_wire_sensor/data')
+        self.declare_parameter('server_id', 0)
+        self.declare_parameter('hybrid_high_base', 133.7)
+        self.declare_parameter('hybrid_middle_base', 128.7)
+        self.declare_parameter('hybrid_low_base', 113.7)
+        self.declare_parameter('hybrid_step', 44.45)
+        
         self.port = self.get_parameter('port').value
         self.sensor_topic = self.get_parameter('sensor_topic').value
+        self.server_id = self.get_parameter('server_id').value
+        self.hybrid_high_base = self.get_parameter('hybrid_high_base').value
+        self.hybrid_middle_base = self.get_parameter('hybrid_middle_base').value
+        self.hybrid_low_base = self.get_parameter('hybrid_low_base').value
+        self.hybrid_step = self.get_parameter('hybrid_step').value
 
         # Portable config directory resolution
         env_dir = os.environ.get('LIFT_ROBOT_CONFIG_DIR')
@@ -73,6 +84,11 @@ class LiftRobotWeb(Node):
         self.left_force_freq_hz = 0.0   # publish frequency
         self.combined_force_sensor = None  # Combined force (sum of two sensors, falls back to single sensor if one missing)
         self.last_force_update = None  # Latest force sensor update timestamp (either sensor)
+        # Force sensor error status
+        self.right_force_error = False
+        self.right_force_error_msg = None
+        self.left_force_error = False
+        self.left_force_error_msg = None
         self.platform_status = None
         self.pushrod_status = None
 
@@ -188,6 +204,18 @@ class LiftRobotWeb(Node):
                         merged['left_force_freq_hz'] = self.left_force_freq_hz
                         merged['combined_force_sensor'] = self.combined_force_sensor
                         
+                        # Extract draw_wire_sensor error info (from latest_obj which comes from sensor topic)
+                        sensor_error = self.latest_obj.get('error', False)
+                        sensor_error_msg = self.latest_obj.get('error_message')
+                        merged['sensor_error'] = sensor_error
+                        merged['sensor_error_message'] = sensor_error_msg
+                        
+                        # Add force sensor error info
+                        merged['right_force_error'] = getattr(self, 'right_force_error', False)
+                        merged['right_force_error_message'] = getattr(self, 'right_force_error_msg', None)
+                        merged['left_force_error'] = getattr(self, 'left_force_error', False)
+                        merged['left_force_error_message'] = getattr(self, 'left_force_error_msg', None)
+                        
                         # Force sensor status detection
                         if self.last_force_update is None:
                             # Never received any force data
@@ -223,11 +251,21 @@ class LiftRobotWeb(Node):
             value = data.get('force', None)
             freq_hz = data.get('freq_hz', 0.0)
             
+            # Extract error info
+            has_error = data.get('error', False)
+            error_msg = data.get('error_message')
+            
+            # Store error status
+            self.right_force_error = has_error
+            self.right_force_error_msg = error_msg
+            
             # Check for overflow (inf/nan) - set to None if invalid
             if value is not None and (math.isinf(value) or math.isnan(value)):
                 self.get_logger().warn(f"Right force sensor overflow detected: {value}")
                 self.right_force_sensor = None
                 self.right_force_freq_hz = 0.0
+                self.right_force_error = True
+                self.right_force_error_msg = "Overflow detected (inf/nan)"
             else:
                 self.right_force_sensor = value
                 self.right_force_freq_hz = freq_hz
@@ -237,6 +275,8 @@ class LiftRobotWeb(Node):
             self.get_logger().error(f"Right force callback error: {e}")
             self.right_force_sensor = None  # Set to None on exception
             self.right_force_freq_hz = 0.0
+            self.right_force_error = True
+            self.right_force_error_msg = f"Callback exception: {e}"
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_cb_left(self, msg):
@@ -248,11 +288,21 @@ class LiftRobotWeb(Node):
             value = data.get('force', None)
             freq_hz = data.get('freq_hz', 0.0)
             
+            # Extract error info
+            has_error = data.get('error', False)
+            error_msg = data.get('error_message')
+            
+            # Store error status
+            self.left_force_error = has_error
+            self.left_force_error_msg = error_msg
+            
             # Check for overflow (inf/nan) - set to None if invalid
             if value is not None and (math.isinf(value) or math.isnan(value)):
                 self.get_logger().warn(f"Left force sensor overflow detected: {value}")
                 self.left_force_sensor = None
                 self.left_force_freq_hz = 0.0
+                self.left_force_error = True
+                self.left_force_error_msg = "Overflow detected (inf/nan)"
             else:
                 self.left_force_sensor = value
                 self.left_force_freq_hz = freq_hz
@@ -262,6 +312,8 @@ class LiftRobotWeb(Node):
             self.get_logger().error(f"Left force callback error: {e}")
             self.left_force_sensor = None  # Set to None on exception
             self.left_force_freq_hz = 0.0
+            self.left_force_error = True
+            self.left_force_error_msg = f"Callback exception: {e}"
             self.last_force_update = time.time()  # Update timestamp to avoid stale detection
     
     def force_raw_cb_right(self, msg):
@@ -348,7 +400,14 @@ def run_fastapi_server(port):
 
         @app.get('/')
         def index():
-            return FileResponse(os.path.join(web_dir, 'index.html'))
+            return FileResponse(
+                os.path.join(web_dir, 'index.html'),
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
 
         @app.get('/api/latest')
         def latest():
@@ -367,23 +426,37 @@ def run_fastapi_server(port):
                 merged['left_force_freq_hz'] = lift_robot_node.left_force_freq_hz
                 merged['combined_force_sensor'] = lift_robot_node.combined_force_sensor
                 
-                # Force sensor status detection
-                if lift_robot_node.last_force_update is None:
-                    # Never received any force data
-                    merged['force_sensor_status'] = 'no_data'
-                    merged['force_stale'] = True
-                elif (time.time() - lift_robot_node.last_force_update) > 2.0:
-                    # No update for >2s (connection lost or sensor failed)
-                    merged['force_sensor_status'] = 'stale'
-                    merged['force_stale'] = True
-                else:
-                    # Normal operation
-                    merged['force_sensor_status'] = 'ok'
-                    merged['force_stale'] = False
+                # Add error info from draw_wire_sensor
+                sensor_error = lift_robot_node.latest_obj.get('error', False)
+                sensor_error_msg = lift_robot_node.latest_obj.get('error_message')
+                merged['sensor_error'] = sensor_error
+                merged['sensor_error_message'] = sensor_error_msg
+                
+                # Add force sensor error info
+                merged['right_force_error'] = getattr(lift_robot_node, 'right_force_error', False)
+                merged['right_force_error_message'] = getattr(lift_robot_node, 'right_force_error_msg', None)
+                merged['left_force_error'] = getattr(lift_robot_node, 'left_force_error', False)
+                merged['left_force_error_message'] = getattr(lift_robot_node, 'left_force_error_msg', None)
                 
                 # Add platform status (pushrod shares same status)
                 if lift_robot_node.platform_status is not None:
                     merged['platform_status'] = lift_robot_node.platform_status
+                    # Also add top-level task status fields for web interface compatibility
+                    merged['task_state'] = lift_robot_node.platform_status.get('task_state', 'idle')
+                    merged['task_type'] = lift_robot_node.platform_status.get('task_type')
+                    merged['task_start_time'] = lift_robot_node.platform_status.get('task_start_time')
+                    merged['task_end_time'] = lift_robot_node.platform_status.get('task_end_time')
+                    merged['task_duration'] = lift_robot_node.platform_status.get('task_duration')
+                    merged['completion_reason'] = lift_robot_node.platform_status.get('completion_reason')
+                else:
+                    # Provide default task status when no platform_status available
+                    merged['platform_status'] = None
+                    merged['task_state'] = 'idle'
+                    merged['task_type'] = None
+                    merged['task_start_time'] = None
+                    merged['task_end_time'] = None
+                    merged['task_duration'] = None
+                    merged['completion_reason'] = None
                 
                 return merged
             except Exception as e:
@@ -405,14 +478,15 @@ def run_fastapi_server(port):
             allowed = {
                 'up', 'down', 'stop', 'reset',
                 'goto_height', 'force_up', 'force_down', 'height_force_hybrid',
-                'range_scan_down', 'range_scan_up', 'range_scan_cancel'
+                'range_scan_down', 'range_scan_up', 'range_scan_cancel',
+                'set_force_limit'
             }
             if cmd not in allowed:
                 return JSONResponse({'error': 'invalid command'}, status_code=400)
             
             # Route commands to appropriate publisher
-            # Direct commands: ONLY reset and range_scan_* -> lift_robot_node (stop uses Action)
-            direct_commands = {'reset', 'range_scan_down', 'range_scan_up', 'range_scan_cancel'}
+            # Direct commands: ONLY reset, set_force_limit, and range_scan_* -> lift_robot_node (stop uses Action)
+            direct_commands = {'reset', 'set_force_limit', 'range_scan_down', 'range_scan_up', 'range_scan_cancel'}
             
             queue_msg = String()
             queue_msg.data = json.dumps(payload)
@@ -445,18 +519,26 @@ def run_fastapi_server(port):
             """Get current platform and pushrod task status"""
             response = {}
             if lift_robot_node.platform_status:
+                # Top-level unified task state (shared by platform and pushrod)
+                response['task_state'] = lift_robot_node.platform_status.get('task_state', 'idle')
+                response['task_type'] = lift_robot_node.platform_status.get('task_type')
+                response['task_start_time'] = lift_robot_node.platform_status.get('task_start_time')
+                response['task_end_time'] = lift_robot_node.platform_status.get('task_end_time')
+                response['task_duration'] = lift_robot_node.platform_status.get('task_duration')
+                response['completion_reason'] = lift_robot_node.platform_status.get('completion_reason')
+                
+                # Platform-specific fields (no task_state here)
                 response['platform'] = {
-                    'task_state': lift_robot_node.platform_status.get('task_state', 'unknown'),
-                    'task_type': lift_robot_node.platform_status.get('task_type'),
-                    'task_start_time': lift_robot_node.platform_status.get('task_start_time'),
-                    'task_end_time': lift_robot_node.platform_status.get('task_end_time'),
-                    'task_duration': lift_robot_node.platform_status.get('task_duration'),
-                    'completion_reason': lift_robot_node.platform_status.get('completion_reason'),
                     'control_mode': lift_robot_node.platform_status.get('control_mode'),
                     'movement_state': lift_robot_node.platform_status.get('movement_state'),
                     'current_height': lift_robot_node.platform_status.get('current_height'),
                     'target_height': lift_robot_node.platform_status.get('target_height'),
                     'limit_exceeded': lift_robot_node.platform_status.get('limit_exceeded', False),
+                    # Force limit fields
+                    'force_limit_exceeded': lift_robot_node.platform_status.get('force_limit_exceeded', False),
+                    'max_force_limit': lift_robot_node.platform_status.get('max_force_limit', 0.0),
+                    'force_sensor_error': lift_robot_node.platform_status.get('force_sensor_error', False),
+                    'force_sensor_error_message': lift_robot_node.platform_status.get('force_sensor_error_message'),
                     # Overshoot calibration data
                     'last_goto_target': lift_robot_node.platform_status.get('last_goto_target'),
                     'last_goto_actual': lift_robot_node.platform_status.get('last_goto_actual'),
@@ -469,16 +551,8 @@ def run_fastapi_server(port):
                     'range_scan_low_height': lift_robot_node.platform_status.get('range_scan_low_height'),
                     'range_scan_high_height': lift_robot_node.platform_status.get('range_scan_high_height'),
                 }
-            # Pushrod status: shares same task_state/movement_state as platform
-            # (both controlled by same lift_robot_node, use same state variables)
-            if lift_robot_node.platform_status:
+                # Pushrod-specific fields (no task_state here, shares top-level state)
                 response['pushrod'] = {
-                    'task_state': lift_robot_node.platform_status.get('task_state', 'unknown'),
-                    'task_type': lift_robot_node.platform_status.get('task_type'),
-                    'task_start_time': lift_robot_node.platform_status.get('task_start_time'),
-                    'task_end_time': lift_robot_node.platform_status.get('task_end_time'),
-                    'task_duration': lift_robot_node.platform_status.get('task_duration'),
-                    'completion_reason': lift_robot_node.platform_status.get('completion_reason'),
                     'control_mode': lift_robot_node.platform_status.get('control_mode'),
                     'movement_state': lift_robot_node.platform_status.get('movement_state'),
                     'current_height': lift_robot_node.platform_status.get('current_height'),
@@ -486,7 +560,103 @@ def run_fastapi_server(port):
                 }
             if not response:
                 return JSONResponse({'error': 'no status data available'}, status_code=503)
+            
+            # Add server_id and hybrid parameters to response
+            response['server_id'] = lift_robot_node.server_id
+            response['hybrid_params'] = {
+                'high_base': lift_robot_node.hybrid_high_base,
+                'middle_base': lift_robot_node.hybrid_middle_base,
+                'low_base': lift_robot_node.hybrid_low_base,
+                'step': lift_robot_node.hybrid_step
+            }
+            response['hybrid_positions'] = {
+                'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                'middle_pos': lift_robot_node.hybrid_middle_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
+            }
+            
             return response
+        
+        # Server ID and Hybrid Control API
+        @app.get('/api/server_config')
+        def get_server_config():
+            """Get server ID and hybrid control configuration"""
+            return {
+                'server_id': lift_robot_node.server_id,
+                'hybrid_params': {
+                    'high_base': lift_robot_node.hybrid_high_base,
+                    'middle_base': lift_robot_node.hybrid_middle_base,
+                    'low_base': lift_robot_node.hybrid_low_base,
+                    'step': lift_robot_node.hybrid_step
+                },
+                'hybrid_positions': {
+                    'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                    'middle_pos': lift_robot_node.hybrid_middle_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                    'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
+                }
+            }
+        
+        @app.post('/api/server_config/set_server_id')
+        async def set_server_id(payload: dict):
+            """Set server ID (runtime only, does not persist to config)"""
+            server_id = payload.get('server_id')
+            if server_id is None:
+                return JSONResponse({'success': False, 'error': 'Missing server_id field'}, status_code=400)
+            try:
+                lift_robot_node.server_id = int(server_id)
+                lift_robot_node.get_logger().info(f"Server ID updated to: {lift_robot_node.server_id}")
+                return {
+                    'success': True,
+                    'server_id': lift_robot_node.server_id,
+                    'hybrid_positions': {
+                        'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                        'middle_pos': lift_robot_node.hybrid_middle_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                        'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
+                    }
+                }
+            except (ValueError, TypeError) as e:
+                return JSONResponse({'success': False, 'error': f'Invalid server_id: {e}'}, status_code=400)
+        
+        @app.post('/api/server_config/set_hybrid_params')
+        async def set_hybrid_params(payload: dict):
+            """Set hybrid control parameters (runtime only, does not persist to config)"""
+            high_base = payload.get('high_base')
+            middle_base = payload.get('middle_base')
+            low_base = payload.get('low_base')
+            step = payload.get('step')
+            
+            try:
+                if high_base is not None:
+                    lift_robot_node.hybrid_high_base = float(high_base)
+                if middle_base is not None:
+                    lift_robot_node.hybrid_middle_base = float(middle_base)
+                if low_base is not None:
+                    lift_robot_node.hybrid_low_base = float(low_base)
+                if step is not None:
+                    lift_robot_node.hybrid_step = float(step)
+                
+                lift_robot_node.get_logger().info(
+                    f"Hybrid params updated: high_base={lift_robot_node.hybrid_high_base}, "
+                    f"middle_base={lift_robot_node.hybrid_middle_base}, "
+                    f"low_base={lift_robot_node.hybrid_low_base}, step={lift_robot_node.hybrid_step}"
+                )
+                
+                return {
+                    'success': True,
+                    'hybrid_params': {
+                        'high_base': lift_robot_node.hybrid_high_base,
+                        'middle_base': lift_robot_node.hybrid_middle_base,
+                        'low_base': lift_robot_node.hybrid_low_base,
+                        'step': lift_robot_node.hybrid_step
+                    },
+                    'hybrid_positions': {
+                        'high_pos': lift_robot_node.hybrid_high_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                        'middle_pos': lift_robot_node.hybrid_middle_base + lift_robot_node.hybrid_step * lift_robot_node.server_id,
+                        'low_pos': lift_robot_node.hybrid_low_base + lift_robot_node.hybrid_step * lift_robot_node.server_id
+                    }
+                }
+            except (ValueError, TypeError) as e:
+                return JSONResponse({'success': False, 'error': f'Invalid parameter value: {e}'}, status_code=400)
         
         # Calibration API endpoints
         @app.post('/api/calibration/add_sample')

@@ -8,6 +8,9 @@ All functions correspond to web interface controls
 import requests
 import time
 import threading
+import yaml
+from pathlib import Path
+from courier_robot_interactive import interactive_mode
 
 
 class CourierRobotWebAPI:
@@ -16,14 +19,56 @@ class CourierRobotWebAPI:
     Provides all control functions available in the web interface
     """
     
-    def __init__(self, base_url="http://192.168.1.3:8090", verbose=True):
+    @staticmethod
+    def _load_config_url():
+        """
+        Load base URL from robot_config.yaml
+        
+        Returns:
+            str: Base URL from config, or default if not found
+        """
+        try:
+            # Try to find config file
+            script_dir = Path(__file__).parent
+            config_path = script_dir.parent / 'config' / 'robot_config.yaml'
+            
+            if not config_path.exists():
+                return None
+            
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Extract lift_robot.web configuration
+            web_config = config.get('lift_robot', {}).get('web', {})
+            host = web_config.get('host', 'localhost')
+            port = web_config.get('port', 8090)
+            
+            # Build URL
+            return f"http://{host}:{port}"
+        except Exception as e:
+            # Silently fail and return None if config cannot be loaded
+            return None
+    
+    def __init__(self, base_url=None, verbose=True):
         """
         Initialize courier robot controller
         
         Args:
-            base_url: HTTP server base URL (default: http://192.168.1.3:8090)
+            base_url: HTTP server base URL (default: read from config/robot_config.yaml, 
+                     fallback to http://192.168.1.3:8090 if config not found)
+                     Can override by passing explicit URL
             verbose: If True, automatically print command results (default: True)
         """
+        # Determine base URL priority: explicit parameter > config file > hardcoded default
+        if base_url is None:
+            base_url = self._load_config_url()
+            if base_url is None:
+                base_url = "http://192.168.1.3:8090"  # Hardcoded fallback
+                if verbose:
+                    print(f"⚠️  Config file not found, using default URL: {base_url}")
+            elif verbose:
+                print(f"📄 Loaded URL from config: {base_url}")
+        
         self.base_url = base_url
         self.verbose = verbose
         self.background_task = None  # Track background task thread
@@ -89,18 +134,38 @@ class CourierRobotWebAPI:
                 status_data = status_response.json()
                 
                 # Extract only essential status fields for external API users
+                # Note: task_state is now at top level (not in platform/pushrod)
                 result = {
                     "success": True,
+                    # Top-level task state (shared by platform and pushrod)
+                    "task_state": status_data.get('task_state'),
                     "platform": {
-                        'task_state': status_data.get('platform', {}).get('task_state'),
                         'movement_state': status_data.get('platform', {}).get('movement_state'),
-                        'control_mode': status_data.get('platform', {}).get('control_mode')
+                        'control_mode': status_data.get('platform', {}).get('control_mode'),
+                        'max_force_limit': status_data.get('platform', {}).get('max_force_limit', 0.0)
                     },
                     "pushrod": {
-                        'task_state': status_data.get('pushrod', {}).get('task_state'),
                         'movement_state': status_data.get('pushrod', {}).get('movement_state')
-                    }
+                    },
+                    "server_id": status_data.get('server_id', 0),
+                    "hybrid_params": status_data.get('hybrid_params', {}),
+                    "hybrid_positions": status_data.get('hybrid_positions', {})
                 }
+                
+                # Calculate force_limit_status (3 states: 'ok', 'exceeded', 'disabled')
+                platform_data = status_data.get('platform', {})
+                force_sensor_error = platform_data.get('force_sensor_error', False)
+                force_limit_exceeded = platform_data.get('force_limit_exceeded', False)
+                
+                if force_sensor_error:
+                    result['platform']['force_limit_status'] = 'disabled'
+                    result['platform']['force_limit_message'] = platform_data.get('force_sensor_error_message', 'Sensor error')
+                elif force_limit_exceeded:
+                    result['platform']['force_limit_status'] = 'exceeded'
+                    result['platform']['force_limit_message'] = 'Force limit exceeded'
+                else:
+                    result['platform']['force_limit_status'] = 'ok'
+                    result['platform']['force_limit_message'] = 'Force within limits'
                 
                 # Keep full data available for internal use (verbose printing)
                 result['_full_data'] = status_data
@@ -115,7 +180,14 @@ class CourierRobotWebAPI:
                         'combined_force': sensor_data.get('combined_force_sensor'),
                         'freq_hz': sensor_data.get('freq_hz'),
                         'right_force_freq_hz': sensor_data.get('right_force_freq_hz'),
-                        'left_force_freq_hz': sensor_data.get('left_force_freq_hz')
+                        'left_force_freq_hz': sensor_data.get('left_force_freq_hz'),
+                        # Error information
+                        'height_sensor_error': sensor_data.get('sensor_error', False),
+                        'height_sensor_error_message': sensor_data.get('sensor_error_message'),
+                        'right_force_error': sensor_data.get('right_force_error', False),
+                        'right_force_error_message': sensor_data.get('right_force_error_message'),
+                        'left_force_error': sensor_data.get('left_force_error', False),
+                        'left_force_error_message': sensor_data.get('left_force_error_message')
                     }
                 else:
                     result['sensors'] = {}
@@ -132,9 +204,10 @@ class CourierRobotWebAPI:
         Returns:
             dict with simplified status for external API users:
             - success: bool
-            - platform: {task_state, movement_state, control_mode}
-            - pushrod: {task_state, movement_state}
-            - sensors: {height, forces, frequencies}
+            - task_state: unified task state (idle/running/completed/emergency_stop)
+            - platform: {movement_state, control_mode, force_limit_status}
+            - pushrod: {movement_state}
+            - sensors: {height, forces, frequencies, errors}
         """
         result = self._get_status()
         
@@ -181,76 +254,258 @@ class CourierRobotWebAPI:
                 print(f"❌ Failed to get sensor data: {e}")
             return {"success": False, "error": str(e)}
     
+    # ==================== Server Configuration ====================
+    
+    def get_server_config(self):
+        """
+        Get server ID and hybrid control configuration
+        
+        Returns:
+            dict with success, server_id, hybrid_params, and calculated hybrid_positions
+        """
+        try:
+            url = f"{self.base_url}/api/server_config"
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                result = {"success": True, **data}
+                
+                if self.verbose:
+                    print("\n⚙️  Server Configuration:")
+                    print(f"   Server ID: {data['server_id']}")
+                    print(f"   Hybrid Params:")
+                    print(f"      High Base: {data['hybrid_params']['high_base']:.1f} mm")
+                    print(f"      Middle Base: {data['hybrid_params']['middle_base']:.1f} mm")
+                    print(f"      Low Base: {data['hybrid_params']['low_base']:.1f} mm")
+                    print(f"      Step: {data['hybrid_params']['step']:.1f} mm/ID")
+                    print(f"   Calculated Positions:")
+                    print(f"      High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"      Middle Position: {data['hybrid_positions']['middle_pos']:.1f} mm")
+                    print(f"      Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
+                
+                return result
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            if self.verbose:
+                print(f"❌ Failed to get server config: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def set_server_id(self, server_id):
+        """
+        Set server ID (runtime only, does not persist to config)
+        
+        Args:
+            server_id: Integer server ID
+        
+        Returns:
+            dict with success status and updated configuration
+        """
+        try:
+            url = f"{self.base_url}/api/server_config/set_server_id"
+            payload = {'server_id': server_id}
+            response = requests.post(url, json=payload, timeout=2)
+            
+            if response.status_code == 200:
+                data = response.json()
+                result = {"success": True, **data}
+                
+                if self.verbose:
+                    print(f"\n✅ Server ID updated to: {data['server_id']}")
+                    print(f"   New High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"   New Middle Position: {data['hybrid_positions']['middle_pos']:.1f} mm")
+                    print(f"   New Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
+                
+                return result
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            if self.verbose:
+                print(f"❌ Failed to set server ID: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def set_hybrid_params(self, high_base=None, middle_base=None, low_base=None, step=None):
+        """
+        Set hybrid control parameters (runtime only, does not persist to config)
+        
+        Args:
+            high_base: Base height for high position (mm), optional
+            middle_base: Base height for middle position (mm), optional
+            low_base: Base height for low position (mm), optional
+            step: Step distance per ID (mm), optional
+        
+        Returns:
+            dict with success status and updated configuration
+        """
+        try:
+            url = f"{self.base_url}/api/server_config/set_hybrid_params"
+            payload = {}
+            if high_base is not None:
+                payload['high_base'] = high_base
+            if middle_base is not None:
+                payload['middle_base'] = middle_base
+            if low_base is not None:
+                payload['low_base'] = low_base
+            if step is not None:
+                payload['step'] = step
+            
+            response = requests.post(url, json=payload, timeout=2)
+            
+            if response.status_code == 200:
+                data = response.json()
+                result = {"success": True, **data}
+                
+                if self.verbose:
+                    print(f"\n✅ Hybrid parameters updated:")
+                    params = data['hybrid_params']
+                    print(f"   High Base: {params['high_base']:.1f} mm")
+                    print(f"   Middle Base: {params['middle_base']:.1f} mm")
+                    print(f"   Low Base: {params['low_base']:.1f} mm")
+                    print(f"   Step: {params['step']:.1f} mm/ID")
+                    print(f"   Calculated Positions:")
+                    print(f"      High Position: {data['hybrid_positions']['high_pos']:.1f} mm")
+                    print(f"      Middle Position: {data['hybrid_positions']['middle_pos']:.1f} mm")
+                    print(f"      Low Position: {data['hybrid_positions']['low_pos']:.1f} mm\n")
+                
+                return result
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            if self.verbose:
+                print(f"❌ Failed to set hybrid params: {e}")
+            return {"success": False, "error": str(e)}
+    
     # ==================== Platform Manual Control ====================
     
-    def platform_up(self):
+    def platform_up(self, blocking=True, timeout=300, _internal_call=False):
         """
         Platform manual up movement
         
+        Args:
+            blocking: If True, wait until movement completes. If False, return immediately.
+            timeout: Maximum wait time in seconds (only used if blocking=True)
+            _internal_call: Internal flag to prevent infinite recursion
+        
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
-        status = self._get_status()
-        if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+        # If blocking and not an internal call, execute in background thread
+        # This allows stop/emergency_reset to interrupt the blocking operation
+        if blocking and not _internal_call:
+            success = self._execute_in_background(
+                self.platform_up, 
+                blocking=blocking, 
+                timeout=timeout,
+                _internal_call=True
+            )
+            if not success:
                 return {
                     'success': False,
-                    'error': f'Platform is busy (state: {platform_state})',
+                    'error': 'Previous command still running'
+                }
+            return {'success': True, 'started': True}
+        
+        # Check if robot is idle or completed before sending command
+        status = self._get_status()
+        if status.get('success'):
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Robot is busy (state: {task_state}), command rejected")
+                return {
+                    'success': False,
+                    'error': f'Robot is busy (state: {task_state})',
                     'status': status
                 }
         
         if self.verbose:
-            print(f"⬆️  [Platform] Manual UP")
+            mode_str = "(blocking)" if blocking else "(non-blocking)"
+            print(f"⬆️  [Platform] Manual UP {mode_str}")
         result = self._send_command('platform', 'up')
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['final_status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Platform UP command sent successfully")
-            else:
+        if not result.get('success'):
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
+            return result
+        
+        # If non-blocking, return immediately
+        if not blocking:
+            final_status = self.get_status()
+            result['final_status'] = final_status
+            if self.verbose:
+                print(f"✅ Platform UP command sent successfully (non-blocking)")
+            return result
+        
+        # If blocking, wait for completion
+        if self.verbose:
+            print(f"✅ Platform UP command sent, waiting for completion...")
+        
+        wait_result = self._wait_for_completion(timeout=timeout)
+        result.update(wait_result)
         return result
     
-    def platform_down(self):
+    def platform_down(self, blocking=True, timeout=300, _internal_call=False):
         """
         Platform manual down movement
         
+        Args:
+            blocking: If True, wait until movement completes. If False, return immediately.
+            timeout: Maximum wait time in seconds (only used if blocking=True)
+            _internal_call: Internal flag to prevent infinite recursion
+        
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
-        status = self._get_status()
-        if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+        # If blocking and not an internal call, execute in background thread
+        # This allows stop/emergency_reset to interrupt the blocking operation
+        if blocking and not _internal_call:
+            success = self._execute_in_background(
+                self.platform_down, 
+                blocking=blocking, 
+                timeout=timeout,
+                _internal_call=True
+            )
+            if not success:
                 return {
                     'success': False,
-                    'error': f'Platform is busy (state: {platform_state})',
+                    'error': 'Previous command still running'
+                }
+            return {'success': True, 'started': True}
+        
+        # Check if robot is idle or completed before sending command
+        status = self._get_status()
+        if status.get('success'):
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Robot is busy (state: {task_state}), command rejected")
+                return {
+                    'success': False,
+                    'error': f'Robot is busy (state: {task_state})',
                     'status': status
                 }
         
         if self.verbose:
-            print(f"⬇️  [Platform] Manual DOWN")
+            mode_str = "(blocking)" if blocking else "(non-blocking)"
+            print(f"⬇️  [Platform] Manual DOWN {mode_str}")
         result = self._send_command('platform', 'down')
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['final_status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Platform DOWN command sent successfully")
-            else:
+        if not result.get('success'):
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
+            return result
+        
+        # If non-blocking, return immediately
+        if not blocking:
+            final_status = self.get_status()
+            result['final_status'] = final_status
+            if self.verbose:
+                print(f"✅ Platform DOWN command sent successfully (non-blocking)")
+            return result
+        
+        # If blocking, wait for completion
+        if self.verbose:
+            print(f"✅ Platform DOWN command sent, waiting for completion...")
+        
+        wait_result = self._wait_for_completion(timeout=timeout)
+        result.update(wait_result)
         return result
     
     def platform_stop(self):
@@ -260,9 +515,15 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
+        # Set reset flag to interrupt any blocking operations
+        self.reset_flag = True
+        
         if self.verbose:
             print(f"🛑 [Platform] STOP")
         result = self._send_command('platform', 'stop')
+        
+        # Clear reset flag after stop command sent
+        self.reset_flag = False
         
         # Get final status after command
         final_status = self.get_status()
@@ -287,24 +548,24 @@ class CourierRobotWebAPI:
             Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Platform is busy (state: {platform_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.platform_stop()
         
         if self.verbose:
@@ -320,7 +581,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='platform', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -353,24 +614,24 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Platform is busy (state: {platform_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.platform_stop()
         
         if self.verbose:
@@ -386,7 +647,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='platform', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -415,24 +676,24 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Platform is busy (state: {platform_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.platform_stop()
         
         if self.verbose:
@@ -448,7 +709,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='platform', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -471,7 +732,7 @@ class CourierRobotWebAPI:
         Platform hybrid control (height OR force, whichever reached first) (BLOCKING by default)
         
         Args:
-            target_height: Target height in mm
+            target_height: Target height in mm, or 'high_pos'/'middle_pos'/'low_pos' to use calculated hybrid positions
             target_force: Target force in Newtons
             wait: If True, wait for completion before returning (default: True)
                   If False (non-blocking), will auto-stop previous task if running
@@ -480,24 +741,53 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if platform is idle or completed before sending command
+        # Resolve special height values (high_pos/middle_pos/low_pos)
+        if isinstance(target_height, str):
+            if target_height.lower() in ['high_pos', 'high']:
+                config = self.get_server_config()
+                if config.get('success'):
+                    target_height = config['hybrid_positions']['high_pos']
+                    if self.verbose:
+                        print(f"🔄 Resolved 'high_pos' to {target_height:.1f} mm")
+                else:
+                    return {'success': False, 'error': 'Failed to get server config for high_pos'}
+            elif target_height.lower() in ['middle_pos', 'middle', 'mid']:
+                config = self.get_server_config()
+                if config.get('success'):
+                    target_height = config['hybrid_positions']['middle_pos']
+                    if self.verbose:
+                        print(f"🔄 Resolved 'middle_pos' to {target_height:.1f} mm")
+                else:
+                    return {'success': False, 'error': 'Failed to get server config for middle_pos'}
+            elif target_height.lower() in ['low_pos', 'low']:
+                config = self.get_server_config()
+                if config.get('success'):
+                    target_height = config['hybrid_positions']['low_pos']
+                    if self.verbose:
+                        print(f"🔄 Resolved 'low_pos' to {target_height:.1f} mm")
+                else:
+                    return {'success': False, 'error': 'Failed to get server config for low_pos'}
+            else:
+                return {'success': False, 'error': f"Invalid height value: {target_height}. Use numeric value or 'high_pos'/'middle_pos'/'low_pos'"}
+        
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            platform_state = status.get('platform', {}).get('task_state', 'unknown')
-            if platform_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Platform is busy (state: {platform_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Platform is busy (state: {platform_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Platform is busy (state: {platform_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.platform_stop()
         
         if self.verbose:
@@ -514,7 +804,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='platform', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -532,74 +822,138 @@ class CourierRobotWebAPI:
     
     # ==================== Pushrod Manual Control ====================
     
-    def pushrod_up(self):
+    def pushrod_up(self, blocking=True, timeout=300, _internal_call=False):
         """
         Pushrod manual up movement
         
+        Args:
+            blocking: If True, wait until movement completes. If False, return immediately.
+            timeout: Maximum wait time in seconds (only used if blocking=True)
+            _internal_call: Internal flag to prevent infinite recursion
+        
         Returns:
             dict with success status and complete state
         """
-        # Check if pushrod is idle or completed before sending command
-        status = self._get_status()
-        if status.get('success'):
-            pushrod_state = status.get('pushrod', {}).get('task_state', 'unknown')
-            if pushrod_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
+        # If blocking and not an internal call, execute in background thread
+        # This allows stop/emergency_reset to interrupt the blocking operation
+        if blocking and not _internal_call:
+            success = self._execute_in_background(
+                self.pushrod_up, 
+                blocking=blocking, 
+                timeout=timeout,
+                _internal_call=True
+            )
+            if not success:
                 return {
                     'success': False,
-                    'error': f'Pushrod is busy (state: {pushrod_state})',
+                    'error': 'Previous command still running'
+                }
+            return {'success': True, 'started': True}
+        
+        # Check if robot is idle or completed before sending command
+        status = self._get_status()
+        if status.get('success'):
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Robot is busy (state: {task_state}), command rejected")
+                return {
+                    'success': False,
+                    'error': f'Robot is busy (state: {task_state})',
                     'status': status
                 }
         
         if self.verbose:
-            print(f"⬆️  [Pushrod] Manual UP")
+            mode_str = "(blocking)" if blocking else "(non-blocking)"
+            print(f"⬆️  [Pushrod] Manual UP {mode_str}")
         result = self._send_command('pushrod', 'up')
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['final_status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Pushrod UP command sent successfully")
-            else:
+        if not result.get('success'):
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
+            return result
+        
+        # If non-blocking, return immediately
+        if not blocking:
+            final_status = self.get_status()
+            result['final_status'] = final_status
+            if self.verbose:
+                print(f"✅ Pushrod UP command sent successfully (non-blocking)")
+            return result
+        
+        # If blocking, wait for completion
+        if self.verbose:
+            print(f"✅ Pushrod UP command sent, waiting for completion...")
+        
+        wait_result = self._wait_for_completion(timeout=timeout)
+        result.update(wait_result)
         return result
     
-    def pushrod_down(self):
+    def pushrod_down(self, blocking=True, timeout=300, _internal_call=False):
         """
         Pushrod manual down movement
         
+        Args:
+            blocking: If True, wait until movement completes. If False, return immediately.
+            timeout: Maximum wait time in seconds (only used if blocking=True)
+            _internal_call: Internal flag to prevent infinite recursion
+        
         Returns:
             dict with success status and complete state
         """
-        # Check if pushrod is idle or completed before sending command
-        status = self._get_status()
-        if status.get('success'):
-            pushrod_state = status.get('pushrod', {}).get('task_state', 'unknown')
-            if pushrod_state not in ['idle', 'completed']:
-                if self.verbose:
-                    print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
+        # If blocking and not an internal call, execute in background thread
+        # This allows stop/emergency_reset to interrupt the blocking operation
+        if blocking and not _internal_call:
+            success = self._execute_in_background(
+                self.pushrod_down, 
+                blocking=blocking, 
+                timeout=timeout,
+                _internal_call=True
+            )
+            if not success:
                 return {
                     'success': False,
-                    'error': f'Pushrod is busy (state: {pushrod_state})',
+                    'error': 'Previous command still running'
+                }
+            return {'success': True, 'started': True}
+        
+        # Check if robot is idle or completed before sending command
+        status = self._get_status()
+        if status.get('success'):
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
+                if self.verbose:
+                    print(f"❌ Robot is busy (state: {task_state}), command rejected")
+                return {
+                    'success': False,
+                    'error': f'Robot is busy (state: {task_state})',
                     'status': status
                 }
         
         if self.verbose:
-            print(f"⬇️  [Pushrod] Manual DOWN")
+            mode_str = "(blocking)" if blocking else "(non-blocking)"
+            print(f"⬇️  [Pushrod] Manual DOWN {mode_str}")
         result = self._send_command('pushrod', 'down')
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['final_status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Pushrod DOWN command sent successfully")
-            else:
+        if not result.get('success'):
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
+            return result
+        
+        # If non-blocking, return immediately
+        if not blocking:
+            final_status = self.get_status()
+            result['final_status'] = final_status
+            if self.verbose:
+                print(f"✅ Pushrod DOWN command sent successfully (non-blocking)")
+            return result
+        
+        # If blocking, wait for completion
+        if self.verbose:
+            print(f"✅ Pushrod DOWN command sent, waiting for completion...")
+        
+        wait_result = self._wait_for_completion(timeout=timeout)
+        result.update(wait_result)
         return result
     
     def pushrod_stop(self):
@@ -609,9 +963,15 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
+        # Set reset flag to interrupt any blocking operations
+        self.reset_flag = True
+        
         if self.verbose:
             print(f"🛑 [Pushrod] STOP")
         result = self._send_command('pushrod', 'stop')
+        
+        # Clear reset flag after stop command sent
+        self.reset_flag = False
         
         # Get final status after command
         final_status = self.get_status()
@@ -637,24 +997,24 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
-        # Check if pushrod is idle or completed before sending command
+        # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
-            pushrod_state = status.get('pushrod', {}).get('task_state', 'unknown')
-            if pushrod_state not in ['idle', 'completed']:
+            task_state = status.get('task_state', 'unknown')
+            if task_state not in ['idle', 'completed']:
                 if wait:
                     # Blocking mode: reject if busy
                     if self.verbose:
-                        print(f"❌ Pushrod is busy (state: {pushrod_state}), command rejected")
+                        print(f"❌ Robot is busy (state: {task_state}), command rejected")
                     return {
                         'success': False,
-                        'error': f'Pushrod is busy (state: {pushrod_state})',
+                        'error': f'Robot is busy (state: {task_state})',
                         'status': status
                     }
                 else:
                     # Non-blocking mode: auto-stop previous task
                     if self.verbose:
-                        print(f"⚠️  Pushrod is busy (state: {pushrod_state}), auto-stopping...")
+                        print(f"⚠️  Robot is busy (state: {task_state}), auto-stopping...")
                     self.pushrod_stop()
         
         if self.verbose:
@@ -672,7 +1032,7 @@ class CourierRobotWebAPI:
         if wait:
             if self.verbose:
                 print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
-            completion = self._wait_for_completion(target='pushrod', timeout=timeout)
+            completion = self._wait_for_completion(timeout=timeout)
             
             # Only print completion message if successful (not aborted by reset)
             if completion['success'] and self.verbose:
@@ -766,12 +1126,11 @@ class CourierRobotWebAPI:
             return True
     
     
-    def _wait_for_completion(self, target='platform', timeout=300, poll_interval=0.1):
+    def _wait_for_completion(self, timeout=300, poll_interval=0.1):
         """
-        Internal method: Wait for platform or pushrod task to complete
+        Internal method: Wait for task to complete
         
         Args:
-            target: 'platform' or 'pushrod'
             timeout: Maximum wait time in seconds
             poll_interval: Status polling interval in seconds (default: 0.1s = 10Hz)
             
@@ -780,7 +1139,7 @@ class CourierRobotWebAPI:
         """
         start_time = time.time()
         if self.verbose:
-            print(f"⏳ Waiting for [{target}] task to complete (timeout: {timeout}s)...")
+            print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
         
         # Temporarily disable verbose to avoid spamming status output during polling
         original_verbose = self.verbose
@@ -803,8 +1162,8 @@ class CourierRobotWebAPI:
                     return {"success": False, "error": "Aborted by reset"}
                 
                 status_result = self._get_status()
-                if status_result['success'] and target in status_result:
-                    task_state = status_result[target].get('task_state', 'unknown')
+                if status_result['success']:
+                    task_state = status_result.get('task_state', 'unknown')
                     
                     # Check if task is running - new task has started
                     if task_state in ['running', 'executing']:
@@ -819,8 +1178,8 @@ class CourierRobotWebAPI:
                         if completed_first_seen is None:
                             completed_first_seen = time.time()
                         elif time.time() - completed_first_seen >= completed_stable_threshold:
-                            # Been 'completed' for >= 1s, likely already at target (not a new task)
-                            full_data = status_result.get('_full_data', {}).get(target, {})
+                            # Been 'completed' for >= threshold, likely already at target (not a new task)
+                            full_data = status_result.get('_full_data', {})
                             reason = full_data.get('completion_reason', 'unknown')
                             
                             if original_verbose:
@@ -854,12 +1213,12 @@ class CourierRobotWebAPI:
                 
                 status_result = self._get_status()
                 
-                if status_result['success'] and target in status_result:
-                    task_state = status_result[target].get('task_state', 'unknown')
+                if status_result['success']:
+                    task_state = status_result.get('task_state', 'unknown')
                     
                     if task_state == 'completed':
                         # Try to get from full data if available
-                        full_data = status_result.get('_full_data', {}).get(target, {})
+                        full_data = status_result.get('_full_data', {})
                         reason = full_data.get('completion_reason', 'unknown')
                         duration = full_data.get('task_duration', 0)
                         if original_verbose:
@@ -879,7 +1238,7 @@ class CourierRobotWebAPI:
                         }
                     elif task_state == 'emergency_stop':
                         # Try to get from full data if available
-                        full_data = status_result.get('_full_data', {}).get(target, {})
+                        full_data = status_result.get('_full_data', {})
                         reason = full_data.get('completion_reason', 'unknown')
                         if original_verbose:
                             print(f"🚨 EMERGENCY STOP: {reason}")
@@ -910,221 +1269,6 @@ class CourierRobotWebAPI:
         finally:
             # Ensure verbose is always restored
             self.verbose = original_verbose
-
-
-def interactive_mode(robot):
-    """
-    Interactive command-line mode for manual control
-    
-    Args:
-        robot: CourierRobotWebAPI instance
-    
-    Available commands:
-    
-    Status & Info:
-      status, st        - Show current status
-      sensor, sn        - Show sensor data
-      help, h, ?        - Show this help
-      quit, exit, q     - Exit interactive mode
-    
-    Platform Height Control:
-      goto <height>     - Go to height (mm), e.g., 'goto 900' (runs in background, can be interrupted)
-      g <height>        - Short form of goto
-      goto! <height>    - Non-blocking goto (fire-and-forget)
-      g! <height>       - Non-blocking short form
-    
-    Platform Force Control:
-      fup <force>       - Force control up (N), e.g., 'fup 50' (background)
-      fdown <force>     - Force control down (N), e.g., 'fdown 30' (background)
-      fup! <force>      - Non-blocking force up
-      fdown! <force>    - Non-blocking force down
-      hybrid <h> <f>    - Hybrid control, e.g., 'hybrid 900 50' (background)
-      hybrid! <h> <f>   - Non-blocking hybrid control
-    
-    Platform Manual Control:
-      up                - Manual up (use 'stop' to stop)
-      down              - Manual down (use 'stop' to stop)
-      stop              - Stop platform (can interrupt any command!)
-    
-    Pushrod Control:
-      pup               - Pushrod manual up (use 'pstop' to stop)
-      pdown             - Pushrod manual down (use 'pstop' to stop)
-      pgoto <height>    - Pushrod goto absolute height (mm, background)
-      pgoto! <height>   - Pushrod goto absolute height (non-blocking)
-      prel <offset>     - Pushrod relative move (mm, background), e.g., 'prel 10' or 'prel -5'
-      prel! <offset>    - Pushrod relative move (non-blocking)
-      pstop             - Stop pushrod (can interrupt any command!)
-    
-    Emergency:
-      reset, emergency  - Emergency reset (can interrupt any command!)
-    
-    Note: Commands without '!' run in background - you can type 'stop' anytime to interrupt!
-    """
-    print("\n" + "="*60)
-    print("🤖 CourierRobot Interactive Mode")
-    print("="*60)
-    print("Type 'help' for available commands, 'quit' to exit")
-    print("="*60 + "\n")
-    
-    while True:
-        try:
-            cmd = input("robot> ").strip().lower()
-            
-            if not cmd:
-                continue
-            
-            parts = cmd.split()
-            command = parts[0]
-            
-            # Exit commands
-            if command in ['quit', 'exit', 'q']:
-                print("👋 Exiting interactive mode")
-                break
-            
-            # Help
-            elif command in ['help', 'h', '?']:
-                print(interactive_mode.__doc__)
-            
-            # Status commands
-            elif command in ['status', 'st']:
-                import json
-                status = robot.get_status()
-                print(json.dumps(status, indent=2))
-            
-            elif command in ['sensor', 'sn']:
-                robot.get_sensor_data()
-            
-            # Platform height control
-            elif command in ['goto', 'g', 'goto!', 'g!']:
-                if len(parts) < 2:
-                    print("❌ Usage: goto <height> or goto! <height> (non-blocking)")
-                else:
-                    try:
-                        height = float(parts[1])
-                        wait = not command.endswith('!')  # Non-blocking if ends with !
-                        if wait:
-                            # Blocking mode: execute in background thread
-                            robot._execute_in_background(robot.platform_goto_height, height, wait=True)
-                        else:
-                            # Non-blocking mode: execute directly
-                            robot.platform_goto_height(height, wait=False)
-                    except ValueError:
-                        print("❌ Invalid height value")
-            
-            # Platform force control
-            elif command in ['fup', 'fup!']:
-                if len(parts) < 2:
-                    print("❌ Usage: fup <force> or fup! <force> (non-blocking)")
-                else:
-                    try:
-                        force = float(parts[1])
-                        wait = not command.endswith('!')
-                        if wait:
-                            # Blocking mode: execute in background thread
-                            robot._execute_in_background(robot.platform_force_up, force, wait=True)
-                        else:
-                            # Non-blocking mode: execute directly
-                            robot.platform_force_up(force, wait=False)
-                    except ValueError:
-                        print("❌ Invalid force value")
-            
-            elif command in ['fdown', 'fdown!']:
-                if len(parts) < 2:
-                    print("❌ Usage: fdown <force> or fdown! <force> (non-blocking)")
-                else:
-                    try:
-                        force = float(parts[1])
-                        wait = not command.endswith('!')
-                        if wait:
-                            # Blocking mode: execute in background thread
-                            robot._execute_in_background(robot.platform_force_down, force, wait=True)
-                        else:
-                            # Non-blocking mode: execute directly
-                            robot.platform_force_down(force, wait=False)
-                    except ValueError:
-                        print("❌ Invalid force value")
-            
-            elif command in ['hybrid', 'hybrid!']:
-                if len(parts) < 3:
-                    print("❌ Usage: hybrid <height> <force> or hybrid! <height> <force> (non-blocking)")
-                else:
-                    try:
-                        height = float(parts[1])
-                        force = float(parts[2])
-                        wait = not command.endswith('!')
-                        if wait:
-                            # Blocking mode: execute in background thread
-                            robot._execute_in_background(robot.platform_hybrid_control, height, force, wait=True)
-                        else:
-                            # Non-blocking mode: execute directly
-                            robot.platform_hybrid_control(height, force, wait=False)
-                    except ValueError:
-                        print("❌ Invalid height or force value")
-            
-            # Platform manual control
-            elif command == 'up':
-                robot.platform_up()
-            
-            elif command == 'down':
-                robot.platform_down()
-            
-            elif command == 'stop':
-                robot.platform_stop()
-            
-            # Pushrod control
-            elif command == 'pup':
-                robot.pushrod_up()
-            
-            elif command == 'pdown':
-                robot.pushrod_down()
-            
-            elif command in ['pgoto', 'pgoto!']:
-                if len(parts) < 2:
-                    print("❌ Usage: pgoto <height> or pgoto! <height> (non-blocking)")
-                else:
-                    try:
-                        height = float(parts[1])
-                        wait = not command.endswith('!')
-                        if wait:
-                            # Blocking mode: execute in background thread
-                            robot._execute_in_background(robot.pushrod_goto_height, height, mode='absolute', wait=True)
-                        else:
-                            # Non-blocking mode: execute directly
-                            robot.pushrod_goto_height(height, mode='absolute', wait=False)
-                    except ValueError:
-                        print("❌ Invalid height value")
-            
-            elif command in ['prel', 'prel!']:
-                if len(parts) < 2:
-                    print("❌ Usage: prel <offset> or prel! <offset> (non-blocking)")
-                else:
-                    try:
-                        offset = float(parts[1])
-                        wait = not command.endswith('!')
-                        if wait:
-                            # Blocking mode: execute in background thread
-                            robot._execute_in_background(robot.pushrod_goto_height, offset, mode='relative', wait=True)
-                        else:
-                            # Non-blocking mode: execute directly
-                            robot.pushrod_goto_height(offset, mode='relative', wait=False)
-                    except ValueError:
-                        print("❌ Invalid offset value")
-            
-            elif command == 'pstop':
-                robot.pushrod_stop()
-            
-            # Emergency
-            elif command in ['reset', 'emergency']:
-                robot.emergency_reset()
-            
-            else:
-                print(f"❌ Unknown command: '{command}'. Type 'help' for available commands.")
-        
-        except KeyboardInterrupt:
-            print("\n👋 Exiting interactive mode (Ctrl+C)")
-            break
-        except Exception as e:
-            print(f"❌ Error: {e}")
 
 
 if __name__ == "__main__":

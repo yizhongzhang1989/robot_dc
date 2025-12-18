@@ -27,6 +27,7 @@ def generate_launch_description():
     # Modbus driver defaults
     modbus_port_default = get_config_value('lift_robot.modbus_driver.port', 'auto')
     modbus_baudrate_default = get_config_value('lift_robot.modbus_driver.baudrate', '115200')
+    modbus_timeout_default = get_config_value('lift_robot.modbus_driver.timeout', '0.03')
     dashboard_enabled_default = get_config_value('lift_robot.modbus_driver.dashboard.enabled', 'false')
     dashboard_host_default = get_config_value('lift_robot.modbus_driver.dashboard.host', '0.0.0.0')
     dashboard_port_default = get_config_value('lift_robot.modbus_driver.dashboard.port', '5000')
@@ -34,6 +35,7 @@ def generate_launch_description():
     # Platform defaults
     platform_device_id_default = get_config_value('lift_robot.platform.device_id', '50')
     platform_delay_default = get_config_value('lift_robot.platform.launch_delay', '3.0')
+    platform_overshoot_settle_time_default = get_config_value('lift_robot.platform.overshoot_settle_time', '0.8')
     
     # Draw wire sensor defaults
     draw_wire_device_id_default = get_config_value('lift_robot.draw_wire_sensor.device_id', '51')
@@ -66,20 +68,28 @@ def generate_launch_description():
     web_listen_host_default = get_config_value('lift_robot.web.listen_host', '0.0.0.0')
     web_sensor_topic_default = get_config_value('lift_robot.web.sensor_topic', '/draw_wire_sensor/data')
     web_delay_default = get_config_value('lift_robot.web.launch_delay', '5.5')
+    web_server_id_default = get_config_value('lift_robot.web.server_id', '0')
+    web_hybrid_high_base_default = get_config_value('lift_robot.web.hybrid_params.high_base', '756.0')
+    web_hybrid_middle_base_default = get_config_value('lift_robot.web.hybrid_params.middle_base', '746.0')
+    web_hybrid_low_base_default = get_config_value('lift_robot.web.hybrid_params.low_base', '736.0')
+    web_hybrid_step_default = get_config_value('lift_robot.web.hybrid_params.step', '48.0')
     
     print(f"[lift_robot_bringup] Loaded config defaults:")
-    print(f"  Modbus: port={modbus_port_default}, baudrate={modbus_baudrate_default}")
-    print(f"  Platform: device_id={platform_device_id_default}, delay={platform_delay_default}")
+    print(f"  Modbus: port={modbus_port_default}, baudrate={modbus_baudrate_default}, timeout={modbus_timeout_default}s")
+    print(f"  Platform: device_id={platform_device_id_default}, delay={platform_delay_default}, overshoot_settle_time={platform_overshoot_settle_time_default}")
     print(f"  DrawWire: device_id={draw_wire_device_id_default}, interval={draw_wire_interval_default}, delay={draw_wire_delay_default}")
     print(f"  Force Right: device_id={force_right_device_id_default}, interval={force_right_interval_default}, delay={force_right_delay_default}")
     print(f"  Force Left: device_id={force_left_device_id_default}, interval={force_left_interval_default}, delay={force_left_delay_default}")
     print(f"  Web: port={web_port_default}, enabled={web_enabled_default}, delay={web_delay_default}")
+    print(f"  Web Hybrid: server_id={web_server_id_default}, high_base={web_hybrid_high_base_default}, middle_base={web_hybrid_middle_base_default}, low_base={web_hybrid_low_base_default}, step={web_hybrid_step_default}")
     
     # Launch arguments - Modbus Driver
     modbus_port_arg = DeclareLaunchArgument(
         'modbus_port', default_value=modbus_port_default, description='Modbus serial port (auto or /dev/ttyUSB0)')
     modbus_baudrate_arg = DeclareLaunchArgument(
         'modbus_baudrate', default_value=modbus_baudrate_default, description='Modbus baudrate')
+    modbus_timeout_arg = DeclareLaunchArgument(
+        'modbus_timeout', default_value=modbus_timeout_default, description='Modbus timeout in seconds (0.03 = 30ms)')
     enable_dashboard_arg = DeclareLaunchArgument(
         'enable_dashboard', default_value=dashboard_enabled_default, description='Enable Modbus dashboard web interface')
     dashboard_host_arg = DeclareLaunchArgument(
@@ -92,6 +102,8 @@ def generate_launch_description():
         'platform_device_id', default_value=platform_device_id_default, description='Platform controller Modbus slave ID')
     platform_delay_arg = DeclareLaunchArgument(
         'platform_delay', default_value=platform_delay_default, description='Platform node launch delay (s)')
+    platform_overshoot_settle_time_arg = DeclareLaunchArgument(
+        'platform_overshoot_settle_time', default_value=platform_overshoot_settle_time_default, description='Settle time after stop (s)')
     
     # Launch arguments - Draw Wire Sensor
     draw_wire_device_id_arg = DeclareLaunchArgument(
@@ -148,6 +160,16 @@ def generate_launch_description():
         'web_sensor_topic', default_value=web_sensor_topic_default, description='Web sensor topic')
     web_delay_arg = DeclareLaunchArgument(
         'web_delay', default_value=web_delay_default, description='Web interface launch delay (s)')
+    web_server_id_arg = DeclareLaunchArgument(
+        'web_server_id', default_value=web_server_id_default, description='Server ID for hybrid control')
+    web_hybrid_high_base_arg = DeclareLaunchArgument(
+        'web_hybrid_high_base', default_value=web_hybrid_high_base_default, description='Hybrid high position base height (mm)')
+    web_hybrid_middle_base_arg = DeclareLaunchArgument(
+        'web_hybrid_middle_base', default_value=web_hybrid_middle_base_default, description='Hybrid middle position base height (mm)')
+    web_hybrid_low_base_arg = DeclareLaunchArgument(
+        'web_hybrid_low_base', default_value=web_hybrid_low_base_default, description='Hybrid low position base height (mm)')
+    web_hybrid_step_arg = DeclareLaunchArgument(
+        'web_hybrid_step', default_value=web_hybrid_step_default, description='Hybrid step distance per ID (mm)')
     # Paths to launch files
     modbus_path = os.path.join(
         get_package_share_directory('modbus_driver'),
@@ -185,6 +207,7 @@ def generate_launch_description():
         launch_arguments={
             'modbus_port': LaunchConfiguration('modbus_port'),
             'baudrate': LaunchConfiguration('modbus_baudrate'),
+            'timeout': LaunchConfiguration('modbus_timeout'),
             'enable_dashboard': LaunchConfiguration('enable_dashboard'),
             'dashboard_host': LaunchConfiguration('dashboard_host'),
             'dashboard_port': LaunchConfiguration('dashboard_port')
@@ -197,7 +220,8 @@ def generate_launch_description():
         actions=[IncludeLaunchDescription(
             PythonLaunchDescriptionSource(lift_robot_path),
             launch_arguments={
-                'device_id': LaunchConfiguration('platform_device_id')
+                'device_id': LaunchConfiguration('platform_device_id'),
+                'overshoot_settle_time': LaunchConfiguration('platform_overshoot_settle_time')
             }.items()
         )]
     )
@@ -262,7 +286,12 @@ def generate_launch_description():
                 'port': LaunchConfiguration('web_port'),
                 'host': LaunchConfiguration('web_host'),
                 'listen_host': LaunchConfiguration('web_listen_host'),
-                'sensor_topic': LaunchConfiguration('web_sensor_topic')
+                'sensor_topic': LaunchConfiguration('web_sensor_topic'),
+                'server_id': LaunchConfiguration('web_server_id'),
+                'hybrid_high_base': LaunchConfiguration('web_hybrid_high_base'),
+                'hybrid_middle_base': LaunchConfiguration('web_hybrid_middle_base'),
+                'hybrid_low_base': LaunchConfiguration('web_hybrid_low_base'),
+                'hybrid_step': LaunchConfiguration('web_hybrid_step')
             }.items()
         )],
         condition=IfCondition(LaunchConfiguration('web_enabled'))
@@ -272,12 +301,14 @@ def generate_launch_description():
         # Modbus driver arguments
         modbus_port_arg,
         modbus_baudrate_arg,
+        modbus_timeout_arg,
         enable_dashboard_arg,
         dashboard_host_arg,
         dashboard_port_arg,
         # Platform arguments
         platform_device_id_arg,
         platform_delay_arg,
+        platform_overshoot_settle_time_arg,
         # Draw wire sensor arguments
         draw_wire_device_id_arg,
         draw_wire_interval_arg,
@@ -306,6 +337,11 @@ def generate_launch_description():
         web_listen_host_arg,
         web_sensor_topic_arg,
         web_delay_arg,
+        web_server_id_arg,
+        web_hybrid_high_base_arg,
+        web_hybrid_middle_base_arg,
+        web_hybrid_low_base_arg,
+        web_hybrid_step_arg,
         # Launch actions
         modbus_launch,
         lift_robot_launch,

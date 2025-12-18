@@ -30,6 +30,14 @@ class ForceSensorController(ModbusDevice):
         self.last_force_value = None
         self.last_force_reg = None
         self.last_force_ts = None
+        # Error tracking
+        self.error_count = 0
+        self.last_error = None
+        self.last_error_time = None
+        self.consecutive_errors = 0
+        # Sensor disable mechanism (after consecutive failures)
+        self.sensor_disabled = False
+        self.disable_threshold = 2  # Disable after 2 consecutive failures (prevent jitter)
 
     def initialize(self):
         self.node.get_logger().info(
@@ -68,34 +76,88 @@ class ForceSensorController(ModbusDevice):
         """异步读取单通道力值 (REG_FORCE)。"""
         def cb(resp):
             try:
+                # Check if response is None or empty (error indicators from base_device)
+                if resp is None or not resp or len(resp) == 0:
+                    self.error_count += 1
+                    self.consecutive_errors += 1
+                    self.last_error = "Modbus recv no response (timeout or hardware failure)"
+                    self.last_error_time = time.time()
+                    # Check if we should disable this sensor
+                    if self.consecutive_errors >= self.disable_threshold:
+                        if not self.sensor_disabled:
+                            self.sensor_disabled = True
+                            self.node.get_logger().error(
+                                f"[SEQ {seq_id}] 🔴 Sensor reached disable threshold ({self.consecutive_errors}/{self.disable_threshold}) - stopping Modbus commands"
+                            )
+                    self.node.get_logger().error(f"[SEQ {seq_id}] FORCE read error ({self.consecutive_errors}/{self.disable_threshold}): {self.last_error}")
+                    return
+                
                 ts = time.time()
                 if resp and len(resp) >= 1:
                     val = self._parse_int16(resp)
                     self.last_force_value = val
                     self.last_force_reg = resp[0]
                     self.last_force_ts = ts
+                    # Reset error counters on success
+                    self.consecutive_errors = 0
+                    self.last_error = None
                     self.node.get_logger().debug(f"[SEQ {seq_id}] FORCE reg: 0x{resp[0]:04X} value={val}N")
                 else:
-                    self.node.get_logger().warn(f"[SEQ {seq_id}] Invalid FORCE response: {resp}")
+                    # Should not reach here after the check above, but keep for safety
+                    self.error_count += 1
+                    self.consecutive_errors += 1
+                    self.last_error = f"Invalid FORCE response: {resp}"
+                    self.last_error_time = ts
+                    if self.consecutive_errors >= self.disable_threshold:
+                        if not self.sensor_disabled:
+                            self.sensor_disabled = True
+                            self.node.get_logger().error(
+                                f"[SEQ {seq_id}] 🔴 Sensor reached disable threshold ({self.consecutive_errors}/{self.disable_threshold}) - stopping Modbus commands"
+                            )
+                    self.node.get_logger().warn(f"[SEQ {seq_id}] {self.last_error}")
             except Exception as e:
-                self.node.get_logger().error(f"[SEQ {seq_id}] Force callback error: {e}")
+                self.error_count += 1
+                self.consecutive_errors += 1
+                self.last_error = f"Force callback error: {e}"
+                self.last_error_time = time.time()
+                if self.consecutive_errors >= self.disable_threshold:
+                    if not self.sensor_disabled:
+                        self.sensor_disabled = True
+                        self.node.get_logger().error(
+                            f"[SEQ {seq_id}] 🔴 Sensor reached disable threshold ({self.consecutive_errors}/{self.disable_threshold}) - stopping Modbus commands"
+                        )
+                self.node.get_logger().error(f"[SEQ {seq_id}] {self.last_error}")
                 # Don't propagate exception - keep node running
         
-        # 读取 1 个保持寄存器 - wrap to catch Modbus errors
+        # Read 1 holding register - wrap to catch Modbus errors
         try:
             self.recv(3, self.REG_FORCE, 1, callback=cb, seq_id=seq_id)
         except Exception as e:
-            self.node.get_logger().error(f"[SEQ {seq_id}] Force recv error: {e}")
+            self.error_count += 1
+            self.consecutive_errors += 1
+            self.last_error = f"Force recv error: {e}"
+            self.last_error_time = time.time()
+            if self.consecutive_errors >= self.disable_threshold:
+                if not self.sensor_disabled:
+                    self.sensor_disabled = True
+                    self.node.get_logger().error(
+                        f"[SEQ {seq_id}] 🔴 Sensor reached disable threshold ({self.consecutive_errors}/{self.disable_threshold}) - stopping Modbus commands"
+                    )
+            self.node.get_logger().error(f"[SEQ {seq_id}] {self.last_error}")
             # Don't propagate - allow system to continue
 
     def get_last(self):
-        # 为兼容旧接口，返回左右两路相同值
+        # For backward compatibility, return same value for both channels
         return {
             'right_value': self.last_force_value,
             'left_value': self.last_force_value,
             'force_reg': self.last_force_reg,
             'right_ts': self.last_force_ts,
             'left_ts': self.last_force_ts,
+            'error_count': self.error_count,
+            'last_error': self.last_error,
+            'last_error_time': self.last_error_time,
+            'consecutive_errors': self.consecutive_errors,
         }
 
     def cleanup(self):
