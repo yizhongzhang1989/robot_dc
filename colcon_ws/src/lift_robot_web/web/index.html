@@ -867,7 +867,7 @@ function update(d){
   
   // Update unified task status
   if(d.platform_status || d.pushrod_status) {
-    updateUnifiedTaskStatus(d.platform_status, d.pushrod_status);
+    updateUnifiedTaskStatus(d, d.platform_status, d.pushrod_status);
   }
   
   // Update force limit status (3 states: enabled-normal, enabled-exceeded, disabled)
@@ -913,7 +913,7 @@ function update(d){
 }
 
 // Update unified task status card (merge platform + pushrod)
-function updateUnifiedTaskStatus(platformStatus, pushrodStatus) {
+function updateUnifiedTaskStatus(data, platformStatus, pushrodStatus) {
   let mergedState = 'idle';
   let mergedType = '-';
   let mergedDuration = '-';

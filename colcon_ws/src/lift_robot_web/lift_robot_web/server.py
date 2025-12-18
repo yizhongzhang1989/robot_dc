@@ -441,6 +441,22 @@ def run_fastapi_server(port):
                 # Add platform status (pushrod shares same status)
                 if lift_robot_node.platform_status is not None:
                     merged['platform_status'] = lift_robot_node.platform_status
+                    # Also add top-level task status fields for web interface compatibility
+                    merged['task_state'] = lift_robot_node.platform_status.get('task_state', 'idle')
+                    merged['task_type'] = lift_robot_node.platform_status.get('task_type')
+                    merged['task_start_time'] = lift_robot_node.platform_status.get('task_start_time')
+                    merged['task_end_time'] = lift_robot_node.platform_status.get('task_end_time')
+                    merged['task_duration'] = lift_robot_node.platform_status.get('task_duration')
+                    merged['completion_reason'] = lift_robot_node.platform_status.get('completion_reason')
+                else:
+                    # Provide default task status when no platform_status available
+                    merged['platform_status'] = None
+                    merged['task_state'] = 'idle'
+                    merged['task_type'] = None
+                    merged['task_start_time'] = None
+                    merged['task_end_time'] = None
+                    merged['task_duration'] = None
+                    merged['completion_reason'] = None
                 
                 return merged
             except Exception as e:
@@ -504,7 +520,7 @@ def run_fastapi_server(port):
             response = {}
             if lift_robot_node.platform_status:
                 # Top-level unified task state (shared by platform and pushrod)
-                response['task_state'] = lift_robot_node.platform_status.get('task_state', 'unknown')
+                response['task_state'] = lift_robot_node.platform_status.get('task_state', 'idle')
                 response['task_type'] = lift_robot_node.platform_status.get('task_type')
                 response['task_start_time'] = lift_robot_node.platform_status.get('task_start_time')
                 response['task_end_time'] = lift_robot_node.platform_status.get('task_end_time')
