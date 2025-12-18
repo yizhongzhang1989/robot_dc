@@ -193,50 +193,50 @@ class URWobjOpenHandle(UROperateWobj):
         print("[INFO] Motion 1 completed successfully")
         time.sleep(0.5)
 
-        # ==============Motion 2: Open the handle=================
-        print("\n[Motion 2] Opening handle...")
-        # Get current TCP pose
-        tcp_pose = self.robot.get_actual_tcp_pose()
-        print(f"[INFO] Current TCP pose: {tcp_pose}")
+        # # ==============Motion 2: Open the handle=================
+        # print("\n[Motion 2] Opening handle...")
+        # # Get current TCP pose
+        # tcp_pose = self.robot.get_actual_tcp_pose()
+        # print(f"[INFO] Current TCP pose: {tcp_pose}")
         
-        # Extract rotation matrix from server transformation matrix and convert to rotation vector
-        server_rotation = self.server2base_matrix[:3, :3]
-        rotation_obj = R.from_matrix(server_rotation)
-        rotation_vector = rotation_obj.as_rotvec()
+        # # Extract rotation matrix from server transformation matrix and convert to rotation vector
+        # server_rotation = self.server2base_matrix[:3, :3]
+        # rotation_obj = R.from_matrix(server_rotation)
+        # rotation_vector = rotation_obj.as_rotvec()
         
-        # Create task frame using current position with server orientation
-        task_frame = [
-            tcp_pose[0],        # x (current position)
-            tcp_pose[1],        # y
-            tcp_pose[2],        # z
-            rotation_vector[0], # rx (server orientation)
-            rotation_vector[1], # ry
-            rotation_vector[2]  # rz
-        ]
+        # # Create task frame using current position with server orientation
+        # task_frame = [
+        #     tcp_pose[0],        # x (current position)
+        #     tcp_pose[1],        # y
+        #     tcp_pose[2],        # z
+        #     rotation_vector[0], # rx (server orientation)
+        #     rotation_vector[1], # ry
+        #     rotation_vector[2]  # rz
+        # ]
         
-        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
+        # print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
-        # Set force mode parameters for motion 2
-        selection_vector = [1, 0, 0, 0, 0, 0]  # Enable force control in X direction relative to task frame
-        wrench = [-15, 0, 0, 0, 0, 0]  # Desired force/torque in each direction
-        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        # # Set force mode parameters for motion 2
+        # selection_vector = [1, 0, 0, 0, 0, 0]  # Enable force control in X direction relative to task frame
+        # wrench = [-15, 0, 0, 0, 0, 0]  # Desired force/torque in each direction
+        # limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
-        print("[INFO] Starting force control task - motion 2: opening handle...")
+        # print("[INFO] Starting force control task - motion 2: opening handle...")
         
-        # Execute force control task with time-based termination
-        result = self.robot.force_control_task(
-            task_frame=task_frame,
-            selection_vector=selection_vector,
-            wrench=wrench,
-            limits=limits,
-            damping=0.1,
-            end_type=1,
-            end_time=3
-        )
+        # # Execute force control task with time-based termination
+        # result = self.robot.force_control_task(
+        #     task_frame=task_frame,
+        #     selection_vector=selection_vector,
+        #     wrench=wrench,
+        #     limits=limits,
+        #     damping=0.1,
+        #     end_type=1,
+        #     end_time=3
+        # )
         
-        if result != 0:
-            print(f"[ERROR] Motion 2 failed with code: {result}")
-            return result
+        # if result != 0:
+        #     print(f"[ERROR] Motion 2 failed with code: {result}")
+        #     return result
         
         print("[INFO] Motion 2 completed successfully")
         time.sleep(0.5)
@@ -277,7 +277,7 @@ class URWobjOpenHandle(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction relative to task frame
-        wrench = [0, 80, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 60, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pushing server...")
@@ -383,7 +383,7 @@ class URWobjOpenHandle(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction relative to task frame
-        wrench = [0, -80, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, -60, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pulling server...")

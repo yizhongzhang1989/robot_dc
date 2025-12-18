@@ -58,9 +58,9 @@ class AMRController:
             
             # Extract AMR configuration
             amr_config = self.config.get('amr', {})
-            # Use AMR IP as the host for connecting to the web API
-            amr_web_host = amr_config.get('ip', 'msra-yizhong.guest.corp.microsoft.com')
             web_config = amr_config.get('web', {})
+            # Use web config host for connecting to the web API
+            amr_web_host = web_config.get('host', 'msra-yizhong.guest.corp.microsoft.com')
             web_port = web_config.get('port', 5000)
             
             # Construct AMR Web API URL

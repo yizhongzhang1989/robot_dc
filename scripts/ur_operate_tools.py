@@ -195,7 +195,7 @@ class UROperateTools:
             [76.47, -98.15, 18.49, -63.29, 13.73, 183.24],    # Waypoint 4
             [194.04, -98.15, 18.49, -63.29, 13.73, 183.24],   # Waypoint 5
             [194.04, -93.88, 79.31, -63.29, 13.73, 183.24],   # Waypoint 6
-            [194.04, -93.88, 76.55, -71.93, -88.84, 180.68]   # Waypoint 7 (final tools position)
+            [194.04, -93.88, 76.55, -71.93, -88.84, 0]   # Waypoint 7 (final tools position)
         ]
         
         # Convert degrees to radians
@@ -238,7 +238,7 @@ class UROperateTools:
         
         # Define the 7 waypoints in degrees (reverse order from tools to task)
         waypoints_degrees = [
-            [194.04, -93.88, 76.55, -71.93, -88.84, 180.68],  # Waypoint 1 (from tools position)
+            [194.04, -93.88, 76.55, -71.93, -88.84, 0],  # Waypoint 1 (from tools position)
             [194.04, -93.88, 79.31, -63.29, 13.73, 183.24],   # Waypoint 2
             [194.04, -98.15, 18.49, -63.29, 13.73, 183.24],   # Waypoint 3
             [76.47, -98.15, 18.49, -63.29, 13.73, 183.24],    # Waypoint 4
@@ -829,6 +829,70 @@ class UROperateTools:
             print(f"✗ Exception during return_tool_from_task_position: {e}")
             return False
 
+    def return_tool1_get_tool2_from_task(self, tool1_name, tool2_name):
+        """
+        Complete workflow to return one tool and get another tool from task position
+        Executes: task->tools->return_tool1->get_tool2->task
+        
+        Args:
+            tool1_name (str): Name of the tool to return ('tool_pushpull', 'tool_rotate', or 'tool_extract')
+            tool2_name (str): Name of the tool to get ('tool_pushpull', 'tool_rotate', or 'tool_extract')
+        """
+        print(f"Starting return_tool1_get_tool2_from_task workflow: returning {tool1_name}, getting {tool2_name}...")
+        
+        # Validate tool names
+        valid_tools = ['tool_pushpull', 'tool_rotate', 'tool_extract']
+        if tool1_name not in valid_tools:
+            print(f"✗ Invalid tool1 name '{tool1_name}'. Valid tools: {valid_tools}")
+            return False
+        if tool2_name not in valid_tools:
+            print(f"✗ Invalid tool2 name '{tool2_name}'. Valid tools: {valid_tools}")
+            return False
+        
+        try:
+            # Step 1: Move from task position to tools area
+            print("Step 1: Moving from task position to tools area...")
+            if not self.movej_from_task_to_tools():
+                print("✗ Failed to move from task to tools area")
+                return False
+            
+            # Step 2: Return tool1
+            print(f"Step 2: Returning {tool1_name}...")
+            return_method_name = f"movel_from_tool_to_return_{tool1_name}"
+            if hasattr(self, return_method_name):
+                return_method = getattr(self, return_method_name)
+                if not return_method():
+                    print(f"✗ Failed to return {tool1_name}")
+                    return False
+            else:
+                print(f"✗ Method {return_method_name} not found")
+                return False
+            
+            # Step 3: Get tool2
+            print(f"Step 3: Getting {tool2_name}...")
+            get_method_name = f"movel_from_tool_to_get_{tool2_name}"
+            if hasattr(self, get_method_name):
+                get_method = getattr(self, get_method_name)
+                if not get_method():
+                    print(f"✗ Failed to get {tool2_name}")
+                    return False
+            else:
+                print(f"✗ Method {get_method_name} not found")
+                return False
+            
+            # Step 4: Return to task position with tool2
+            print("Step 4: Returning to task position with tool2...")
+            if not self.movej_from_tool_to_task():
+                print("✗ Failed to return to task position")
+                return False
+            
+            print(f"✓ Successfully completed return_tool1_get_tool2_from_task workflow: returned {tool1_name}, got {tool2_name}")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Exception during return_tool1_get_tool2_from_task: {e}")
+            return False
+
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='UR15 Robot Tool Operation')
@@ -842,6 +906,3 @@ if __name__ == "__main__":
 
     print("UROperateTools initialized successfully")
     print("Ready for tool operations...")
-
-    ur_tools.get_tool_from_task_position('tool_pushpull')
-    ur_tools.return_tool_from_task_position('tool_pushpull')

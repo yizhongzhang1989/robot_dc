@@ -816,7 +816,7 @@ async function testServiceStatus(serviceName, serviceUrl) {
         const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
         
         const response = await fetch(serviceUrl, {
-            method: 'HEAD', // Use HEAD to minimize data transfer
+            method: 'GET', // Changed from HEAD to GET for better compatibility
             signal: controller.signal,
             mode: 'no-cors' // Allow cross-origin requests
         });
@@ -824,6 +824,7 @@ async function testServiceStatus(serviceName, serviceUrl) {
         clearTimeout(timeoutId);
         updateQuickNavServiceStatus(serviceName, true);
     } catch (error) {
+        console.warn(`Service ${serviceName} (${serviceUrl}) is not available:`, error.name);
         updateQuickNavServiceStatus(serviceName, false);
     }
 }
@@ -876,14 +877,15 @@ function updateCourierRobotMonitor(data) {
         // Update Platform Status
         if (data.platform) {
             // Handle platform task state with color coding
+            // Note: task_state is now at top level (not in platform object)
             const platformTaskElement = document.getElementById('platformTaskState');
-            if (platformTaskElement && data.platform.task_state) {
-                platformTaskElement.textContent = data.platform.task_state;
+            if (platformTaskElement && data.task_state) {
+                platformTaskElement.textContent = data.task_state;
                 
                 // Color coding based on task state
-                if (data.platform.task_state === 'completed') {
+                if (data.task_state === 'completed') {
                     platformTaskElement.className = 'font-mono text-green-600 font-bold';
-                } else if (data.platform.task_state === 'running') {
+                } else if (data.task_state === 'running') {
                     platformTaskElement.className = 'font-mono text-red-600 font-bold';
                 } else {
                     platformTaskElement.className = 'font-mono text-blue-600 font-bold';

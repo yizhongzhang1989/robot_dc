@@ -378,13 +378,13 @@ class URWobjInsertServer(UROperateWobj):
             return -1
         time.sleep(0.5)
         
-        result = self.courier_robot.pushrod_down()
+        result = self.courier_robot.pushrod_down(blocking=True)
         if not result.get('success', False):
             print(f"[ERROR] Failed to lower pushrod: {result.get('error', 'Unknown error')}")
             return -1
         time.sleep(7)
         
-        result = self.courier_robot.platform_down()
+        result = self.courier_robot.platform_down(blocking=True)
         if not result.get('success', False):
             print(f"[ERROR] Failed to lower platform: {result.get('error', 'Unknown error')}")
             return -1
@@ -393,6 +393,12 @@ class URWobjInsertServer(UROperateWobj):
         result = self.courier_robot.pushrod_goto_height(target_height=20, mode='relative')
         if not result.get('success', False):
             print(f"[ERROR] Failed to set pushrod height: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(0.5)
+
+        result = self.courier_robot.platform_hybrid_control(target_height='middle_pos', target_force=500)
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to set platform hybrid control: {result.get('error', 'Unknown error')}")
             return -1
         time.sleep(0.5)
 

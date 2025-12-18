@@ -731,7 +731,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0.03, -0.35-self.tool_length, 0.03]
+            offset_in_rack=[0.03, -0.30-self.tool_length, 0.03]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
@@ -765,7 +765,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[-0.105, -0.10-self.tool_length, 0.022]
+            offset_in_rack=[-0.105, -0.10-self.tool_length, 0.018]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to left knob position")
@@ -812,7 +812,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        result = self.movel_in_server_frame([0.03, 0.23, -0.04])
+        result = self.movel_in_server_frame([0.03, 0.23, -0.03])
         if result != 0:
             print(f"[ERROR] Failed to move away from left knob")
             return result
@@ -861,7 +861,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0.105, -0.10-self.tool_length, 0.022]
+            offset_in_rack=[0.105, -0.10-self.tool_length, 0.018]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to right knob position")
@@ -908,7 +908,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             return result
         time.sleep(0.5)
         
-        self.movel_in_server_frame([-0.03, 0.23, -0.04])
+        self.movel_in_server_frame([-0.03, 0.23, -0.03])
         time.sleep(0.5)
 
         # Step 18: Force control to open right handle
