@@ -34,6 +34,7 @@ from courier_robot_webapi import CourierRobotWebAPI
 from demo_amr_functions import AMRController
 from robot_status_redis.client_utils import RobotStatusClient
 from ur_operate_tools import UROperateTools
+from ur_operate_wobj import UROperateWobj
 
 class TaskManager:
     """
@@ -51,6 +52,7 @@ class TaskManager:
         self.courier_robot = None
         self.amr_controller = None
         self.ur_operate_tools = None
+        self.ur_operate_wobj = None
         self.server_index = None
         self.redis_client = None
         
@@ -67,6 +69,7 @@ class TaskManager:
         self._init_courier_robot()
         self._init_amr_controller()
         self._init_ur_operate_tools()
+        self._init_ur_operate_wobj()
     
     # ===================================== Initialization Method ======================================
     def _set_paths(self):
@@ -213,6 +216,17 @@ class TaskManager:
         except Exception as e:
             print(f"Failed to initialize UR Operate Tools: {e}")
             self.ur_operate_tools = None
+    
+    def _init_ur_operate_wobj(self):
+        """
+        Private method to initialize UR operate wobj
+        """
+        try:
+            self.ur_operate_wobj = UROperateWobj()
+            print("UR Operate Wobj initialized successfully")
+        except Exception as e:
+            print(f"Failed to initialize UR Operate Wobj: {e}")
+            self.ur_operate_wobj = None
 
     # ===================================== Script Execution Method ======================================
     def _execute_ur_wobj_script(self, script_path, task_name):
@@ -598,8 +612,35 @@ class TaskManager:
         #     print(f"✗ Error during UR15 tool exchange operation: {e}")
         #     return False
         
-        # # Step 10: Execute AMR courier movement to extraction position
-        # print("\n📌 Step 10: Executing AMR courier movement to extraction position")
+        # # Step 10: Execute UR15 move to target position
+        # print("\n📌 Step 10: Executing UR15 move to target position")
+        # print("-" * 40)
+        
+        # # Check if UR operate wobj is initialized
+        # if self.ur_operate_wobj is None:
+        #     print("✗ Error: UR Operate Wobj not initialized. Cannot execute move operation.")
+        #     return False
+        
+        # try:
+        #     # Execute move to target position operation
+        #     move_result = self.ur_operate_wobj.movel_to_target_position(
+        #         index=self.server_index,
+        #         execution_order=[1, 3, 2],
+        #         offset_in_rack=[0, -0.60, 0.60]
+        #     )
+            
+        #     if not move_result:
+        #         print("✓ UR15 move to target position completed successfully")
+        #     else:
+        #         print("✗ UR15 move to target position failed")
+        #         return False
+                
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 move to target position: {e}")
+        #     return False
+        
+        # # Step 11: Execute AMR courier movement to extraction position
+        # print("\n📌 Step 11: Executing AMR courier movement to extraction position")
         # print("-" * 40)
         
         # try:
@@ -616,8 +657,8 @@ class TaskManager:
         #     print(f"✗ Error during AMR courier movement: {e}")
         #     return False
         
-        # # Step 11: Execute UR15 extract server task
-        # print("\n📌 Step 11: Executing UR15 extract server task")
+        # # Step 12: Execute UR15 extract server task
+        # print("\n📌 Step 12: Executing UR15 extract server task")
         # print("-" * 40)
         
         # try:
@@ -634,8 +675,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 extract server task: {e}")
         #     return False
         
-        # # Step 12: Execute AMR courier movement from extraction position to dock
-        # print("\n📌 Step 12: Executing AMR courier movement from extraction position to dock")
+        # # Step 13: Execute AMR courier movement from extraction position to dock
+        # print("\n📌 Step 13: Executing AMR courier movement from extraction position to dock")
         # print("-" * 40)
         
         # try:
@@ -652,8 +693,8 @@ class TaskManager:
         #     print(f"✗ Error during AMR courier return movement: {e}")
         #     return False
         
-        # # Step 13: Execute UR15 return tool_extract to storage position
-        # print("\n📌 Step 13: Executing UR15 return tool_extract to storage position")
+        # # Step 14: Execute UR15 return tool_extract to storage position
+        # print("\n📌 Step 14: Executing UR15 return tool_extract to storage position")
         # print("-" * 40)
         
         # try:
@@ -674,8 +715,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 tool return operation: {e}")
         #     return False
         
-        # # Step 14: Execute UR15 put frame task
-        # print("\n📌 Step 14: Executing UR15 put frame task")
+        # # Step 15: Execute UR15 put frame task
+        # print("\n📌 Step 15: Executing UR15 put frame task")
         # print("-" * 40)
         
         # try:
@@ -692,8 +733,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 put frame task: {e}")
         #     return False
         
-        # # Step 15: Execute UR15 get tool_extract from task position
-        # print("\n📌 Step 15: Executing UR15 get tool_extract from task position")
+        # # Step 16: Execute UR15 get tool_extract from task position
+        # print("\n📌 Step 16: Executing UR15 get tool_extract from task position")
         # print("-" * 40)
         
         # try:
@@ -714,8 +755,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 tool get operation: {e}")
         #     return False
         
-        # # Step 16: Execute AMR courier movement from dock to insertion position
-        # print("\n📌 Step 16: Executing AMR courier movement from dock to insertion position")
+        # # Step 17: Execute AMR courier movement from dock to insertion position
+        # print("\n📌 Step 17: Executing AMR courier movement from dock to insertion position")
         # print("-" * 40)
         
         # try:
@@ -732,8 +773,8 @@ class TaskManager:
         #     print(f"✗ Error during AMR courier insertion movement: {e}")
         #     return False
         
-        # # Step 17: Execute UR15 insert server task
-        # print("\n📌 Step 17: Executing UR15 insert server task")
+        # # Step 18: Execute UR15 insert server task
+        # print("\n📌 Step 18: Executing UR15 insert server task")
         # print("-" * 40)
         
         # try:
@@ -750,8 +791,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 insert server task: {e}")
         #     return False
         
-        # # Step 18: Execute AMR courier movement from insertion position to dock
-        # print("\n📌 Step 18: Executing AMR courier movement from insertion position to dock")
+        # # Step 19: Execute AMR courier movement from insertion position to dock
+        # print("\n📌 Step 19: Executing AMR courier movement from insertion position to dock")
         # print("-" * 40)
         
         # try:
@@ -768,8 +809,8 @@ class TaskManager:
         #     print(f"✗ Error during AMR courier return movement: {e}")
         #     return False
         
-        # # Step 19: Execute UR15 tool exchange operation - return tool_extract and get tool_rotate
-        # print("\n📌 Step 19: Executing UR15 tool exchange operation - return tool_extract and get tool_rotate")
+        # # Step 20: Execute UR15 tool exchange operation - return tool_extract and get tool_rotate
+        # print("\n📌 Step 20: Executing UR15 tool exchange operation - return tool_extract and get tool_rotate")
         # print("-" * 40)
         
         # try:
@@ -790,8 +831,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 tool exchange operation: {e}")
         #     return False
         
-        # # Step 20: Execute UR15 unlock knob insert task
-        # print("\n📌 Step 20: Executing UR15 unlock knob insert task")
+        # # Step 21: Execute UR15 unlock knob insert task
+        # print("\n📌 Step 21: Executing UR15 unlock knob insert task")
         # print("-" * 40)
         
         # try:
@@ -808,8 +849,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 unlock knob insert task: {e}")
         #     return False
         
-        # # Step 21: Execute UR15 tool exchange operation - return tool_rotate and get tool_pushpull
-        # print("\n📌 Step 21: Executing UR15 tool exchange operation - return tool_rotate and get tool_pushpull")
+        # # Step 22: Execute UR15 tool exchange operation - return tool_rotate and get tool_pushpull
+        # print("\n📌 Step 22: Executing UR15 tool exchange operation - return tool_rotate and get tool_pushpull")
         # print("-" * 40)
         
         # try:
@@ -830,8 +871,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 tool exchange operation: {e}")
         #     return False
         
-        # # Step 22: Execute UR15 close handles task
-        # print("\n📌 Step 22: Executing UR15 close handles task")
+        # # Step 23: Execute UR15 close handles task
+        # print("\n📌 Step 23: Executing UR15 close handles task")
         # print("-" * 40)
         
         # try:
@@ -848,8 +889,8 @@ class TaskManager:
         #     print(f"✗ Error during UR15 close handles task: {e}")
         #     return False
         
-        # # Step 23: Execute UR15 return tool_pushpull to storage position
-        # print("\n📌 Step 23: Executing UR15 return tool_pushpull to storage position")
+        # # Step 24: Execute UR15 return tool_pushpull to storage position
+        # print("\n📌 Step 24: Executing UR15 return tool_pushpull to storage position")
         # print("-" * 40)
         
         # try:
@@ -883,20 +924,21 @@ class TaskManager:
         print("  ✓ Step 7: UR15 close left task completed")
         print("  ✓ Step 8: UR15 close right task completed")
         print("  ✓ Step 9: UR15 tool exchange operation completed (tool_pushpull → tool_extract)")
-        print("  ✓ Step 10: AMR courier movement to extraction position completed")
-        print("  ✓ Step 11: UR15 extract server task completed")
-        print("  ✓ Step 12: AMR courier movement from extraction position to dock completed")
-        print("  ✓ Step 13: UR15 tool_extract return to storage completed")
-        print("  ✓ Step 14: UR15 put frame task completed")
-        print("  ✓ Step 15: UR15 tool_extract get from storage completed")
-        print("  ✓ Step 16: AMR courier movement from dock to insertion position completed")
-        print("  ✓ Step 17: UR15 insert server task completed")
-        print("  ✓ Step 18: AMR courier movement from insertion position to dock completed")
-        print("  ✓ Step 19: UR15 tool exchange operation completed (tool_extract → tool_rotate)")
-        print("  ✓ Step 20: UR15 unlock knob insert task completed")
-        print("  ✓ Step 21: UR15 tool exchange operation completed (tool_rotate → tool_pushpull)")
-        print("  ✓ Step 22: UR15 close handles task completed")
-        print("  ✓ Step 23: UR15 tool_pushpull return to storage completed")
+        print("  ✓ Step 10: UR15 move to target position completed")
+        print("  ✓ Step 11: AMR courier movement to extraction position completed")
+        print("  ✓ Step 12: UR15 extract server task completed")
+        print("  ✓ Step 13: AMR courier movement from extraction position to dock completed")
+        print("  ✓ Step 14: UR15 tool_extract return to storage completed")
+        print("  ✓ Step 15: UR15 put frame task completed")
+        print("  ✓ Step 16: UR15 tool_extract get from storage completed")
+        print("  ✓ Step 17: AMR courier movement from dock to insertion position completed")
+        print("  ✓ Step 18: UR15 insert server task completed")
+        print("  ✓ Step 19: AMR courier movement from insertion position to dock completed")
+        print("  ✓ Step 20: UR15 tool exchange operation completed (tool_extract → tool_rotate)")
+        print("  ✓ Step 21: UR15 unlock knob insert task completed")
+        print("  ✓ Step 22: UR15 tool exchange operation completed (tool_rotate → tool_pushpull)")
+        print("  ✓ Step 23: UR15 close handles task completed")
+        print("  ✓ Step 24: UR15 tool_pushpull return to storage completed")
         print("=" * 60)
         
         return True

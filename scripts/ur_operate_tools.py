@@ -906,3 +906,4 @@ if __name__ == "__main__":
 
     print("UROperateTools initialized successfully")
     print("Ready for tool operations...")
+    ur_tools.movej_from_tool_to_task()
