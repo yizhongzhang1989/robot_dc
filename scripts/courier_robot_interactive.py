@@ -39,13 +39,17 @@ def interactive_mode(robot):
                           <h> can be: numeric height (mm), 'high_pos', 'high', 'middle_pos', 'middle', 'mid', 'low_pos', or 'low'
     
     Platform Manual Control:
-      up                - Manual up (use 'stop' to stop)
-      down              - Manual down (use 'stop' to stop)
+      up                - Manual up (blocking: waits until completed)
+      up!               - Manual up (non-blocking: fire-and-forget, use 'stop' to stop)
+      down              - Manual down (blocking: waits until completed)
+      down!             - Manual down (non-blocking: fire-and-forget, use 'stop' to stop)
       stop              - Stop platform (can interrupt any command!)
     
     Pushrod Control:
-      pup               - Pushrod manual up (use 'pstop' to stop)
-      pdown             - Pushrod manual down (use 'pstop' to stop)
+      pup               - Pushrod manual up (blocking: waits until completed)
+      pup!              - Pushrod manual up (non-blocking: use 'pstop' to stop)
+      pdown             - Pushrod manual down (blocking: waits until completed)
+      pdown!            - Pushrod manual down (non-blocking: use 'pstop' to stop)
       pgoto <height>    - Pushrod goto absolute height (mm, background)
       pgoto! <height>   - Pushrod goto absolute height (non-blocking)
       prel <offset>     - Pushrod relative move (mm, background), e.g., 'prel 10' or 'prel -5'
@@ -176,21 +180,25 @@ def interactive_mode(robot):
                         print("❌ Invalid force value")
             
             # Platform manual control
-            elif command == 'up':
-                robot.platform_up()
+            elif command in ['up', 'up!']:
+                blocking = (command == 'up')  # 'up' = blocking, 'up!' = non-blocking
+                robot.platform_up(blocking=blocking)
             
-            elif command == 'down':
-                robot.platform_down()
+            elif command in ['down', 'down!']:
+                blocking = (command == 'down')  # 'down' = blocking, 'down!' = non-blocking
+                robot.platform_down(blocking=blocking)
             
             elif command == 'stop':
                 robot.platform_stop()
             
             # Pushrod control
-            elif command == 'pup':
-                robot.pushrod_up()
+            elif command in ['pup', 'pup!']:
+                blocking = (command == 'pup')  # 'pup' = blocking, 'pup!' = non-blocking
+                robot.pushrod_up(blocking=blocking)
             
-            elif command == 'pdown':
-                robot.pushrod_down()
+            elif command in ['pdown', 'pdown!']:
+                blocking = (command == 'pdown')  # 'pdown' = blocking, 'pdown!' = non-blocking
+                robot.pushrod_down(blocking=blocking)
             
             elif command in ['pgoto', 'pgoto!']:
                 if len(parts) < 2:

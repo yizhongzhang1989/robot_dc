@@ -374,13 +374,34 @@ class CourierRobotWebAPI:
     
     # ==================== Platform Manual Control ====================
     
-    def platform_up(self):
+    def platform_up(self, blocking=True, timeout=300, _internal_call=False):
         """
         Platform manual up movement
         
+        Args:
+            blocking: If True, wait until movement completes. If False, return immediately.
+            timeout: Maximum wait time in seconds (only used if blocking=True)
+            _internal_call: Internal flag to prevent infinite recursion
+        
         Returns:
             dict with success status and complete state
         """
+        # If blocking and not an internal call, execute in background thread
+        # This allows stop/emergency_reset to interrupt the blocking operation
+        if blocking and not _internal_call:
+            success = self._execute_in_background(
+                self.platform_up, 
+                blocking=True, 
+                timeout=timeout,
+                _internal_call=True
+            )
+            if not success:
+                return {
+                    'success': False,
+                    'error': 'Previous command still running'
+                }
+            return {'success': True, 'started': True}
+        
         # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
@@ -395,27 +416,59 @@ class CourierRobotWebAPI:
                 }
         
         if self.verbose:
-            print(f"⬆️  [Platform] Manual UP")
+            mode_str = "(blocking)" if blocking else "(non-blocking)"
+            print(f"⬆️  [Platform] Manual UP {mode_str}")
         result = self._send_command('platform', 'up')
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['final_status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Platform UP command sent successfully")
-            else:
+        if not result.get('success'):
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
+            return result
+        
+        # If non-blocking, return immediately
+        if not blocking:
+            final_status = self.get_status()
+            result['final_status'] = final_status
+            if self.verbose:
+                print(f"✅ Platform UP command sent successfully (non-blocking)")
+            return result
+        
+        # If blocking, wait for completion
+        if self.verbose:
+            print(f"✅ Platform UP command sent, waiting for completion...")
+        
+        wait_result = self._wait_for_completion(timeout=timeout)
+        result.update(wait_result)
         return result
     
-    def platform_down(self):
+    def platform_down(self, blocking=True, timeout=300, _internal_call=False):
         """
         Platform manual down movement
         
+        Args:
+            blocking: If True, wait until movement completes. If False, return immediately.
+            timeout: Maximum wait time in seconds (only used if blocking=True)
+            _internal_call: Internal flag to prevent infinite recursion
+        
         Returns:
             dict with success status and complete state
         """
+        # If blocking and not an internal call, execute in background thread
+        # This allows stop/emergency_reset to interrupt the blocking operation
+        if blocking and not _internal_call:
+            success = self._execute_in_background(
+                self.platform_down, 
+                blocking=True, 
+                timeout=timeout,
+                _internal_call=True
+            )
+            if not success:
+                return {
+                    'success': False,
+                    'error': 'Previous command still running'
+                }
+            return {'success': True, 'started': True}
+        
         # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
@@ -430,18 +483,29 @@ class CourierRobotWebAPI:
                 }
         
         if self.verbose:
-            print(f"⬇️  [Platform] Manual DOWN")
+            mode_str = "(blocking)" if blocking else "(non-blocking)"
+            print(f"⬇️  [Platform] Manual DOWN {mode_str}")
         result = self._send_command('platform', 'down')
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['final_status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Platform DOWN command sent successfully")
-            else:
+        if not result.get('success'):
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
+            return result
+        
+        # If non-blocking, return immediately
+        if not blocking:
+            final_status = self.get_status()
+            result['final_status'] = final_status
+            if self.verbose:
+                print(f"✅ Platform DOWN command sent successfully (non-blocking)")
+            return result
+        
+        # If blocking, wait for completion
+        if self.verbose:
+            print(f"✅ Platform DOWN command sent, waiting for completion...")
+        
+        wait_result = self._wait_for_completion(timeout=timeout)
+        result.update(wait_result)
         return result
     
     def platform_stop(self):
@@ -451,9 +515,15 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
+        # Set reset flag to interrupt any blocking operations
+        self.reset_flag = True
+        
         if self.verbose:
             print(f"🛑 [Platform] STOP")
         result = self._send_command('platform', 'stop')
+        
+        # Clear reset flag after stop command sent
+        self.reset_flag = False
         
         # Get final status after command
         final_status = self.get_status()
@@ -752,13 +822,34 @@ class CourierRobotWebAPI:
     
     # ==================== Pushrod Manual Control ====================
     
-    def pushrod_up(self):
+    def pushrod_up(self, blocking=True, timeout=300, _internal_call=False):
         """
         Pushrod manual up movement
         
+        Args:
+            blocking: If True, wait until movement completes. If False, return immediately.
+            timeout: Maximum wait time in seconds (only used if blocking=True)
+            _internal_call: Internal flag to prevent infinite recursion
+        
         Returns:
             dict with success status and complete state
         """
+        # If blocking and not an internal call, execute in background thread
+        # This allows stop/emergency_reset to interrupt the blocking operation
+        if blocking and not _internal_call:
+            success = self._execute_in_background(
+                self.pushrod_up, 
+                blocking=True, 
+                timeout=timeout,
+                _internal_call=True
+            )
+            if not success:
+                return {
+                    'success': False,
+                    'error': 'Previous command still running'
+                }
+            return {'success': True, 'started': True}
+        
         # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
@@ -773,27 +864,59 @@ class CourierRobotWebAPI:
                 }
         
         if self.verbose:
-            print(f"⬆️  [Pushrod] Manual UP")
+            mode_str = "(blocking)" if blocking else "(non-blocking)"
+            print(f"⬆️  [Pushrod] Manual UP {mode_str}")
         result = self._send_command('pushrod', 'up')
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['final_status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Pushrod UP command sent successfully")
-            else:
+        if not result.get('success'):
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
+            return result
+        
+        # If non-blocking, return immediately
+        if not blocking:
+            final_status = self.get_status()
+            result['final_status'] = final_status
+            if self.verbose:
+                print(f"✅ Pushrod UP command sent successfully (non-blocking)")
+            return result
+        
+        # If blocking, wait for completion
+        if self.verbose:
+            print(f"✅ Pushrod UP command sent, waiting for completion...")
+        
+        wait_result = self._wait_for_completion(timeout=timeout)
+        result.update(wait_result)
         return result
     
-    def pushrod_down(self):
+    def pushrod_down(self, blocking=True, timeout=300, _internal_call=False):
         """
         Pushrod manual down movement
         
+        Args:
+            blocking: If True, wait until movement completes. If False, return immediately.
+            timeout: Maximum wait time in seconds (only used if blocking=True)
+            _internal_call: Internal flag to prevent infinite recursion
+        
         Returns:
             dict with success status and complete state
         """
+        # If blocking and not an internal call, execute in background thread
+        # This allows stop/emergency_reset to interrupt the blocking operation
+        if blocking and not _internal_call:
+            success = self._execute_in_background(
+                self.pushrod_down, 
+                blocking=True, 
+                timeout=timeout,
+                _internal_call=True
+            )
+            if not success:
+                return {
+                    'success': False,
+                    'error': 'Previous command still running'
+                }
+            return {'success': True, 'started': True}
+        
         # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
@@ -808,18 +931,29 @@ class CourierRobotWebAPI:
                 }
         
         if self.verbose:
-            print(f"⬇️  [Pushrod] Manual DOWN")
+            mode_str = "(blocking)" if blocking else "(non-blocking)"
+            print(f"⬇️  [Pushrod] Manual DOWN {mode_str}")
         result = self._send_command('pushrod', 'down')
         
-        # Get final status after command
-        final_status = self.get_status()
-        result['final_status'] = final_status
-        
-        if self.verbose:
-            if result['success']:
-                print(f"✅ Pushrod DOWN command sent successfully")
-            else:
+        if not result.get('success'):
+            if self.verbose:
                 print(f"❌ Failed: {result.get('error')}")
+            return result
+        
+        # If non-blocking, return immediately
+        if not blocking:
+            final_status = self.get_status()
+            result['final_status'] = final_status
+            if self.verbose:
+                print(f"✅ Pushrod DOWN command sent successfully (non-blocking)")
+            return result
+        
+        # If blocking, wait for completion
+        if self.verbose:
+            print(f"✅ Pushrod DOWN command sent, waiting for completion...")
+        
+        wait_result = self._wait_for_completion(timeout=timeout)
+        result.update(wait_result)
         return result
     
     def pushrod_stop(self):
@@ -829,9 +963,15 @@ class CourierRobotWebAPI:
         Returns:
             dict with success status and complete state
         """
+        # Set reset flag to interrupt any blocking operations
+        self.reset_flag = True
+        
         if self.verbose:
             print(f"🛑 [Pushrod] STOP")
         result = self._send_command('pushrod', 'stop')
+        
+        # Clear reset flag after stop command sent
+        self.reset_flag = False
         
         # Get final status after command
         final_status = self.get_status()
