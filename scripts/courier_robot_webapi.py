@@ -391,7 +391,7 @@ class CourierRobotWebAPI:
         if blocking and not _internal_call:
             success = self._execute_in_background(
                 self.platform_up, 
-                blocking=True, 
+                blocking=blocking, 
                 timeout=timeout,
                 _internal_call=True
             )
@@ -458,7 +458,7 @@ class CourierRobotWebAPI:
         if blocking and not _internal_call:
             success = self._execute_in_background(
                 self.platform_down, 
-                blocking=True, 
+                blocking=blocking, 
                 timeout=timeout,
                 _internal_call=True
             )
@@ -839,7 +839,7 @@ class CourierRobotWebAPI:
         if blocking and not _internal_call:
             success = self._execute_in_background(
                 self.pushrod_up, 
-                blocking=True, 
+                blocking=blocking, 
                 timeout=timeout,
                 _internal_call=True
             )
@@ -906,7 +906,7 @@ class CourierRobotWebAPI:
         if blocking and not _internal_call:
             success = self._execute_in_background(
                 self.pushrod_down, 
-                blocking=True, 
+                blocking=blocking, 
                 timeout=timeout,
                 _internal_call=True
             )
