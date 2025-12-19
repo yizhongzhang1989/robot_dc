@@ -44,7 +44,8 @@ class UROperateWobj:
         # ========================= Initialization =========================
         self._setup_paths()
         self._initialize_robot()
-        self._init_rs485_socket()
+        # RS485 socket will be initialized on-demand to avoid conflicts
+        # self._init_rs485_socket()
         self._initialize_robot_status_client()
         self._initialize_server_frame_generator()
         
@@ -142,6 +143,8 @@ class UROperateWobj:
             print(f'Initializing RS485 socket connection at {self.robot_ip}:{self.rs485_port}...')
             # Open RS485 socket connection
             self.rs485_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Set socket timeout to 5 seconds to prevent blocking indefinitely
+            self.rs485_socket.settimeout(5.0)
             rs485_start_res = self.rs485_socket.connect((self.robot_ip, self.rs485_port))
             print(f"✓ RS485 socket connection result: {rs485_start_res}")
         except Exception as e:
@@ -351,6 +354,95 @@ class UROperateWobj:
             print("Robot status client is not initialized, skipping server2base_matrix upload")
         
         return server2base
+
+    # ============================= Quick Changer Control Methods =============================
+    def ur_unlock_quick_changer(self):
+        """
+        Unlock the UR quick changer using RS485 communication
+        Creates a temporary connection to avoid conflicts with other instances
+        
+        Returns:
+            int: 0 if successful, -1 if failed
+        """
+        temp_socket = None
+        try:
+            print("[INFO] Unlocking quick changer...")
+            
+            # Create temporary RS485 socket connection
+            temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            temp_socket.settimeout(5.0)
+            temp_socket.connect((self.robot_ip, self.rs485_port))
+            print("[INFO] Temporary RS485 connection established")
+            
+            # Send unlock command via RS485
+            unlock_command = bytes([0x53, 0x26, 0x01, 0x01, 0x02, 0x7A, 0xD5])
+            temp_socket.sendall(unlock_command)
+            print("[INFO] Unlock command sent successfully")
+            time.sleep(0.5)
+            
+            # Receive and verify response
+            rs485_data = temp_socket.recv(1024)
+            print(f"[INFO] RS485 Received Data: {' '.join(f'0x{b:02x}' for b in rs485_data)}")
+            time.sleep(0.5)
+            
+            print("[INFO] Quick changer unlocked successfully")
+            return 0
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to unlock quick changer: {e}")
+            return -1
+        finally:
+            # Always close the temporary socket
+            if temp_socket is not None:
+                try:
+                    temp_socket.close()
+                    print("[INFO] Temporary RS485 connection closed")
+                except:
+                    pass
+    
+    def ur_lock_quick_changer(self):
+        """
+        Lock the UR quick changer using RS485 communication
+        Creates a temporary connection to avoid conflicts with other instances
+        
+        Returns:
+            int: 0 if successful, -1 if failed
+        """
+        temp_socket = None
+        try:
+            print("[INFO] Locking quick changer...")
+            
+            # Create temporary RS485 socket connection
+            temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            temp_socket.settimeout(5.0)
+            temp_socket.connect((self.robot_ip, self.rs485_port))
+            print("[INFO] Temporary RS485 connection established")
+            
+            # Send lock command via RS485
+            lock_command = bytes([0x53, 0x26, 0x01, 0x00, 0x02, 0x7A, 0xD4])
+            temp_socket.sendall(lock_command)
+            print("[INFO] Lock command sent successfully")
+            time.sleep(0.5)
+            
+            # Receive and verify response
+            rs485_data = temp_socket.recv(1024)
+            print(f"[INFO] RS485 Received Data: {' '.join(f'0x{b:02x}' for b in rs485_data)}")
+            time.sleep(0.5)
+            
+            print("[INFO] Quick changer locked successfully")
+            return 0
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to lock quick changer: {e}")
+            return -1
+        finally:
+            # Always close the temporary socket
+            if temp_socket is not None:
+                try:
+                    temp_socket.close()
+                    print("[INFO] Temporary RS485 connection closed")
+                except:
+                    pass
 
     # ============================= Robot Movement and Control Methods =============================
     def movel_in_rack_frame(self, offset_in_rack=[0, 0, 0]):

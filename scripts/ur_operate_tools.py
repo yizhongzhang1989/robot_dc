@@ -8,176 +8,35 @@ import socket
 import argparse
 from robot_status_redis.client_utils import RobotStatusClient
 from scipy.spatial.transform import Rotation as R
+from ur_operate_wobj import UROperateWobj
 
 
-class UROperateTools:
+class UROperateTools(UROperateWobj):
     def __init__(self, robot_ip=None, robot_port=None):
-        # ========================= Setup paths first =========================
-        self._setup_paths()
+        # Call parent class constructor (UROperateWobj)
+        # Note: server_index is not needed for tools operations, use default
+        super().__init__(robot_ip=robot_ip, robot_port=robot_port, server_index=0)
         
-        # Load config parameters if not provided
-        config_params = self._load_ur15_config_from_file()
-        
-        # =========================== Configurable Parameters ===========================
-        self.robot_ip = robot_ip if robot_ip is not None else config_params['robot_ip']
-        self.robot_port = robot_port if robot_port is not None else config_params['robot_port']
-        self.rs485_port = 54321
-        
-        # Movement parameters
+        # Movement parameters specific to tools operations
         self.a_movej = 0.5  # Acceleration for joint movements (rad/s²)
         self.v_movej = 1.0  # Velocity for joint movements (rad/s)
         self.a_movel = 0.3  # Acceleration for joint movements (m/s²)
         self.v_movel = 0.2  # Velocity for joint movements (m/s)
-
-        # ========================= Instance variables =========================
-        self.robot = None
-        self.rs485_socket = None
-        self.robot_status_client = None
         
-        # ========================= Other variables =========================     
-        # Tool coordinate system storage
+        # Tool coordinate system storage (specific to UROperateTools)
         self.tool_transformation_matrix = None
         self.tool_offset = None
-
-        # ========================= Initialization =========================
-        self._initialize_robot()
-        self._init_rs485_socket()
-        self._initialize_robot_status_client()
     
-    # ================================== Private Helper Methods ==================================
-    def _load_ur15_config_from_file(self):
-        """Load UR15 robot IP and port from robot_config.yaml file"""
-        # Default parameters
-        default_params = {
-            'robot_ip': '192.168.1.15',
-            'robot_port': 30002
-        }
-        
-        try:
-            # Use common package to get config path
-            from common.workspace_utils import get_config_directory
-            config_dir = get_config_directory()
-            
-            if config_dir:
-                config_path = os.path.join(config_dir, 'robot_config.yaml')
-                
-                if os.path.exists(config_path):
-                    import yaml
-                    with open(config_path, 'r') as f:
-                        config = yaml.safe_load(f)
-                        if 'ur15' in config and 'robot' in config['ur15']:
-                            ur15_config = config['ur15']['robot']
-                            default_params['robot_ip'] = ur15_config.get('ip', default_params['robot_ip'])
-                            if 'ports' in ur15_config and 'control' in ur15_config['ports']:
-                                default_params['robot_port'] = ur15_config['ports']['control']
-        except Exception as e:
-            print(f"Warning: Could not load UR15 config from file, using defaults: {e}")
-        
-        return default_params
-
-    def _load_robot_parameters_from_config(self):
-        """Load robot parameters from config file (deprecated, use _load_ur15_config_from_file)"""
-        return self._load_ur15_config_from_file()
+    # Note: The following methods are now inherited from UROperateWobj base class:
+    # - _load_robot_parameters_from_config()
+    # - _setup_paths()
+    # - _initialize_robot()
+    # - _init_rs485_socket()
+    # - _initialize_robot_status_client()
+    # - ur_unlock_quick_changer()
+    # - ur_lock_quick_changer()
     
-    def _setup_paths(self):
-        """Setup directory paths for script, dataset, data and results"""
-        # Get the script directory for relative paths
-        try:
-            from common.workspace_utils import get_scripts_directory
-            self.script_dir = get_scripts_directory() if get_scripts_directory() else os.path.dirname(os.path.abspath(__file__))
-        except ImportError:
-            self.script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    def _initialize_robot(self):
-        """Initialize UR15 robot instance and establish connection"""
-        try:
-            print(f'Initializing UR15 robot at {self.robot_ip}:{self.robot_port}...')
-            self.robot = UR15Robot(ip=self.robot_ip, port=self.robot_port)
-            
-            # Attempt to connect
-            res = self.robot.open()
-            if res == 0:
-                print('✓ UR15 robot connected successfully')
-            else:
-                print(f'✗ Failed to connect to UR15 robot (error code: {res})')
-                self.robot = None
-        except Exception as e:
-            print(f'Failed to initialize robot: {e}')
-            self.robot = None
-    
-    def _init_rs485_socket(self):
-        """Initialize RS485 socket connection"""
-        try:
-            print(f'Initializing RS485 socket connection at {self.robot_ip}:{self.rs485_port}...')
-            # Open RS485 socket connection
-            self.rs485_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            rs485_start_res = self.rs485_socket.connect((self.robot_ip, self.rs485_port))
-            print(f"✓ RS485 socket connection result: {rs485_start_res}")
-        except Exception as e:
-            print(f'✗ Failed to initialize RS485 socket: {e}')
-            self.rs485_socket = None
-    
-    def _initialize_robot_status_client(self):
-        """Initialize robot status client for getting camera parameters and other status"""
-        try:
-            print(f'Initializing robot status client...')
-            self.robot_status_client = RobotStatusClient()
-            print('✓ Robot status client initialized successfully')
-        except ConnectionError as e:
-            print(f'✗ Redis connection error: {e}')
-            print('  Make sure Redis server is running: sudo systemctl start redis-server')
-            self.robot_status_client = None
-        except Exception as e:
-            print(f'✗ Failed to initialize robot status client: {e}')
-            import traceback
-            traceback.print_exc()
-            self.robot_status_client = None
-    
-    def rs485_unlock(self):
-        """
-        Send unlock command via RS485 communication
-        Sends predefined unlock command bytes to the RS485 device
-        """
-        if not self.rs485_socket:
-            print("✗ RS485 socket not connected, cannot execute rs485_unlock")
-            return False
-        
-        try:
-            time.sleep(1)  # Small delay before sending command
-            unlock_command = [0x53, 0x26, 0x01, 0x01, 0x02, 0x7A, 0xD5]
-            print("Sending RS485 unlock command...")
-            self.rs485_socket.sendall(bytes(unlock_command))
-            time.sleep(2)  # Wait for command to take effect
-            print("✓ RS485 unlock command sent successfully")
-            return True
-            
-        except Exception as e:
-            print(f"✗ Exception during rs485_unlock: {e}")
-            return False
-    
-    def rs485_lock(self):
-        """
-        Send lock command via RS485 communication
-        Sends predefined lock command bytes to the RS485 device
-        """
-        if not self.rs485_socket:
-            print("✗ RS485 socket not connected, cannot execute rs485_lock")
-            return False
-        
-        try:
-            time.sleep(1)  # Small delay before sending command
-            lock_command = [0x53, 0x26, 0x01, 0x01, 0x01, 0x3A, 0xD4]
-            print("Sending RS485 lock command...")
-            self.rs485_socket.sendall(bytes(lock_command))
-            time.sleep(2)  # Wait for command to take effect
-            print("✓ RS485 lock command sent successfully")
-            return True
-            
-        except Exception as e:
-            print(f"✗ Exception during rs485_lock: {e}")
-            return False
-
-# ================================== Tool Operation Methods ==================================
+    # ================================== Tool Operation Methods ==================================
     def movej_from_task_to_tools(self):
         """
         Move robot joints through predefined waypoints from task position to tools area
@@ -289,7 +148,7 @@ class UROperateTools:
         # Define the 4 waypoints in Cartesian space (meters + radians)
         # Format: [x, y, z, rx, ry, rz]
         waypoints_cartesian = [
-            [0.49623, 0.50446, 0.47265, 3.041, -0.842, 0.001],  # Waypoint 1 (approach tool_pushpull)
+            [0.49623, 0.50446, 0.57265, 3.041, -0.842, 0.001],  # Waypoint 1 (approach tool_pushpull)
             [0.49623, 0.50446, 0.39298, 3.041, -0.842, 0.001],  # Waypoint 2 (align with tool_pushpull)
             [0.49623, 0.63619, 0.39298, 3.041, -0.842, 0.001],  # Waypoint 3 (engage tool_pushpull)
             [0.49623, 0.63619, 0.65947, 3.041, -0.842, 0.001]   # Waypoint 4 (secure tool_pushpull)
@@ -318,8 +177,8 @@ class UROperateTools:
             print("✓ Completed first phase")
             
             # Execute RS485 lock command between phases
-            lock_result = self.rs485_lock()
-            if not lock_result:
+            lock_result = self.ur_lock_quick_changer()
+            if lock_result != 0:
                 print("✗ Failed to execute RS485 lock command")
                 return False
             
@@ -361,7 +220,7 @@ class UROperateTools:
             [0.49623, 0.63619, 0.65947, 3.041, -0.842, 0.001],   # Waypoint 1 (from elevated position)
             [0.49623, 0.63619, 0.39298, 3.041, -0.842, 0.001],   # Waypoint 2 (approach release)
             [0.49623, 0.50446, 0.39298, 3.041, -0.842, 0.001],   # Waypoint 3 (release position)
-            [0.49623, 0.50446, 0.47265, 3.041, -0.842, 0.001]    # Waypoint 4 (final position)
+            [0.49623, 0.50446, 0.57265, 3.041, -0.842, 0.001]    # Waypoint 4 (final position)
         ]
         
         print("Starting movel_from_tool_to_return_tool_pushpull trajectory with movel...")
@@ -401,8 +260,8 @@ class UROperateTools:
             time.sleep(0.8)
             
             # Execute RS485 unlock command between step 3 and 4
-            unlock_result = self.rs485_unlock()
-            if not unlock_result:
+            unlock_result = self.ur_unlock_quick_changer()
+            if unlock_result != 0:
                 print("✗ Failed to execute RS485 unlock command")
                 return False
             
@@ -440,7 +299,7 @@ class UROperateTools:
         # Define the 4 waypoints in Cartesian space (meters + radians)
         # Format: [x, y, z, rx, ry, rz]
         waypoints_cartesian = [
-            [0.64116, 0.47126, 0.47795, 1.532, -2.748, 0.009],  # Waypoint 1 (approach tool_rotate)
+            [0.64116, 0.47126, 0.57795, 1.532, -2.748, 0.009],  # Waypoint 1 (approach tool_rotate)
             [0.64116, 0.47126, 0.38944, 1.532, -2.748, 0.009],  # Waypoint 2 (align with tool_rotate)
             [0.75134, 0.46889, 0.39128, 1.448, -2.777, 0.005],  # Waypoint 3 (engage tool_rotate)
             [0.75134, 0.46889, 0.71440, 1.448, -2.777, 0.005]   # Waypoint 4 (secure tool_rotate)
@@ -469,8 +328,8 @@ class UROperateTools:
             print("✓ Completed first phase")
             
             # Execute RS485 lock command between phases
-            lock_result = self.rs485_lock()
-            if not lock_result:
+            lock_result = self.ur_lock_quick_changer()
+            if lock_result != 0:
                 print("✗ Failed to execute RS485 lock command")
                 return False
             
@@ -514,7 +373,7 @@ class UROperateTools:
             [0.75134, 0.46889, 0.71440, 1.448, -2.777, 0.005],   # Waypoint 1 (from elevated position)
             [0.75134, 0.46889, 0.39128, 1.448, -2.777, 0.005],   # Waypoint 2 (approach release)
             [0.64116, 0.47126, 0.38944, 1.532, -2.748, 0.009],   # Waypoint 3 (release position)
-            [0.64116, 0.47126, 0.47795, 1.532, -2.748, 0.009]    # Waypoint 4 (final position)
+            [0.64116, 0.47126, 0.57795, 1.532, -2.748, 0.009]    # Waypoint 4 (final position)
         ]
         
         print("Starting movel_from_tool_to_return_tool_rotate trajectory with movel...")
@@ -554,8 +413,8 @@ class UROperateTools:
             time.sleep(0.8)
             
             # Execute RS485 unlock command between step 3 and 4
-            unlock_result = self.rs485_unlock()
-            if not unlock_result:
+            unlock_result = self.ur_unlock_quick_changer()
+            if unlock_result != 0:
                 print("✗ Failed to execute RS485 unlock command")
                 return False
             
@@ -622,8 +481,8 @@ class UROperateTools:
             print("✓ Completed first phase")
             
             # Execute RS485 lock command between phases
-            lock_result = self.rs485_lock()
-            if not lock_result:
+            lock_result = self.ur_lock_quick_changer()
+            if lock_result != 0:
                 print("✗ Failed to execute RS485 lock command")
                 return False
             
@@ -707,8 +566,8 @@ class UROperateTools:
             time.sleep(0.8)
             
             # Execute RS485 unlock command between step 3 and 4
-            unlock_result = self.rs485_unlock()
-            if not unlock_result:
+            unlock_result = self.ur_unlock_quick_changer()
+            if unlock_result != 0:
                 print("✗ Failed to execute RS485 unlock command")
                 return False
             
@@ -956,7 +815,7 @@ class UROperateTools:
             [241.0, -90.9, 1.0, -178.6, -90.0, 3.6],    # Waypoint 2
             [87.0, -90.9, 1.0, -178.6, -90.0, 3.6],     # Waypoint 3
             [87.3, -83.5, 71.4, -76.0, -93.4, -53.9],    # Waypoint 4 
-            [80.1, -62.2, 84.3, -27.5, -2.5, -145.7]    # Waypoint 5 (final task position)
+            [92.4, -59.6, 92.8, -30.3, 10.6, 177.7]    # Waypoint 5 (final task position)
         ]
         
         # Convert degrees to radians
@@ -1030,8 +889,8 @@ class UROperateTools:
             print("✓ Completed first phase")
             
             # Execute RS485 lock command
-            lock_result = self.rs485_lock()
-            if not lock_result:
+            lock_result = self.ur_lock_quick_changer()
+            if lock_result != 0:
                 print("✗ Failed to execute RS485 lock command")
                 return False
             
@@ -1097,6 +956,93 @@ class UROperateTools:
             
         except Exception as e:
             print(f"✗ Exception during get_frame_from_task_position: {e}")
+            return False
+    
+    def return_tool_get_frame_from_task(self, tool_name):
+        """
+        Complete workflow to return a tool and get frame tool from task position
+        Executes: task->tools->return_tool->get_frame_tool->task
+        
+        Args:
+            tool_name (str): Name of the tool to return ('tool_pushpull', 'tool_rotate', or 'tool_extract')
+        """
+        print(f"Starting return_tool_get_frame_from_task workflow: returning {tool_name}, getting frame tool...")
+        
+        # Validate tool name
+        valid_tools = ['tool_pushpull', 'tool_rotate', 'tool_extract']
+        if tool_name not in valid_tools:
+            print(f"✗ Invalid tool name '{tool_name}'. Valid tools: {valid_tools}")
+            return False
+        
+        try:
+            # Step 1: Move from task position to tools area
+            print("Step 1: Moving from task position to tools area...")
+            if not self.movej_from_task_to_tools():
+                print("✗ Failed to move from task to tools area")
+                return False
+            
+            # Step 2: Return the specified tool
+            print(f"Step 2: Returning {tool_name}...")
+            return_method_name = f"movel_from_tool_to_return_{tool_name}"
+            if hasattr(self, return_method_name):
+                return_method = getattr(self, return_method_name)
+                if not return_method():
+                    print(f"✗ Failed to return {tool_name}")
+                    return False
+            else:
+                print(f"✗ Method {return_method_name} not found")
+                return False
+            
+            # Step 3: Move to intermediate waypoint 1
+            print("Step 3: Moving to intermediate waypoint 1...")
+            waypoint1_degrees = [205.1, -86.8, 86.6, -90.6, -89.7, 34.3]
+            waypoint1_radians = [np.deg2rad(angle) for angle in waypoint1_degrees]
+            move_result = self.robot.movej(waypoint1_radians, a=self.a_movej, v=self.v_movej)
+            time.sleep(0.5)
+            if move_result:
+                print("✗ Failed to move to intermediate waypoint 1")
+                return False
+            print("✓ Reached intermediate waypoint 1")
+            
+            # Step 4: Move to intermediate waypoint 2
+            print("Step 4: Moving to intermediate waypoint 2...")
+            waypoint2_degrees = [233.6, -80.7, 92.0, -107.2, -90.0, -3.5]
+            waypoint2_radians = [np.deg2rad(angle) for angle in waypoint2_degrees]
+            move_result = self.robot.movej(waypoint2_radians, a=self.a_movej, v=self.v_movej)
+            time.sleep(0.5)
+            if move_result:
+                print("✗ Failed to move to intermediate waypoint 2")
+                return False
+            print("✓ Reached intermediate waypoint 2")
+            
+            # Step 5: Move to intermediate waypoint 3
+            print("Step 5: Moving to intermediate waypoint 3...")
+            waypoint3_degrees = [235.4, -82.3, 125.7, -133.3, -90.0, -2.4]
+            waypoint3_radians = [np.deg2rad(angle) for angle in waypoint3_degrees]
+            move_result = self.robot.movej(waypoint3_radians, a=self.a_movej, v=self.v_movej)
+            time.sleep(0.5)
+            if move_result:
+                print("✗ Failed to move to intermediate waypoint 3")
+                return False
+            print("✓ Reached intermediate waypoint 3")
+
+            # Step 6: Get frame tool
+            print("Step 6: Getting frame tool...")
+            if not self.movel_from_frame_to_get_tool_frame():
+                print("✗ Failed to get frame tool")
+                return False
+            
+            # Step 7: Return to task position with frame tool
+            print("Step 7: Returning to task position with frame tool...")
+            if not self.movej_from_frame_to_task():
+                print("✗ Failed to return to task position")
+                return False
+            
+            print(f"✓ Successfully completed return_tool_get_frame_from_task workflow: returned {tool_name}, got frame tool")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Exception during return_tool_get_frame_from_task: {e}")
             return False
 
 if __name__ == "__main__":

@@ -368,26 +368,26 @@ class URWobjExtractServer(UROperateWobj):
         print("STARTING EXTRACT SERVER SEQUENCE")
         print("="*70)
         
-        # # Step 0: Initialize height of courier robot
-        # print("\n" + "="*50)
-        # print("Step 1: Initializing courier robot platform height...")
-        # print("="*50)
-        # if self.courier_robot is None:
-        #     print("[ERROR] CourierRobotWebAPI is not initialized")
-        #     return -1
-        # time.sleep(0.5)
+        # Step 0: Initialize height of courier robot
+        print("\n" + "="*50)
+        print("Step 0: Initializing courier robot platform height...")
+        print("="*50)
+        if self.courier_robot is None:
+            print("[ERROR] CourierRobotWebAPI is not initialized")
+            return -1
+        time.sleep(0.5)
         
-        # result = self.courier_robot.pushrod_down(blocking=True)
-        # if not result.get('success', False):
-        #     print(f"[ERROR] Failed to lower pushrod: {result.get('error', 'Unknown error')}")
-        #     return -1
-        # time.sleep(1)
+        result = self.courier_robot.pushrod_down(blocking=True)
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to lower pushrod: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(1)
         
-        # result = self.courier_robot.platform_down(blocking=True)
-        # if not result.get('success', False):
-        #     print(f"[ERROR] Failed to lower platform: {result.get('error', 'Unknown error')}")
-        #     return -1
-        # time.sleep(1)
+        result = self.courier_robot.platform_down(blocking=True)
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to lower platform: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(1)
 
         result = self.courier_robot.pushrod_goto_height(target_height=20, mode='relative')
         if not result.get('success', False):
@@ -463,7 +463,7 @@ class URWobjExtractServer(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.045, distance+self.tool_length]
+            offset_in_rack=[0, -0.04, distance+self.tool_length]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
@@ -477,7 +477,7 @@ class URWobjExtractServer(UROperateWobj):
         if self.courier_robot is None:
             print("[ERROR] CourierRobotWebAPI is not initialized")
             return -1
-        lift_result = self.courier_robot.platform_hybrid_control(target_height='low_pos', target_force=125)
+        lift_result = self.courier_robot.platform_force_up(target_force=125)
         if not lift_result.get('success', False):
             print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
             return -1
@@ -519,7 +519,7 @@ class URWobjExtractServer(UROperateWobj):
         if self.courier_robot is None:
             print("[ERROR] CourierRobotWebAPI is not initialized")
             return -1
-        lift_result = self.courier_robot.platform_hybrid_control(target_height='high_pos', target_force=350)
+        lift_result = self.courier_robot.platform_force_up(target_force=350)
         if not lift_result.get('success', False):
             print(f"[ERROR] Failed to lift platform: {lift_result.get('error', 'Unknown error')}")
             return -1
@@ -528,7 +528,7 @@ class URWobjExtractServer(UROperateWobj):
         print("\n" + "="*50)
         print("Step 11: Extracting server with force control...")
         print("="*50)
-        result = self.force_task_extract_server(distance=0.55)
+        result = self.force_task_extract_server(distance=0.60)
         if result != 0:
             print(f"[ERROR] Failed to extract server (error code: {result})")
             return result
@@ -543,6 +543,27 @@ class URWobjExtractServer(UROperateWobj):
             print(f"[ERROR] Failed to move away from server (error code: {result})")
             return result
         time.sleep(0.5)
+
+        # Step 13: Courier robot lower platform and pushrod to initial state
+        print("\n" + "="*50)
+        print("Step 13: Courier robot lower platform and pushrod to initial state...")
+        print("="*50)
+        if self.courier_robot is None:
+            print("[ERROR] CourierRobotWebAPI is not initialized")
+            return -1
+        time.sleep(0.5)
+        
+        result = self.courier_robot.pushrod_down(blocking=True)
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to lower pushrod: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(1)
+        
+        result = self.courier_robot.platform_down(blocking=True)
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to lower platform: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(1)
 
         print("\n" + "="*70)
         print("EXTRACT SERVER SEQUENCE FINISHED SUCCESSFULLY")

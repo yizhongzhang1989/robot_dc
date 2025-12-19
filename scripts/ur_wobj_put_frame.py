@@ -1,5 +1,6 @@
 import os
 import time
+import socket
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from ur_operate_wobj import UROperateWobj
@@ -126,8 +127,8 @@ class URWobjPutFrame(UROperateWobj):
             wrench=wrench,
             limits=limits,
             damping=0.05,
-            end_type=2,
-            end_force=[0, 25, 0, 0, 0, 0]  # Terminate when Z force reaches 30N
+            end_type=1,
+            end_time=8  # Terminate when Z force reaches 30N
         )
         time.sleep(0.5)
         return result
@@ -185,32 +186,8 @@ class URWobjPutFrame(UROperateWobj):
         time.sleep(0.5)
         return result
     
-    # ================================ Quick Changer Control ================================
-    def ur_unlock_quick_changer(self):
-        """
-        Unlock the UR quick changer using RS485 communication
-        """
-        if self.rs485_socket is None:
-            print("RS485 socket is not initialized")
-            return -1
-        
-        try:
-            print("[INFO] Unlocking quick changer...")
-            # Send unlock command via RS485
-            unlock_command = bytes([0x53, 0x26, 0x01, 0x01, 0x02, 0x7A, 0xD5])
-            self.rs485_socket.sendall(unlock_command)
-            time.sleep(0.5)
-            
-            # Read response
-            response = self.rs485_socket.recv(1024)
-            print(f"[INFO] Quick changer unlock response: {response.hex()}")
-            
-            print("[INFO] Quick changer unlocked successfully")
-            return 0
-            
-        except Exception as e:
-            print(f"[ERROR] Failed to unlock quick changer: {e}")
-            return -1
+    # Note: ur_unlock_quick_changer() and ur_lock_quick_changer() methods 
+    # are now inherited from UROperateWobj base class
 
     # ================================ Task Execution Methods ================================
     def execute_put_frame_sequence(self):
@@ -251,7 +228,7 @@ class URWobjPutFrame(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.35-self.tool_length, -0.12]  # Offset to account for tool length
+            offset_in_rack=[0, -0.35-self.tool_length, -0.11]  # Offset to account for tool length
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position")
@@ -276,7 +253,7 @@ class URWobjPutFrame(UROperateWobj):
         if result != 0:
             print(f"[ERROR] Failed to unlock quick changer")
             return result
-        time.sleep(3)  # Wait for quick changer to fully unlock
+        time.sleep(1)  # Wait for quick changer to fully unlock
 
         # Step 5: Force task to leave the frame
         print("\n" + "="*50)
