@@ -368,6 +368,33 @@ class URWobjExtractServer(UROperateWobj):
         print("STARTING EXTRACT SERVER SEQUENCE")
         print("="*70)
         
+        # # Step 0: Initialize height of courier robot
+        # print("\n" + "="*50)
+        # print("Step 1: Initializing courier robot platform height...")
+        # print("="*50)
+        # if self.courier_robot is None:
+        #     print("[ERROR] CourierRobotWebAPI is not initialized")
+        #     return -1
+        # time.sleep(0.5)
+        
+        # result = self.courier_robot.pushrod_down(blocking=True)
+        # if not result.get('success', False):
+        #     print(f"[ERROR] Failed to lower pushrod: {result.get('error', 'Unknown error')}")
+        #     return -1
+        # time.sleep(1)
+        
+        # result = self.courier_robot.platform_down(blocking=True)
+        # if not result.get('success', False):
+        #     print(f"[ERROR] Failed to lower platform: {result.get('error', 'Unknown error')}")
+        #     return -1
+        # time.sleep(1)
+
+        result = self.courier_robot.pushrod_goto_height(target_height=20, mode='relative')
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to set pushrod height: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(0.5)
+
         # Step 1: Correct TCP pose
         print("\n" + "="*50)
         print("Step 1: Correcting TCP pose...")

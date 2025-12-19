@@ -657,23 +657,23 @@ class TaskManager:
         #     print(f"✗ Error during AMR courier movement: {e}")
         #     return False
         
-        # # Step 12: Execute UR15 extract server task
-        # print("\n📌 Step 12: Executing UR15 extract server task")
-        # print("-" * 40)
+        # Step 12: Execute UR15 extract server task
+        print("\n📌 Step 12: Executing UR15 extract server task")
+        print("-" * 40)
         
-        # try:
-        #     # Execute extract server operation
-        #     extract_result = self.ur15_execute_extract_server_task()
+        try:
+            # Execute extract server operation
+            extract_result = self.ur15_execute_extract_server_task()
             
-        #     if extract_result:
-        #         print("✓ UR15 extract server task completed successfully")
-        #     else:
-        #         print("✗ UR15 extract server task failed")
-        #         return False
+            if extract_result:
+                print("✓ UR15 extract server task completed successfully")
+            else:
+                print("✗ UR15 extract server task failed")
+                return False
                 
-        # except Exception as e:
-        #     print(f"✗ Error during UR15 extract server task: {e}")
-        #     return False
+        except Exception as e:
+            print(f"✗ Error during UR15 extract server task: {e}")
+            return False
         
         # # Step 13: Execute AMR courier movement from extraction position to dock
         # print("\n📌 Step 13: Executing AMR courier movement from extraction position to dock")

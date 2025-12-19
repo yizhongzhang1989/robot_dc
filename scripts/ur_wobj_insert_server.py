@@ -382,13 +382,13 @@ class URWobjInsertServer(UROperateWobj):
         if not result.get('success', False):
             print(f"[ERROR] Failed to lower pushrod: {result.get('error', 'Unknown error')}")
             return -1
-        time.sleep(7)
+        time.sleep(1)
         
         result = self.courier_robot.platform_down(blocking=True)
         if not result.get('success', False):
             print(f"[ERROR] Failed to lower platform: {result.get('error', 'Unknown error')}")
             return -1
-        time.sleep(10)
+        time.sleep(1)
         
         result = self.courier_robot.pushrod_goto_height(target_height=20, mode='relative')
         if not result.get('success', False):

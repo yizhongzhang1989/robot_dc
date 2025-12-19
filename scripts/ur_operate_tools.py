@@ -893,6 +893,212 @@ class UROperateTools:
             print(f"✗ Exception during return_tool1_get_tool2_from_task: {e}")
             return False
 
+# ===================================== Frame Operation Functions ===================================== 
+    def movej_from_task_to_frame(self):
+        """
+        Move robot joints through predefined waypoints from task position to frame position
+        Uses 5 predefined joint positions for trajectory planning
+        """
+        if not self.robot:
+            print("✗ Robot not connected, cannot execute movej_from_task_to_frame")
+            return False
+        
+        # Define the 5 waypoints in degrees (convert to radians for robot)
+        waypoints_degrees = [
+            [85.8, -72.7, 107.9, -26.1, 13.5, 182.3],   # Waypoint 1
+            [76.4, -121.1, 140.8, -63.3, 13.7, 183.5],  # Waypoint 2
+            [76.5, -98.1, 18.5, -63.3, 13.7, 183.5],    # Waypoint 3
+            [221.0, -98.1, 18.5, -63.3, 13.7, 183.5],   # Waypoint 4
+            [235.4, -82.3, 125.7, -133.3, -90.0, -2.4]  # Waypoint 5 (final frame position)
+        ]
+        
+        # Convert degrees to radians
+        waypoints_radians = []
+        for waypoint in waypoints_degrees:
+            waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
+            waypoints_radians.append(waypoint_rad)
+        
+        print("Starting movej_from_task_to_frame trajectory...")
+        
+        try:
+            for i, waypoint in enumerate(waypoints_radians, 1):
+                print(f"Moving to waypoint {i}/5...")
+                
+                # Execute joint movement
+                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                
+                if result != 0:
+                    print(f"✗ Failed to move to waypoint {i}, error code: {result}")
+                    return False
+                
+                # Add small delay between movements for stability
+                time.sleep(0.5)
+            
+            print("✓ Successfully completed movej_from_task_to_frame trajectory")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Exception during movej_from_task_to_frame: {e}")
+            return False
+    
+    def movej_from_frame_to_task(self):
+        """
+        Move robot joints through predefined waypoints from frame position to task position
+        Uses 4 predefined joint positions for trajectory planning
+        """
+        if not self.robot:
+            print("✗ Robot not connected, cannot execute movej_from_frame_to_task")
+            return False
+        
+        # Define the 5 waypoints in degrees (convert to radians for robot)
+        waypoints_degrees = [
+            [241.0, -90.9, 1.0, 1.9, -90.0, 3.6],       # Waypoint 1 (from frame position)
+            [241.0, -90.9, 1.0, -178.6, -90.0, 3.6],    # Waypoint 2
+            [87.0, -90.9, 1.0, -178.6, -90.0, 3.6],     # Waypoint 3
+            [87.3, -83.5, 71.4, -76.0, -93.4, -53.9],    # Waypoint 4 
+            [80.1, -62.2, 84.3, -27.5, -2.5, -145.7]    # Waypoint 5 (final task position)
+        ]
+        
+        # Convert degrees to radians
+        waypoints_radians = []
+        for waypoint in waypoints_degrees:
+            waypoint_rad = [np.deg2rad(angle) for angle in waypoint]
+            waypoints_radians.append(waypoint_rad)
+        
+        print("Starting movej_from_frame_to_task trajectory...")
+        
+        try:
+            for i, waypoint in enumerate(waypoints_radians, 1):
+                print(f"Moving to waypoint {i}/5...")
+                
+                # Execute joint movement
+                result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
+                
+                if result != 0:
+                    print(f"✗ Failed to move to waypoint {i}, error code: {result}")
+                    return False
+                
+                # Add small delay between movements for stability
+                time.sleep(0.5)
+            
+            print("✓ Successfully completed movej_from_frame_to_task trajectory")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Exception during movej_from_frame_to_task: {e}")
+            return False
+        
+    def movel_from_frame_to_get_tool_frame(self):
+        """
+        Move robot using linear movements to get tool_frame from frame position
+        Uses 3 predefined Cartesian positions (xyz + rotation vector) with movel for precise tool pickup
+        Position format: [x, y, z, rx, ry, rz] in meters and radians
+        Executes: position 1 -> lock_command -> position 2 -> position 3
+        """
+        if not self.robot:
+            print("✗ Robot not connected, cannot execute movel_from_frame_to_get_tool_frame")
+            return False
+        
+        # Define the 3 waypoints in Cartesian space (meters + radians)
+        # Format: [x, y, z, rx, ry, rz]
+        waypoints_cartesian = [
+            [0.19354, 0.59381, 0.14359, 3.019, -0.879, 0.009],  # Waypoint 1 (approach frame)
+            [0.19354, 0.73082, 0.14430, 3.019, -0.879, 0.009],  # Waypoint 2 (after lock, engage frame)
+            [0.19354, 0.73082, 0.77569, 3.019, -0.879, 0.009]   # Waypoint 3 (secure frame)
+        ]
+        
+        print("Starting movel_from_frame_to_get_tool_frame trajectory with movel...")
+        
+        try:
+            # Execute first waypoint
+            print("Executing first phase: approach frame position...")
+            waypoint = waypoints_cartesian[0]
+            print(f"Moving to waypoint 1/3 in getting tool_frame...")
+            
+            # Execute linear movement
+            result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
+            
+            if result != 0:
+                print(f"✗ Failed to move to waypoint 1, error code: {result}")
+                return False
+            
+            print(f"✓ Reached waypoint 1")
+            
+            # Add small delay between movements for stability
+            time.sleep(0.8)
+            
+            print("✓ Completed first phase")
+            
+            # Execute RS485 lock command
+            lock_result = self.rs485_lock()
+            if not lock_result:
+                print("✗ Failed to execute RS485 lock command")
+                return False
+            
+            # Execute remaining waypoints
+            print("Executing second phase: engage and secure frame...")
+            for i, waypoint in enumerate(waypoints_cartesian[1:], 2):
+                print(f"Moving to waypoint {i}/3 in getting tool_frame...")
+                
+                # Execute linear movement
+                result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
+                
+                if result != 0:
+                    print(f"✗ Failed to move to waypoint {i}, error code: {result}")
+                    return False
+                
+                print(f"✓ Reached waypoint {i}")
+                
+                # Add small delay between movements for stability
+                time.sleep(0.8)
+            
+            print("✓ Successfully completed movel_from_frame_to_get_tool_frame trajectory")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Exception during movel_from_frame_to_get_tool_frame: {e}")
+            return False
+    
+    def get_frame_from_task_position(self):
+        """
+        Complete workflow to get frame from task position
+        Executes: task->frame->get_frame->task
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        print("Starting get_frame_from_task_position workflow...")
+        
+        if not self.robot:
+            print("✗ Robot not connected, cannot execute get_frame_from_task_position")
+            return False
+        
+        try:
+            # Step 1: Move from task position to frame area
+            print("Step 1: Moving from task position to frame area...")
+            if not self.movej_from_task_to_frame():
+                print("✗ Failed to move from task to frame area")
+                return False
+            
+            # Step 2: Get frame
+            print("Step 2: Getting frame...")
+            if not self.movel_from_frame_to_get_tool_frame():
+                print("✗ Failed to get frame")
+                return False
+            
+            # Step 3: Return to task position with frame
+            print("Step 3: Returning to task position with frame...")
+            if not self.movej_from_frame_to_task():
+                print("✗ Failed to return to task position")
+                return False
+            
+            print("✓ Successfully completed get_frame_from_task_position workflow")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Exception during get_frame_from_task_position: {e}")
+            return False
+
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='UR15 Robot Tool Operation')
@@ -906,4 +1112,4 @@ if __name__ == "__main__":
 
     print("UROperateTools initialized successfully")
     print("Ready for tool operations...")
-    ur_tools.movej_from_tool_to_task()
+    ur_tools.get_frame_from_task_position()

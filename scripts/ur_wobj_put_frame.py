@@ -127,7 +127,7 @@ class URWobjPutFrame(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=2,
-            end_force=[0, 30, 0, 0, 0, 0]  # Terminate when Z force reaches 30N
+            end_force=[0, 25, 0, 0, 0, 0]  # Terminate when Z force reaches 30N
         )
         time.sleep(0.5)
         return result
