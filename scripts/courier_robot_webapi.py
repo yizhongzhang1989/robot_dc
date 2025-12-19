@@ -10,6 +10,7 @@ import time
 import threading
 import yaml
 from pathlib import Path
+from courier_robot_interactive import interactive_mode
 
 
 class CourierRobotWebAPI:
@@ -1306,3 +1307,7 @@ if __name__ == "__main__":
     
     # Initialize robot with parsed URL
     robot = CourierRobotWebAPI(base_url=args.url, verbose=args.verbose)
+    
+    # Run interactive mode
+    interactive_mode(robot)
+    # ==================== Test Area ====================
