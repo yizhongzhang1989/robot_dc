@@ -378,12 +378,7 @@ class UROperateWobj:
             unlock_command = bytes([0x53, 0x26, 0x01, 0x01, 0x02, 0x7A, 0xD5])
             temp_socket.sendall(unlock_command)
             print("[INFO] Unlock command sent successfully")
-            time.sleep(0.5)
-            
-            # Receive and verify response
-            rs485_data = temp_socket.recv(1024)
-            print(f"[INFO] RS485 Received Data: {' '.join(f'0x{b:02x}' for b in rs485_data)}")
-            time.sleep(0.5)
+            time.sleep(2.0)
             
             print("[INFO] Quick changer unlocked successfully")
             return 0
@@ -422,12 +417,7 @@ class UROperateWobj:
             lock_command = bytes([0x53, 0x26, 0x01, 0x00, 0x02, 0x7A, 0xD4])
             temp_socket.sendall(lock_command)
             print("[INFO] Lock command sent successfully")
-            time.sleep(0.5)
-            
-            # Receive and verify response
-            rs485_data = temp_socket.recv(1024)
-            print(f"[INFO] RS485 Received Data: {' '.join(f'0x{b:02x}' for b in rs485_data)}")
-            time.sleep(0.5)
+            time.sleep(2.0)
             
             print("[INFO] Quick changer locked successfully")
             return 0

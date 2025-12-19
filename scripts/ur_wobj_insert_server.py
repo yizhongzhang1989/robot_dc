@@ -542,17 +542,24 @@ class URWobjInsertServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # # Step 13: Final platform down to default position
-        # print("\n" + "="*50)
-        # print("Step 13: Lowering platform to default position...")
-        # print("="*50)
-        # if self.courier_robot is None:
-        #     print("[ERROR] CourierRobotWebAPI is not initialized")
-        #     return -1
-        # lift_result = self.courier_robot.platform_hybrid_control(target_height=500, target_force=0)
-        # if not lift_result.get('success', False):
-        #     print(f"[ERROR] Failed to lower platform to default: {lift_result.get('error', 'Unknown error')}")
-        #     return -1
+        # Step 13: Final platform down to default position
+        print("\n" + "="*50)
+        print("Step 13: Lowering platform to default position...")
+        print("="*50)
+        if self.courier_robot is None:
+            print("[ERROR] CourierRobotWebAPI is not initialized")
+            return -1
+        result = self.courier_robot.pushrod_down(blocking=True)
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to lower pushrod: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(1)
+        
+        result = self.courier_robot.platform_down(blocking=True)
+        if not result.get('success', False):
+            print(f"[ERROR] Failed to lower platform: {result.get('error', 'Unknown error')}")
+            return -1
+        time.sleep(1)
 
         print("\n" + "="*70)
         print("INSERT SERVER SEQUENCE FINISHED SUCCESSFULLY")
