@@ -452,10 +452,10 @@ class UROperateTools(UROperateWobj):
         # Define the 4 waypoints in Cartesian space (meters + radians)
         # Format: [x, y, z, rx, ry, rz]
         waypoints_cartesian = [
-            [0.64134, 0.38184, 0.50183, 1.466, -2.779, 0.011],  # Waypoint 1 (approach tool_extract)
-            [0.64134, 0.38184, 0.39193, 1.466, -2.779, 0.011],  # Waypoint 2 (align with tool_extract)
-            [0.77048, 0.38184, 0.39193, 1.466, -2.779, 0.011],  # Waypoint 3 (engage tool_extract)
-            [0.77048, 0.38184, 0.65495, 1.466, -2.779, 0.011]   # Waypoint 4 (secure tool_extract)
+            [0.64235, 0.38245, 0.49744, 1.512, -2.750, 0.010],  # Waypoint 1 (approach tool_extract)
+            [0.64235, 0.38245, 0.39111, 1.512, -2.750, 0.010],  # Waypoint 2 (align with tool_extract)
+            [0.75054, 0.38245, 0.39111, 1.512, -2.750, 0.010],  # Waypoint 3 (engage tool_extract)
+            [0.75054, 0.38245, 0.70277, 1.512, -2.750, 0.010]   # Waypoint 4 (secure tool_extract)
         ]
         
         print("Starting movel_from_tool_to_get_tool_extract trajectory with movel...")
@@ -523,10 +523,10 @@ class UROperateTools(UROperateWobj):
         # Define the 4 waypoints in Cartesian space (meters + radians) - reverse order of get_tool_extract
         # Format: [x, y, z, rx, ry, rz]
         waypoints_cartesian = [
-            [0.77048, 0.38184, 0.65495, 1.466, -2.779, 0.011],   # Waypoint 1 (from elevated position)
-            [0.77048, 0.38184, 0.39193, 1.466, -2.779, 0.011],   # Waypoint 2 (approach release)
-            [0.64134, 0.38184, 0.39193, 1.466, -2.779, 0.011],   # Waypoint 3 (release position)
-            [0.64134, 0.38184, 0.50183, 1.466, -2.779, 0.011]    # Waypoint 4 (final position)
+            [0.75054, 0.38245, 0.70277, 1.512, -2.750, 0.010],   # Waypoint 1 (from elevated position)
+            [0.75054, 0.38245, 0.39111, 1.512, -2.750, 0.010],   # Waypoint 2 (approach release)
+            [0.64235, 0.38245, 0.39111, 1.512, -2.750, 0.010],   # Waypoint 3 (release position)
+            [0.64235, 0.38245, 0.49744, 1.512, -2.750, 0.010]    # Waypoint 4 (final position)
         ]
         
         print("Starting movel_from_tool_to_return_tool_extract trajectory with movel...")
