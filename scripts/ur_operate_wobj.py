@@ -414,7 +414,7 @@ class UROperateWobj:
             print("[INFO] Temporary RS485 connection established")
             
             # Send lock command via RS485
-            lock_command = bytes([0x53, 0x26, 0x01, 0x00, 0x02, 0x7A, 0xD4])
+            lock_command = bytes([0x53, 0x26, 0x01, 0x01, 0x01, 0x3A, 0xD4])
             temp_socket.sendall(lock_command)
             print("[INFO] Lock command sent successfully")
             time.sleep(2.0)

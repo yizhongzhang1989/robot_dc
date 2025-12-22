@@ -10,6 +10,7 @@ import time
 import subprocess
 import threading
 import argparse
+import math
 from pathlib import Path
 
 # Use common package for workspace utilities
@@ -615,13 +616,36 @@ class TaskManager:
         #     move_result = self.ur_operate_tools.movel_to_target_position(
         #         index=self.server_index,
         #         execution_order=[1, 3, 2],
-        #         offset_in_rack=[0, -0.55, 1.20]
+        #         offset_in_rack=[0, -0.55, 0.45]
         #     )
             
         #     if not move_result:
         #         print("✓ UR15 move to target position completed successfully")
         #     else:
         #         print("✗ UR15 move to target position failed")
+        #         return False
+            
+        #     # After movel_to_target_position, execute movej to specified joint angles
+        #     print("\n📌 Step 10: Executing UR15 movej to target joint angles")
+        #     print("-" * 40)
+            
+        #     target_joints_degrees = [113.2, -62.4, 65.1, -92.5, -90.3, -61.8]
+        #     target_joints_radians = [math.radians(angle) for angle in target_joints_degrees]
+            
+        #     print(f"Target joint angles (degrees): {target_joints_degrees}")
+        #     print(f"Target joint angles (radians): {[f'{rad:.4f}' for rad in target_joints_radians]}")
+            
+        #     # Execute movej operation
+        #     movej_result = self.ur_operate_tools.robot.movej(
+        #         target_joints_radians,
+        #         a=0.5,  # acceleration
+        #         v=0.5   # velocity
+        #     )
+            
+        #     if movej_result == 0:
+        #         print("✓ UR15 movej to target joint angles completed successfully")
+        #     else:
+        #         print(f"✗ UR15 movej to target joint angles failed with error code: {movej_result}")
         #         return False
                 
         # except Exception as e:
@@ -758,13 +782,36 @@ class TaskManager:
         #     move_result = self.ur_operate_tools.movel_to_target_position(
         #         index=self.server_index,
         #         execution_order=[1, 3, 2],
-        #         offset_in_rack=[0, -0.55, 1.30]
+        #         offset_in_rack=[0, -0.55, 0.45]
         #     )
             
         #     if not move_result:
         #         print("✓ UR15 move to target position completed successfully")
         #     else:
         #         print("✗ UR15 move to target position failed")
+        #         return False
+
+        #     # After movel_to_target_position, execute movej to specified joint angles
+        #     print("\n📌 Step 10: Executing UR15 movej to target joint angles")
+        #     print("-" * 40)
+            
+        #     target_joints_degrees = [113.2, -62.4, 65.1, -92.5, -90.3, -61.8]
+        #     target_joints_radians = [math.radians(angle) for angle in target_joints_degrees]
+            
+        #     print(f"Target joint angles (degrees): {target_joints_degrees}")
+        #     print(f"Target joint angles (radians): {[f'{rad:.4f}' for rad in target_joints_radians]}")
+            
+        #     # Execute movej operation
+        #     movej_result = self.ur_operate_tools.robot.movej(
+        #         target_joints_radians,
+        #         a=1.0,  # acceleration
+        #         v=1.0`   # velocity
+        #     )
+            
+        #     if movej_result == 0:
+        #         print("✓ UR15 movej to target joint angles completed successfully")
+        #     else:
+        #         print(f"✗ UR15 movej to target joint angles failed with error code: {movej_result}")
         #         return False
                 
         # except Exception as e:
@@ -824,6 +871,8 @@ class TaskManager:
         # except Exception as e:
         #     print(f"✗ Error during AMR courier return movement: {e}")
         #     return False
+
+        # Here, we need to return tool_frame manually before proceeding
         
         # # Step 21: Execute UR15 tool exchange operation - return tool_extract and get tool_rotate
         # print("\n📌 Step 21: Executing UR15 tool exchange operation - return tool_extract and get tool_rotate")
@@ -941,7 +990,7 @@ class TaskManager:
         #     move_result = self.ur_operate_tools.movel_to_target_position(
         #         index=self.server_index,
         #         execution_order=[1, 3, 2],
-        #         offset_in_rack=[0, -0.55, 1.30]
+        #         offset_in_rack=[0, -0.55, 0.45]
         #     )
             
         #     if not move_result:

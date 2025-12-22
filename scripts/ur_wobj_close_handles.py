@@ -94,7 +94,7 @@ class URWobjCloseHandles(UROperateWobj):
         # Set force mode parameters
         task_frame = tcp_pose  # Use TCP coordinate system
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in XYZ directions
-        wrench = [0, 0, 25, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 20, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - touching right handle...")

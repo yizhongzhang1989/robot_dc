@@ -703,7 +703,14 @@ class UROperateWobjUnlockKnob(UROperateWobj):
         time.sleep(0.5)
 
         print("\n" + "="*50)
-        result = self.movel_in_server_frame([0.03, 0.23, -0.04])
+        result = self.movel_in_server_frame([0, 0, -0.04])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from left knob")
+            return result
+        time.sleep(0.5)
+
+        print("\n" + "="*50)
+        result = self.movel_in_server_frame([0.03, 0.23, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away from left knob")
             return result
@@ -799,7 +806,16 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        self.movel_in_server_frame([-0.03, 0.23, -0.03])
+        result = self.movel_in_server_frame([0, 0, -0.04])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from right knob")
+            return result
+        time.sleep(0.5)
+
+        result = self.movel_in_server_frame([-0.03, 0.23, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from right knob")
+            return result
         time.sleep(0.5)
 
         # Step 17: Force task to open the right handle

@@ -67,7 +67,7 @@ class UROperateTools(UROperateWobj):
         
         try:
             for i, waypoint in enumerate(waypoints_radians, 1):
-                print(f"Moving to waypoint {i}/7...")
+                print(f"Moving to waypoint {i}/7 in movej_from_task_to_tools...")
                 
                 # Execute joint movement
                 result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
@@ -116,7 +116,7 @@ class UROperateTools(UROperateWobj):
         
         try:
             for i, waypoint in enumerate(waypoints_radians, 1):
-                print(f"Moving to waypoint {i}/7...")
+                print(f"Moving to waypoint {i}/7 in movej_from_tool_to_task...")
                 
                 # Execute joint movement
                 result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
@@ -268,7 +268,7 @@ class UROperateTools(UROperateWobj):
             # Execute final waypoint
             print("Executing final phase: moving to final position...")
             waypoint = waypoints_cartesian[3]
-            print(f"Moving to waypoint 4/4 using movel...")
+            print(f"Moving to waypoint 4/4 in movel_from_tool_to_return_tool_pushpull...")
             
             result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
             
@@ -421,7 +421,7 @@ class UROperateTools(UROperateWobj):
             # Execute final waypoint
             print("Executing final phase: moving to final position...")
             waypoint = waypoints_cartesian[3]
-            print(f"Moving to waypoint 4/4 using movel...")
+            print(f"Moving to waypoint 4/4 in movel_from_tool_to_return_tool_rotate...")
             
             result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
             
@@ -574,7 +574,7 @@ class UROperateTools(UROperateWobj):
             # Execute final waypoint
             print("Executing final phase: moving to final position...")
             waypoint = waypoints_cartesian[3]
-            print(f"Moving to waypoint 4/4 using movel...")
+            print(f"Moving to waypoint 4/4 in movel_from_tool_to_return_tool_extract...")
             
             result = self.robot.movel(waypoint, a=self.a_movel, v=self.v_movel)
             
@@ -781,7 +781,7 @@ class UROperateTools(UROperateWobj):
         
         try:
             for i, waypoint in enumerate(waypoints_radians, 1):
-                print(f"Moving to waypoint {i}/5...")
+                print(f"Moving to waypoint {i}/5 in movej_from_task_to_frame...")
                 
                 # Execute joint movement
                 result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)
@@ -828,7 +828,7 @@ class UROperateTools(UROperateWobj):
         
         try:
             for i, waypoint in enumerate(waypoints_radians, 1):
-                print(f"Moving to waypoint {i}/5...")
+                print(f"Moving to waypoint {i}/5 in movej_from_frame_to_task...")
                 
                 # Execute joint movement
                 result = self.robot.movej(waypoint, a=self.a_movej, v=self.v_movej)

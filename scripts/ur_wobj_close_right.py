@@ -392,7 +392,7 @@ class URWobjCloseRight(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [0, 0, -20, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, -25, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pushing handle completely...")
@@ -405,7 +405,7 @@ class URWobjCloseRight(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=2,
-            end_force=[0, 0, 10, 0, 0, 0]
+            end_force=[0, 0, 15, 0, 0, 0]
         )
         
         if result5 != 0:
@@ -493,8 +493,8 @@ class URWobjCloseRight(UROperateWobj):
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters for locking
-        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [25, 40, 0, 0, 0, -1.0]
+        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
+        wrench = [25, 35, -8, 0, 0, -1.0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -507,7 +507,7 @@ class URWobjCloseRight(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.08, 0.10, 0, 0, 0, 0]
+            end_distance=[0.08, 0.10, 0.05, 0, 0, 0]
         )
         
         if result7 != 0:
@@ -555,7 +555,7 @@ class URWobjCloseRight(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control in Z direction
-        wrench = [0, 0, 15, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 25, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - touching server...")
@@ -567,8 +567,8 @@ class URWobjCloseRight(UROperateWobj):
             wrench=wrench,
             limits=limits,
             damping=0.1,
-            end_type=3,
-            end_distance=[0, 0, 0.015, 0, 0, 0]
+            end_type=2,
+            end_force=[0, 0, 15, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
@@ -621,7 +621,7 @@ class URWobjCloseRight(UROperateWobj):
             limits=limits,
             damping=0.5,
             end_type=3,
-            end_distance=[0, 0.15, 0, 0, 0, 0]
+            end_distance=[0, 0.20, 0, 0, 0, 0]
         )
         time.sleep(0.5)
         return result

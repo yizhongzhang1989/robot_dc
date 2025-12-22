@@ -565,6 +565,20 @@ class URWobjExtractServer(UROperateWobj):
             return -1
         time.sleep(1)
 
+        # Step 14: Move to target position to position before extraction
+        print("\n" + "="*50)
+        print("Step 14: Moving to target position before extraction...")
+        print("="*50)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0, -0.40, 0.20+self.tool_length]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to target position (error code: {result})")
+            return result
+        time.sleep(0.5)
+
         print("\n" + "="*70)
         print("EXTRACT SERVER SEQUENCE FINISHED SUCCESSFULLY")
         print("="*70)

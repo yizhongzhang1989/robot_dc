@@ -603,7 +603,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
-        wrench = [0, 0, 20, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 25, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task...")
@@ -616,7 +616,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             limits=limits,
             damping=0.1,
             end_type=3,
-            end_distance=[0,0,0.02,0,0,0]
+            end_distance=[0,0,0.03,0,0,0]
         )
         time.sleep(0.5)
         return result
@@ -920,7 +920,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        result = self.movel_in_server_frame([-0.03, 0.23, 0])
+        result = self.movel_in_server_frame([-0.02, 0.23, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away from left knob")
             return result
