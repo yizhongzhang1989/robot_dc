@@ -77,41 +77,6 @@ class URWobjCloseHandles(UROperateWobj):
             self.tool_angle_z = defaults['tool_angle_z']
 
     # ================================ Force Control Functions ================================
-    def force_task_touch_left_handle(self):
-        """
-        Execute force control task to touch the left handle using TCP coordinate system.
-        The robot will apply a downward force (relative to TCP) to make contact with the left handle.
-        Returns: result from force_control_task
-        """
-        if self.robot is None:
-            print("Robot is not initialized")
-            return -1
-        
-        # Get current TCP pose to use as task frame (for force control in TCP coordinate system)
-        tcp_pose = self.robot.get_actual_tcp_pose()
-        print(f"[INFO] Current TCP pose: {tcp_pose}")
-        
-        # Set force mode parameters
-        task_frame = tcp_pose  # Use TCP coordinate system
-        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in XYZ directions
-        wrench = [0, 0, 25, 0, 0, 0]  # Desired force/torque in each direction
-        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
-        
-        print("[INFO] Starting force control task - touching left handle...")
-        
-        # Execute force control task with distance-based termination
-        result = self.robot.force_control_task(
-            task_frame=task_frame,
-            selection_vector=selection_vector,
-            wrench=wrench,
-            limits=limits,
-            damping=0.05,
-            end_type=3,
-            end_distance=[0.02, 0.02, 0.10, 0, 0, 0]
-        )
-        time.sleep(0.5)
-        return result
-
     def force_task_touch_right_handle(self):
         """
         Execute force control task to touch the right handle using TCP coordinate system.
@@ -142,7 +107,7 @@ class URWobjCloseHandles(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=2,
-            end_force=[10, 10, 15, 0, 0, 0]
+            end_force=[10, 10, 10, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
@@ -235,7 +200,7 @@ class URWobjCloseHandles(UROperateWobj):
         
         # Set force mode parameters for closing
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [25, 25, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [25, 30, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - closing handle...")
@@ -337,26 +302,46 @@ class URWobjCloseHandles(UROperateWobj):
         time.sleep(0.5)
 
         # ==============Motion 5: Move along Z direction down=================
-        print("\n[Motion 5] Moving along Z negative direction by 1cm...")
+        print("\n[Motion 5] Move along Z direction down...")
         
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
-        # Create target pose: move 1cm (0.01m) along Z negative direction
-        target_pose = [
-            tcp_pose[0],        # x (keep current)
-            tcp_pose[1],        # y (keep current)
-            tcp_pose[2] - 0.01, # z (move 1cm down)
-            tcp_pose[3],        # rx (keep current orientation)
-            tcp_pose[4],        # ry
-            tcp_pose[5]         # rz
+        # Extract rotation matrix from server transformation matrix and convert to rotation vector
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
+        
+        # Create task frame using current position with server orientation
+        task_frame = [
+            tcp_pose[0],        # x (current position)
+            tcp_pose[1],        # y
+            tcp_pose[2],        # z
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
-        print(f"[INFO] Target pose: {target_pose}")
+        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
-        # Execute movel movement
-        result5 = self.robot.movel(target_pose, a=0.1, v=0.05)
+        # Set force mode parameters
+        selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
+        wrench = [0, 0, -25, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - pushing handle completely...")
+        
+        # Execute force control with force-based termination
+        result5 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.05,
+            end_type=2,
+            end_force=[0, 0, 15, 0, 0, 0]
+        )
         
         if result5 != 0:
             print(f"[ERROR] Motion 5 failed with code: {result5}")
@@ -390,8 +375,8 @@ class URWobjCloseHandles(UROperateWobj):
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters for locking
-        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
-        wrench = [-25, 30, 0, 0, 0, 0]  # Desired force/torque in each direction
+        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, and Z directions
+        wrench = [-25, 30, -5, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -404,7 +389,7 @@ class URWobjCloseHandles(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=3,
-            end_distance=[0.09, 0.10, 0, 0, 0, 0]
+            end_distance=[0.09, 0.10, 0.05, 0, 0, 0]
         )
         
         if result6 != 0:
@@ -490,7 +475,7 @@ class URWobjCloseHandles(UROperateWobj):
         
         # Set force mode parameters for unlocking
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in X and Z directions
-        wrench = [0, 20, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 25, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - unlocking...")
@@ -514,26 +499,46 @@ class URWobjCloseHandles(UROperateWobj):
         time.sleep(0.5)
 
         # ==============Motion 3: Move along Z direction down=================
-        print("\n[Motion 3] Moving along Z negative direction by 5mm...")
+        print("\n[Motion 3] Move along Z direction down...")
         
         # Get current TCP pose
         tcp_pose = self.robot.get_actual_tcp_pose()
         print(f"[INFO] Current TCP pose: {tcp_pose}")
         
-        # Create target pose: move 5mm (0.005m) along Z negative direction
-        target_pose = [
-            tcp_pose[0],         # x (keep current)
-            tcp_pose[1],         # y (keep current)
-            tcp_pose[2] - 0.01, # z (move 10mm down)
-            tcp_pose[3],         # rx (keep current orientation)
-            tcp_pose[4],         # ry
-            tcp_pose[5]          # rz
+        # Extract rotation matrix from server transformation matrix and convert to rotation vector
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
+        
+        # Create task frame using current position with server orientation
+        task_frame = [
+            tcp_pose[0],        # x (current position)
+            tcp_pose[1],        # y
+            tcp_pose[2],        # z
+            server_rotation_vector[0], # rx (server orientation)
+            server_rotation_vector[1], # ry
+            server_rotation_vector[2]  # rz
         ]
         
-        print(f"[INFO] Target pose: {target_pose}")
+        print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
-        # Execute movel movement
-        result3 = self.robot.movel(target_pose, a=0.1, v=0.05)
+        # Set force mode parameters
+        selection_vector = [0, 0, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
+        wrench = [0, 0, -25, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task - pushing handle completely...")
+        
+        # Execute force control with force-based termination
+        result3 = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.05,
+            end_type=2,
+            end_force=[0, 0, 15, 0, 0, 0]
+        )
         
         if result3 != 0:
             print(f"[ERROR] Motion 3 failed with code: {result3}")
@@ -561,8 +566,8 @@ class URWobjCloseHandles(UROperateWobj):
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters
-        selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [25, 30, 0, 0, 0, 0]  # Desired force/torque in each direction
+        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
+        wrench = [25, 30, -5, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -632,7 +637,7 @@ class URWobjCloseHandles(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.325-self.tool_length, 0]
+            offset_in_rack=[0, -0.325-self.tool_length, 0.01]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to left handle position")
@@ -681,7 +686,7 @@ class URWobjCloseHandles(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0.05, -0.15-self.tool_length, 0]
+            offset_in_rack=[0.05, -0.15-self.tool_length, 0.01]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to right handle position")

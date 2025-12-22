@@ -95,7 +95,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         # Set force mode parameters
         task_frame = tcp_pose  # set task frame to TCP pose
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in XYZ direction relative to task frame
-        wrench = [0, 0, 20, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 30, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force task: 'Touch Knob'...")
@@ -205,7 +205,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=2,
-            end_force=[0, 0, 20, 0, 0, 0]
+            end_force=[0, 0, 10, 0, 0, 0]
         )
         
         if result1 != 0:
@@ -242,7 +242,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         
         # Set force mode parameters for unlocking
         selection_vector = [0, 1, 0, 0, 1, 0]  # Enable torque control in Z direction only
-        wrench = [0, 2, 0, 0, -1.0, 0]
+        wrench = [0, 5, 0, 0, -3.0, 0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - unlocking...")
@@ -287,7 +287,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         
         # Set force mode parameters for releasing spring
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction only
-        wrench = [0, -15.0, 0, 0, 0, 0]
+        wrench = [0, -35.0, 0, 0, 0, 0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - releasing spring...")
@@ -298,7 +298,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.01,
+            damping=0.05,
             end_type=3,
             end_distance=[0, 0.003, 0, 0, 0, 0]
         )
@@ -331,7 +331,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         
         # Set force mode parameters for return motion
         selection_vector = [0, 0, 0, 0, 1, 0]  # Enable torque control in Y direction only
-        wrench = [0, 0, 0, 0, 1.0, 0]  # Apply 1.0 Nm torque (clockwise)
+        wrench = [0, 0, 0, 0, 3.0, 0]  # Apply 3.0 Nm torque (clockwise)
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - returning...")
@@ -342,7 +342,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.005,
+            damping=0.01,
             end_type=4,
             end_angle=15.0  # Stop after rotating 15 degrees
         )
@@ -412,7 +412,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             limits=limits,
             damping=0.05,
             end_type=2,
-            end_force=[0, 0, 20, 0, 0, 0]
+            end_force=[0, 0, 10, 0, 0, 0]
         )
         
         if result1 != 0:
@@ -450,7 +450,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
 
         # Set force mode parameters for unlocking
         selection_vector = [0, 1, 0, 0, 1, 0]  # Enable torque control in Z direction only
-        wrench = [0, 2, 0, 0, 1.0, 0]
+        wrench = [0, 5, 0, 0, 3.0, 0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - unlocking...")
@@ -494,7 +494,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         
         # Set force mode parameters for releasing spring
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction only
-        wrench = [0, -20.0, 0, 0, 0, 0]
+        wrench = [0, -35.0, 0, 0, 0, 0]
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - releasing spring...")
@@ -505,7 +505,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.002,
+            damping=0.01,
             end_type=3,
             end_distance=[0, 0.003, 0, 0, 0, 0]
         )
@@ -538,7 +538,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         
         # Set force mode parameters for return motion
         selection_vector = [0, 0, 0, 0, 1, 0]  # Enable torque control in Y direction only
-        wrench = [0, 0, 0, 0, -1.0, 0]  # Apply -1.0 Nm torque (counter-clockwise)
+        wrench = [0, 0, 0, 0, -3.0, 0]  # Apply -1.0 Nm torque (counter-clockwise)
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - returning...")
@@ -549,7 +549,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.005,
+            damping=0.01,
             end_type=4,
             end_angle=15.0  # Stop after rotating 15 degrees
         )
@@ -765,7 +765,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[-0.105, -0.10-self.tool_length, 0.018]
+            offset_in_rack=[-0.105, -0.10-self.tool_length, 0.020]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to left knob position")
@@ -812,7 +812,13 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        result = self.movel_in_server_frame([0.03, 0.23, -0.03])
+        result = self.movel_in_server_frame([0, 0, -0.04])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from left knob")
+            return result
+        time.sleep(0.5)
+
+        result = self.movel_in_server_frame([0.03, 0.23, 0])
         if result != 0:
             print(f"[ERROR] Failed to move away from left knob")
             return result
@@ -861,7 +867,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0.105, -0.10-self.tool_length, 0.018]
+            offset_in_rack=[0.105, -0.10-self.tool_length, 0.020]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to right knob position")
@@ -908,7 +914,16 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             return result
         time.sleep(0.5)
         
-        self.movel_in_server_frame([-0.03, 0.23, -0.03])
+        result = self.movel_in_server_frame([0, 0, -0.04])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from left knob")
+            return result
+        time.sleep(0.5)
+
+        result = self.movel_in_server_frame([-0.03, 0.23, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from left knob")
+            return result
         time.sleep(0.5)
 
         # Step 18: Force control to open right handle

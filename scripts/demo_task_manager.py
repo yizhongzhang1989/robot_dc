@@ -825,27 +825,27 @@ class TaskManager:
         #     print(f"✗ Error during AMR courier return movement: {e}")
         #     return False
         
-        # Step 21: Execute UR15 tool exchange operation - return tool_extract and get tool_rotate
-        print("\n📌 Step 21: Executing UR15 tool exchange operation - return tool_extract and get tool_rotate")
-        print("-" * 40)
+        # # Step 21: Execute UR15 tool exchange operation - return tool_extract and get tool_rotate
+        # print("\n📌 Step 21: Executing UR15 tool exchange operation - return tool_extract and get tool_rotate")
+        # print("-" * 40)
         
-        try:
-            # Execute tool exchange operation using ur_operate_tools
-            if self.ur_operate_tools:
-                tool_exchange_result = self.ur_operate_tools.return_tool1_get_tool2_from_task(tool1_name="tool_extract", tool2_name="tool_rotate")
+        # try:
+        #     # Execute tool exchange operation using ur_operate_tools
+        #     if self.ur_operate_tools:
+        #         tool_exchange_result = self.ur_operate_tools.return_tool1_get_tool2_from_task(tool1_name="tool_extract", tool2_name="tool_rotate")
                 
-                if tool_exchange_result:
-                    print("✓ UR15 tool exchange operation (tool_extract → tool_rotate) completed successfully")
-                else:
-                    print("✗ UR15 tool exchange operation (tool_extract → tool_rotate) failed")
-                    return False
-            else:
-                print("✗ UR operate tools not initialized")
-                return False
+        #         if tool_exchange_result:
+        #             print("✓ UR15 tool exchange operation (tool_extract → tool_rotate) completed successfully")
+        #         else:
+        #             print("✗ UR15 tool exchange operation (tool_extract → tool_rotate) failed")
+        #             return False
+        #     else:
+        #         print("✗ UR operate tools not initialized")
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 tool exchange operation: {e}")
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 tool exchange operation: {e}")
+        #     return False
         
         # # Step 22: Execute UR15 unlock knob insert task
         # print("\n📌 Step 22: Executing UR15 unlock knob insert task")
@@ -925,6 +925,33 @@ class TaskManager:
                 
         # except Exception as e:
         #     print(f"✗ Error during UR15 tool return operation: {e}")
+        #     return False
+
+        # # Step 26: Execute UR15 move to target position
+        # print("\n📌 Step 26: Executing UR15 move to target position")
+        # print("-" * 40)
+        
+        # # Check if UR operate tools is initialized
+        # if self.ur_operate_tools is None:
+        #     print("✗ Error: UR Operate Tools not initialized. Cannot execute move operation.")
+        #     return False
+        
+        # try:
+        #     # Execute move to target position operation
+        #     move_result = self.ur_operate_tools.movel_to_target_position(
+        #         index=self.server_index,
+        #         execution_order=[1, 3, 2],
+        #         offset_in_rack=[0, -0.55, 1.30]
+        #     )
+            
+        #     if not move_result:
+        #         print("✓ UR15 move to target position completed successfully")
+        #     else:
+        #         print("✗ UR15 move to target position failed")
+        #         return False
+                
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 move to target position: {e}")
         #     return False
         
         # Sequence completed successfully
