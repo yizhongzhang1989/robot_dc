@@ -374,34 +374,17 @@ class CourierRobotWebAPI:
     
     # ==================== Platform Manual Control ====================
     
-    def platform_up(self, blocking=True, timeout=300, _internal_call=False):
+    def platform_up(self, blocking=True, timeout=300):
         """
         Platform manual up movement
         
         Args:
             blocking: If True, wait until movement completes. If False, return immediately.
             timeout: Maximum wait time in seconds (only used if blocking=True)
-            _internal_call: Internal flag to prevent infinite recursion
         
         Returns:
             dict with success status and complete state
         """
-        # If blocking and not an internal call, execute in background thread
-        # This allows stop/emergency_reset to interrupt the blocking operation
-        if blocking and not _internal_call:
-            success = self._execute_in_background(
-                self.platform_up, 
-                blocking=blocking, 
-                timeout=timeout,
-                _internal_call=True
-            )
-            if not success:
-                return {
-                    'success': False,
-                    'error': 'Previous command still running'
-                }
-            return {'success': True, 'started': True}
-        
         # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
@@ -441,34 +424,17 @@ class CourierRobotWebAPI:
         result.update(wait_result)
         return result
     
-    def platform_down(self, blocking=True, timeout=300, _internal_call=False):
+    def platform_down(self, blocking=True, timeout=300):
         """
         Platform manual down movement
         
         Args:
             blocking: If True, wait until movement completes. If False, return immediately.
             timeout: Maximum wait time in seconds (only used if blocking=True)
-            _internal_call: Internal flag to prevent infinite recursion
         
         Returns:
             dict with success status and complete state
         """
-        # If blocking and not an internal call, execute in background thread
-        # This allows stop/emergency_reset to interrupt the blocking operation
-        if blocking and not _internal_call:
-            success = self._execute_in_background(
-                self.platform_down, 
-                blocking=blocking, 
-                timeout=timeout,
-                _internal_call=True
-            )
-            if not success:
-                return {
-                    'success': False,
-                    'error': 'Previous command still running'
-                }
-            return {'success': True, 'started': True}
-        
         # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
@@ -822,34 +788,17 @@ class CourierRobotWebAPI:
     
     # ==================== Pushrod Manual Control ====================
     
-    def pushrod_up(self, blocking=True, timeout=300, _internal_call=False):
+    def pushrod_up(self, blocking=True, timeout=300):
         """
         Pushrod manual up movement
         
         Args:
             blocking: If True, wait until movement completes. If False, return immediately.
             timeout: Maximum wait time in seconds (only used if blocking=True)
-            _internal_call: Internal flag to prevent infinite recursion
         
         Returns:
             dict with success status and complete state
         """
-        # If blocking and not an internal call, execute in background thread
-        # This allows stop/emergency_reset to interrupt the blocking operation
-        if blocking and not _internal_call:
-            success = self._execute_in_background(
-                self.pushrod_up, 
-                blocking=blocking, 
-                timeout=timeout,
-                _internal_call=True
-            )
-            if not success:
-                return {
-                    'success': False,
-                    'error': 'Previous command still running'
-                }
-            return {'success': True, 'started': True}
-        
         # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
@@ -889,34 +838,17 @@ class CourierRobotWebAPI:
         result.update(wait_result)
         return result
     
-    def pushrod_down(self, blocking=True, timeout=300, _internal_call=False):
+    def pushrod_down(self, blocking=True, timeout=300):
         """
         Pushrod manual down movement
         
         Args:
             blocking: If True, wait until movement completes. If False, return immediately.
             timeout: Maximum wait time in seconds (only used if blocking=True)
-            _internal_call: Internal flag to prevent infinite recursion
         
         Returns:
             dict with success status and complete state
         """
-        # If blocking and not an internal call, execute in background thread
-        # This allows stop/emergency_reset to interrupt the blocking operation
-        if blocking and not _internal_call:
-            success = self._execute_in_background(
-                self.pushrod_down, 
-                blocking=blocking, 
-                timeout=timeout,
-                _internal_call=True
-            )
-            if not success:
-                return {
-                    'success': False,
-                    'error': 'Previous command still running'
-                }
-            return {'success': True, 'started': True}
-        
         # Check if robot is idle or completed before sending command
         status = self._get_status()
         if status.get('success'):
