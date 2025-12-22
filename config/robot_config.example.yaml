@@ -7,16 +7,15 @@
 #   cp robot_config.example.yaml robot_config.yaml
 #   nano robot_config.yaml  # Edit with your values
 
-version: "1.0"
+version: "2.0"
 
 # ============================================================================
 # UR15 Robot Configuration
 # ============================================================================
 ur15:
-  # Robot configuration (hardware specs and network)
   robot:
     type: "ur15"            # Robot type for ur_robot_driver
-    ip: "192.168.1.15"  # UPDATE: UR15 robot IP address
+    ip: "192.168.1.15"      # UR15 robot IP address
     ports:
       control: 30002          # Primary interface port
       dashboard: 29999        # Dashboard server port
@@ -33,8 +32,25 @@ ur15:
       - "wrist_1_joint"
       - "wrist_2_joint"
       - "wrist_3_joint"
+  # tools configuration
+  tool:
+    tool_rotate:
+      length: 0.325          # Length of the tool rotate from flange to tip (meters)
+      angle_z: -31           # Rotation angle around Z axis (degrees)
+
+    tool_pushpull:
+      length: 0.325         # Length of the pushpull tool from flange to tip (meters)
+      angle_z: -31             # Rotation angle around Z axis (degrees)
+    
+    tool_frame:
+      length: 0.345          # Length of the tool frame from flange to tip (meters)
+      angle_z: -33           # Rotation angle around Z axis (degrees)
+
+    tool_extract:
+      length: 0.225          # Length of the tool extract from flange to tip (meters)
+      angle_z: -31           # Rotation angle around Z axis (degrees)
   
-  # Launch modules and sequence
+  # Launch configuration: modules and sequence
   launch_modules:
     - package: "robot_status_redis"
       launch_file: "robot_status_launch.py"
@@ -107,14 +123,14 @@ ur15:
 duco:
   # Network configuration
   network:
-    ip: "192.168.1.10"  # UPDATE: Duco robot IP address
-    port: 7003                 # Thrift RPC port
+    ip: "192.168.1.10"        # Duco robot IP address
+    port: 7003                # Thrift RPC port
   
   # Camera configuration
   camera:
     name: "DucoCamera"
-    ip: "192.168.1.102"      # UPDATE: Duco camera IP (if different)
-    rtsp_url: "rtsp://admin:123456@192.168.1.102/stream0"  # UPDATE: Change password
+    ip: "192.168.1.102"      # Duco camera IP
+    rtsp_url: "rtsp://admin:123456@192.168.1.102/stream0" # rtsp url with password
     server_port: 8020
     topic: "/duco_camera/image_raw"
     stream_fps: 25
@@ -146,7 +162,7 @@ services:
   positioning_3d:
     host: "0.0.0.0"
     port: 8004
-    ffpp_url: "http://msraig-ubuntu-4.guest.corp.microsoft.com:8001"  # UPDATE: FlowFormer++ server URL
+    ffpp_url: "http://10.172.100.34:8001"  # UPDATE: FlowFormer++ server URL
     dataset_path: "dataset"
   
   # Camera Calibration Web Service
@@ -185,16 +201,7 @@ shared:
     
     # FlowFormer++ server for keypoint tracking
     ffpp_server:
-      url: "http://msraig-ubuntu-4.guest.corp.microsoft.com:8001"  # UPDATE: FFPP server URL
-  
-  # Shared service ports
-  services:
-    rtsp_server: 8011       # Generic RTSP streaming server
-  
-  # Shared paths
-  paths:
-    temp: "temp"
-    scripts: "scripts"
+      url: "http://10.172.100.34:8001"  # FFPP server URL
 
   GB200_rack:
     rack_inner_width: 0.550
@@ -202,13 +209,6 @@ shared:
     rack_origin_to_unit_start_y: 0.190
     rack_origin_to_unit_start_z: 0.03715
     unit_length: 0.04445
-
-# ============================================================================
-# Environment Variables Reference
-# ============================================================================
-# Set these environment variables before running services:
-#
-# export ROBOT_DC_ROOT="/path/to/robot_dc"     # Optional, auto-detected
 
 # ============================================================================
 # Lift Robot (Courier Platform) Configuration
@@ -281,7 +281,7 @@ lift_robot:
   
   # Web Interface Node Configuration
   web:
-    host: "localhost"         # Web server host address (localhost or IP like 192.168.1.3)
+    host: "192.168.1.3"         # Web server host address (localhost or IP like 192.168.1.3)
     port: 8090                # Web server port
     listen_host: "0.0.0.0"    # Listen on all interfaces (for server binding)
     sensor_topic: "/draw_wire_sensor/data"
@@ -292,11 +292,20 @@ lift_robot:
       left_raw: "/force_sensor_left/raw"
     launch_delay: 5.5         # Delay after modbus driver ready (seconds)
     enabled: true             # Launch web interface
-    
+
     # Server and Hybrid Control Configuration
     server_id: 0              # Server ID for hybrid control calculations
     hybrid_params:
       high_base: 133.7        # Base height for high position (mm)
       middle_base: 128.7      # Base height for middle position (mm)
       low_base: 113.7         # Base height for low position (mm)
-      step: 44.45              # Step distance between different IDs (mm per ID)
+      step: 44.45             # Step height between server units (mm)
+
+# ============================================================================
+# AMR Robot Configuration
+# ============================================================================
+amr:
+  ip: "192.168.1.123"
+  web:
+    host: "0.0.0.0"
+    port: 5000
