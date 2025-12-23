@@ -282,7 +282,7 @@ class URWobjInsertServer(UROperateWobj):
         # Set force mode parameters
         # In rack coordinate system: Y+ is pushing direction (into rack)
         selection_vector = [1, 1, 0, 0, 0, 0]  # Enable force control in X and Y directions
-        wrench = [0, 70, 0, 0, 0, 0]  # +70N in rack Y direction = pushing into rack
+        wrench = [0, 80, 0, 0, 0, 0]  # +80N in rack Y direction = pushing into rack
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print(f"[INFO] Starting force control task to insert server {distance}m...")

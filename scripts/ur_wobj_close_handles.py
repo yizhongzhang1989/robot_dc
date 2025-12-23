@@ -94,7 +94,7 @@ class URWobjCloseHandles(UROperateWobj):
         # Set force mode parameters
         task_frame = tcp_pose  # Use TCP coordinate system
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in XYZ directions
-        wrench = [0, 0, 20, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 25, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - touching right handle...")
@@ -105,7 +105,7 @@ class URWobjCloseHandles(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.05,
+            damping=0.01,
             end_type=2,
             end_force=[10, 10, 10, 0, 0, 0]
         )
@@ -414,41 +414,7 @@ class URWobjCloseHandles(UROperateWobj):
         if self.server2base_matrix is None:
             print("Server coordinate system transformation matrix not loaded")
             return -1
-        
-        # ==============Motion 1: Move along Z direction up=================
-        print("\n[Motion 1] Moving along Z positive direction by 1cm...")
-        
-        # Get current TCP pose
-        tcp_pose = self.robot.get_actual_tcp_pose()
-        print(f"[INFO] Current TCP pose: {tcp_pose}")
-        
-        # Create target pose: move 1cm (0.01m) along Z positive direction
-        target_pose = [
-            tcp_pose[0],        # x (keep current)
-            tcp_pose[1],        # y (keep current)
-            tcp_pose[2] + 0.01, # z (move 1cm up)
-            tcp_pose[3],        # rx (keep current orientation)
-            tcp_pose[4],        # ry
-            tcp_pose[5]         # rz
-        ]
-        
-        print(f"[INFO] Target pose: {target_pose}")
-        
-        # Execute movel movement
-        result1 = self.robot.movel(target_pose, a=0.1, v=0.05)
-        
-        if result1 != 0:
-            print(f"[ERROR] Motion 1 failed with code: {result1}")
-            return result1
-        
-        print("[INFO] Motion 1 completed successfully")
-        time.sleep(0.5)
-        
-        # Extract server rotation (reusable for all motions)
-        server_rotation_matrix = self.server2base_matrix[:3, :3]
-        server_rotation = R.from_matrix(server_rotation_matrix)
-        server_rotation_vector = server_rotation.as_rotvec()
-        
+
         # ==============Motion 2: push to unlock the handle=================
         print("\n[Motion 2] Pushing to unlock the handle...")
         
@@ -474,8 +440,8 @@ class URWobjCloseHandles(UROperateWobj):
         print(f"[INFO] Task frame (server coordinate system): {task_frame}")
         
         # Set force mode parameters for unlocking
-        selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in X and Z directions
-        wrench = [0, 25, 0, 0, 0, 0]  # Desired force/torque in each direction
+        selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X and Z directions
+        wrench = [0, 20, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - unlocking...")
@@ -486,9 +452,9 @@ class URWobjCloseHandles(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.05,
+            damping=0.01,
             end_type=2,
-            end_force=[0, 10, 0, 0, 0, 0]
+            end_force=[10, 10, 10, 0, 0, 0]
         )
         
         if result2 != 0:
@@ -496,6 +462,9 @@ class URWobjCloseHandles(UROperateWobj):
             return result2
         
         print("[INFO] Motion 2 completed successfully")
+        time.sleep(0.5)
+
+        result = self.movel_in_server_frame([0, -0.002, 0])
         time.sleep(0.5)
 
         # ==============Motion 3: Move along Z direction down=================
@@ -567,7 +536,7 @@ class URWobjCloseHandles(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in X, Y, Z directions
-        wrench = [25, 30, -5, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [25, 35, -5, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - locking knob...")
@@ -614,69 +583,69 @@ class URWobjCloseHandles(UROperateWobj):
         print("STARTING COMPLETE CLOSE HANDLES SEQUENCE")
         print("="*70)
         
-        # ===============Close left handle=================
-        # Step 1: Correct TCP pose to align with rack coordinate system
-        print("\n" + "="*50)
-        print("Step 1: Correcting TCP pose...")
-        print("="*50)
-        result = self.movel_to_correct_tcp_pose(
-            tcp_x_to_rack=[1, 0, 0],
-            tcp_y_to_rack=[0, 0, -1],
-            tcp_z_to_rack=[0, 1, 0],
-            angle_deg=-self.tool_angle_z
-        )
-        if result != 0:
-            print(f"[ERROR] Failed to correct TCP pose")
-            return result
-        time.sleep(0.5)
+        # # ===============Close left handle=================
+        # # Step 1: Correct TCP pose to align with rack coordinate system
+        # print("\n" + "="*50)
+        # print("Step 1: Correcting TCP pose...")
+        # print("="*50)
+        # result = self.movel_to_correct_tcp_pose(
+        #     tcp_x_to_rack=[1, 0, 0],
+        #     tcp_y_to_rack=[0, 0, -1],
+        #     tcp_z_to_rack=[0, 1, 0],
+        #     angle_deg=-self.tool_angle_z
+        # )
+        # if result != 0:
+        #     print(f"[ERROR] Failed to correct TCP pose")
+        #     return result
+        # time.sleep(0.5)
         
-        # Step 2: Move to left handle position
-        print("\n" + "="*50)
-        print("Step 2: Moving to left handle position...")
-        print("="*50)
-        result = self.movel_to_target_position(
-            index=self.server_index,
-            execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.325-self.tool_length, 0.01]
-        )
-        if result != 0:
-            print(f"[ERROR] Failed to move to left handle position")
-            return result
-        time.sleep(0.5)
+        # # Step 2: Move to left handle position
+        # print("\n" + "="*50)
+        # print("Step 2: Moving to left handle position...")
+        # print("="*50)
+        # result = self.movel_to_target_position(
+        #     index=self.server_index,
+        #     execution_order=[1, 3, 2],
+        #     offset_in_rack=[0, -0.325-self.tool_length, -0.005]
+        # )
+        # if result != 0:
+        #     print(f"[ERROR] Failed to move to left handle position")
+        #     return result
+        # time.sleep(0.5)
 
-        # Step 3: Move to close left handle position
-        print("\n" + "="*50)
-        print("Step 3: Moving to close left handle position...")
-        print("="*50)
-        result = self.movel_to_target_position(
-            index=self.server_index,
-            execution_order=[1, 3, 2],
-            offset_in_rack=[-0.24, -0.19-self.tool_length, 0]
-        )
-        if result != 0:
-            print(f"[ERROR] Failed to move to left handle position")
-            return result
-        time.sleep(0.5)
+        # # Step 3: Move to close left handle position
+        # print("\n" + "="*50)
+        # print("Step 3: Moving to close left handle position...")
+        # print("="*50)
+        # result = self.movel_to_target_position(
+        #     index=self.server_index,
+        #     execution_order=[1, 3, 2],
+        #     offset_in_rack=[-0.24, -0.19-self.tool_length, 0]
+        # )
+        # if result != 0:
+        #     print(f"[ERROR] Failed to move to left handle position")
+        #     return result
+        # time.sleep(0.5)
 
-        # Step 4: Close left handle
-        print("\n" + "="*50)
-        print("Step 4: Closing left handle...")
-        print("="*50)
-        result = self.force_task_close_left_handle()
-        if result != 0:
-            print(f"[ERROR] Failed to close left handle")
-            return result
-        time.sleep(0.5)
+        # # Step 4: Close left handle
+        # print("\n" + "="*50)
+        # print("Step 4: Closing left handle...")
+        # print("="*50)
+        # result = self.force_task_close_left_handle()
+        # if result != 0:
+        #     print(f"[ERROR] Failed to close left handle")
+        #     return result
+        # time.sleep(0.5)
 
-        # Step 5: Move away from left handle
-        print("\n" + "="*50)
-        print("Step 5: Moving away from left handle...")
-        print("="*50)
-        result = self.movel_in_server_frame([0, -0.15, 0])
-        if result != 0:
-            print(f"[ERROR] Failed to move away from left handle")
-            return result
-        time.sleep(0.5)
+        # # Step 5: Move away from left handle
+        # print("\n" + "="*50)
+        # print("Step 5: Moving away from left handle...")
+        # print("="*50)
+        # result = self.movel_in_server_frame([0, -0.15, 0])
+        # if result != 0:
+        #     print(f"[ERROR] Failed to move away from left handle")
+        #     return result
+        # time.sleep(0.5)
 
         # ===============Close right handle=================
         # Step 6: Move to right handle position
@@ -686,7 +655,7 @@ class URWobjCloseHandles(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0.05, -0.15-self.tool_length, 0.01]
+            offset_in_rack=[0.05, -0.15-self.tool_length, -0.005]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to right handle position")
@@ -700,6 +669,17 @@ class URWobjCloseHandles(UROperateWobj):
         result = self.force_task_touch_right_handle()
         if result != 0:
             print(f"[ERROR] Failed to touch right handle")
+            return result
+        time.sleep(0.5)
+
+        # initialize server2base_matrix to predefined value
+        self._calculate_server2base(self.server_index)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 2, 3],
+            offset_in_rack=[0.06, -0.055-self.tool_length, 0.005]  # Offset to reach server push position
+        )
+        if result != 0:
             return result
         time.sleep(0.5)
 

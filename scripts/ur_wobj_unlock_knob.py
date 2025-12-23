@@ -702,17 +702,13 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        print("\n" + "="*50)
-        result = self.movel_in_server_frame([0, 0, -0.04])
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[2, 3, 1],
+            offset_in_rack=[-0.06, -0.04-self.tool_length, -0.025]
+        )
         if result != 0:
-            print(f"[ERROR] Failed to move away from left knob")
-            return result
-        time.sleep(0.5)
-
-        print("\n" + "="*50)
-        result = self.movel_in_server_frame([0.03, 0.23, 0])
-        if result != 0:
-            print(f"[ERROR] Failed to move away from left knob")
+            print(f"[ERROR] Failed to move to left knob position")
             return result
         time.sleep(0.5)
 
@@ -806,15 +802,13 @@ class UROperateWobjUnlockKnob(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        result = self.movel_in_server_frame([0, 0, -0.04])
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[2, 3, 1],
+            offset_in_rack=[0.06, -0.04-self.tool_length, -0.025]
+        )
         if result != 0:
-            print(f"[ERROR] Failed to move away from right knob")
-            return result
-        time.sleep(0.5)
-
-        result = self.movel_in_server_frame([-0.03, 0.23, 0])
-        if result != 0:
-            print(f"[ERROR] Failed to move away from right knob")
+            print(f"[ERROR] Failed to move to left knob position")
             return result
         time.sleep(0.5)
 

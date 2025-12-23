@@ -757,13 +757,14 @@ class URWobjCloseRight(UROperateWobj):
         print("\n" + "="*50)
         print("Step 9: Moving to leave the server and prepare for pull out...")
         print("="*50)
-        result = self.movel_in_server_frame([0, 0, -0.03])
+        self._calculate_server2base(self.server_index)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[2, 3, 1],
+            offset_in_rack=[0.05, -0.035-self.tool_length, -0.03]
+        )
         if result != 0:
-            return result
-        time.sleep(0.5)
-
-        result = self.movel_in_server_frame([-0.11, 0.09, 0])
-        if result != 0:
+            print(f"[ERROR] Failed to move to left knob position")
             return result
         time.sleep(0.5)
 

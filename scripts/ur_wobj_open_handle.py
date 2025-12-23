@@ -277,7 +277,7 @@ class URWobjOpenHandle(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction relative to task frame
-        wrench = [0, 60, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 50, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pushing server...")
@@ -288,9 +288,9 @@ class URWobjOpenHandle(UROperateWobj):
             selection_vector=selection_vector,
             wrench=wrench,
             limits=limits,
-            damping=0.1,
+            damping=0.5,
             end_type=1,
-            end_time=3.5
+            end_time=4
         )
         time.sleep(0.5)
         return result
@@ -453,18 +453,15 @@ class URWobjOpenHandle(UROperateWobj):
         print("\n" + "="*50)
         print("Step 3: Moving to touch start position...")
         print("="*50)
-        result = self.movel_in_server_frame([0, 0, -0.04])
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[2, 3, 1],
+            offset_in_rack=[-0.08, -0.09-self.tool_length, -0.04]
+        )
         if result != 0:
-            print(f"[ERROR] Failed to move away from right knob")
+            print(f"[ERROR] Failed to move to left knob position")
             return result
         time.sleep(0.5)
-
-        result = self.movel_in_server_frame([-0.08, 0.18, 0])
-        if result != 0:
-            print(f"[ERROR] Failed to move away from right knob")
-            return result
-        time.sleep(0.5)
-
 
         # Step 4: Force control to touch the handle
         print("\n" + "="*50)
@@ -519,8 +516,13 @@ class URWobjOpenHandle(UROperateWobj):
         print("\n" + "="*50)
         print("Step 9: Moving to leave the server...")
         print("="*50)
-        result = self.movel_in_server_frame([0, -0.05, -0.04])
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[3, 1, 2],
+            offset_in_rack=[0.03, -0.10-self.tool_length, -0.02]
+        )
         if result != 0:
+            print(f"[ERROR] Failed to move to left knob position")
             return result
         time.sleep(0.5)
 
@@ -528,8 +530,13 @@ class URWobjOpenHandle(UROperateWobj):
         print("\n" + "="*50)
         print("Step 10: Moving to under the server...")
         print("="*50)
-        result = self.movel_in_server_frame([0, 0.06, 0])
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[3, 1, 2],
+            offset_in_rack=[0.03, -0.02-self.tool_length, -0.02]
+        )
         if result != 0:
+            print(f"[ERROR] Failed to move to left knob position")
             return result
         time.sleep(0.5)
 

@@ -281,7 +281,7 @@ class URWobjExtractServer(UROperateWobj):
         # Set force mode parameters
         # In rack coordinate system: Y- is pulling direction (away from rack)
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
-        wrench = [0, -70, 0, 0, 0, 0]  # -70N in rack Y direction = pulling away from rack
+        wrench = [0, -80, 0, 0, 0, 0]  # -80N in rack Y direction = pulling away from rack
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print(f"[INFO] Starting force control task to extract server {distance}m...")
@@ -528,7 +528,7 @@ class URWobjExtractServer(UROperateWobj):
         print("\n" + "="*50)
         print("Step 11: Extracting server with force control...")
         print("="*50)
-        result = self.force_task_extract_server(distance=0.60)
+        result = self.force_task_extract_server(distance=0.65)
         if result != 0:
             print(f"[ERROR] Failed to extract server (error code: {result})")
             return result
@@ -569,10 +569,13 @@ class URWobjExtractServer(UROperateWobj):
         print("\n" + "="*50)
         print("Step 14: Moving to target position before extraction...")
         print("="*50)
+        # initialize server2base_matrix to predefined value
+        self._calculate_server2base(self.server_index)
+        
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.40, 0.20+self.tool_length]
+            offset_in_rack=[0, -0.60, 0.20+self.tool_length]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")

@@ -733,10 +733,11 @@ class UROperateWobj:
         
         Args:
             index: Server index (default: 14)
-            execution_order: List of integers [1,2,3] representing movement sequence along rack axes.
-                            1=X axis, 2=Y axis, 3=Z axis
-                            e.g., [1,2,3] means move along X first, then Y, then Z
-                            e.g., [1,3,2] means move along X first, then Z, then Y (default)
+            execution_order: List of 3 integers [x_order, y_order, z_order] representing execution order.
+                            Each value (1-3) indicates when that axis should move.
+                            Position in list: [X-axis, Y-axis, Z-axis]
+                            e.g., [1, 3, 2] means X=1st, Y=3rd, Z=2nd → execute [X, Z, Y]
+                            e.g., [2, 3, 1] means X=2nd, Y=3rd, Z=1st → execute [Z, X, Y] (default)
             offset_in_rack: List [x, y, z] offset in rack coordinate system to apply to target position (default: [0, 0, 0])
                            e.g., [0.1, 0, 0] adds 0.1m along rack X axis
         
@@ -857,12 +858,21 @@ class UROperateWobj:
         }
         
         print(f"Movement in rack frame: X={movement_components[1]:.6f}, Y={movement_components[2]:.6f}, Z={movement_components[3]:.6f}")
-        print(f"Execution order: {[axis_names[i] for i in execution_order]}")
+        
+        # Convert execution_order from [x_order, y_order, z_order] format to actual execution sequence
+        # e.g., [2, 3, 1] means: X=2nd, Y=3rd, Z=1st → execute [Z, X, Y]
+        execution_sequence = [0] * 3
+        for axis_id in range(1, 4):  # 1=X, 2=Y, 3=Z
+            order_position = execution_order[axis_id - 1]  # Get the order for this axis
+            execution_sequence[order_position - 1] = axis_id  # Place axis_id at the correct position
+        
+        print(f"Execution order [X, Y, Z]: {execution_order}")
+        print(f"Execution sequence: {[axis_names[i] for i in execution_sequence]}")
 
-        # Execute movements according to execution_order
+        # Execute movements according to execution_sequence
         accumulated_position = current_position.copy()
         
-        for step_idx, axis_id in enumerate(execution_order, start=1):
+        for step_idx, axis_id in enumerate(execution_sequence, start=1):
             axis_name = axis_names[axis_id]
             axis_vector = rack_axes[axis_id]
             movement_amount = movement_components[axis_id]
