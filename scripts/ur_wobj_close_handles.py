@@ -583,69 +583,69 @@ class URWobjCloseHandles(UROperateWobj):
         print("STARTING COMPLETE CLOSE HANDLES SEQUENCE")
         print("="*70)
         
-        # # ===============Close left handle=================
-        # # Step 1: Correct TCP pose to align with rack coordinate system
-        # print("\n" + "="*50)
-        # print("Step 1: Correcting TCP pose...")
-        # print("="*50)
-        # result = self.movel_to_correct_tcp_pose(
-        #     tcp_x_to_rack=[1, 0, 0],
-        #     tcp_y_to_rack=[0, 0, -1],
-        #     tcp_z_to_rack=[0, 1, 0],
-        #     angle_deg=-self.tool_angle_z
-        # )
-        # if result != 0:
-        #     print(f"[ERROR] Failed to correct TCP pose")
-        #     return result
-        # time.sleep(0.5)
+        # ===============Close left handle=================
+        # Step 1: Correct TCP pose to align with rack coordinate system
+        print("\n" + "="*50)
+        print("Step 1: Correcting TCP pose...")
+        print("="*50)
+        result = self.movel_to_correct_tcp_pose(
+            tcp_x_to_rack=[1, 0, 0],
+            tcp_y_to_rack=[0, 0, -1],
+            tcp_z_to_rack=[0, 1, 0],
+            angle_deg=-self.tool_angle_z
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to correct TCP pose")
+            return result
+        time.sleep(0.5)
         
-        # # Step 2: Move to left handle position
-        # print("\n" + "="*50)
-        # print("Step 2: Moving to left handle position...")
-        # print("="*50)
-        # result = self.movel_to_target_position(
-        #     index=self.server_index,
-        #     execution_order=[1, 3, 2],
-        #     offset_in_rack=[0, -0.325-self.tool_length, -0.005]
-        # )
-        # if result != 0:
-        #     print(f"[ERROR] Failed to move to left handle position")
-        #     return result
-        # time.sleep(0.5)
+        # Step 2: Move to left handle position
+        print("\n" + "="*50)
+        print("Step 2: Moving to left handle position...")
+        print("="*50)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0, -0.325-self.tool_length, -0.005]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to left handle position")
+            return result
+        time.sleep(0.5)
 
-        # # Step 3: Move to close left handle position
-        # print("\n" + "="*50)
-        # print("Step 3: Moving to close left handle position...")
-        # print("="*50)
-        # result = self.movel_to_target_position(
-        #     index=self.server_index,
-        #     execution_order=[1, 3, 2],
-        #     offset_in_rack=[-0.24, -0.19-self.tool_length, 0]
-        # )
-        # if result != 0:
-        #     print(f"[ERROR] Failed to move to left handle position")
-        #     return result
-        # time.sleep(0.5)
+        # Step 3: Move to close left handle position
+        print("\n" + "="*50)
+        print("Step 3: Moving to close left handle position...")
+        print("="*50)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[-0.24, -0.19-self.tool_length, 0]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to left handle position")
+            return result
+        time.sleep(0.5)
 
-        # # Step 4: Close left handle
-        # print("\n" + "="*50)
-        # print("Step 4: Closing left handle...")
-        # print("="*50)
-        # result = self.force_task_close_left_handle()
-        # if result != 0:
-        #     print(f"[ERROR] Failed to close left handle")
-        #     return result
-        # time.sleep(0.5)
+        # Step 4: Close left handle
+        print("\n" + "="*50)
+        print("Step 4: Closing left handle...")
+        print("="*50)
+        result = self.force_task_close_left_handle()
+        if result != 0:
+            print(f"[ERROR] Failed to close left handle")
+            return result
+        time.sleep(0.5)
 
-        # # Step 5: Move away from left handle
-        # print("\n" + "="*50)
-        # print("Step 5: Moving away from left handle...")
-        # print("="*50)
-        # result = self.movel_in_server_frame([0, -0.15, 0])
-        # if result != 0:
-        #     print(f"[ERROR] Failed to move away from left handle")
-        #     return result
-        # time.sleep(0.5)
+        # Step 5: Move away from left handle
+        print("\n" + "="*50)
+        print("Step 5: Moving away from left handle...")
+        print("="*50)
+        result = self.movel_in_server_frame([0, -0.15, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from left handle")
+            return result
+        time.sleep(0.5)
 
         # ===============Close right handle=================
         # Step 6: Move to right handle position

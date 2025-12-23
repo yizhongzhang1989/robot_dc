@@ -397,7 +397,8 @@ function initializeRobotMonitor() {
         'jointCur1', 'jointCur2', 'jointCur3', 'jointCur4', 'jointCur5', 'jointCur6',
         'jointTemp1', 'jointTemp2', 'jointTemp3', 'jointTemp4', 'jointTemp5', 'jointTemp6',
         'toolAnalogInput0', 'toolAnalogInput1', 'toolOutputVoltage', 'toolOutputCurrent',
-        'payloadMass', 'actualMomentum', 'actualExecutionTime', 'targetExecutionTime'
+        'payloadMass', 'actualMomentum', 'actualExecutionTime', 'targetExecutionTime',
+        'forceFx', 'forceFy', 'forceFz', 'torqueMx', 'torqueMy', 'torqueMz'
     ];
     
     fields.forEach(fieldId => {
@@ -406,6 +407,216 @@ function initializeRobotMonitor() {
             element.textContent = '--';
         }
     });
+    
+    // Initialize force sensor charts
+    initializeForceSensorCharts();
+}
+
+// Global chart instances
+let forceChart = null;
+let torqueChart = null;
+
+// Force sensor data buffers (keep last 50 data points for display)
+const maxDataPoints = 50;
+const forceDataBuffer = {
+    timestamps: [],
+    fx: [],
+    fy: [],
+    fz: []
+};
+const torqueDataBuffer = {
+    timestamps: [],
+    mx: [],
+    my: [],
+    mz: []
+};
+
+// Initialize force sensor charts
+function initializeForceSensorCharts() {
+    console.log('Initializing force sensor charts...');
+    
+    // Force Chart
+    const forceCtx = document.getElementById('forceChart');
+    if (forceCtx) {
+        forceChart = new Chart(forceCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Fx',
+                        data: [],
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Fy',
+                        data: [],
+                        borderColor: 'rgb(16, 185, 129)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Fz',
+                        data: [],
+                        borderColor: 'rgb(249, 115, 22)',
+                        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 0
+                },
+                scales: {
+                    x: {
+                        display: false
+                    },
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Force (N)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+    
+    // Torque Chart
+    const torqueCtx = document.getElementById('torqueChart');
+    if (torqueCtx) {
+        torqueChart = new Chart(torqueCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Mx',
+                        data: [],
+                        borderColor: 'rgb(139, 92, 246)',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'My',
+                        data: [],
+                        borderColor: 'rgb(236, 72, 153)',
+                        backgroundColor: 'rgba(236, 72, 153, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Mz',
+                        data: [],
+                        borderColor: 'rgb(234, 179, 8)',
+                        backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 0
+                },
+                scales: {
+                    x: {
+                        display: false
+                    },
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Torque (Nm)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Update force sensor charts with new data
+function updateForceSensorCharts(forceData) {
+    if (!forceData || !Array.isArray(forceData) || forceData.length < 6) {
+        return;
+    }
+    
+    // Get current timestamp
+    const now = new Date();
+    const timeLabel = now.toLocaleTimeString('en-US', { hour12: false });
+    
+    // Add new data to buffers
+    forceDataBuffer.timestamps.push(timeLabel);
+    forceDataBuffer.fx.push(forceData[0]);
+    forceDataBuffer.fy.push(forceData[1]);
+    forceDataBuffer.fz.push(forceData[2]);
+    
+    torqueDataBuffer.timestamps.push(timeLabel);
+    torqueDataBuffer.mx.push(forceData[3]);
+    torqueDataBuffer.my.push(forceData[4]);
+    torqueDataBuffer.mz.push(forceData[5]);
+    
+    // Keep only last maxDataPoints
+    if (forceDataBuffer.timestamps.length > maxDataPoints) {
+        forceDataBuffer.timestamps.shift();
+        forceDataBuffer.fx.shift();
+        forceDataBuffer.fy.shift();
+        forceDataBuffer.fz.shift();
+        
+        torqueDataBuffer.timestamps.shift();
+        torqueDataBuffer.mx.shift();
+        torqueDataBuffer.my.shift();
+        torqueDataBuffer.mz.shift();
+    }
+    
+    // Update force chart
+    if (forceChart) {
+        forceChart.data.labels = forceDataBuffer.timestamps;
+        forceChart.data.datasets[0].data = forceDataBuffer.fx;
+        forceChart.data.datasets[1].data = forceDataBuffer.fy;
+        forceChart.data.datasets[2].data = forceDataBuffer.fz;
+        forceChart.update('none');
+    }
+    
+    // Update torque chart
+    if (torqueChart) {
+        torqueChart.data.labels = torqueDataBuffer.timestamps;
+        torqueChart.data.datasets[0].data = torqueDataBuffer.mx;
+        torqueChart.data.datasets[1].data = torqueDataBuffer.my;
+        torqueChart.data.datasets[2].data = torqueDataBuffer.mz;
+        torqueChart.update('none');
+    }
 }
 
 // Fetch RTDE data from backend
@@ -614,6 +825,20 @@ function updateRobotMonitor(rtdeData) {
             updateMonitorField('targetExecutionTime', rtdeData.target_execution_time.toFixed(2));
         }
         
+        // Force Sensor Data (actual_TCP_force)
+        if (rtdeData.actual_TCP_force && Array.isArray(rtdeData.actual_TCP_force) && rtdeData.actual_TCP_force.length >= 6) {
+            // Update individual force/torque values
+            updateMonitorField('forceFx', rtdeData.actual_TCP_force[0].toFixed(2));
+            updateMonitorField('forceFy', rtdeData.actual_TCP_force[1].toFixed(2));
+            updateMonitorField('forceFz', rtdeData.actual_TCP_force[2].toFixed(2));
+            updateMonitorField('torqueMx', rtdeData.actual_TCP_force[3].toFixed(2));
+            updateMonitorField('torqueMy', rtdeData.actual_TCP_force[4].toFixed(2));
+            updateMonitorField('torqueMz', rtdeData.actual_TCP_force[5].toFixed(2));
+            
+            // Update charts
+            updateForceSensorCharts(rtdeData.actual_TCP_force);
+        }
+        
     } catch (error) {
         console.error('Error updating robot monitor:', error);
     }
@@ -640,7 +865,8 @@ function clearRobotMonitorData() {
         'jointCur1', 'jointCur2', 'jointCur3', 'jointCur4', 'jointCur5', 'jointCur6',
         'jointTemp1', 'jointTemp2', 'jointTemp3', 'jointTemp4', 'jointTemp5', 'jointTemp6',
         'toolAnalogInput0', 'toolAnalogInput1', 'toolOutputVoltage', 'toolOutputCurrent',
-        'payloadMass', 'actualMomentum', 'actualExecutionTime', 'targetExecutionTime'
+        'payloadMass', 'actualMomentum', 'actualExecutionTime', 'targetExecutionTime',
+        'forceFx', 'forceFy', 'forceFz', 'torqueMx', 'torqueMy', 'torqueMz'
     ];
     
     fields.forEach(fieldId => {
@@ -749,10 +975,10 @@ function startPeriodicUpdates() {
         fetchRobotStatus();
     }, 100);
     
-    // Fetch RTDE data every 500ms for robot monitor
+    // Fetch RTDE data every 100ms for robot monitor (10 Hz)
     setInterval(() => {
         fetchRtdeData();
-    }, 500);
+    }, 100);
     
     // Fetch courier robot status every 200ms for courier robot monitor
     setInterval(() => {

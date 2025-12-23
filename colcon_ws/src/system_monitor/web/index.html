@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Task Manager Interface</title>
     <script src="tailwind.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         /* Status Bar Styles */
         .status-bar {
@@ -263,7 +264,7 @@
                             <!-- UR15 Dashboard Row -->
                             <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
                                 <button id="btnUR15" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
-                                    UR15 Dashboard
+                                    🤖 UR15 Dashboard
                                 </button>
                                 <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
                                     <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorUR15"></div>
@@ -274,7 +275,7 @@
                             <!-- AMR Dashboard Row -->
                             <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
                                 <button id="btnAMR" class="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
-                                    AMR Dashboard
+                                    🚗 AMR Dashboard
                                 </button>
                                 <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
                                     <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorAMR"></div>
@@ -285,7 +286,7 @@
                             <!-- Courier Dashboard Row -->
                             <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
                                 <button id="btnCourier" class="flex-1 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
-                                    Courier Dashboard
+                                    🚃 Courier Dashboard
                                 </button>
                                 <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
                                     <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorCourier"></div>
@@ -296,7 +297,7 @@
                             <!-- Robot Status Redis Row -->
                             <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
                                 <button id="btnRobotStatus" class="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
-                                    Robot Status Redis
+                                    💽 Robot Status Redis
                                 </button>
                                 <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
                                     <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorRedis"></div>
@@ -307,7 +308,7 @@
                             <!-- Positioning Service Row -->
                             <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
                                 <button id="btnPositioning" class="flex-1 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
-                                    Positioning Service
+                                    📸 Positioning Service
                                 </button>
                                 <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
                                     <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorPositioning"></div>
@@ -318,7 +319,7 @@
                             <!-- Labeling Service Row -->
                             <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
                                 <button id="btnLabeling" class="flex-1 px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
-                                    Labeling Service
+                                    🪬 Labeling Service
                                 </button>
                                 <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
                                     <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorLabeling"></div>
@@ -329,7 +330,7 @@
                             <!-- Workflow Service Row -->
                             <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
                                 <button id="btnWorkflow" class="flex-1 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
-                                    Workflow Service
+                                    🎏 Workflow Service
                                 </button>
                                 <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
                                     <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorWorkflow"></div>
@@ -340,13 +341,38 @@
                             <!-- FFPP Server Row -->
                             <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
                                 <button id="btnFFPP" class="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
-                                    FFPP Server
+                                    💻 FFPP Server
                                 </button>
                                 <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
                                     <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorFFPP"></div>
                                     <span class="text-sm text-gray-700 font-medium" id="statusTextFFPP">Checking</span>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Position Control Panel -->
+                <div class="panel-with-title mt-4">
+                    <div class="panel-title">
+                        Position Control Panel
+                    </div>
+                    <div class="panel-content">
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem; width: 100%;">
+                            <!-- Task Position Button -->
+                            <button id="btnTaskPosition" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                🦿 Task Position
+                            </button>
+                            
+                            <!-- Tool Position Button -->
+                            <button id="btnToolPosition" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                🛠️ Tool Position
+                            </button>
+                            
+                            <!-- Home Position Button -->
+                            <button id="btnHomePosition" class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                🏠 Home Position
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -782,6 +808,87 @@
                                             <span id="targetExecutionTime" class="text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
                                             <span class="text-gray-600 text-xs font-medium ml-2">ms</span>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- UR15 Force Sensor Data (Independent Panel) -->
+                <div class="panel-with-title mt-4">
+                    <div class="panel-title">
+                        UR15 Force Sensor Data
+                    </div>
+                    <div class="panel-content">
+                        <div style="width: 100%;">
+                            
+                            <!-- Force/Torque Values Display -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🔧 Sensor Values</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Fx</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="forceFx" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(59, 130, 246);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Fy</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="forceFy" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(16, 185, 129);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Fz</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="forceFz" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(249, 115, 22);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Mx</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="torqueMx" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(139, 92, 246);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">Nm</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">My</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="torqueMy" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(236, 72, 153);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">Nm</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Mz</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="torqueMz" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(234, 179, 8);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">Nm</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Force Chart -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">📈 Force Trend</h4>
+                                <div class="bg-white p-3 rounded-lg border border-gray-200">
+                                    <div style="position: relative; height: 200px;">
+                                        <canvas id="forceChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Torque Chart -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">📉 Torque Trend</h4>
+                                <div class="bg-white p-3 rounded-lg border border-gray-200">
+                                    <div style="position: relative; height: 200px;">
+                                        <canvas id="torqueChart"></canvas>
                                     </div>
                                 </div>
                             </div>

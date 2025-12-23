@@ -402,12 +402,6 @@ class URWobjInsertServer(UROperateWobj):
             return -1
         time.sleep(0.5)
 
-        result = self.courier_robot.platform_hybrid_control(target_height='high_pos', target_force=300)
-        if not result.get('success', False):
-            print(f"[ERROR] Failed to set platform hybrid control: {result.get('error', 'Unknown error')}")
-            return -1
-        time.sleep(0.5)
-
         # Step 2: Correct TCP pose
         print("\n" + "="*50)
         print("Step 2: Correcting TCP pose...")

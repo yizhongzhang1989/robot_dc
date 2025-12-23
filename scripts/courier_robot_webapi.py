@@ -49,7 +49,7 @@ class CourierRobotWebAPI:
             # Silently fail and return None if config cannot be loaded
             return None
     
-    def __init__(self, base_url=None, verbose=True):
+    def __init__(self, base_url=None, verbose=False):
         """
         Initialize courier robot controller
         
@@ -57,7 +57,7 @@ class CourierRobotWebAPI:
             base_url: HTTP server base URL (default: read from config/robot_config.yaml, 
                      fallback to http://192.168.1.3:8090 if config not found)
                      Can override by passing explicit URL
-            verbose: If True, automatically print command results (default: True)
+            verbose: If True, automatically print command results (default: False)
         """
         # Determine base URL priority: explicit parameter > config file > hardcoded default
         if base_url is None:
