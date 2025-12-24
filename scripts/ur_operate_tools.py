@@ -815,7 +815,7 @@ class UROperateTools(UROperateWobj):
             [241.0, -90.9, 1.0, -178.6, -90.0, 3.6],    # Waypoint 2
             [87.0, -90.9, 1.0, -178.6, -90.0, 3.6],     # Waypoint 3
             [87.3, -83.5, 71.4, -76.0, -93.4, -53.9],    # Waypoint 4 
-            [92.4, -59.6, 92.8, -30.3, 10.6, 177.7]    # Waypoint 5 (final task position)
+            [92.4, -59.6, 92.8, -30.3, 10.6, -177.7]    # Waypoint 5 (final task position)
         ]
         
         # Convert degrees to radians

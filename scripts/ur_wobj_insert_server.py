@@ -536,6 +536,12 @@ class URWobjInsertServer(UROperateWobj):
             return result
         time.sleep(0.5)
 
+        result = self.movel_in_rack_frame([0, -0.15, 0])
+        if result != 0:
+            print(f"[ERROR] Failed to move away from server (error code: {result})")
+            return result
+        time.sleep(0.5)
+
         # Step 13: Final platform down to default position
         print("\n" + "="*50)
         print("Step 13: Lowering platform to default position...")

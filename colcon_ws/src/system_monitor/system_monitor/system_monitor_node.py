@@ -68,6 +68,9 @@ class SystemMonitorNode(Node):
         self.cached_rtde_data = {}  # Cache for all RTDE data
         self.robot_ip = '192.168.1.15'  # Default UR15 IP
         
+        # Task manager for demo operations (lazy initialization)
+        self.task_manager = None
+        
         # Get package share directory for web files
         try:
             self.package_share_directory = get_package_share_directory('system_monitor')
@@ -276,6 +279,425 @@ class SystemMonitorNode(Node):
                     'amr': self.amr_ip
                 }
             })
+        
+        @self.app.route('/api/demo/execute_step', methods=['POST'])
+        def execute_demo_step():
+            """API endpoint to execute a single demo step"""
+            try:
+                from flask import request
+                data = request.get_json()
+                step_number = data.get('step')
+                
+                if step_number is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Step number is required'
+                    }), 400
+                
+                # Get server_index from request
+                server_index = data.get('server_index', None)
+                if server_index is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Server index is required'
+                    }), 400
+                
+                # Import TaskManager and execute the step
+                try:
+                    import sys
+                    from pathlib import Path
+                    
+                    # Add scripts directory to path
+                    workspace_root = Path(__file__).resolve().parents[3]
+                    scripts_dir = workspace_root / 'scripts'
+                    if str(scripts_dir) not in sys.path:
+                        sys.path.insert(0, str(scripts_dir))
+                    
+                    from demo_task_manager import TaskManager
+                    
+                    self.get_logger().info(f'Executing demo step {step_number} with server_index={server_index}...')
+                    
+                    # Initialize TaskManager with server_index if not already initialized or if server_index changed
+                    if not hasattr(self, 'task_manager') or self.task_manager is None or self.task_manager.server_index != server_index:
+                        self.get_logger().info(f'Creating new TaskManager with server_index={server_index}')
+                        self.task_manager = TaskManager(server_index=server_index)
+                    
+                    # Execute the specific step
+                    success = self._execute_single_step(step_number)
+                    
+                    if success:
+                        self.get_logger().info(f'Step {step_number} completed successfully')
+                        return jsonify({
+                            'success': True,
+                            'message': f'Step {step_number} completed successfully'
+                        })
+                    else:
+                        self.get_logger().error(f'Step {step_number} failed')
+                        return jsonify({
+                            'success': False,
+                            'message': f'Step {step_number} failed'
+                        })
+                
+                except ImportError as e:
+                    self.get_logger().error(f'Failed to import TaskManager: {e}')
+                    return jsonify({
+                        'success': False,
+                        'message': f'Failed to import TaskManager: {str(e)}'
+                    }), 500
+                except Exception as e:
+                    self.get_logger().error(f'Error executing step {step_number}: {e}')
+                    return jsonify({
+                        'success': False,
+                        'message': f'Error executing step: {str(e)}'
+                    }), 500
+                    
+            except Exception as e:
+                self.get_logger().error(f'Error processing request: {e}')
+                return jsonify({
+                    'success': False,
+                    'message': f'Error processing request: {str(e)}'
+                }), 500
+        
+    
+    def _execute_single_step(self, step_number):
+        """
+        Execute a single step from the complete task sequence
+        
+        Args:
+            step_number (int): The step number to execute (1-26)
+            
+        Returns:
+            bool: True if step completed successfully, False otherwise
+        """
+        try:
+            # Map step numbers to their corresponding methods
+            step_mapping = {
+                1: self._step_1_amr_move_arms,
+                2: self._step_2_ur15_rack_positioning,
+                3: self._step_3_ur15_get_tool_rotate,
+                4: self._step_4_ur15_unlock_knobs,
+                5: self._step_5_ur15_tool_exchange_rotate_to_pushpull,
+                6: self._step_6_ur15_open_handles,
+                7: self._step_7_ur15_close_left,
+                8: self._step_8_ur15_close_right,
+                9: self._step_9_ur15_tool_exchange_pushpull_to_extract,
+                10: self._step_10_ur15_move_to_target,
+                11: self._step_11_amr_courier_to_extraction,
+                12: self._step_12_ur15_extract_server,
+                13: self._step_13_amr_courier_back_to_dock,
+                14: self._step_14_ur15_return_extract_get_frame,
+                15: self._step_15_ur15_put_frame,
+                16: self._step_16_ur15_get_tool_extract,
+                17: self._step_17_ur15_move_to_target,
+                18: self._step_18_amr_courier_to_insertion,
+                19: self._step_19_ur15_insert_server,
+                20: self._step_20_amr_courier_back_to_dock,
+                21: self._step_21_ur15_tool_exchange_extract_to_rotate,
+                22: self._step_22_ur15_unlock_knob_insert,
+                23: self._step_23_ur15_tool_exchange_rotate_to_pushpull,
+                24: self._step_24_ur15_close_handles,
+                25: self._step_25_ur15_return_tool_pushpull,
+                26: self._step_26_ur15_move_to_target,
+            }
+            
+            # Get the step function
+            step_func = step_mapping.get(step_number)
+            if step_func is None:
+                self.get_logger().error(f'Invalid step number: {step_number}')
+                return False
+            
+            # Execute the step
+            self.get_logger().info(f'Executing Step {step_number}...')
+            result = step_func()
+            
+            return result
+            
+        except Exception as e:
+            self.get_logger().error(f'Error executing step {step_number}: {e}')
+            return False
+    
+    # Individual step implementation methods
+    def _step_1_amr_move_arms(self):
+        """Step 1: AMR move arms from DOCK to SIDE"""
+        try:
+            result = self.task_manager.amr_controller.amr_move_arm_from_dock_to_side()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 1 error: {e}')
+            return False
+    
+    def _step_2_ur15_rack_positioning(self):
+        """Step 2: UR15 rack positioning"""
+        try:
+            result = self.task_manager.ur15_execute_rack_positioning_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 2 error: {e}')
+            return False
+    
+    def _step_3_ur15_get_tool_rotate(self):
+        """Step 3: UR15 get tool_rotate"""
+        try:
+            result = self.task_manager.ur_operate_tools.get_tool_from_task_position("tool_rotate")
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 3 error: {e}')
+            return False
+    
+    def _step_4_ur15_unlock_knobs(self):
+        """Step 4: UR15 unlock knobs"""
+        try:
+            result = self.task_manager.ur15_execute_unlock_knob_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 4 error: {e}')
+            return False
+    
+    def _step_5_ur15_tool_exchange_rotate_to_pushpull(self):
+        """Step 5: UR15 tool exchange (rotate→pushpull)"""
+        try:
+            result = self.task_manager.ur_operate_tools.return_tool1_get_tool2_from_task(
+                tool1_name="tool_rotate", tool2_name="tool_pushpull")
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 5 error: {e}')
+            return False
+    
+    def _step_6_ur15_open_handles(self):
+        """Step 6: UR15 open handles"""
+        try:
+            result = self.task_manager.ur15_execute_open_handle_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 6 error: {e}')
+            return False
+    
+    def _step_7_ur15_close_left(self):
+        """Step 7: UR15 close left handle"""
+        try:
+            result = self.task_manager.ur15_execute_close_left_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 7 error: {e}')
+            return False
+    
+    def _step_8_ur15_close_right(self):
+        """Step 8: UR15 close right handle"""
+        try:
+            result = self.task_manager.ur15_execute_close_right_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 8 error: {e}')
+            return False
+    
+    def _step_9_ur15_tool_exchange_pushpull_to_extract(self):
+        """Step 9: UR15 tool exchange (pushpull→extract)"""
+        try:
+            result = self.task_manager.ur_operate_tools.return_tool1_get_tool2_from_task(
+                tool1_name="tool_pushpull", tool2_name="tool_extract")
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 9 error: {e}')
+            return False
+    
+    def _step_10_ur15_move_to_target(self):
+        """Step 10: UR15 move to target position"""
+        try:
+            import math
+            # First move
+            move_result = self.task_manager.ur_operate_tools.movel_to_target_position(
+                index=self.task_manager.server_index,
+                execution_order=[1, 3, 2],
+                offset_in_rack=[0, -0.65, 0.45]
+            )
+            if move_result:
+                return False
+            
+            # Then movej to target angles
+            target_joints_degrees = [113.2, -62.4, 65.1, -92.5, -90.3, -61.8]
+            target_joints_radians = [math.radians(angle) for angle in target_joints_degrees]
+            movej_result = self.task_manager.ur_operate_tools.robot.movej(
+                target_joints_radians, a=0.5, v=0.5)
+            return movej_result == 0
+        except Exception as e:
+            self.get_logger().error(f'Step 10 error: {e}')
+            return False
+    
+    def _step_11_amr_courier_to_extraction(self):
+        """Step 11: AMR courier to extraction position"""
+        try:
+            result = self.task_manager.amr_controller.amr_move_courier_from_dock_to_extraction_position()
+            return result and result.get('success', False)
+        except Exception as e:
+            self.get_logger().error(f'Step 11 error: {e}')
+            return False
+    
+    def _step_12_ur15_extract_server(self):
+        """Step 12: UR15 extract server"""
+        try:
+            result = self.task_manager.ur15_execute_extract_server_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 12 error: {e}')
+            return False
+    
+    def _step_13_amr_courier_back_to_dock(self):
+        """Step 13: AMR courier back to dock"""
+        try:
+            result = self.task_manager.amr_controller.amr_move_courier_from_extraction_position_to_dock()
+            return result and result.get('success', False)
+        except Exception as e:
+            self.get_logger().error(f'Step 13 error: {e}')
+            return False
+    
+    def _step_14_ur15_return_extract_get_frame(self):
+        """Step 14: UR15 return tool_extract & get frame"""
+        try:
+            result = self.task_manager.ur_operate_tools.return_tool_get_frame_from_task(tool_name="tool_extract")
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 14 error: {e}')
+            return False
+    
+    def _step_15_ur15_put_frame(self):
+        """Step 15: UR15 put frame"""
+        try:
+            result = self.task_manager.ur15_execute_put_frame_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 15 error: {e}')
+            return False
+    
+    def _step_16_ur15_get_tool_extract(self):
+        """Step 16: UR15 get tool_extract"""
+        try:
+            result = self.task_manager.ur_operate_tools.get_tool_from_task_position("tool_extract")
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 16 error: {e}')
+            return False
+    
+    def _step_17_ur15_move_to_target(self):
+        """Step 17: UR15 move to target position"""
+        try:
+            import math
+            # First move
+            move_result = self.task_manager.ur_operate_tools.movel_to_target_position(
+                index=self.task_manager.server_index,
+                execution_order=[1, 3, 2],
+                offset_in_rack=[0, -0.65, 0.45]
+            )
+            if move_result:
+                return False
+            
+            # Then movej to target angles
+            target_joints_degrees = [113.2, -62.4, 65.1, -92.5, -90.3, -61.8]
+            target_joints_radians = [math.radians(angle) for angle in target_joints_degrees]
+            movej_result = self.task_manager.ur_operate_tools.robot.movej(
+                target_joints_radians, a=1.0, v=1.0)
+            return movej_result == 0
+        except Exception as e:
+            self.get_logger().error(f'Step 17 error: {e}')
+            return False
+    
+    def _step_18_amr_courier_to_insertion(self):
+        """Step 18: AMR courier to insertion position"""
+        try:
+            result = self.task_manager.amr_controller.amr_move_courier_from_dock_to_insertion_position()
+            return result and result.get('success', False)
+        except Exception as e:
+            self.get_logger().error(f'Step 18 error: {e}')
+            return False
+    
+    def _step_19_ur15_insert_server(self):
+        """Step 19: UR15 insert server"""
+        try:
+            result = self.task_manager.ur15_execute_insert_server_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 19 error: {e}')
+            return False
+    
+    def _step_20_amr_courier_back_to_dock(self):
+        """Step 20: AMR courier back to dock"""
+        try:
+            result = self.task_manager.amr_controller.amr_move_courier_from_insertion_position_to_dock()
+            return result and result.get('success', False)
+        except Exception as e:
+            self.get_logger().error(f'Step 20 error: {e}')
+            return False
+    
+    def _step_21_ur15_tool_exchange_extract_to_rotate(self):
+        """Step 21: UR15 tool exchange (extract→rotate)"""
+        try:
+            result = self.task_manager.ur_operate_tools.return_tool1_get_tool2_from_task(
+                tool1_name="tool_extract", tool2_name="tool_rotate")
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 21 error: {e}')
+            return False
+    
+    def _step_22_ur15_unlock_knob_insert(self):
+        """Step 22: UR15 unlock knob insert"""
+        try:
+            result = self.task_manager.ur15_execute_unlock_knob_insert_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 22 error: {e}')
+            return False
+    
+    def _step_23_ur15_tool_exchange_rotate_to_pushpull(self):
+        """Step 23: UR15 tool exchange (rotate→pushpull)"""
+        try:
+            result = self.task_manager.ur_operate_tools.return_tool1_get_tool2_from_task(
+                tool1_name="tool_rotate", tool2_name="tool_pushpull")
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 23 error: {e}')
+            return False
+    
+    def _step_24_ur15_close_handles(self):
+        """Step 24: UR15 close handles"""
+        try:
+            result = self.task_manager.ur15_execute_close_handles_task()
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 24 error: {e}')
+            return False
+    
+    def _step_25_ur15_return_tool_pushpull(self):
+        """Step 25: UR15 return tool_pushpull"""
+        try:
+            result = self.task_manager.ur_operate_tools.return_tool_from_task_position("tool_pushpull")
+            return result
+        except Exception as e:
+            self.get_logger().error(f'Step 25 error: {e}')
+            return False
+    
+    def _step_26_ur15_move_to_target(self):
+        """Step 26: UR15 move to target position"""
+        try:
+            # First, recalculate server2base to ensure consistency
+            self.get_logger().info('Recalculating server2base_matrix before moving to target...')
+            server2base = self.task_manager.ur_operate_tools._calculate_server2base(
+                index=self.task_manager.server_index
+            )
+            
+            if server2base is None:
+                self.get_logger().error('Failed to calculate server2base_matrix')
+                return False
+            
+            # Execute move to target position operation
+            move_result = self.task_manager.ur_operate_tools.movel_to_target_position(
+                index=self.task_manager.server_index,
+                execution_order=[1, 3, 2],
+                offset_in_rack=[0, -0.55, 0.45]
+            )
+            # Note: movel_to_target_position returns 0 on success, non-zero on failure
+            return not move_result
+        except Exception as e:
+            self.get_logger().error(f'Step 26 error: {e}')
+            return False
     
     def _init_rtde_connection(self):
         """Initialize RTDE connection for reading robot_mode and safety_mode"""

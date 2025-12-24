@@ -1,5 +1,43 @@
 // Task Manager JavaScript
 
+// Modal functions
+function showModal(title, message, type = 'info') {
+    const modal = document.getElementById('messageModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalMessage = document.getElementById('modalMessage');
+    const modalCloseBtn = document.getElementById('modalCloseBtn');
+    
+    if (!modal || !modalTitle || !modalMessage || !modalCloseBtn) return;
+    
+    // Set title and message
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+    
+    // Set button color based on type
+    modalCloseBtn.className = 'px-4 py-2 text-white text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2';
+    if (type === 'error') {
+        modalCloseBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'focus:ring-red-300');
+    } else if (type === 'warning') {
+        modalCloseBtn.classList.add('bg-yellow-500', 'hover:bg-yellow-600', 'focus:ring-yellow-300');
+    } else if (type === 'success') {
+        modalCloseBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'focus:ring-green-300');
+    } else {
+        modalCloseBtn.classList.add('bg-blue-500', 'hover:bg-blue-600', 'focus:ring-blue-300');
+    }
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    modal.style.display = 'block';
+}
+
+function closeModal() {
+    const modal = document.getElementById('messageModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+}
+
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Task Manager Interface loaded');
@@ -208,6 +246,9 @@ function updateRobotStatus(data) {
 function setupButtonHandlers() {
     // Fetch web URLs from backend
     fetchWebURLs();
+    
+    // Setup Demo Operation Panel button handlers
+    setupDemoOperationButtons();
 }
 
 // Fetch web URLs from backend and setup button handlers
@@ -1239,5 +1280,345 @@ function updateCourierMonitorField(fieldId, value) {
         element.textContent = value || '--';
     }
 }
+
+// ============================= Demo Operation Panel Functions =============================
+
+// Setup Demo Operation Panel button handlers
+// Global variable to store server index
+let currentServerIndex = null;
+
+function setupDemoOperationButtons() {
+    console.log('Setting up Demo Operation button handlers...');
+    
+    // Setup Operation Unit input and button
+    const btnSetOperationUnit = document.getElementById('btnSetOperationUnit');
+    if (btnSetOperationUnit) {
+        btnSetOperationUnit.addEventListener('click', setOperationUnit);
+    }
+    
+    // Setup individual step buttons and checkboxes (1-26)
+    for (let i = 1; i <= 26; i++) {
+        const btnId = `btnStep${i}`;
+        const chkId = `chkStep${i}`;
+        const btn = document.getElementById(btnId);
+        const chk = document.getElementById(chkId);
+        
+        if (btn) {
+            btn.addEventListener('click', () => executeStep(i));
+            // Initially disable all step buttons
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            btn.classList.remove('hover:bg-blue-600');
+        }
+        
+        if (chk) {
+            // Initially disable all checkboxes
+            chk.disabled = true;
+        }
+    }
+    
+    // Setup Select All button
+    const btnSelectAll = document.getElementById('btnSelectAll');
+    if (btnSelectAll) {
+        btnSelectAll.addEventListener('click', selectAllSteps);
+        // Initially disable
+        btnSelectAll.disabled = true;
+        btnSelectAll.classList.add('opacity-50', 'cursor-not-allowed');
+        btnSelectAll.classList.remove('hover:bg-blue-600');
+    }
+    
+    // Setup Execute Selected button
+    const btnExecuteSelected = document.getElementById('btnExecuteSelected');
+    if (btnExecuteSelected) {
+        btnExecuteSelected.addEventListener('click', executeSelectedSteps);
+        // Initially disable
+        btnExecuteSelected.disabled = true;
+        btnExecuteSelected.classList.add('opacity-50', 'cursor-not-allowed');
+        btnExecuteSelected.classList.remove('hover:bg-orange-600');
+    }
+    
+    // Setup Execute All button
+    const btnExecuteAll = document.getElementById('btnExecuteAll');
+    if (btnExecuteAll) {
+        btnExecuteAll.addEventListener('click', executeAllSteps);
+        // Initially disable Execute All button
+        btnExecuteAll.disabled = true;
+        btnExecuteAll.classList.add('opacity-50', 'cursor-not-allowed');
+        btnExecuteAll.classList.remove('hover:bg-green-600');
+    }
+}
+
+// Set Operation Unit (Server Index)
+function setOperationUnit() {
+    const input = document.getElementById('operationUnitInput');
+    const statusDiv = document.getElementById('operationUnitStatus');
+    
+    if (!input || !statusDiv) return;
+    
+    const value = parseInt(input.value);
+    
+    if (isNaN(value) || value < 8 || value > 25) {
+        showModal('Invalid Input', 'Please enter a valid server index (8-25)', 'warning');
+        return;
+    }
+    
+    // Set the global server index
+    currentServerIndex = value;
+    
+    // Update status display
+    statusDiv.innerHTML = `
+        <span class="inline-block w-3 h-3 rounded-full bg-green-500"></span>
+        <span class="text-sm font-medium text-green-600">Unit ${value}</span>
+    `;
+    
+    // Enable all step buttons and checkboxes
+    for (let i = 1; i <= 26; i++) {
+        const btn = document.getElementById(`btnStep${i}`);
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            btn.classList.add('hover:bg-blue-600');
+        }
+        
+        const chk = document.getElementById(`chkStep${i}`);
+        if (chk) {
+            chk.disabled = false;
+        }
+    }
+    
+    // Enable Select All button
+    const btnSelectAll = document.getElementById('btnSelectAll');
+    if (btnSelectAll) {
+        btnSelectAll.disabled = false;
+        btnSelectAll.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnSelectAll.classList.add('hover:bg-blue-600');
+    }
+    
+    // Enable Execute Selected button
+    const btnExecuteSelected = document.getElementById('btnExecuteSelected');
+    if (btnExecuteSelected) {
+        btnExecuteSelected.disabled = false;
+        btnExecuteSelected.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnExecuteSelected.classList.add('hover:bg-orange-600');
+    }
+    
+    // Enable Execute All button
+    const btnExecuteAll = document.getElementById('btnExecuteAll');
+    if (btnExecuteAll) {
+        btnExecuteAll.disabled = false;
+        btnExecuteAll.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnExecuteAll.classList.add('hover:bg-green-600');
+    }
+    
+    console.log(`Operation Unit set to: ${value}`);
+}
+
+// Select/Deselect all steps
+function selectAllSteps() {
+    const btnSelectAll = document.getElementById('btnSelectAll');
+    if (!btnSelectAll) return;
+    
+    // Check if any checkbox is unchecked
+    let anyUnchecked = false;
+    for (let i = 1; i <= 26; i++) {
+        const chk = document.getElementById(`chkStep${i}`);
+        if (chk && !chk.checked) {
+            anyUnchecked = true;
+            break;
+        }
+    }
+    
+    // If any is unchecked, check all; otherwise uncheck all
+    const newState = anyUnchecked;
+    for (let i = 1; i <= 26; i++) {
+        const chk = document.getElementById(`chkStep${i}`);
+        if (chk) {
+            chk.checked = newState;
+        }
+    }
+    
+    // Update button text
+    btnSelectAll.innerHTML = newState ? '☐ Deselect All Steps' : '☑️ Select All Steps';
+}
+
+// Execute selected steps
+async function executeSelectedSteps() {
+    // Check if operation unit is set
+    if (currentServerIndex === null) {
+        showModal('Operation Unit Required', 'Please set Operation Unit (Server Index) first!', 'warning');
+        return;
+    }
+    
+    // Get list of selected steps
+    const selectedSteps = [];
+    for (let i = 1; i <= 26; i++) {
+        const chk = document.getElementById(`chkStep${i}`);
+        if (chk && chk.checked) {
+            selectedSteps.push(i);
+        }
+    }
+    
+    if (selectedSteps.length === 0) {
+        showModal('No Steps Selected', 'Please select at least one step to execute!', 'warning');
+        return;
+    }
+    
+    const btnExecuteSelected = document.getElementById('btnExecuteSelected');
+    if (!btnExecuteSelected) return;
+    
+    // Disable the button
+    btnExecuteSelected.disabled = true;
+    const originalText = btnExecuteSelected.innerHTML;
+    btnExecuteSelected.innerHTML = '⏳ Executing...';
+    
+    try {
+        // Execute each selected step sequentially
+        for (const stepNumber of selectedSteps) {
+            console.log(`Executing selected step ${stepNumber}...`);
+            await executeStep(stepNumber);
+            
+            // Check if the step failed
+            const statusText = document.getElementById(`statusText${stepNumber}`);
+            if (statusText && statusText.textContent === 'Failed') {
+                console.error(`Step ${stepNumber} failed. Stopping execution.`);
+                showModal('Execution Failed', `Execution stopped at Step ${stepNumber} due to failure.`, 'error');
+                break;
+            }
+            
+            // Small delay between steps
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        console.log('All selected steps completed');
+    } catch (error) {
+        console.error('Error executing selected steps:', error);
+        showModal('Execution Error', `Error executing selected steps: ${error.message}`, 'error');
+    } finally {
+        // Re-enable the button
+        btnExecuteSelected.disabled = false;
+        btnExecuteSelected.innerHTML = originalText;
+    }
+}
+
+// Execute a single step
+async function executeStep(stepNumber) {
+    // Check if operation unit is set
+    if (currentServerIndex === null) {
+        showModal('Operation Unit Required', 'Please set Operation Unit (Server Index) first!', 'warning');
+        return;
+    }
+    
+    const btnId = `btnStep${stepNumber}`;
+    const statusDotId = `statusDot${stepNumber}`;
+    const statusTextId = `statusText${stepNumber}`;
+    const btn = document.getElementById(btnId);
+    const statusDot = document.getElementById(statusDotId);
+    const statusText = document.getElementById(statusTextId);
+    
+    if (!btn || !statusDot || !statusText) {
+        console.error(`Elements not found for step ${stepNumber}`);
+        return;
+    }
+    
+    // Disable button and show loading state
+    btn.disabled = true;
+    statusDot.className = 'inline-block w-3 h-3 rounded-full bg-yellow-500';
+    statusText.textContent = 'Executing';
+    statusText.className = 'text-xs font-medium text-yellow-600';
+    
+    try {
+        console.log(`Executing Step ${stepNumber} with server_index=${currentServerIndex}...`);
+        
+        // Call backend API to execute the step
+        const response = await fetch('/api/demo/execute_step', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                step: stepNumber,
+                server_index: currentServerIndex
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Success - show green status
+            statusDot.className = 'inline-block w-3 h-3 rounded-full bg-green-500';
+            statusText.textContent = 'Success';
+            statusText.className = 'text-xs font-medium text-green-600';
+            console.log(`Step ${stepNumber} completed successfully`);
+        } else {
+            // Failure - show red status
+            statusDot.className = 'inline-block w-3 h-3 rounded-full bg-red-500';
+            statusText.textContent = 'Failed';
+            statusText.className = 'text-xs font-medium text-red-600';
+            console.error(`Step ${stepNumber} failed:`, data.message || 'Unknown error');
+            showModal('Step Failed', `Step ${stepNumber} failed: ${data.message || 'Unknown error'}`, 'error');
+        }
+        
+    } catch (error) {
+        // Error - show red status
+        statusDot.className = 'inline-block w-3 h-3 rounded-full bg-red-500';
+        statusText.textContent = 'Failed';
+        statusText.className = 'text-xs font-medium text-red-600';
+        console.error(`Error executing Step ${stepNumber}:`, error);
+        showModal('Execution Error', `Error executing Step ${stepNumber}: ${error.message}`, 'error');
+    } finally {
+        // Re-enable button after a short delay
+        setTimeout(() => {
+            btn.disabled = false;
+        }, 1000);
+    }
+}
+
+// Execute all steps sequentially
+async function executeAllSteps() {
+    // Check if operation unit is set
+    if (currentServerIndex === null) {
+        showModal('Operation Unit Required', 'Please set Operation Unit (Server Index) first!', 'warning');
+        return;
+    }
+    
+    const btnExecuteAll = document.getElementById('btnExecuteAll');
+    if (!btnExecuteAll) return;
+    
+    // Disable execute all button
+    btnExecuteAll.disabled = true;
+    const originalText = btnExecuteAll.innerHTML;
+    btnExecuteAll.innerHTML = '⏳ Executing...';
+    
+    try {
+        console.log('Starting execution of all steps...');
+        
+        // Execute each step sequentially
+        for (let i = 1; i <= 26; i++) {
+            console.log(`Executing step ${i} of 26...`);
+            await executeStep(i);
+            
+            // Check if the step failed
+            const statusText = document.getElementById(`statusText${i}`);
+            if (statusText && statusText.textContent === 'Failed') {
+                console.error(`Step ${i} failed. Stopping execution.`);
+                showModal('Execution Failed', `Execution stopped at Step ${i} due to failure.`, 'error');
+                break;
+            }
+            
+            // Small delay between steps
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        console.log('All steps execution completed');
+        
+    } catch (error) {
+        console.error('Error during all steps execution:', error);
+        showModal('Execution Error', `Error during execution: ${error.message}`, 'error');
+    } finally {
+        // Re-enable the execute all button
+        btnExecuteAll.disabled = false;
+        btnExecuteAll.innerHTML = originalText;
+    }
+}
+
 
 console.log('Task Manager JavaScript loaded');

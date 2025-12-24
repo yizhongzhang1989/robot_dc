@@ -761,7 +761,7 @@ class URWobjCloseRight(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[2, 3, 1],
-            offset_in_rack=[0.05, -0.035-self.tool_length, -0.03]
+            offset_in_rack=[0.05, -0.035-self.tool_length, -0.025]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to left knob position")
