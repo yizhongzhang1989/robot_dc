@@ -1299,8 +1299,8 @@ function setupDemoOperationButtons() {
         btnSetOperationUnit.addEventListener('click', setOperationUnit);
     }
     
-    // Setup individual step buttons and checkboxes (1-27)
-    for (let i = 1; i <= 27; i++) {
+    // Setup individual step buttons and checkboxes (0-28)
+    for (let i = 0; i <= 28; i++) {
         const btnId = `btnStep${i}`;
         const chkId = `chkStep${i}`;
         const btn = document.getElementById(btnId);
@@ -1311,7 +1311,11 @@ function setupDemoOperationButtons() {
             // Initially disable all step buttons
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
-            btn.classList.remove('hover:bg-blue-600');
+            if (i === 0) {
+                btn.classList.remove('hover:bg-purple-600');
+            } else {
+                btn.classList.remove('hover:bg-blue-600');
+            }
         }
         
         if (chk) {
@@ -1438,12 +1442,16 @@ function setOperationUnit() {
     `;
     
     // Enable all step buttons and checkboxes
-    for (let i = 1; i <= 27; i++) {
+    for (let i = 0; i <= 28; i++) {
         const btn = document.getElementById(`btnStep${i}`);
         if (btn) {
             btn.disabled = false;
             btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            btn.classList.add('hover:bg-blue-600');
+            if (i === 0) {
+                btn.classList.add('hover:bg-purple-600');
+            } else {
+                btn.classList.add('hover:bg-blue-600');
+            }
         }
         
         const chk = document.getElementById(`chkStep${i}`);
@@ -1486,7 +1494,7 @@ function selectAllSteps() {
     
     // Check if any checkbox is unchecked
     let anyUnchecked = false;
-    for (let i = 1; i <= 27; i++) {
+    for (let i = 0; i <= 28; i++) {
         const chk = document.getElementById(`chkStep${i}`);
         if (chk && !chk.checked) {
             anyUnchecked = true;
@@ -1496,7 +1504,7 @@ function selectAllSteps() {
     
     // If any is unchecked, check all; otherwise uncheck all
     const newState = anyUnchecked;
-    for (let i = 1; i <= 27; i++) {
+    for (let i = 0; i <= 28; i++) {
         const chk = document.getElementById(`chkStep${i}`);
         if (chk) {
             chk.checked = newState;
@@ -1517,7 +1525,7 @@ async function executeSelectedSteps() {
     
     // Get list of selected steps
     const selectedSteps = [];
-    for (let i = 1; i <= 27; i++) {
+    for (let i = 0; i <= 28; i++) {
         const chk = document.getElementById(`chkStep${i}`);
         if (chk && chk.checked) {
             selectedSteps.push(i);
@@ -1658,8 +1666,8 @@ async function executeAllSteps() {
         console.log('Starting execution of all steps...');
         
         // Execute each step sequentially
-        for (let i = 1; i <= 27; i++) {
-            console.log(`Executing step ${i} of 27...`);
+        for (let i = 0; i <= 28; i++) {
+            console.log(`Executing step ${i} of 29...`);
             await executeStep(i);
             
             // Check if the step failed

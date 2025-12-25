@@ -450,6 +450,7 @@ class SystemMonitorNode(Node):
         try:
             # Map step numbers to their corresponding methods
             step_mapping = {
+                0: self._step_0_amr_home_to_arm_dock,
                 1: self._step_1_amr_move_arms,
                 2: self._step_2_ur15_rack_positioning,
                 3: self._step_3_ur15_get_tool_rotate,
@@ -475,7 +476,9 @@ class SystemMonitorNode(Node):
                 23: self._step_23_ur15_tool_exchange_rotate_to_pushpull,
                 24: self._step_24_ur15_close_handles,
                 25: self._step_25_ur15_return_tool_pushpull,
-                26: self._step_26_ur15_move_to_target,
+                26: self._step_26_ur15_movej_to_home,
+                27: self._step_27_amr_arm_side_to_dock,
+                28: self._step_28_amr_back_to_home,
             }
             
             # Get the step function
@@ -495,6 +498,26 @@ class SystemMonitorNode(Node):
             return False
     
     # Individual step implementation methods
+    def _step_0_amr_home_to_arm_dock(self):
+        """Step 0: AMR move from home to arm dock"""
+        try:
+            # Execute first goto: LM2
+            result_lm2 = self.task_manager.amr_controller.amr_controller.goto(target_id="LM2", wait=True)
+            if not result_lm2.get('success', False):
+                self.get_logger().error('Step 0 error: Failed to move to LM2')
+                return False
+            
+            # Execute second goto: LM9
+            result_lm9 = self.task_manager.amr_controller.amr_controller.goto(target_id="LM9", wait=True)
+            if not result_lm9.get('success', False):
+                self.get_logger().error('Step 0 error: Failed to move to LM9')
+                return False
+            
+            return True
+        except Exception as e:
+            self.get_logger().error(f'Step 0 error: {e}')
+            return False
+    
     def _step_1_amr_move_arms(self):
         """Step 1: AMR move arms from DOCK to SIDE"""
         try:
@@ -752,27 +775,12 @@ class SystemMonitorNode(Node):
             self.get_logger().error(f'Step 25 error: {e}')
             return False
     
-    def _step_26_ur15_move_to_target(self):
-        """Step 26: UR15 move to target position"""
+    def _step_26_ur15_movej_to_home(self):
+        """Step 26: UR15 movej to home position (J6 -> J1)"""
         try:
-            # First, recalculate server2base to ensure consistency
-            self.get_logger().info('Recalculating server2base_matrix before moving to target...')
-            server2base = self.task_manager.ur_operate_tools._calculate_server2base(
-                index=self.task_manager.server_index
-            )
-            
-            if server2base is None:
-                self.get_logger().error('Failed to calculate server2base_matrix')
-                return False
-            
-            # Execute move to target position operation
-            move_result = self.task_manager.ur_operate_tools.movel_to_target_position(
-                index=self.task_manager.server_index,
-                execution_order=[1, 3, 2],
-                offset_in_rack=[0, -0.55, 0.45]
-            )
-            # Note: movel_to_target_position returns 0 on success, non-zero on failure
-            return not move_result
+            # Execute movej to home position operation
+            movej_result = self.task_manager.ur15_execute_movej_to_home_position()
+            return movej_result
         except Exception as e:
             self.get_logger().error(f'Step 26 error: {e}')
             return False
@@ -784,6 +792,15 @@ class SystemMonitorNode(Node):
             return result and result.get('success', False)
         except Exception as e:
             self.get_logger().error(f'Step 27 error: {e}')
+            return False
+    
+    def _step_28_amr_back_to_home(self):
+        """Step 28: AMR back to home position"""
+        try:
+            result = self.task_manager.amr_controller.amr_controller.goto(target_id="LM2", wait=True)
+            return result.get('success', False)
+        except Exception as e:
+            self.get_logger().error(f'Step 28 error: {e}')
             return False
     
     def _init_rtde_connection(self):
