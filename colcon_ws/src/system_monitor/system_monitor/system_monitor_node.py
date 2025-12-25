@@ -280,6 +280,84 @@ class SystemMonitorNode(Node):
                 }
             })
         
+        @self.app.route('/api/move_to_position', methods=['POST'])
+        def move_to_position():
+            """API endpoint to move robot to home or task position"""
+            try:
+                from flask import request
+                data = request.get_json()
+                position_type = data.get('position_type')  # 'home' or 'task'
+                
+                if position_type not in ['home', 'task']:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid position_type. Must be "home" or "task"'
+                    }), 400
+                
+                # Import URMoveToTarget
+                try:
+                    import sys
+                    from pathlib import Path
+                    
+                    # Add scripts directory to path
+                    workspace_root = Path(__file__).resolve().parents[3]
+                    scripts_dir = workspace_root / 'scripts'
+                    if str(scripts_dir) not in sys.path:
+                        sys.path.insert(0, str(scripts_dir))
+                    
+                    from ur_move_to_target import URMoveToTarget
+                    
+                    self.get_logger().info(f'Moving robot to {position_type} position...')
+                    
+                    # Create controller instance
+                    controller = URMoveToTarget()
+                    
+                    if not controller.robot:
+                        self.get_logger().error('Failed to initialize robot controller')
+                        return jsonify({
+                            'success': False,
+                            'message': 'Failed to initialize robot controller'
+                        }), 500
+                    
+                    # Execute the requested movement
+                    if position_type == 'home':
+                        success = controller.movej_to_home_position()
+                    else:  # task
+                        success = controller.movej_to_task_position()
+                    
+                    if success:
+                        self.get_logger().info(f'Successfully moved to {position_type} position')
+                        return jsonify({
+                            'success': True,
+                            'message': f'Successfully moved to {position_type} position'
+                        })
+                    else:
+                        self.get_logger().error(f'Failed to move to {position_type} position')
+                        return jsonify({
+                            'success': False,
+                            'message': f'Failed to move to {position_type} position'
+                        })
+                
+                except ImportError as e:
+                    self.get_logger().error(f'Failed to import URMoveToTarget: {e}')
+                    return jsonify({
+                        'success': False,
+                        'message': f'Failed to import URMoveToTarget: {str(e)}'
+                    }), 500
+                except Exception as e:
+                    self.get_logger().error(f'Error moving to {position_type} position: {e}')
+                    return jsonify({
+                        'success': False,
+                        'message': f'Error: {str(e)}'
+                    }), 500
+                    
+            except Exception as e:
+                self.get_logger().error(f'Error in move_to_position API: {e}')
+                return jsonify({
+                    'success': False,
+                    'message': f'Internal server error: {str(e)}'
+                }), 500
+        
         @self.app.route('/api/demo/execute_step', methods=['POST'])
         def execute_demo_step():
             """API endpoint to execute a single demo step"""
@@ -697,6 +775,15 @@ class SystemMonitorNode(Node):
             return not move_result
         except Exception as e:
             self.get_logger().error(f'Step 26 error: {e}')
+            return False
+    
+    def _step_27_amr_arm_side_to_dock(self):
+        """Step 27: AMR arm from side to dock"""
+        try:
+            result = self.task_manager.amr_controller.amr_move_arm_from_side_to_dock()
+            return result and result.get('success', False)
+        except Exception as e:
+            self.get_logger().error(f'Step 27 error: {e}')
             return False
     
     def _init_rtde_connection(self):

@@ -249,6 +249,9 @@ function setupButtonHandlers() {
     
     // Setup Demo Operation Panel button handlers
     setupDemoOperationButtons();
+    
+    // Setup Position Control Panel button handlers
+    setupPositionControlButtons();
 }
 
 // Fetch web URLs from backend and setup button handlers
@@ -1296,8 +1299,8 @@ function setupDemoOperationButtons() {
         btnSetOperationUnit.addEventListener('click', setOperationUnit);
     }
     
-    // Setup individual step buttons and checkboxes (1-26)
-    for (let i = 1; i <= 26; i++) {
+    // Setup individual step buttons and checkboxes (1-27)
+    for (let i = 1; i <= 27; i++) {
         const btnId = `btnStep${i}`;
         const chkId = `chkStep${i}`;
         const btn = document.getElementById(btnId);
@@ -1348,6 +1351,69 @@ function setupDemoOperationButtons() {
     }
 }
 
+// Setup Position Control Panel button handlers
+function setupPositionControlButtons() {
+    console.log('Setting up Position Control button handlers...');
+    
+    // Setup Task Position button
+    const btnTaskPosition = document.getElementById('btnTaskPosition');
+    if (btnTaskPosition) {
+        btnTaskPosition.addEventListener('click', () => moveToPosition('task'));
+    }
+    
+    // Setup Home Position button
+    const btnHomePosition = document.getElementById('btnHomePosition');
+    if (btnHomePosition) {
+        btnHomePosition.addEventListener('click', () => moveToPosition('home'));
+    }
+}
+
+// Move robot to specified position
+async function moveToPosition(positionType) {
+    console.log(`Moving to ${positionType} position...`);
+    
+    // Disable button to prevent multiple clicks
+    const btnId = positionType === 'task' ? 'btnTaskPosition' : 'btnHomePosition';
+    const btn = document.getElementById(btnId);
+    const originalText = btn ? btn.textContent : '';
+    
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+        btn.textContent = positionType === 'task' ? '⏳ Moving to Task...' : '⏳ Moving to Home...';
+    }
+    
+    try {
+        const response = await fetch('/api/move_to_position', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                position_type: positionType
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showModal('Success', `Successfully moved to ${positionType} position`, 'success');
+        } else {
+            showModal('Error', data.message || `Failed to move to ${positionType} position`, 'error');
+        }
+    } catch (error) {
+        console.error(`Error moving to ${positionType} position:`, error);
+        showModal('Error', `Failed to move to ${positionType} position: ${error.message}`, 'error');
+    } finally {
+        // Re-enable button
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            btn.textContent = originalText;
+        }
+    }
+}
+
 // Set Operation Unit (Server Index)
 function setOperationUnit() {
     const input = document.getElementById('operationUnitInput');
@@ -1372,7 +1438,7 @@ function setOperationUnit() {
     `;
     
     // Enable all step buttons and checkboxes
-    for (let i = 1; i <= 26; i++) {
+    for (let i = 1; i <= 27; i++) {
         const btn = document.getElementById(`btnStep${i}`);
         if (btn) {
             btn.disabled = false;
@@ -1420,7 +1486,7 @@ function selectAllSteps() {
     
     // Check if any checkbox is unchecked
     let anyUnchecked = false;
-    for (let i = 1; i <= 26; i++) {
+    for (let i = 1; i <= 27; i++) {
         const chk = document.getElementById(`chkStep${i}`);
         if (chk && !chk.checked) {
             anyUnchecked = true;
@@ -1430,7 +1496,7 @@ function selectAllSteps() {
     
     // If any is unchecked, check all; otherwise uncheck all
     const newState = anyUnchecked;
-    for (let i = 1; i <= 26; i++) {
+    for (let i = 1; i <= 27; i++) {
         const chk = document.getElementById(`chkStep${i}`);
         if (chk) {
             chk.checked = newState;
@@ -1451,7 +1517,7 @@ async function executeSelectedSteps() {
     
     // Get list of selected steps
     const selectedSteps = [];
-    for (let i = 1; i <= 26; i++) {
+    for (let i = 1; i <= 27; i++) {
         const chk = document.getElementById(`chkStep${i}`);
         if (chk && chk.checked) {
             selectedSteps.push(i);
@@ -1592,8 +1658,8 @@ async function executeAllSteps() {
         console.log('Starting execution of all steps...');
         
         // Execute each step sequentially
-        for (let i = 1; i <= 26; i++) {
-            console.log(`Executing step ${i} of 26...`);
+        for (let i = 1; i <= 27; i++) {
+            console.log(`Executing step ${i} of 27...`);
             await executeStep(i);
             
             // Check if the step failed

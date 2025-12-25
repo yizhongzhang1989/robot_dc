@@ -113,7 +113,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         time.sleep(0.5)
         return result
     
-    def force_task_touch_knob_right(self):
+    def force_task_touch_knob_right_with_push_server(self):
         """
         Execute force control task to touch the knob using TCP coordinate system.
         The robot will apply a downward force (relative to TCP) to make contact with the knob.
@@ -130,7 +130,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         # Set force mode parameters
         task_frame = tcp_pose  # set task frame to TCP pose
         selection_vector = [1, 1, 1, 0, 0, 0]  # Enable force control in XYZ direction relative to task frame
-        wrench = [0, 0, 50, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 0, 60, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force task: 'Touch Knob'...")
@@ -564,7 +564,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         print("[INFO] Right knob unlock sequence completed successfully")
         return 0
 
-    def force_task_open_handle(self):
+    def force_task_lift_handle(self):
         """
         Execute force control task to open handle using server coordinate system.
         The robot will apply force to pull the handle open.
@@ -656,7 +656,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         
         # Set force mode parameters
         selection_vector = [0, 1, 0, 0, 0, 0]  # Enable force control in Y direction
-        wrench = [0, 80, 0, 0, 0, 0]  # Desired force/torque in each direction
+        wrench = [0, 70, 0, 0, 0, 0]  # Desired force/torque in each direction
         limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
         
         print("[INFO] Starting force control task - pushing server...")
@@ -674,7 +674,120 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         time.sleep(0.5)
         return result
 
-
+    def force_task_open_left_handle(self):
+        """
+        Execute force control task to touch the knob using TCP coordinate system.
+        The robot will apply a downward force (relative to TCP) to make contact with the knob.
+        Returns: result from force_control_task
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.server2base_matrix is None:
+            print("Server coordinate system transformation matrix not loaded")
+            return -1
+        
+        print("\n[Motion 1] Rotating counter-clockwise to unlock knob...")
+        # Get current TCP pose for position
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        if tcp_pose is None or len(tcp_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract server rotation from server2base matrix
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
+        
+        # Create task frame: TCP position + server orientation
+        task_frame = [
+            tcp_pose[0],              # x from TCP
+            tcp_pose[1],              # y from TCP
+            tcp_pose[2],              # z from TCP
+            server_rotation_vector[0],  # rx from server
+            server_rotation_vector[1],  # ry from server
+            server_rotation_vector[2]   # rz from server
+        ]
+        print(f"[INFO] Task frame (TCP position + server orientation): {task_frame}")
+        
+        # Set force mode parameters
+        selection_vector = [1, 0, 0, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
+        wrench = [-25, 0, 0, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task...")
+        
+        # Execute force control task with force-based termination
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.02,
+            end_type=2,
+            end_force=[10, 0, 0, 0, 0, 0]
+        )
+        time.sleep(0.5)
+        return result
+    
+    def force_task_open_right_handle(self):
+        """
+        Execute force control task to touch the knob using TCP coordinate system.
+        The robot will apply a downward force (relative to TCP) to make contact with the knob.
+        Returns: result from force_control_task
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.server2base_matrix is None:
+            print("Server coordinate system transformation matrix not loaded")
+            return -1
+        
+        print("\n[Motion 1] Rotating counter-clockwise to unlock knob...")
+        # Get current TCP pose for position
+        tcp_pose = self.robot.get_actual_tcp_pose()
+        if tcp_pose is None or len(tcp_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract server rotation from server2base matrix
+        server_rotation_matrix = self.server2base_matrix[:3, :3]
+        server_rotation = R.from_matrix(server_rotation_matrix)
+        server_rotation_vector = server_rotation.as_rotvec()
+        
+        # Create task frame: TCP position + server orientation
+        task_frame = [
+            tcp_pose[0],              # x from TCP
+            tcp_pose[1],              # y from TCP
+            tcp_pose[2],              # z from TCP
+            server_rotation_vector[0],  # rx from server
+            server_rotation_vector[1],  # ry from server
+            server_rotation_vector[2]   # rz from server
+        ]
+        print(f"[INFO] Task frame (TCP position + server orientation): {task_frame}")
+        
+        # Set force mode parameters
+        selection_vector = [1, 0, 0, 0, 0, 0]  # Enable force control in Z direction (now relative to task frame)
+        wrench = [25, 0, 0, 0, 0, 0]  # Desired force/torque in each direction
+        limits = [0.2, 0.1, 0.1, 0.785, 0.785, 1.57]  # Force/torque limits
+        
+        print("[INFO] Starting force control task...")
+        
+        # Execute force control task with force-based termination
+        result = self.robot.force_control_task(
+            task_frame=task_frame,
+            selection_vector=selection_vector,
+            wrench=wrench,
+            limits=limits,
+            damping=0.02,
+            end_type=2,
+            end_force=[10, 0, 0, 0, 0, 0]
+        )
+        time.sleep(0.5)
+        return result
+    
     # ================================ Task Execution Methods ================================
     def execute_unlock_and_insert_sequence(self):
         """
@@ -815,7 +928,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[2, 3, 1],
-            offset_in_rack=[-0.06, -0.06-self.tool_length, -0.025]
+            offset_in_rack=[-0.06, -0.10-self.tool_length, -0.025]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to left knob position")
@@ -826,7 +939,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         print("\n" + "="*50)
         print("Step 10: Opening left handle...")
         print("="*50)
-        result = self.force_task_open_handle()
+        result = self.force_task_lift_handle()
         if result != 0:
             print(f"[ERROR] Failed to open left handle")
             return result
@@ -876,7 +989,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         print("\n" + "="*50)
         print("Step 14: Touching right knob...")
         print("="*50)
-        result = self.force_task_touch_knob_right()
+        result = self.force_task_touch_knob_right_with_push_server()
         if result != 0:
             print(f"[ERROR] Failed to touch right knob")
             return result
@@ -915,7 +1028,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[2, 3, 1],
-            offset_in_rack=[0.12, -0.06-self.tool_length, -0.025]
+            offset_in_rack=[0.12, -0.10-self.tool_length, -0.025]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to left knob position")
@@ -926,7 +1039,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
         print("\n" + "="*50)
         print("Step 18: Opening right handle...")
         print("="*50)
-        result = self.force_task_open_handle()
+        result = self.force_task_lift_handle()
         if result != 0:
             print(f"[ERROR] Failed to open right handle")
             return result
@@ -942,10 +1055,78 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # ===============Push server to end position=================
-        # Step 20: Move to push position
+        # step 20: move to fully open left handle position
         print("\n" + "="*50)
-        print("Step 20: Moving to push position...")
+        print("Step 20: Ensuring handles are fully opened...")
+        print("="*50)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0, -0.10-self.tool_length, 0.02]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to push position")
+            return result
+        time.sleep(0.5)
+
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[-0.10, -0.10-self.tool_length, 0.02]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to left handle position")
+            return result
+        time.sleep(0.5)
+
+        # step 21: force control to fully open the left handle
+        print("\n" + "="*50)
+        print("Step 21: Ensuring left handle is fully opened...")
+        print("="*50)
+        result = self.force_task_open_left_handle()
+        if result != 0:
+            print(f"[ERROR] Failed to open left handle")
+            return result
+        time.sleep(0.5)
+
+        # step 22: move to fully open right handle position
+        print("\n" + "="*50)
+        print("Step 22: Ensuring right handle is fully opened...")
+        print("="*50)
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0, -0.10-self.tool_length, 0.02]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to push position")
+            return result
+        time.sleep(0.5)
+        
+        result = self.movel_to_target_position(
+            index=self.server_index,
+            execution_order=[1, 3, 2],
+            offset_in_rack=[0.10, -0.10-self.tool_length, 0.02]
+        )
+        if result != 0:
+            print(f"[ERROR] Failed to move to right handle position")
+            return result
+        time.sleep(0.5)
+
+        # step 23: force control to fully open the right handle
+        print("\n" + "="*50)
+        print("Step 23: Ensuring right handle is fully opened...")
+        print("="*50)
+        result = self.force_task_open_right_handle()
+        if result != 0:
+            print(f"[ERROR] Failed to open right handle")
+            return result
+        time.sleep(0.5)
+
+        # ===============Push server to end position=================
+        # Step 21: Move to push position
+        print("\n" + "="*50)
+        print("Step 21: Moving to push position...")
         print("="*50)
         result = self.movel_to_target_position(
             index=self.server_index,
@@ -957,9 +1138,9 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             return result
         time.sleep(0.5)
 
-        # Step 21: Force control to push server to end
+        # Step 22: Force control to push server to end
         print("\n" + "="*50)
-        print("Step 21: Pushing server to end...")
+        print("Step 22: Pushing server to end...")
         print("="*50)
         result = self.force_task_push_server_to_end()
         if result != 0:

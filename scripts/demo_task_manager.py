@@ -11,6 +11,7 @@ import subprocess
 import threading
 import argparse
 import math
+import yaml
 from pathlib import Path
 
 # Use common package for workspace utilities
@@ -215,6 +216,43 @@ class TaskManager:
             print(f"Failed to initialize UR Operate Tools: {e}")
             self.ur_operate_tools = None
     
+    def _load_target_workflow_file(self):
+        """
+        Private method to load workflow file name from robot_config.yaml
+        
+        Returns:
+            str: Workflow file name from config, or None if not found
+        """
+        try:
+            # Build path to robot_config.yaml
+            config_file = os.path.join(self.config_dir, 'robot_config.yaml')
+            
+            # Check if config file exists
+            if not os.path.exists(config_file):
+                print(f"✗ Config file not found: {config_file}")
+                return None
+            
+            # Load yaml configuration
+            with open(config_file, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Navigate to ur15 -> task -> rack_positioning -> workflow_name
+            workflow_name = config.get('ur15', {}).get('task', {}).get('rack_positioning', {}).get('workflow_name')
+            
+            if workflow_name:
+                print(f"✓ Workflow file loaded from config: {workflow_name}")
+                return workflow_name
+            else:
+                print(f"✗ Workflow name not found in config at path: ur15.task.rack_positioning.workflow_name")
+                return None
+                
+        except yaml.YAMLError as e:
+            print(f"✗ Error parsing YAML config: {e}")
+            return None
+        except Exception as e:
+            print(f"✗ Error loading workflow file from config: {e}")
+            return None
+    
     # Note: ur_operate_wobj functionality is now available through ur_operate_tools
     # since UROperateTools inherits from UROperateWobj
 
@@ -288,8 +326,14 @@ class TaskManager:
         Execute rack positioning workflow using UR15 robot
         """
 
+        # Load workflow filename from config
+        workflow_filename = self._load_target_workflow_file()
+        if workflow_filename is None:
+            print("✗ Failed to load workflow filename from config")
+            return False
+        
         # Define workflow file path using temp directory
-        workflow_file = os.path.join(self.temp_dir, "workflow_files", "wf_rack_location.json")
+        workflow_file = os.path.join(self.temp_dir, "workflow_files", workflow_filename)
         
         # Check if workflow file exists
         if not os.path.exists(workflow_file):
@@ -519,354 +563,354 @@ class TaskManager:
         #     self._print_execution_summary(step_status)
         #     return False
                
-        # ========================================================================
-        # STEP 2: UR15 execute rack positioning task
-        # ========================================================================
-        print("\n📌 Step 2: Executing UR15 rack positioning task")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 2: UR15 execute rack positioning task
+        # # ========================================================================
+        # print("\n📌 Step 2: Executing UR15 rack positioning task")
+        # print("-" * 40)
         
-        try:
-            # Execute UR15 positioning workflow
-            ur15_result = self.ur15_execute_rack_positioning_task()
+        # try:
+        #     # Execute UR15 positioning workflow
+        #     ur15_result = self.ur15_execute_rack_positioning_task()
             
-            if ur15_result:
-                print("✓ UR15 rack positioning task completed successfully")
-                step_status["Step 2: UR15 rack positioning"] = "SUCCESS"
-            else:
-                print("✗ UR15 rack positioning task failed")
-                step_status["Step 2: UR15 rack positioning"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if ur15_result:
+        #         print("✓ UR15 rack positioning task completed successfully")
+        #         step_status["Step 2: UR15 rack positioning"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 rack positioning task failed")
+        #         step_status["Step 2: UR15 rack positioning"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 positioning task: {e}")
-            step_status["Step 2: UR15 rack positioning"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 positioning task: {e}")
+        #     step_status["Step 2: UR15 rack positioning"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 3: Move UR15 to get tool_rotate
-        # ========================================================================
-        print("\n📌 Step 3: Executing UR15 tool operation - get tool_rotate")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 3: Move UR15 to get tool_rotate
+        # # ========================================================================
+        # print("\n📌 Step 3: Executing UR15 tool operation - get tool_rotate")
+        # print("-" * 40)
         
-        # Check if UR operate tools is initialized
-        if self.ur_operate_tools is None:
-            print("✗ Error: UR Operate Tools not initialized. Cannot execute tool operation.")
-            return False
+        # # Check if UR operate tools is initialized
+        # if self.ur_operate_tools is None:
+        #     print("✗ Error: UR Operate Tools not initialized. Cannot execute tool operation.")
+        #     return False
         
-        try:
-            # Execute get tool_rotate operation
-            tool_result = self.ur_operate_tools.get_tool_from_task_position("tool_rotate")
+        # try:
+        #     # Execute get tool_rotate operation
+        #     tool_result = self.ur_operate_tools.get_tool_from_task_position("tool_rotate")
             
-            if tool_result:
-                print("✓ UR15 tool_rotate operation completed successfully")
-                step_status["Step 3: UR15 get tool_rotate"] = "SUCCESS"
-            else:
-                print("✗ UR15 tool_rotate operation failed")
-                step_status["Step 3: UR15 get tool_rotate"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if tool_result:
+        #         print("✓ UR15 tool_rotate operation completed successfully")
+        #         step_status["Step 3: UR15 get tool_rotate"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 tool_rotate operation failed")
+        #         step_status["Step 3: UR15 get tool_rotate"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 tool operation: {e}")
-            step_status["Step 3: UR15 get tool_rotate"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 tool operation: {e}")
+        #     step_status["Step 3: UR15 get tool_rotate"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 4: UR15 use FTC to unlock knobs on the server
-        # ========================================================================
-        print("\n📌 Step 4: Executing UR15 unlock knob task")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 4: UR15 use FTC to unlock knobs on the server
+        # # ========================================================================
+        # print("\n📌 Step 4: Executing UR15 unlock knob task")
+        # print("-" * 40)
         
-        try:
-            # Execute unlock knob operation
-            unlock_result = self.ur15_execute_unlock_knob_task()
+        # try:
+        #     # Execute unlock knob operation
+        #     unlock_result = self.ur15_execute_unlock_knob_task()
             
-            if unlock_result:
-                print("✓ UR15 unlock knob task completed successfully")
-                step_status["Step 4: UR15 unlock knobs"] = "SUCCESS"
-            else:
-                print("✗ UR15 unlock knob task failed")
-                step_status["Step 4: UR15 unlock knobs"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if unlock_result:
+        #         print("✓ UR15 unlock knob task completed successfully")
+        #         step_status["Step 4: UR15 unlock knobs"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 unlock knob task failed")
+        #         step_status["Step 4: UR15 unlock knobs"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 unlock knob task: {e}")
-            step_status["Step 4: UR15 unlock knobs"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 unlock knob task: {e}")
+        #     step_status["Step 4: UR15 unlock knobs"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 5: Move UR15 to return tool_rotate and then get tool_pushpull
-        # ========================================================================
-        print("\n📌 Step 5: Executing UR15 tool exchange operation - return tool_rotate and get tool_pushpull")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 5: Move UR15 to return tool_rotate and then get tool_pushpull
+        # # ========================================================================
+        # print("\n📌 Step 5: Executing UR15 tool exchange operation - return tool_rotate and get tool_pushpull")
+        # print("-" * 40)
         
-        # Check if UR operate tools is initialized
-        if self.ur_operate_tools is None:
-            print("✗ Error: UR Operate Tools not initialized. Cannot execute tool exchange operation.")
-            return False
+        # # Check if UR operate tools is initialized
+        # if self.ur_operate_tools is None:
+        #     print("✗ Error: UR Operate Tools not initialized. Cannot execute tool exchange operation.")
+        #     return False
         
-        try:
-            # Execute return tool_rotate and get tool_pushpull operation
-            exchange_result = self.ur_operate_tools.return_tool1_get_tool2_from_task(tool1_name="tool_rotate", tool2_name="tool_pushpull")
+        # try:
+        #     # Execute return tool_rotate and get tool_pushpull operation
+        #     exchange_result = self.ur_operate_tools.return_tool1_get_tool2_from_task(tool1_name="tool_rotate", tool2_name="tool_pushpull")
             
-            if exchange_result:
-                print("✓ UR15 tool exchange operation completed successfully")
-                step_status["Step 5: UR15 tool exchange (rotate→pushpull)"] = "SUCCESS"
-            else:
-                print("✗ UR15 tool exchange operation failed")
-                step_status["Step 5: UR15 tool exchange (rotate→pushpull)"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if exchange_result:
+        #         print("✓ UR15 tool exchange operation completed successfully")
+        #         step_status["Step 5: UR15 tool exchange (rotate→pushpull)"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 tool exchange operation failed")
+        #         step_status["Step 5: UR15 tool exchange (rotate→pushpull)"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 tool exchange operation: {e}")
-            step_status["Step 5: UR15 tool exchange (rotate→pushpull)"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 tool exchange operation: {e}")
+        #     step_status["Step 5: UR15 tool exchange (rotate→pushpull)"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 6: UR15 use FTC to open handles on the server and then pull out the server for about 5 cm
-        # ========================================================================
-        print("\n📌 Step 6: Executing UR15 open handle task")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 6: UR15 use FTC to open handles on the server and then pull out the server for about 5 cm
+        # # ========================================================================
+        # print("\n📌 Step 6: Executing UR15 open handle task")
+        # print("-" * 40)
         
-        try:
-            # Execute open handle operation
-            open_handle_result = self.ur15_execute_open_handle_task()
+        # try:
+        #     # Execute open handle operation
+        #     open_handle_result = self.ur15_execute_open_handle_task()
             
-            if open_handle_result:
-                print("✓ UR15 open handle task completed successfully")
-                step_status["Step 6: UR15 open handles"] = "SUCCESS"
-            else:
-                print("✗ UR15 open handle task failed")
-                step_status["Step 6: UR15 open handles"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if open_handle_result:
+        #         print("✓ UR15 open handle task completed successfully")
+        #         step_status["Step 6: UR15 open handles"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 open handle task failed")
+        #         step_status["Step 6: UR15 open handles"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 open handle task: {e}")
-            step_status["Step 6: UR15 open handles"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 open handle task: {e}")
+        #     step_status["Step 6: UR15 open handles"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 7: UR15 re-positioning the position of server and then use FTC to close left handle
-        # ========================================================================
-        print("\n📌 Step 7: Executing UR15 close left task")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 7: UR15 re-positioning the position of server and then use FTC to close left handle
+        # # ========================================================================
+        # print("\n📌 Step 7: Executing UR15 close left task")
+        # print("-" * 40)
         
-        try:
-            # Execute close left operation
-            close_left_result = self.ur15_execute_close_left_task()
+        # try:
+        #     # Execute close left operation
+        #     close_left_result = self.ur15_execute_close_left_task()
             
-            if close_left_result:
-                print("✓ UR15 close left task completed successfully")
-                step_status["Step 7: UR15 close left handle"] = "SUCCESS"
-            else:
-                print("✗ UR15 close left task failed")
-                step_status["Step 7: UR15 close left handle"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if close_left_result:
+        #         print("✓ UR15 close left task completed successfully")
+        #         step_status["Step 7: UR15 close left handle"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 close left task failed")
+        #         step_status["Step 7: UR15 close left handle"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 close left task: {e}")
-            step_status["Step 7: UR15 close left handle"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 close left task: {e}")
+        #     step_status["Step 7: UR15 close left handle"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 8: UR15 re-positioning the position of server and then use FTC to close right handle
-        # ========================================================================
-        print("\n📌 Step 8: Executing UR15 close right task")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 8: UR15 re-positioning the position of server and then use FTC to close right handle
+        # # ========================================================================
+        # print("\n📌 Step 8: Executing UR15 close right task")
+        # print("-" * 40)
         
-        try:
-            # Execute close right operation
-            close_right_result = self.ur15_execute_close_right_task()
+        # try:
+        #     # Execute close right operation
+        #     close_right_result = self.ur15_execute_close_right_task()
             
-            if close_right_result:
-                print("✓ UR15 close right task completed successfully")
-                step_status["Step 8: UR15 close right handle"] = "SUCCESS"
-            else:
-                print("✗ UR15 close right task failed")
-                step_status["Step 8: UR15 close right handle"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if close_right_result:
+        #         print("✓ UR15 close right task completed successfully")
+        #         step_status["Step 8: UR15 close right handle"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 close right task failed")
+        #         step_status["Step 8: UR15 close right handle"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 close right task: {e}")
-            step_status["Step 8: UR15 close right handle"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 close right task: {e}")
+        #     step_status["Step 8: UR15 close right handle"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
                 
-        # ========================================================================
-        # STEP 9: Move UR15 to return tool_pushpull and then get tool_extract
-        # ========================================================================
-        print("\n📌 Step 9: Executing UR15 tool exchange operation - return tool_pushpull and get tool_extract")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 9: Move UR15 to return tool_pushpull and then get tool_extract
+        # # ========================================================================
+        # print("\n📌 Step 9: Executing UR15 tool exchange operation - return tool_pushpull and get tool_extract")
+        # print("-" * 40)
         
-        # Check if UR operate tools is initialized
-        if self.ur_operate_tools is None:
-            print("✗ Error: UR Operate Tools not initialized. Cannot execute tool exchange operation.")
-            return False
+        # # Check if UR operate tools is initialized
+        # if self.ur_operate_tools is None:
+        #     print("✗ Error: UR Operate Tools not initialized. Cannot execute tool exchange operation.")
+        #     return False
         
-        try:
-            # Execute return tool_pushpull and get tool_extract operation
-            exchange_result = self.ur_operate_tools.return_tool1_get_tool2_from_task(tool1_name="tool_pushpull", tool2_name="tool_extract")
+        # try:
+        #     # Execute return tool_pushpull and get tool_extract operation
+        #     exchange_result = self.ur_operate_tools.return_tool1_get_tool2_from_task(tool1_name="tool_pushpull", tool2_name="tool_extract")
             
-            if exchange_result:
-                print("✓ UR15 tool exchange operation completed successfully")
-                step_status["Step 9: UR15 tool exchange (pushpull→extract)"] = "SUCCESS"
-            else:
-                print("✗ UR15 tool exchange operation failed")
-                step_status["Step 9: UR15 tool exchange (pushpull→extract)"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if exchange_result:
+        #         print("✓ UR15 tool exchange operation completed successfully")
+        #         step_status["Step 9: UR15 tool exchange (pushpull→extract)"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 tool exchange operation failed")
+        #         step_status["Step 9: UR15 tool exchange (pushpull→extract)"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 tool exchange operation: {e}")
-            step_status["Step 9: UR15 tool exchange (pushpull→extract)"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 tool exchange operation: {e}")
+        #     step_status["Step 9: UR15 tool exchange (pushpull→extract)"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 10: Move UR15 to target positions to avoid collision
-        # ========================================================================
-        print("\n📌 Step 10: Moving UR15 to target position")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 10: Move UR15 to target positions to avoid collision
+        # # ========================================================================
+        # print("\n📌 Step 10: Moving UR15 to target position")
+        # print("-" * 40)
         
-        # Check if UR operate tools is initialized
-        if self.ur_operate_tools is None:
-            print("✗ Error: UR Operate Tools not initialized. Cannot execute move operation.")
-            return False
+        # # Check if UR operate tools is initialized
+        # if self.ur_operate_tools is None:
+        #     print("✗ Error: UR Operate Tools not initialized. Cannot execute move operation.")
+        #     return False
         
-        try:
-            # Execute move to target position operation
-            move_result = self.ur_operate_tools.movel_to_target_position(
-                index=self.server_index,
-                execution_order=[1, 3, 2],
-                offset_in_rack=[0, -0.65, 0.45]
-            )
+        # try:
+        #     # Execute move to target position operation
+        #     move_result = self.ur_operate_tools.movel_to_target_position(
+        #         index=self.server_index,
+        #         execution_order=[1, 3, 2],
+        #         offset_in_rack=[0, -0.65, 0.45]
+        #     )
             
-            if not move_result:
-                print("✓ UR15 move to target position completed successfully")
-            else:
-                print("✗ UR15 move to target position failed")
-                step_status["Step 10: UR15 move to target position"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if not move_result:
+        #         print("✓ UR15 move to target position completed successfully")
+        #     else:
+        #         print("✗ UR15 move to target position failed")
+        #         step_status["Step 10: UR15 move to target position"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
             
-            # After movel_to_target_position, execute movej to specified joint angles
-            print("\n📌 Step 10: Executing UR15 movej to target joint angles")
-            print("-" * 40)
+        #     # After movel_to_target_position, execute movej to specified joint angles
+        #     print("\n📌 Step 10: Executing UR15 movej to target joint angles")
+        #     print("-" * 40)
             
-            target_joints_degrees = [113.2, -62.4, 65.1, -92.5, -90.3, -61.8]
-            target_joints_radians = [math.radians(angle) for angle in target_joints_degrees]
+        #     target_joints_degrees = [113.2, -62.4, 65.1, -92.5, -90.3, -61.8]
+        #     target_joints_radians = [math.radians(angle) for angle in target_joints_degrees]
             
-            print(f"Target joint angles (degrees): {target_joints_degrees}")
-            print(f"Target joint angles (radians): {[f'{rad:.4f}' for rad in target_joints_radians]}")
+        #     print(f"Target joint angles (degrees): {target_joints_degrees}")
+        #     print(f"Target joint angles (radians): {[f'{rad:.4f}' for rad in target_joints_radians]}")
             
-            # Execute movej operation
-            movej_result = self.ur_operate_tools.robot.movej(
-                target_joints_radians,
-                a=0.5,  # acceleration
-                v=0.5   # velocity
-            )
+        #     # Execute movej operation
+        #     movej_result = self.ur_operate_tools.robot.movej(
+        #         target_joints_radians,
+        #         a=0.5,  # acceleration
+        #         v=0.5   # velocity
+        #     )
             
-            if movej_result == 0:
-                print("✓ UR15 movej to target joint angles completed successfully")
-                step_status["Step 10: UR15 move to target position"] = "SUCCESS"
-            else:
-                print(f"✗ UR15 movej to target joint angles failed with error code: {movej_result}")
-                step_status["Step 10: UR15 move to target position"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if movej_result == 0:
+        #         print("✓ UR15 movej to target joint angles completed successfully")
+        #         step_status["Step 10: UR15 move to target position"] = "SUCCESS"
+        #     else:
+        #         print(f"✗ UR15 movej to target joint angles failed with error code: {movej_result}")
+        #         step_status["Step 10: UR15 move to target position"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 move to target position: {e}")
-            step_status["Step 10: UR15 move to target position"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 move to target position: {e}")
+        #     step_status["Step 10: UR15 move to target position"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 11: AMR move courier robot from DOCK position to extraction position
-        # ========================================================================
-        print("\n📌 Step 11: Executing AMR courier movement to extraction position")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 11: AMR move courier robot from DOCK position to extraction position
+        # # ========================================================================
+        # print("\n📌 Step 11: Executing AMR courier movement to extraction position")
+        # print("-" * 40)
         
-        try:
-            # Execute AMR courier movement
-            courier_result = self.amr_controller.amr_move_courier_from_dock_to_extraction_position()
+        # try:
+        #     # Execute AMR courier movement
+        #     courier_result = self.amr_controller.amr_move_courier_from_dock_to_extraction_position()
             
-            if courier_result and courier_result.get('success', False):
-                print("✓ AMR courier movement to extraction position completed successfully")
-                step_status["Step 11: AMR courier to extraction position"] = "SUCCESS"
-            else:
-                print("✗ AMR courier movement to extraction position failed")
-                step_status["Step 11: AMR courier to extraction position"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if courier_result and courier_result.get('success', False):
+        #         print("✓ AMR courier movement to extraction position completed successfully")
+        #         step_status["Step 11: AMR courier to extraction position"] = "SUCCESS"
+        #     else:
+        #         print("✗ AMR courier movement to extraction position failed")
+        #         step_status["Step 11: AMR courier to extraction position"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during AMR courier movement: {e}")
-            step_status["Step 11: AMR courier to extraction position"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during AMR courier movement: {e}")
+        #     step_status["Step 11: AMR courier to extraction position"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 12: UR15 positioning the handles and then use FTC to extract the server from the rack
-        # ========================================================================
-        print("\n📌 Step 12: Executing UR15 extract server task")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 12: UR15 positioning the handles and then use FTC to extract the server from the rack
+        # # ========================================================================
+        # print("\n📌 Step 12: Executing UR15 extract server task")
+        # print("-" * 40)
         
-        try:
-            # Execute extract server operation
-            extract_result = self.ur15_execute_extract_server_task()
+        # try:
+        #     # Execute extract server operation
+        #     extract_result = self.ur15_execute_extract_server_task()
             
-            if extract_result:
-                print("✓ UR15 extract server task completed successfully")
-                step_status["Step 12: UR15 extract server"] = "SUCCESS"
-            else:
-                print("✗ UR15 extract server task failed")
-                step_status["Step 12: UR15 extract server"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if extract_result:
+        #         print("✓ UR15 extract server task completed successfully")
+        #         step_status["Step 12: UR15 extract server"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 extract server task failed")
+        #         step_status["Step 12: UR15 extract server"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 extract server task: {e}")
-            step_status["Step 12: UR15 extract server"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 extract server task: {e}")
+        #     step_status["Step 12: UR15 extract server"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
-        # ========================================================================
-        # STEP 13: AMR move courier robot from extraction position back to DOCK position
-        # ========================================================================
-        print("\n📌 Step 13: Executing AMR courier movement from extraction position to dock")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 13: AMR move courier robot from extraction position back to DOCK position
+        # # ========================================================================
+        # print("\n📌 Step 13: Executing AMR courier movement from extraction position to dock")
+        # print("-" * 40)
         
-        try:
-            # Execute AMR courier movement back to dock
-            courier_return_result = self.amr_controller.amr_move_courier_from_extraction_position_to_dock()
+        # try:
+        #     # Execute AMR courier movement back to dock
+        #     courier_return_result = self.amr_controller.amr_move_courier_from_extraction_position_to_dock()
             
-            if courier_return_result and courier_return_result.get('success', False):
-                print("✓ AMR courier movement from extraction position to dock completed successfully")
-                step_status["Step 13: AMR courier back to dock"] = "SUCCESS"
-            else:
-                print("✗ AMR courier movement from extraction position to dock failed")
-                step_status["Step 13: AMR courier back to dock"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if courier_return_result and courier_return_result.get('success', False):
+        #         print("✓ AMR courier movement from extraction position to dock completed successfully")
+        #         step_status["Step 13: AMR courier back to dock"] = "SUCCESS"
+        #     else:
+        #         print("✗ AMR courier movement from extraction position to dock failed")
+        #         step_status["Step 13: AMR courier back to dock"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during AMR courier return movement: {e}")
-            step_status["Step 13: AMR courier back to dock"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during AMR courier return movement: {e}")
+        #     step_status["Step 13: AMR courier back to dock"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
         # ========================================================================
         # STEP 14: Move UR15 to return tool_extract and then get tool_frame
@@ -1267,6 +1311,31 @@ class TaskManager:
         except Exception as e:
             print(f"✗ Error during UR15 move to target position: {e}")
             step_status["Step 26: UR15 move to target position"] = "FAILED"
+            self._print_execution_summary(step_status)
+            return False
+        
+        # ========================================================================
+        # STEP 27: AMR move arm from side position to dock position
+        # ========================================================================
+        print("\n📌 Step 27: Executing AMR arm movement from side to dock")
+        print("-" * 40)
+        
+        try:
+            # Execute AMR arm movement from side to dock
+            arm_return_result = self.amr_controller.amr_move_arm_from_side_to_dock()
+            
+            if arm_return_result and arm_return_result.get('success', False):
+                print("✓ AMR arm movement from side to dock completed successfully")
+                step_status["Step 27: AMR arm from side to dock"] = "SUCCESS"
+            else:
+                print("✗ AMR arm movement from side to dock failed")
+                step_status["Step 27: AMR arm from side to dock"] = "FAILED"
+                self._print_execution_summary(step_status)
+                return False
+                
+        except Exception as e:
+            print(f"✗ Error during AMR arm movement: {e}")
+            step_status["Step 27: AMR arm from side to dock"] = "FAILED"
             self._print_execution_summary(step_status)
             return False
         
