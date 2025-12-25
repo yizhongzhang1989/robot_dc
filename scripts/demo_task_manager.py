@@ -419,7 +419,7 @@ class TaskManager:
         """
         Execute extract_server task using ur_wobj_extract_server.py script
         """
-        script_path = os.path.join(self.scripts_dir, "ur_wobj_extract_server.py")
+        script_path = os.path.join(self.scripts_dir, "ur_wobj_ extract_server.py")
         return self._execute_ur_wobj_script(script_path, "extract_server")
     
     def ur15_execute_put_frame_task(self):
