@@ -418,7 +418,7 @@ class URWobjExtractServer(UROperateWobj):
         result = self.movel_to_target_position(
             index=self.server_index,
             execution_order=[1, 3, 2],
-            offset_in_rack=[0, -0.40, 0.20+self.tool_length]
+            offset_in_rack=[0, -0.36, 0.20+self.tool_length]
         )
         if result != 0:
             print(f"[ERROR] Failed to move to target position (error code: {result})")
