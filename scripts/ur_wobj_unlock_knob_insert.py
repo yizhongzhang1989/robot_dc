@@ -726,7 +726,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             limits=limits,
             damping=0.02,
             end_type=2,
-            end_force=[10, 0, 0, 0, 0, 0]
+            end_force=[8, 0, 0, 0, 0, 0]
         )
         time.sleep(0.5)
         return result
@@ -783,7 +783,7 @@ class URWobjUnlockKnobInsert(UROperateWobj):
             limits=limits,
             damping=0.02,
             end_type=2,
-            end_force=[10, 0, 0, 0, 0, 0]
+            end_force=[8, 0, 0, 0, 0, 0]
         )
         time.sleep(0.5)
         return result

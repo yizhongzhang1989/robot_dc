@@ -535,6 +535,91 @@ class TaskManager:
             print(f"✗ Exception during movej_to_home_position: {e}")
             return False
 
+    def ur15_execute_movej_to_task_position(self):
+        """
+        Execute UR15 movej to task position by moving each joint in reverse order (J6 to J1).
+        
+        The robot will move:
+        1. Joint 6 (J6) first
+        2. Joint 5 (J5)
+        3. Joint 4 (J4)
+        4. Joint 3 (J3)
+        5. Joint 2 (J2)
+        6. Joint 1 (J1) last
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if self.ur_operate_tools is None:
+            print("✗ Error: UR Operate Tools not initialized. Cannot execute move operation.")
+            return False
+        
+        print("=" * 60)
+        print("Starting movej_to_task_position - Moving joints in order J6 -> J1")
+        print("=" * 60)
+        
+        try:
+            # Task position in degrees (target position)
+            task_position_deg = [92.0, -57.5, 102.9, -47.9, 9.6, 187.1]
+            print(f"Target task position (degrees): {task_position_deg}")
+            
+            # Get current joint positions
+            current_position_rad = self.ur_operate_tools.robot.get_actual_joint_positions()
+            current_position_deg = [math.degrees(angle) for angle in current_position_rad]
+            print(f"Current position (degrees): {[f'{x:.2f}' for x in current_position_deg]}")
+            print()
+            
+            # Movement parameters
+            a_movej = 1.0  # Acceleration for joint movements (rad/s²)
+            v_movej = 1.0  # Velocity for joint movements (rad/s)
+            
+            # Move each joint in reverse order (J6 to J1)
+            # Joint indices: J1=0, J2=1, J3=2, J4=3, J5=4, J6=5
+            joint_order = [5, 4, 3, 2, 1, 0]  # J6, J5, J4, J3, J2, J1
+            joint_names = ['J6', 'J5', 'J4', 'J3', 'J2', 'J1']
+            
+            # Create intermediate position starting from current position
+            intermediate_position_deg = current_position_deg.copy()
+            
+            for idx, (joint_idx, joint_name) in enumerate(zip(joint_order, joint_names), 1):
+                # Update the target joint position
+                intermediate_position_deg[joint_idx] = task_position_deg[joint_idx]
+                
+                # Convert to radians for robot command
+                intermediate_position_rad = [math.radians(angle) for angle in intermediate_position_deg]
+                
+                print(f"  Step {idx}/6: Moving {joint_name} to {task_position_deg[joint_idx]:.2f}°")
+                
+                # Execute joint movement
+                result = self.ur_operate_tools.robot.movej(intermediate_position_rad, a=a_movej, v=v_movej)
+                
+                if result != 0:
+                    print(f"✗ Failed to move {joint_name}, error code: {result}")
+                    return False
+                
+                print(f"  ✓ Successfully moved {joint_name}")
+                
+                # Add small delay between movements for stability
+                time.sleep(0.3)
+            
+            # Verify final position
+            final_position_rad = self.ur_operate_tools.robot.get_actual_joint_positions()
+            final_position_deg = [math.degrees(angle) for angle in final_position_rad]
+            print(f"\nFinal position (degrees): {[f'{x:.2f}' for x in final_position_deg]}")
+            
+            # Calculate position error
+            position_error = [abs(final - target) for final, target in zip(final_position_deg, task_position_deg)]
+            print(f"Position error (degrees): {[f'{x:.2f}' for x in position_error]}")
+            
+            print("=" * 60)
+            print("✓ Successfully completed movej_to_task_position")
+            print("=" * 60)
+            return True
+            
+        except Exception as e:
+            print(f"✗ Exception during movej_to_task_position: {e}")
+            return False
+
     def _print_execution_summary(self, step_status):
         """
         Print execution summary showing which steps succeeded and which failed
@@ -695,6 +780,19 @@ class TaskManager:
         print("-" * 40)
         
         try:
+            # First, move to task position using movej
+            print("\n  → Moving to task position before rack positioning...")
+            movej_task_result = self.ur15_execute_movej_to_task_position()
+            
+            if not movej_task_result:
+                print("✗ UR15 movej to task position failed")
+                step_status["Step 2: UR15 rack positioning"] = "FAILED"
+                self._print_execution_summary(step_status)
+                return False
+            
+            print("✓ UR15 movej to task position completed successfully")
+            print("\n  → Starting rack positioning workflow...")
+            
             # Execute UR15 positioning workflow
             ur15_result = self.ur15_execute_rack_positioning_task()
             

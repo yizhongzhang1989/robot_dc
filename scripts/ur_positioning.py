@@ -488,12 +488,15 @@ class URPositioning(Node):
             print(f'✗ Error capturing image and pose: {e}')
             return False
     
-    def auto_positioning(self):
+    def auto_positioning(self, upload_reference_enable=True):
         """
         Automatic 3D positioning workflow with multiple views
         
+        Args:
+            upload_reference_enable (bool): Enable uploading reference images (default: True)
+        
         Steps:
-        1. Upload reference
+        1. Upload reference (optional, controlled by upload_reference_enable)
         2. Initialize session
         3. Capture images from multiple poses and upload views
         4. Get positioning result (fitting mode)
@@ -511,14 +514,17 @@ class URPositioning(Node):
             return None
         
         try:
-            # Step 1: Upload reference
-            print("\n>>> Step 1: Uploading reference data...")
-            result = self.positioning_client.upload_references()
-            if result.get('success'):
-                print(f"  ✓ Reference uploaded: {result.get('references_loaded', 0)}/{result.get('references_found', 0)}")
+            # Step 1: Upload reference (optional)
+            if upload_reference_enable:
+                print("\n>>> Step 1: Uploading reference data...")
+                result = self.positioning_client.upload_references()
+                if result.get('success'):
+                    print(f"  ✓ Reference uploaded: {result.get('references_loaded', 0)}/{result.get('references_found', 0)}")
+                else:
+                    print(f"  ✗ Failed to upload reference: {result.get('error')}")
+                    return None
             else:
-                print(f"  ✗ Failed to upload reference: {result.get('error')}")
-                return None
+                print("\n>>> Step 1: Skipping reference upload (upload_reference_enable=False)")
             
             # Step 2: Initialize session
             print("\n>>> Step 2: Initializing session...")

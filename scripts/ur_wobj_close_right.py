@@ -155,7 +155,8 @@ class URWobjCloseRight(UROperateWobj):
         print("Updating server coordinate system using vision positioning...")
         
         # Execute auto positioning to get updated server coordinate system
-        positioning_result = self.ur_positioning.auto_positioning()
+        # Skip uploading reference images (already uploaded in Step 2)
+        positioning_result = self.ur_positioning.auto_positioning(upload_reference_enable=False)
         
         # Check if positioning was successful
         if not isinstance(positioning_result, dict) or not positioning_result.get('success', False):

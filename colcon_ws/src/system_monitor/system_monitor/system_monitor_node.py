@@ -528,8 +528,19 @@ class SystemMonitorNode(Node):
             return False
     
     def _step_2_ur15_rack_positioning(self):
-        """Step 2: UR15 rack positioning"""
+        """Step 2: UR15 rack positioning (with movej to task position first)"""
         try:
+            # First, move to task position using movej
+            self.get_logger().info('Moving to task position before rack positioning...')
+            movej_result = self.task_manager.ur15_execute_movej_to_task_position()
+            
+            if not movej_result:
+                self.get_logger().error('Failed to move to task position')
+                return False
+            
+            self.get_logger().info('Successfully moved to task position')
+            
+            # Then execute rack positioning workflow
             result = self.task_manager.ur15_execute_rack_positioning_task()
             return result
         except Exception as e:
