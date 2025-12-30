@@ -721,6 +721,97 @@
         <div id="overshootStatusMsg" class="text-xs text-slate-500"></div>
       </div>
     </div>
+
+    <!-- Row 4: Force Position Calibration (Full Width) -->
+    <div class="bg-white rounded-lg shadow p-4 border-l-4 border-teal-500">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-bold text-lg text-teal-700 flex items-center gap-2">
+          🔧 Force Position Calibration
+        </h2>
+        <span id="forcePositionStatusBadge" class="px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700">no_data</span>
+      </div>
+
+      <!-- Position Selector and Add Sample -->
+      <div class="mb-3 flex items-center gap-2">
+        <label class="text-sm font-semibold">Position:</label>
+        <select id="forcePositionSelect" class="px-3 py-2 border border-slate-300 rounded text-sm">
+          <option value="100">100 mm</option>
+          <option value="200">200 mm</option>
+          <option value="300">300 mm</option>
+          <option value="400">400 mm</option>
+          <option value="500" selected>500 mm</option>
+          <option value="600">600 mm</option>
+          <option value="700">700 mm</option>
+          <option value="800">800 mm</option>
+          <option value="900">900 mm</option>
+          <option value="1000">1000 mm</option>
+        </select>
+        <button id="forcePositionAddBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded font-semibold transition">
+          📝 Read Current Force
+        </button>
+        <div class="flex-1 text-right text-sm">
+          <span class="text-gray-600">Current Total Force:</span>
+          <span id="forcePositionCurrentForce" class="font-mono font-bold text-blue-600 ml-2">—</span>
+          <span class="text-gray-600 ml-1">N</span>
+        </div>
+      </div>
+
+      <!-- Samples Table -->
+      <div class="mb-3 bg-slate-50 rounded p-3 border border-slate-200">
+        <div class="font-semibold text-sm text-teal-600 mb-2">📊 Samples</div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="border-b border-slate-300">
+                <th class="text-left p-1">Position (mm)</th>
+                <th class="text-left p-1">Force Readings (N)</th>
+                <th class="text-right p-1">Average (N)</th>
+              </tr>
+            </thead>
+            <tbody id="forcePositionSamplesList">
+              <tr><td colspan="3" class="text-center text-slate-400 p-2">No samples</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Control Buttons -->
+      <div class="grid grid-cols-6 gap-2 mb-3">
+        <button id="forcePositionPlotBtn" disabled class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+          📊 Plot Points
+        </button>
+        <div class="flex items-center gap-1">
+          <label class="text-xs whitespace-nowrap">Fit Deg:</label>
+          <select id="forcePositionDegree" class="px-2 py-2 border border-slate-300 rounded text-sm flex-1">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+          </select>
+        </div>
+        <button id="forcePositionFitBtn" disabled class="px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+          📈 Fit Curve
+        </button>
+        <button id="forcePositionSaveBtn" disabled class="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm rounded font-semibold transition">
+          💾 Save
+        </button>
+        <button id="forcePositionClearBtn" class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm rounded font-semibold transition">
+          🗑️ Clear
+        </button>
+        <button id="forcePositionRefreshBtn" class="px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white text-sm rounded font-semibold transition">
+          🔄 Refresh
+        </button>
+      </div>
+
+      <!-- Plot Image -->
+      <img id="forcePositionPlotImg" src="" alt="Force position plot" class="max-w-2xl border border-slate-200 rounded hidden mb-3"/>
+
+      <!-- Status Message -->
+      <div id="forcePositionStatusMsg" class="text-xs text-slate-500"></div>
+    </div>
+
       <details>
         <summary class="p-3 font-semibold cursor-pointer hover:bg-slate-50 rounded-t-lg">📄 Raw JSON Data</summary>
         <div class="p-3 border-t">
@@ -2508,6 +2599,272 @@ $('forceCalibForce').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') addForceCalibSample();
 });
 
+// ═══════════════════════════════════════════════════════════════
+// Force Position Calibration Functions
+// ═══════════════════════════════════════════════════════════════
+
+async function updateForcePositionStatus() {
+  try {
+    const res = await fetch('/api/force_position/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    // Update status badge
+    const badge = $('forcePositionStatusBadge');
+    if (data.has_data) {
+      badge.textContent = 'calibrated';
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700';
+    } else {
+      badge.textContent = 'no_data';
+      badge.className = 'px-2 py-1 rounded text-xs font-semibold bg-gray-300 text-gray-700';
+    }
+    
+    // Update current force display
+    const currentForce = data.current_force;
+    if (currentForce !== null && currentForce !== undefined) {
+      $('forcePositionCurrentForce').textContent = currentForce.toFixed(2);
+    } else {
+      $('forcePositionCurrentForce').textContent = '—';
+    }
+    
+    // Update button states
+    const hasSamples = data.sample_count > 0;
+    const hasEnoughForFit = data.sample_count >= 2;
+    $('forcePositionPlotBtn').disabled = !hasSamples;
+    $('forcePositionFitBtn').disabled = !hasEnoughForFit;
+    $('forcePositionSaveBtn').disabled = !hasSamples;
+    
+  } catch (e) {
+    console.error('Force position status update error:', e);
+  }
+}
+
+async function updateForcePositionSamples() {
+  try {
+    console.log('Fetching force position samples...');
+    const res = await fetch('/api/force_position/samples');
+    console.log('Response status:', res.status, res.ok);
+    if (!res.ok) {
+      console.error('Failed to fetch samples:', res.status);
+      return;
+    }
+    const data = await res.json();
+    console.log('Received data:', data);
+    
+    const tbody = $('forcePositionSamplesList');
+    const samples = data.samples || {};
+    
+    console.log('Samples object:', samples);
+    console.log('Sample keys:', Object.keys(samples));
+    
+    if (Object.keys(samples).length === 0) {
+      console.warn('No samples found in response');
+      tbody.innerHTML = '<tr><td colspan="3" class="text-center text-slate-400 p-2">No samples</td></tr>';
+      return;
+    }
+    
+    // Create rows for each position (100-1000)
+    let html = '';
+    for (let pos = 100; pos <= 1000; pos += 100) {
+      // Try both string and number keys for compatibility
+      const readings = samples[pos] || samples[pos.toString()] || [];
+      console.log(`Position ${pos}: ${readings.length} readings`);
+      if (readings.length === 0) continue;
+      
+      // Calculate average
+      const forces = readings.map(r => r.force);
+      const avg = forces.reduce((a, b) => a + b, 0) / forces.length;
+      
+      // Create force readings display with delete buttons
+      const readingsHtml = readings.map((r, idx) => {
+        return `<span class="inline-block bg-blue-50 px-2 py-1 rounded mr-1 mb-1">
+          ${r.force.toFixed(2)}
+          <button onclick="deleteForcePositionSample(${pos}, ${idx})" 
+                  class="ml-1 text-red-600 hover:text-red-800 font-bold">✕</button>
+        </span>`;
+      }).join('');
+      
+      html += `<tr class="border-b border-slate-200">
+        <td class="p-1 font-mono">${pos}</td>
+        <td class="p-1">${readingsHtml}</td>
+        <td class="text-right p-1 font-mono font-bold text-teal-600">${avg.toFixed(2)}</td>
+      </tr>`;
+    }
+    
+    tbody.innerHTML = html || '<tr><td colspan="3" class="text-center text-slate-400 p-2">No samples</td></tr>';
+    
+  } catch (e) {
+    console.error('Force position samples update error:', e);
+  }
+}
+
+async function addForcePositionSample() {
+  const position = parseInt($('forcePositionSelect').value);
+  
+  try {
+    $('forcePositionStatusMsg').textContent = `⏳ Reading force at ${position}mm...`;
+    
+    const res = await fetch('/api/force_position/add_sample', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ position: position })
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forcePositionStatusMsg').textContent = `✓ Added: ${data.sample.force.toFixed(2)} N at ${position} mm`;
+      await updateForcePositionSamples();
+      await updateForcePositionStatus();
+    } else {
+      $('forcePositionStatusMsg').textContent = '❌ ' + (data.error || 'Failed to add sample');
+    }
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 3000);
+  } catch (e) {
+    $('forcePositionStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function deleteForcePositionSample(position, index) {
+  try {
+    const res = await fetch(`/api/force_position/samples/${position}/${index}`, {
+      method: 'DELETE'
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      await updateForcePositionSamples();
+      await updateForcePositionStatus();
+    } else {
+      alert('Failed to delete sample: ' + (data.error || 'Unknown error'));
+    }
+  } catch (e) {
+    alert('Error deleting sample: ' + e.message);
+  }
+}
+
+async function clearForcePositionSamples() {
+  if (!confirm('Clear all force position samples?')) return;
+  
+  try {
+    $('forcePositionStatusMsg').textContent = '⏳ Clearing samples...';
+    
+    const res = await fetch('/api/force_position/samples', {
+      method: 'DELETE'
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forcePositionStatusMsg').textContent = '✓ All samples cleared';
+      await updateForcePositionSamples();
+      await updateForcePositionStatus();
+      $('forcePositionPlotImg').classList.add('hidden');
+    } else {
+      $('forcePositionStatusMsg').textContent = '❌ ' + (data.error || 'Clear failed');
+    }
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 3000);
+  } catch (e) {
+    $('forcePositionStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function plotForcePosition() {
+  try {
+    $('forcePositionStatusMsg').textContent = '⏳ Plotting points...';
+    
+    const res = await fetch('/api/force_position/plot', {
+      method: 'POST'
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forcePositionStatusMsg').textContent = 
+        `✓ Plotted ${data.num_points} points`;
+      
+      if (data.plot_url) {
+        const img = $('forcePositionPlotImg');
+        img.src = data.plot_url + '?t=' + Date.now();
+        img.classList.remove('hidden');
+      }
+    } else {
+      $('forcePositionStatusMsg').textContent = '❌ ' + (data.error || 'Plot failed');
+    }
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 3000);
+  } catch (e) {
+    $('forcePositionStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function fitForcePosition() {
+  const degree = parseInt($('forcePositionDegree').value);
+  
+  try {
+    $('forcePositionStatusMsg').textContent = '⏳ Fitting curve...';
+    
+    const res = await fetch('/api/force_position/fit', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ degree: degree })
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forcePositionStatusMsg').textContent = 
+        `✓ Fitted: Degree ${data.degree}, R²=${data.r_squared.toFixed(4)}, Points=${data.num_points}`;
+      
+      if (data.plot_url) {
+        const img = $('forcePositionPlotImg');
+        img.src = data.plot_url + '?t=' + Date.now();
+        img.classList.remove('hidden');
+      }
+    } else {
+      $('forcePositionStatusMsg').textContent = '❌ ' + (data.error || 'Fit failed');
+    }
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 5000);
+  } catch (e) {
+    $('forcePositionStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 3000);
+  }
+}
+
+async function saveForcePosition() {
+  if (!confirm('Save the fitted curve coefficients?\n\nThis will mark the current fit as the final calibration.')) return;
+  
+  try {
+    $('forcePositionStatusMsg').textContent = '⏳ Saving fit...';
+    
+    const res = await fetch('/api/force_position/save', {
+      method: 'POST'
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      $('forcePositionStatusMsg').textContent = 
+        `✓ Saved fit (degree ${data.fit.degree}, R²=${data.fit.r_squared.toFixed(4)})`;
+      await updateForcePositionStatus();
+    } else {
+      $('forcePositionStatusMsg').textContent = '❌ ' + (data.error || 'Save failed');
+    }
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 5000);
+  } catch (e) {
+    $('forcePositionStatusMsg').textContent = '❌ Error: ' + e.message;
+    setTimeout(() => $('forcePositionStatusMsg').textContent = '', 3000);
+  }
+}
+
+// Force position calibration button event listeners
+$('forcePositionAddBtn').addEventListener('click', addForcePositionSample);
+$('forcePositionPlotBtn').addEventListener('click', plotForcePosition);
+$('forcePositionFitBtn').addEventListener('click', fitForcePosition);
+$('forcePositionSaveBtn').addEventListener('click', saveForcePosition);
+$('forcePositionClearBtn').addEventListener('click', clearForcePositionSamples);
+$('forcePositionRefreshBtn').addEventListener('click', async () => {
+  await updateForcePositionSamples();
+  await updateForcePositionStatus();
+});
+
 // Initialize on page load
 async function initializePage() {
   // Update draw wire calibration status
@@ -2521,6 +2878,10 @@ async function initializePage() {
   await updateForceCalibStatus();
   await updateForceCalibSamples();
   
+  // Update force position calibration status and samples
+  await updateForcePositionStatus();
+  await updateForcePositionSamples();
+  
   console.log('Page initialized - all calibration data loaded');
 }
 
@@ -2529,6 +2890,9 @@ document.addEventListener('DOMContentLoaded', initializePage);
 
 // Update force calibration status every second (for real-time sensor readings)
 setInterval(updateForceCalibStatus, 1000);
+
+// Update force position status every second (for current force display)
+setInterval(updateForcePositionStatus, 1000);
 
 </script>
 </body>
