@@ -50,6 +50,10 @@ ur15:
       length: 0.225          # Length of the tool extract from flange to tip (meters)
       angle_z: -31           # Rotation angle around Z axis (degrees)
   
+  task:
+    rack_positioning:
+      workflow_name: "wf_rack_location_simplify.json"
+
   # Launch configuration: modules and sequence
   launch_modules:
     - package: "robot_status_redis"
