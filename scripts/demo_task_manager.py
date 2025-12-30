@@ -1306,30 +1306,30 @@ class TaskManager:
         #     self._print_execution_summary(step_status)
         #     return False
         
-        # ========================================================================
-        # STEP 19: UR15 positioning the handles and then use FTC to insert the server into the rack
-        # ========================================================================
-        print("\n📌 Step 19: Executing UR15 insert server task")
-        print("-" * 40)
+        # # ========================================================================
+        # # STEP 19: UR15 positioning the handles and then use FTC to insert the server into the rack
+        # # ========================================================================
+        # print("\n📌 Step 19: Executing UR15 insert server task")
+        # print("-" * 40)
         
-        try:
-            # Execute insert server operation
-            insert_result = self.ur15_execute_insert_server_task()
+        # try:
+        #     # Execute insert server operation
+        #     insert_result = self.ur15_execute_insert_server_task()
             
-            if insert_result:
-                print("✓ UR15 insert server task completed successfully")
-                step_status["Step 19: UR15 insert server"] = "SUCCESS"
-            else:
-                print("✗ UR15 insert server task failed")
-                step_status["Step 19: UR15 insert server"] = "FAILED"
-                self._print_execution_summary(step_status)
-                return False
+        #     if insert_result:
+        #         print("✓ UR15 insert server task completed successfully")
+        #         step_status["Step 19: UR15 insert server"] = "SUCCESS"
+        #     else:
+        #         print("✗ UR15 insert server task failed")
+        #         step_status["Step 19: UR15 insert server"] = "FAILED"
+        #         self._print_execution_summary(step_status)
+        #         return False
                 
-        except Exception as e:
-            print(f"✗ Error during UR15 insert server task: {e}")
-            step_status["Step 19: UR15 insert server"] = "FAILED"
-            self._print_execution_summary(step_status)
-            return False
+        # except Exception as e:
+        #     print(f"✗ Error during UR15 insert server task: {e}")
+        #     step_status["Step 19: UR15 insert server"] = "FAILED"
+        #     self._print_execution_summary(step_status)
+        #     return False
         
         # # ========================================================================
         # # STEP 20: AMR move courier robot from insertion position back to DOCK position

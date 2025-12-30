@@ -10,28 +10,67 @@ A modular ROS 2-based control system for DC motors over RS-485 Modbus RTU, featu
 robot_dc/
 ├── colcon_ws/                     # ROS 2 workspace containing all packages
 │   └── src/
-│       ├── cam_node/              # RTSP camera snapshot service
+│       ├── camcalib_web_service/  # Camera calibration web service
+│       ├── camera_node/           # Camera node for image capture
+│       ├── common/                # Common utilities and shared code
+│       ├── draw_wire_sensor/      # Draw wire sensor integration
+│       ├── duco_gcr5_910_urdf/    # URDF models for Duco GCR5-910 robot
+│       ├── duco_robot_arm/        # Duco robot arm control
+│       ├── duco_robot_arm_state/  # Duco robot arm state management
+│       ├── feetech_servo/         # Feetech servo motor control
+│       ├── image_labeling_service/ # Image labeling service
+│       ├── image_process/         # Image processing utilities
+│       ├── image_streaming/       # Image streaming service
 │       ├── leadshine_motor/       # Leadshine motor control node and simulation logic
+│       ├── lift_robot_force_sensor/ # Force sensor integration (single channel)
+│       ├── lift_robot_force_sensor_4channel/ # 4-channel force sensor integration
+│       ├── lift_robot_interfaces/ # Custom ROS 2 interfaces for lift robot
+│       ├── lift_robot_platform/   # Lift platform control
+│       ├── lift_robot_web/        # Web interface for lift robot
+│       ├── modbus_devices/        # Modbus device drivers
 │       ├── modbus_driver/         # Central Modbus RTU driver and simulator
 │       ├── modbus_driver_interfaces/ # Shared service/message interface definitions
+│       ├── motor_status/          # Motor status monitoring
+│       ├── platform_controller/   # Platform motion controller
+│       ├── positioning_3d_service/ # 3D positioning service
+│       ├── robotiq_2f140_gripper/ # Robotiq 2F-140 gripper control
+│       ├── robotiq_2f140_gripper_web/ # Web interface for Robotiq gripper
+│       ├── robotiq_gripper_msgs/  # Robotiq gripper message definitions
+│       ├── robot_arm_web/         # Generic robot arm web interface
 │       ├── robot_bringup/         # Unified system-level launch entry points
 │       ├── robot_status/          # Original file-based robot status management
-│       ├── robot_status_redis/    # High-performance Redis-based status management (recommended)
+│       ├── robot_status_redis/    # Redis-based status management (recommended)
 │       ├── robot_teleop/          # Joystick teleoperation support
-│       └── robot_web/             # Web-based interface for control and monitoring
-├── doc/                          # Documentation and FAQs
-│   └── FAQ/
-│       ├── enable_ch340_usb_serial_on_jetson.md
-│       └── setup_joystick_ros2.md
-├── scripts/                      # Utility and testing scripts
-│   ├── cam.py                    # Original camera script (reference)
-│   ├── jog_motor.py
-│   └── serial_port_finder.py
-├── temp/                         # Runtime data directory
-│   └── robot_status_auto_save.json  # Auto-saved robot status (Redis backend)
-├── install.sh                    # Setup helper script
-├── requirements.txt              # Python dependencies
-└── README.md                     # This file - global project overview
+│       ├── robot_web/             # Web-based interface for control and monitoring
+│       ├── system_monitor/        # System monitoring utilities
+│       ├── test_web/              # Web testing utilities
+│       ├── ur15_robot_arm/        # UR15 robot arm control package
+│       ├── ur15_web/              # Web interface for UR15 robot
+│       ├── ur15_workflow/         # UR15 workflow management
+│       └── urdf_web_viewer/       # URDF model web viewer
+├── config/                        # Configuration files
+│   └── robot_config.example.yaml  # Example robot configuration
+├── doc/                           # Documentation and FAQs
+│   ├── FAQ/
+│   │   ├── enable_ch340_usb_serial_on_jetson.md
+│   │   └── setup_joystick_ros2.md
+│   ├── action_control_commands.md # Action control command reference
+│   ├── calibration_guideline.md   # Calibration procedures
+│   └── lift_robot_system_guide.md # Lift robot system guide
+├── resources/                     # Resource files
+│   └── 3d_model/                  # GB200 server's 3D models and CAD files
+├── scripts/                       # Utility and testing scripts (100+ scripts)
+│   ├── cam.py                     # Camera utilities
+│   ├── webcam_server.py           # Webcam streaming server
+│   ├── jog_motor.py               # Motor jogging utility
+│   ├── serial_port_finder.py      # Serial port detection
+│   ├── duco_*.py                  # Duco robot utilities
+│   ├── ur_wobj_*.py               # Implementation of task operation 
+│   ├── force_sensor_*.py          # Force sensor utilities
+│   └── ...                        # Additional utility scripts
+├── install.sh                     # Setup helper script
+├── requirements.txt               # Python dependencies
+└── README.md                      # This file - global project overview
 ```
 
 ---
