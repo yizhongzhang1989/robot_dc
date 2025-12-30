@@ -25,7 +25,7 @@ class LiftRobotWeb(Node):
         self.declare_parameter('sensor_topic', '/draw_wire_sensor/data')
         self.declare_parameter('server_id', 0)
         self.declare_parameter('hybrid_high_base', 133.7)
-        self.declare_parameter('hybrid_middle_base', 128.7)
+        self.declare_parameter('hybrid_middle_base', 108.7)
         self.declare_parameter('hybrid_low_base', 113.7)
         self.declare_parameter('hybrid_step', 44.45)
         

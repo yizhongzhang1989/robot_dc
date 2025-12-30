@@ -24,15 +24,16 @@ def generate_launch_description():
     port_default = get_config_value('lift_robot.web.port', 8090)
     sensor_topic_default = get_config_value('lift_robot.web.sensor_topic', '/draw_wire_sensor/data')
     server_id_default = get_config_value('lift_robot.web.server_id', 0)
-    hybrid_high_base_default = get_config_value('lift_robot.web.hybrid_params.high_base', 756.0)
-    hybrid_low_base_default = get_config_value('lift_robot.web.hybrid_params.low_base', 736.0)
+    hybrid_high_base_default = get_config_value('lift_robot.web.hybrid_params.high_base', 133.7)
+    hybrid_middle_base_default = get_config_value('lift_robot.web.hybrid_params.middle_base', 108.7)
+    hybrid_low_base_default = get_config_value('lift_robot.web.hybrid_params.low_base', 113.7)
     hybrid_step_default = get_config_value('lift_robot.web.hybrid_params.step', 48.0)
     # Note: 'host' in config is the server address (e.g., localhost, 192.168.1.3)
     # 'listen_host' is for server binding (e.g., 0.0.0.0)
     # The web server node uses port for binding, not the host address
     
     print(f"[lift_robot_web] Config: port={port_default}, sensor_topic={sensor_topic_default}")
-    print(f"[lift_robot_web] Hybrid: server_id={server_id_default}, high_base={hybrid_high_base_default}, low_base={hybrid_low_base_default}, step={hybrid_step_default}")
+    print(f"[lift_robot_web] Hybrid: server_id={server_id_default}, high_base={hybrid_high_base_default},middle_base={hybrid_middle_base_default},low_base={hybrid_low_base_default}, step={hybrid_step_default}")
     
     return LaunchDescription([
         DeclareLaunchArgument('port', default_value=str(port_default), description='Web server port'),
@@ -41,6 +42,7 @@ def generate_launch_description():
         DeclareLaunchArgument('sensor_topic', default_value=str(sensor_topic_default), description='Sensor topic'),
         DeclareLaunchArgument('server_id', default_value=str(server_id_default), description='Server ID for hybrid control'),
         DeclareLaunchArgument('hybrid_high_base', default_value=str(hybrid_high_base_default), description='Hybrid high position base (mm)'),
+        DeclareLaunchArgument('hybrid_middle_base', default_value=str(hybrid_middle_base_default), description='Hybrid middle position base (mm)'),
         DeclareLaunchArgument('hybrid_low_base', default_value=str(hybrid_low_base_default), description='Hybrid low position base (mm)'),
         DeclareLaunchArgument('hybrid_step', default_value=str(hybrid_step_default), description='Hybrid step per ID (mm)'),
         
@@ -54,6 +56,7 @@ def generate_launch_description():
                 'sensor_topic': LaunchConfiguration('sensor_topic'),
                 'server_id': LaunchConfiguration('server_id'),
                 'hybrid_high_base': LaunchConfiguration('hybrid_high_base'),
+                'hybrid_middle_base': LaunchConfiguration('hybrid_middle_base'),
                 'hybrid_low_base': LaunchConfiguration('hybrid_low_base'),
                 'hybrid_step': LaunchConfiguration('hybrid_step')
             }],
