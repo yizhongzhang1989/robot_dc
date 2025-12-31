@@ -307,6 +307,40 @@ class UR15WebNode(Node):
         # Create a timer to load calibration parameters after async cache is populated
         self._load_calib_retry_count = 0
         self._load_calib_timer = self.create_timer(0.5, self._load_calibration_from_status)
+        
+        # Create a timer to update robot_status with robot pose data (for other components)
+        self.robot_state_update_timer = self.create_timer(0.2, self._update_robot_status_timer_callback)
+    
+    def _update_robot_status_timer_callback(self):
+        """Timer callback to periodically update robot_status with current robot state.
+        This ensures robot_status is continuously updated for other components to use,
+        independent of the web interface."""
+        try:
+            with self.ur15_lock:
+                if self.ur15_robot is None:
+                    return
+                
+                # Get joint positions and TCP pose
+                try:
+                    joint_positions_rad = self.ur15_robot.get_actual_joint_positions()
+                    tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                    
+                    # Update robot_status with joint positions (in degrees)
+                    if joint_positions_rad:
+                        joint_positions_deg = np.array([j * 180.0 / np.pi for j in joint_positions_rad], dtype=np.float64)
+                        self.status_client.set_status('ur15', 'joint_positions', joint_positions_deg)
+                    
+                    # Update robot_status with TCP pose [x, y, z, rx, ry, rz]
+                    if tcp_pose_raw:
+                        tcp_pose_array = np.array(tcp_pose_raw, dtype=np.float64)
+                        self.status_client.set_status('ur15', 'tcp_pose', tcp_pose_array)
+                        
+                except Exception as e:
+                    # Silently fail to avoid spamming logs
+                    pass
+        except Exception as e:
+            # Outer exception handler
+            pass
     
     def _load_calibration_from_status(self):
         """Load calibration parameters from robot_status service."""
@@ -949,7 +983,7 @@ class UR15WebNode(Node):
                 'joint_positions': joint_positions if joint_data_valid else [],
                 'tcp_pose': tcp_pose if tcp_data_valid else None,
                 'freedrive_active': freedrive_active,
-                'robot_connected': robot_connected and self.rt_connected,
+                'robot_connected': robot_connected,
                 'board_type': board_type,
                 'board_type_display': board_type_display,
                 'board_type_loaded': board_type_loaded
