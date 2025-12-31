@@ -301,7 +301,7 @@ lift_robot:
     server_id: 0              # Server ID for hybrid control calculations
     hybrid_params:
       high_base: 133.7        # Base height for high position (mm)
-      middle_base: 128.7      # Base height for middle position (mm)
+      middle_base: 108.7      # Base height for middle position (mm)
       low_base: 113.7         # Base height for low position (mm)
       step: 44.45             # Step height between server units (mm)
 

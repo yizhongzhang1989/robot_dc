@@ -182,11 +182,21 @@ def interactive_mode(robot):
             # Platform manual control
             elif command in ['up', 'up!']:
                 blocking = (command == 'up')  # 'up' = blocking, 'up!' = non-blocking
-                robot.platform_up(blocking=blocking)
+                if blocking:
+                    # Blocking mode: execute in background thread
+                    robot._execute_in_background(robot.platform_up, blocking=True)
+                else:
+                    # Non-blocking mode: execute directly
+                    robot.platform_up(blocking=False)
             
             elif command in ['down', 'down!']:
                 blocking = (command == 'down')  # 'down' = blocking, 'down!' = non-blocking
-                robot.platform_down(blocking=blocking)
+                if blocking:
+                    # Blocking mode: execute in background thread
+                    robot._execute_in_background(robot.platform_down, blocking=True)
+                else:
+                    # Non-blocking mode: execute directly
+                    robot.platform_down(blocking=False)
             
             elif command == 'stop':
                 robot.platform_stop()
@@ -194,11 +204,21 @@ def interactive_mode(robot):
             # Pushrod control
             elif command in ['pup', 'pup!']:
                 blocking = (command == 'pup')  # 'pup' = blocking, 'pup!' = non-blocking
-                robot.pushrod_up(blocking=blocking)
+                if blocking:
+                    # Blocking mode: execute in background thread
+                    robot._execute_in_background(robot.pushrod_up, blocking=True)
+                else:
+                    # Non-blocking mode: execute directly
+                    robot.pushrod_up(blocking=False)
             
             elif command in ['pdown', 'pdown!']:
                 blocking = (command == 'pdown')  # 'pdown' = blocking, 'pdown!' = non-blocking
-                robot.pushrod_down(blocking=blocking)
+                if blocking:
+                    # Blocking mode: execute in background thread
+                    robot._execute_in_background(robot.pushrod_down, blocking=True)
+                else:
+                    # Non-blocking mode: execute directly
+                    robot.pushrod_down(blocking=False)
             
             elif command in ['pgoto', 'pgoto!']:
                 if len(parts) < 2:

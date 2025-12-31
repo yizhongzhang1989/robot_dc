@@ -25,7 +25,7 @@ class LiftRobotWeb(Node):
         self.declare_parameter('sensor_topic', '/draw_wire_sensor/data')
         self.declare_parameter('server_id', 0)
         self.declare_parameter('hybrid_high_base', 133.7)
-        self.declare_parameter('hybrid_middle_base', 128.7)
+        self.declare_parameter('hybrid_middle_base', 108.7)
         self.declare_parameter('hybrid_low_base', 113.7)
         self.declare_parameter('hybrid_step', 44.45)
         
@@ -118,6 +118,48 @@ class LiftRobotWeb(Node):
         self.force_calib_scale_right = None  # Scale for right sensor (force = sensor * scale)
         self.force_calib_scale_left = None   # Scale for left sensor
         self.force_calib_lock = threading.Lock()
+
+        # Force position calibration state (force vs position relationship)
+        # positions: 100mm to 1000mm in 100mm intervals
+        # Structure: {position: [force1, force2, ...], ...}
+        self.force_position_samples = {}  # Dict of position -> list of force readings
+        self.force_position_lock = threading.Lock()
+        
+        # Initialize force_data.json file if not exists, and load existing data
+        try:
+            force_data_path = self.get_config_path('force_data.json')
+            if not os.path.exists(force_data_path):
+                # Create empty force_data.json
+                config_dir = os.path.dirname(force_data_path)
+                if not os.path.exists(config_dir):
+                    os.makedirs(config_dir)
+                initial_data = {
+                    'points': [],
+                    'updated_at': time.time(),
+                    'updated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                }
+                with open(force_data_path, 'w') as f:
+                    json.dump(initial_data, f, indent=2)
+                self.get_logger().info(f"Created force_data.json at {force_data_path}")
+            else:
+                # Load existing data into memory
+                try:
+                    with open(force_data_path, 'r') as f:
+                        data = json.load(f)
+                    points = data.get('points', [])
+                    self.get_logger().info(f"Found {len(points)} points in force_data.json")
+                    for point in points:
+                        pos = point['position']
+                        samples_list = point.get('samples', [point['force']])  # Backward compat
+                        self.force_position_samples[pos] = [{'force': f, 'timestamp': time.time()} for f in samples_list]
+                        self.get_logger().info(f"Loaded position {pos} with {len(samples_list)} samples")
+                    self.get_logger().info(f"Loaded {len(self.force_position_samples)} positions from force_data.json: {list(self.force_position_samples.keys())}")
+                except Exception as e:
+                    self.get_logger().warn(f"Failed to load force_data.json: {e}")
+                    import traceback
+                    traceback.print_exc()
+        except Exception as e:
+            self.get_logger().warn(f"Failed to initialize force_data.json: {e}")
 
         # ROS interfaces
         self.sub = self.create_subscription(String, self.sensor_topic, self.sensor_cb, 10)
@@ -1961,6 +2003,508 @@ def run_fastapi_server(port):
                     'success': False,
                     'error': f'Exception: {str(e)}'
                 })
+
+        # ═══════════════════════════════════════════════════════════════
+        # Force Position Calibration API (Force vs Position Relationship)
+        # ═══════════════════════════════════════════════════════════════
+        
+        @app.post('/api/force_position/add_sample')
+        async def add_force_position_sample(request: Request):
+            """Add a force reading at a specific position and sync to force_data.json"""
+            try:
+                body = await request.json()
+                position = body.get('position')  # Position in mm (100-1000)
+                
+                if position is None:
+                    return JSONResponse({'success': False, 'error': 'Missing position value'})
+                
+                # Validate position
+                try:
+                    position = int(position)
+                    if position not in range(100, 1001, 100):
+                        return JSONResponse({'success': False, 'error': 'Position must be 100, 200, ..., 1000'})
+                except:
+                    return JSONResponse({'success': False, 'error': 'Invalid position value'})
+                
+                # Get current combined force
+                force = lift_robot_node.combined_force_sensor
+                if force is None:
+                    return JSONResponse({'success': False, 'error': 'No force sensor data available'})
+                
+                sample = {
+                    'force': float(force),
+                    'timestamp': time.time()
+                }
+                
+                # Update in-memory samples
+                with lift_robot_node.force_position_lock:
+                    if position not in lift_robot_node.force_position_samples:
+                        lift_robot_node.force_position_samples[position] = []
+                    lift_robot_node.force_position_samples[position].append(sample)
+                    
+                    # Sync to force_data.json immediately
+                    config_path = lift_robot_node.get_config_path('force_data.json')
+                    config_dir = os.path.dirname(config_path)
+                    if not os.path.exists(config_dir):
+                        os.makedirs(config_dir)
+                    
+                    # Calculate points with averages
+                    points = []
+                    for pos in sorted(lift_robot_node.force_position_samples.keys()):
+                        force_readings = [s['force'] for s in lift_robot_node.force_position_samples[pos]]
+                        if force_readings:
+                            avg_force = sum(force_readings) / len(force_readings)
+                            points.append({
+                                'position': pos,
+                                'force': avg_force,
+                                'samples': force_readings,
+                                'sample_count': len(force_readings)
+                            })
+                    
+                    config_data = {
+                        'points': points,
+                        'updated_at': time.time(),
+                        'updated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    }
+                    
+                    with open(config_path, 'w') as f:
+                        json.dump(config_data, f, indent=2)
+                
+                return JSONResponse({
+                    'success': True,
+                    'sample': sample,
+                    'position': position,
+                    'count': len(lift_robot_node.force_position_samples[position])
+                })
+            except Exception as e:
+                lift_robot_node.get_logger().error(f"Add force position sample error: {e}")
+                return JSONResponse({'success': False, 'error': str(e)})
+        
+        @app.get('/api/force_position/samples')
+        async def get_force_position_samples():
+            """Get all force position samples from memory"""
+            try:
+                with lift_robot_node.force_position_lock:
+                    # Return samples from memory (already loaded from force_data.json on startup)
+                    # Ensure all keys are integers for consistency
+                    samples = {}
+                    for pos, readings in lift_robot_node.force_position_samples.items():
+                        # Convert position to int to ensure consistency
+                        int_pos = int(pos) if isinstance(pos, str) else pos
+                        samples[int_pos] = readings.copy()
+                
+                lift_robot_node.get_logger().info(f"Returning {len(samples)} sample groups from memory: {list(samples.keys())}")
+                return JSONResponse({'samples': samples})
+            except Exception as e:
+                lift_robot_node.get_logger().error(f"Get force position samples error: {e}")
+                import traceback
+                traceback.print_exc()
+                return JSONResponse({'samples': {}})
+        
+        @app.delete('/api/force_position/samples/{position}/{index}')
+        async def delete_force_position_sample(position: int, index: int):
+            """Delete a specific force position sample and sync to force_data.json"""
+            try:
+                with lift_robot_node.force_position_lock:
+                    if position not in lift_robot_node.force_position_samples:
+                        return JSONResponse({'success': False, 'error': f'No samples at position {position}'})
+                    
+                    samples = lift_robot_node.force_position_samples[position]
+                    if index < 0 or index >= len(samples):
+                        return JSONResponse({'success': False, 'error': 'Invalid sample index'})
+                    
+                    samples.pop(index)
+                    if len(samples) == 0:
+                        del lift_robot_node.force_position_samples[position]
+                    
+                    # Sync to force_data.json immediately
+                    config_path = lift_robot_node.get_config_path('force_data.json')
+                    points = []
+                    for pos in sorted(lift_robot_node.force_position_samples.keys()):
+                        force_readings = [s['force'] for s in lift_robot_node.force_position_samples[pos]]
+                        if force_readings:
+                            avg_force = sum(force_readings) / len(force_readings)
+                            points.append({
+                                'position': pos,
+                                'force': avg_force,
+                                'samples': force_readings,
+                                'sample_count': len(force_readings)
+                            })
+                    
+                    config_data = {
+                        'points': points,
+                        'updated_at': time.time(),
+                        'updated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    }
+                    
+                    with open(config_path, 'w') as f:
+                        json.dump(config_data, f, indent=2)
+                    
+                    return JSONResponse({'success': True})
+            except Exception as e:
+                return JSONResponse({'success': False, 'error': str(e)})
+        
+        @app.delete('/api/force_position/samples')
+        async def clear_force_position_samples():
+            """Clear all force position samples and force_data.json"""
+            try:
+                with lift_robot_node.force_position_lock:
+                    lift_robot_node.force_position_samples.clear()
+                    
+                    # Clear force_data.json
+                    config_path = lift_robot_node.get_config_path('force_data.json')
+                    config_data = {
+                        'points': [],
+                        'updated_at': time.time(),
+                        'updated_at_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    }
+                    
+                    config_dir = os.path.dirname(config_path)
+                    if not os.path.exists(config_dir):
+                        os.makedirs(config_dir)
+                    
+                    with open(config_path, 'w') as f:
+                        json.dump(config_data, f, indent=2)
+                
+                return JSONResponse({'success': True})
+            except Exception as e:
+                return JSONResponse({'success': False, 'error': str(e)})
+        
+        @app.get('/api/force_position/status')
+        async def force_position_status():
+            """Get force position calibration status"""
+            try:
+                config_path = lift_robot_node.get_config_path('force_data.json')
+                has_data = os.path.exists(config_path) and os.path.getsize(config_path) > 10
+                
+                with lift_robot_node.force_position_lock:
+                    sample_count = sum(len(samples) for samples in lift_robot_node.force_position_samples.values())
+                    current_force = lift_robot_node.combined_force_sensor
+                
+                result = {
+                    'has_data': has_data,
+                    'sample_count': sample_count,
+                    'current_force': current_force,
+                    'config_path': config_path
+                }
+                
+                if has_data:
+                    try:
+                        with open(config_path, 'r') as f:
+                            data = json.load(f)
+                            result['saved_points'] = len(data.get('points', []))
+                            result['saved_at'] = data.get('saved_at_iso')
+                    except:
+                        pass
+                
+                return JSONResponse(result)
+            except Exception as e:
+                return JSONResponse({'success': False, 'error': str(e)})
+        
+        @app.post('/api/force_position/plot')
+        async def force_position_plot():
+            """Plot force vs position data points only (no curve fitting)"""
+            try:
+                import numpy as np
+                import cv2
+            except:
+                return JSONResponse({'success': False, 'error': 'OpenCV/Numpy not available'})
+            
+            try:
+                # Read from force_data.json
+                config_path = lift_robot_node.get_config_path('force_data.json')
+                if not os.path.exists(config_path):
+                    return JSONResponse({'success': False, 'error': 'No data file found'})
+                
+                with open(config_path, 'r') as f:
+                    data = json.load(f)
+                
+                points = data.get('points', [])
+                if not points:
+                    return JSONResponse({'success': False, 'error': 'No samples available'})
+                
+                # Extract positions and forces from points
+                positions = [p['position'] for p in points]
+                forces = [p['force'] for p in points]
+                
+                if len(positions) < 1:
+                    return JSONResponse({'success': False, 'error': 'Need at least 1 position with data'})
+                
+                # Generate plot
+                plot_url = None
+                try:
+                    try:
+                        web_dir = os.path.join(get_package_share_directory('lift_robot_web'), 'web')
+                    except Exception:
+                        web_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web'))
+                    plot_path = os.path.join(web_dir, 'force_position_plot.png')
+                    
+                    # Create image
+                    w, h = 800, 400
+                    img = np.ones((h, w, 3), dtype=np.uint8) * 255
+                    
+                    # Margins
+                    margin_l, margin_r, margin_t, margin_b = 80, 40, 60, 80
+                    plot_w = w - margin_l - margin_r
+                    plot_h = h - margin_t - margin_b
+                    
+                    # Determine ranges
+                    x_min, x_max = 0, 1100
+                    y_min = min(forces) * 0.9 if min(forces) > 0 else min(forces) * 1.1
+                    y_max = max(forces) * 1.1 if max(forces) > 0 else max(forces) * 0.9
+                    y_range = y_max - y_min
+                    if y_range < 1:
+                        y_range = 1
+                    
+                    def map_x(val):
+                        return int(margin_l + (val - x_min) / (x_max - x_min) * plot_w)
+                    
+                    def map_y(val):
+                        return int(h - margin_b - (val - y_min) / y_range * plot_h)
+                    
+                    # Draw axes
+                    cv2.line(img, (margin_l, h - margin_b), (w - margin_r, h - margin_b), (0, 0, 0), 2)
+                    cv2.line(img, (margin_l, h - margin_b), (margin_l, margin_t), (0, 0, 0), 2)
+                    
+                    # X-axis labels
+                    for i in range(0, 1100, 200):
+                        px = map_x(i)
+                        cv2.line(img, (px, h - margin_b), (px, h - margin_b + 5), (0, 0, 0), 2)
+                        cv2.putText(img, str(i), (px - 15, h - margin_b + 25), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    cv2.putText(img, 'Position (mm)', (w // 2 - 60, h - 20), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+                    
+                    # Y-axis labels
+                    for i in range(5):
+                        val = y_min + i * y_range / 4
+                        py = map_y(val)
+                        cv2.line(img, (margin_l - 5, py), (margin_l, py), (0, 0, 0), 2)
+                        cv2.putText(img, f'{val:.1f}', (10, py + 5), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    cv2.putText(img, 'Force (N)', (5, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+                    
+                    # Plot data points (larger circles for visibility)
+                    for px, py in zip(positions, forces):
+                        cv2.circle(img, (map_x(px), map_y(py)), 8, (255, 0, 0), -1)  # Red filled circles
+                        # Add white border for better visibility
+                        cv2.circle(img, (map_x(px), map_y(py)), 8, (0, 0, 0), 2)
+                    
+                    # Title
+                    cv2.putText(img, f'Force vs Position ({len(positions)} points)', 
+                               (w // 2 - 150, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+                    
+                    # Save
+                    cv2.imwrite(plot_path, img)
+                    plot_url = '/static/force_position_plot.png'
+                    lift_robot_node.get_logger().info(f"Generated plot at {plot_path}")
+                except Exception as e:
+                    lift_robot_node.get_logger().warn(f"Plot render error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                
+                return JSONResponse({
+                    'success': True,
+                    'plot_url': plot_url,
+                    'num_points': len(positions)
+                })
+            except Exception as e:
+                lift_robot_node.get_logger().error(f"Force position plot error: {e}")
+                import traceback
+                traceback.print_exc()
+                return JSONResponse({'success': False, 'error': str(e)})
+        
+        @app.post('/api/force_position/fit')
+        async def force_position_fit(request: Request):
+            """Fit polynomial curve to force vs position data from force_data.json"""
+            try:
+                import numpy as np
+                import cv2
+            except:
+                return JSONResponse({'success': False, 'error': 'OpenCV/Numpy not available'})
+            
+            try:
+                body = await request.json()
+                degree = body.get('degree', 2)
+                try:
+                    degree = int(degree)
+                    degree = max(1, min(degree, 6))
+                except:
+                    degree = 2
+                
+                # Read from force_data.json
+                config_path = lift_robot_node.get_config_path('force_data.json')
+                if not os.path.exists(config_path):
+                    return JSONResponse({'success': False, 'error': 'No data file found'})
+                
+                with open(config_path, 'r') as f:
+                    data = json.load(f)
+                
+                points = data.get('points', [])
+                if not points:
+                    return JSONResponse({'success': False, 'error': 'No samples available'})
+                
+                # Extract positions and forces from points
+                positions = [p['position'] for p in points]
+                forces = [p['force'] for p in points]
+                
+                if len(positions) < 2:
+                    return JSONResponse({'success': False, 'error': 'Need at least 2 positions with data'})
+                
+                x = np.array(positions)
+                y = np.array(forces)
+                
+                # Fit polynomial
+                coeffs = np.polyfit(x, y, degree)
+                y_fit = np.polyval(coeffs, x)
+                
+                # Calculate R²
+                ss_res = np.sum((y - y_fit) ** 2)
+                ss_tot = np.sum((y - np.mean(y)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+                
+                # Generate plot
+                plot_url = None
+                try:
+                    try:
+                        web_dir = os.path.join(get_package_share_directory('lift_robot_web'), 'web')
+                    except Exception:
+                        web_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web'))
+                    plot_path = os.path.join(web_dir, 'force_position_plot.png')
+                    
+                    # Create image
+                    w, h = 800, 400
+                    img = np.ones((h, w, 3), dtype=np.uint8) * 255
+                    
+                    # Margins
+                    margin_l, margin_r, margin_t, margin_b = 80, 40, 60, 80
+                    plot_w = w - margin_l - margin_r
+                    plot_h = h - margin_t - margin_b
+                    
+                    # Determine ranges
+                    x_min, x_max = 0, 1100
+                    y_min = min(forces) * 0.9
+                    y_max = max(forces) * 1.1
+                    y_range = y_max - y_min
+                    if y_range < 1:
+                        y_range = 1
+                    
+                    def map_x(val):
+                        return int(margin_l + (val - x_min) / (x_max - x_min) * plot_w)
+                    
+                    def map_y(val):
+                        return int(h - margin_b - (val - y_min) / y_range * plot_h)
+                    
+                    # Draw axes
+                    cv2.line(img, (margin_l, h - margin_b), (w - margin_r, h - margin_b), (0, 0, 0), 2)
+                    cv2.line(img, (margin_l, h - margin_b), (margin_l, margin_t), (0, 0, 0), 2)
+                    
+                    # X-axis labels
+                    for i in range(0, 1100, 200):
+                        px = map_x(i)
+                        cv2.line(img, (px, h - margin_b), (px, h - margin_b + 5), (0, 0, 0), 2)
+                        cv2.putText(img, str(i), (px - 15, h - margin_b + 25), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    cv2.putText(img, 'Position (mm)', (w // 2 - 60, h - 20), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+                    
+                    # Y-axis labels
+                    for i in range(5):
+                        val = y_min + i * y_range / 4
+                        py = map_y(val)
+                        cv2.line(img, (margin_l - 5, py), (margin_l, py), (0, 0, 0), 2)
+                        cv2.putText(img, f'{val:.1f}', (10, py + 5), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    cv2.putText(img, 'Force (N)', (5, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+                    
+                    # Plot fitted curve first (so points are on top)
+                    x_curve = np.linspace(x_min, x_max, 200)
+                    y_curve = np.polyval(coeffs, x_curve)
+                    pts = [(map_x(xi), map_y(yi)) for xi, yi in zip(x_curve, y_curve) 
+                           if y_min <= yi <= y_max]
+                    for i in range(len(pts) - 1):
+                        cv2.line(img, pts[i], pts[i + 1], (0, 128, 255), 3)  # Orange curve
+                    
+                    # Plot data points on top (larger circles for visibility)
+                    for px, py in zip(positions, forces):
+                        cv2.circle(img, (map_x(px), map_y(py)), 8, (255, 0, 0), -1)  # Red filled circles
+                        cv2.circle(img, (map_x(px), map_y(py)), 8, (0, 0, 0), 2)  # Black border
+                    
+                    # Title
+                    cv2.putText(img, f'Force vs Position (Degree {degree}, R²={r_squared:.4f})', 
+                               (w // 2 - 250, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+                    
+                    # Save
+                    cv2.imwrite(plot_path, img)
+                    plot_url = '/static/force_position_plot.png'
+                    lift_robot_node.get_logger().info(f"Generated fit plot at {plot_path}")
+                except Exception as e:
+                    lift_robot_node.get_logger().warn(f"Plot render error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                
+                # Save fit coefficients to force_data.json
+                try:
+                    data['fit'] = {
+                        'degree': degree,
+                        'coefficients': coeffs.tolist(),
+                        'r_squared': r_squared,
+                        'fitted_at': time.time(),
+                        'fitted_at_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    }
+                    with open(config_path, 'w') as f:
+                        json.dump(data, f, indent=2)
+                except Exception as e:
+                    lift_robot_node.get_logger().warn(f"Failed to save fit to force_data.json: {e}")
+                
+                return JSONResponse({
+                    'success': True,
+                    'degree': degree,
+                    'coefficients': coeffs.tolist(),
+                    'r_squared': r_squared,
+                    'plot_url': plot_url,
+                    'num_points': len(positions)
+                })
+            except Exception as e:
+                lift_robot_node.get_logger().error(f"Force position fit error: {e}")
+                return JSONResponse({'success': False, 'error': str(e)})
+        
+        @app.post('/api/force_position/save')
+        async def save_force_position():
+            """Mark the fitted curve as saved in force_data.json"""
+            try:
+                # Read current force_data.json
+                config_path = lift_robot_node.get_config_path('force_data.json')
+                if not os.path.exists(config_path):
+                    return JSONResponse({'success': False, 'error': 'No data file found. Please fit curve first.'})
+                
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                
+                # Check if fit data exists (should be added by /fit endpoint)
+                if 'fit' not in config_data:
+                    return JSONResponse({'success': False, 'error': 'No fit data found. Please fit curve first.'})
+                
+                # Update save timestamp
+                config_data['saved_at'] = time.time()
+                config_data['saved_at_iso'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                with open(config_path, 'w') as f:
+                    json.dump(config_data, f, indent=2)
+                
+                lift_robot_node.get_logger().info(f"Saved force position fit to {config_path}")
+                
+                return JSONResponse({
+                    'success': True,
+                    'filepath': config_path,
+                    'fit': config_data['fit'],
+                    'message': 'Fit coefficients saved successfully'
+                })
+            except Exception as e:
+                lift_robot_node.get_logger().error(f"Failed to save force position fit: {e}")
+                return JSONResponse({'success': False, 'error': str(e)})
 
         # ═══════════════════════════════════════════════════════════════
         # Platform Range Detection API (Separate from Overshoot Calibration)
