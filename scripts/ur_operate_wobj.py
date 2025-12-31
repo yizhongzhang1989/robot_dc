@@ -12,11 +12,13 @@ from generate_server_frame import GenerateServerFrame
 
 
 class UROperateWobj:
-    def __init__(self, robot_ip="192.168.1.15", robot_port=30002, server_index=14):
-
+    def __init__(self, robot_ip=None, robot_port=None, server_index=14):
+        # Load config parameters if not provided
+        config_params = self._load_robot_parameters_from_config()
+        
         # =========================== Configurable Parameters ===========================
-        self.robot_ip = robot_ip
-        self.robot_port = robot_port
+        self.robot_ip = robot_ip if robot_ip is not None else config_params['robot_ip']
+        self.robot_port = robot_port if robot_port is not None else config_params['robot_port']
         self.rs485_port = 54321
         self.server_index = server_index
 
@@ -35,19 +37,80 @@ class UROperateWobj:
         # Rack coordinate system storage
         self.rack_transformation_matrix_in_base = None
         self.rack_origin_in_base = None
+        
+        # Server coordinate system storage
+        self.server2base_matrix = None
 
         # ========================= Initialization =========================
         self._setup_paths()
         self._initialize_robot()
-        self._init_rs485_socket()
+        # RS485 socket will be initialized on-demand to avoid conflicts
+        # self._init_rs485_socket()
         self._initialize_robot_status_client()
         self._initialize_server_frame_generator()
         
         # Automatically load neccessary parameters
         self._load_camera_params_from_service()
         self._load_rack2base_from_service()
+        
+        # Calculate server2base transformation matrix
+        self._calculate_server2base(self.server_index)
     
     # ================================== Private Helper Methods ==================================
+    def _load_robot_parameters_from_config(self):
+        """
+        Load robot IP and port from robot_config.yaml
+        
+        Returns:
+            dict: Dictionary with robot_ip and robot_port
+        """
+        # Default values
+        defaults = {
+            'robot_ip': '192.168.1.15',
+            'robot_port': 30002
+        }
+        
+        try:
+            import yaml
+            from common.workspace_utils import get_workspace_root
+            
+            # Get workspace root
+            workspace_root = get_workspace_root()
+            if workspace_root is None:
+                workspace_root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+            
+            # Path to config file
+            config_path = os.path.join(workspace_root, 'config', 'robot_config.yaml')
+            
+            if not os.path.exists(config_path):
+                print(f"Config file not found: {config_path}")
+                print(f"Using default values: IP={defaults['robot_ip']}, Port={defaults['robot_port']}")
+                return defaults
+            
+            # Load config file
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            ur15_config = config.get('ur15', {})
+            
+            # Get robot IP from ur15.robot.ip
+            robot_ip = ur15_config.get('robot', {}).get('ip', defaults['robot_ip'])
+            
+            # Get robot port from ur15.robot.ports.control
+            robot_port = ur15_config.get('robot', {}).get('ports', {}).get('control', defaults['robot_port'])
+            
+            print(f"✓ Loaded config: IP={robot_ip}, Port={robot_port}")
+            
+            return {
+                'robot_ip': robot_ip,
+                'robot_port': robot_port
+            }
+            
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            print(f"Using default values: IP={defaults['robot_ip']}, Port={defaults['robot_port']}")
+            return defaults
+    
     def _setup_paths(self):
         """Setup directory paths for script, dataset, data and results"""
         # Get the script directory for relative paths
@@ -80,6 +143,8 @@ class UROperateWobj:
             print(f'Initializing RS485 socket connection at {self.robot_ip}:{self.rs485_port}...')
             # Open RS485 socket connection
             self.rs485_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Set socket timeout to 5 seconds to prevent blocking indefinitely
+            self.rs485_socket.settimeout(5.0)
             rs485_start_res = self.rs485_socket.connect((self.robot_ip, self.rs485_port))
             print(f"✓ RS485 socket connection result: {rs485_start_res}")
         except Exception as e:
@@ -225,6 +290,150 @@ class UROperateWobj:
             print(f"Error loading operating unit ID: {e}")
             return False
 
+    def _calculate_server2base(self, index, offset_in_rack=[0, 0, 0]):
+        """
+        Calculate server to base coordinate transformation matrix.
+        
+        Args:
+            index: Server index
+            offset_in_rack: List [x, y, z] offset in rack coordinate system to apply to target position (default: [0, 0, 0])
+        
+        Returns:
+            server2base: 4x4 transformation matrix from server to base coordinate system, or None if failed
+        """
+        if self.server_frame_generator is None:
+            print("Server frame generator is not initialized")
+            return None
+        
+        if self.rack_transformation_matrix_in_base is None:
+            print("Rack coordinate system transformation matrix not loaded")
+            return None
+        
+        # Step 1: Generate server frame in rack coordinate system
+        print(f"Generating server frame for index {index} in rack coordinate system...")
+        server_frame_in_rack = self.server_frame_generator.generate_server_frame_in_rack(index)
+        
+        if server_frame_in_rack is None:
+            print("Failed to generate server frame in rack")
+            return None
+        
+        # Extract server2rack transformation matrix
+        server2rack = server_frame_in_rack['target_server_transformation_matrix_in_rack']
+        print(f"✓ Server frame generated successfully")
+        
+        # Step 2: Apply offset in rack coordinate system
+        offset_array = np.array(offset_in_rack)
+        if np.linalg.norm(offset_array) > 0:
+            print(f"Applying offset in rack coordinate system: ({offset_array[0]:.6f}, {offset_array[1]:.6f}, {offset_array[2]:.6f})")
+            # Add offset to the translation part of server2rack matrix
+            server2rack[:3, 3] += offset_array
+            print(f"✓ Offset applied to server position in rack frame")
+        
+        # Step 3: Get rack2base transformation matrix
+        rack2base = self.rack_transformation_matrix_in_base
+        
+        # Step 4: Calculate server2base = rack2base @ server2rack
+        print(f"Calculating server2base transformation...")
+        server2base = rack2base @ server2rack
+        
+        self.server2base_matrix = server2base
+
+        # Extract target position for logging
+        server_position = server2base[:3, 3]
+        print(f"Target position in base coordinate system: ({server_position[0]:.6f}, "
+              f"{server_position[1]:.6f}, {server_position[2]:.6f})")
+        
+        # Step 5: Upload server2base_matrix to Redis
+        if self.robot_status_client is not None:
+            try:
+                self.robot_status_client.set_status('ur15', 'server2base_matrix', server2base)
+                print(f"✓ server2base_matrix uploaded to Redis successfully")
+            except Exception as e:
+                print(f"✗ Failed to upload server2base_matrix to Redis: {e}")
+        else:
+            print("Robot status client is not initialized, skipping server2base_matrix upload")
+        
+        return server2base
+
+    # ============================= Quick Changer Control Methods =============================
+    def ur_unlock_quick_changer(self):
+        """
+        Unlock the UR quick changer using RS485 communication
+        Creates a temporary connection to avoid conflicts with other instances
+        
+        Returns:
+            int: 0 if successful, -1 if failed
+        """
+        temp_socket = None
+        try:
+            print("[INFO] Unlocking quick changer...")
+            
+            # Create temporary RS485 socket connection
+            temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            temp_socket.settimeout(5.0)
+            temp_socket.connect((self.robot_ip, self.rs485_port))
+            print("[INFO] Temporary RS485 connection established")
+            
+            # Send unlock command via RS485
+            unlock_command = bytes([0x53, 0x26, 0x01, 0x01, 0x02, 0x7A, 0xD5])
+            temp_socket.sendall(unlock_command)
+            print("[INFO] Unlock command sent successfully")
+            time.sleep(2.0)
+            
+            print("[INFO] Quick changer unlocked successfully")
+            return 0
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to unlock quick changer: {e}")
+            return -1
+        finally:
+            # Always close the temporary socket
+            if temp_socket is not None:
+                try:
+                    temp_socket.close()
+                    print("[INFO] Temporary RS485 connection closed")
+                except:
+                    pass
+    
+    def ur_lock_quick_changer(self):
+        """
+        Lock the UR quick changer using RS485 communication
+        Creates a temporary connection to avoid conflicts with other instances
+        
+        Returns:
+            int: 0 if successful, -1 if failed
+        """
+        temp_socket = None
+        try:
+            print("[INFO] Locking quick changer...")
+            
+            # Create temporary RS485 socket connection
+            temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            temp_socket.settimeout(5.0)
+            temp_socket.connect((self.robot_ip, self.rs485_port))
+            print("[INFO] Temporary RS485 connection established")
+            
+            # Send lock command via RS485
+            lock_command = bytes([0x53, 0x26, 0x01, 0x01, 0x01, 0x3A, 0xD4])
+            temp_socket.sendall(lock_command)
+            print("[INFO] Lock command sent successfully")
+            time.sleep(2.0)
+            
+            print("[INFO] Quick changer locked successfully")
+            return 0
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to lock quick changer: {e}")
+            return -1
+        finally:
+            # Always close the temporary socket
+            if temp_socket is not None:
+                try:
+                    temp_socket.close()
+                    print("[INFO] Temporary RS485 connection closed")
+                except:
+                    pass
+
     # ============================= Robot Movement and Control Methods =============================
     def movel_in_rack_frame(self, offset_in_rack=[0, 0, 0]):
         """
@@ -284,6 +493,66 @@ class UROperateWobj:
         
         time.sleep(0.5)
         print("[INFO] Successfully moved in rack frame")
+        return 0
+
+    def movel_in_server_frame(self, offset_in_server=[0, 0, 0]):
+        """
+        Move robot in server coordinate system by specified offset.
+        
+        Args:
+            offset_in_server: List [x, y, z] offset in server coordinate system (default: [0, 0, 0])
+        
+        Returns: 0 if successful, error code otherwise
+        """
+        if self.robot is None:
+            print("Robot is not initialized")
+            return -1
+        
+        if self.server2base_matrix is None:
+            print("Server coordinate system transformation matrix not loaded")
+            return -1
+        
+        # Get current TCP pose
+        current_pose = self.robot.get_actual_tcp_pose()
+        if current_pose is None or len(current_pose) < 6:
+            print("Failed to get current robot pose")
+            return -1
+        
+        # Extract server coordinate system rotation
+        server_rotation = self.server2base_matrix[:3, :3]
+        server_x = server_rotation[:, 0] / np.linalg.norm(server_rotation[:, 0])
+        server_y = server_rotation[:, 1] / np.linalg.norm(server_rotation[:, 1])
+        server_z = server_rotation[:, 2] / np.linalg.norm(server_rotation[:, 2])
+        
+        # Calculate movement vector in base frame
+        offset_array = np.array(offset_in_server)
+        movement_vector = (offset_array[0] * server_x + 
+                          offset_array[1] * server_y + 
+                          offset_array[2] * server_z)
+        
+        # Calculate target position
+        current_position = np.array(current_pose[:3])
+        target_position = current_position + movement_vector
+        
+        target_pose = [
+            target_position[0],  # x
+            target_position[1],  # y
+            target_position[2],  # z
+            current_pose[3],     # rx (keep current orientation)
+            current_pose[4],     # ry
+            current_pose[5]      # rz
+        ]
+        
+        print(f"\n[Movement in Server Frame]")
+        print(f"  Offset: X={offset_array[0]:.6f}m, Y={offset_array[1]:.6f}m, Z={offset_array[2]:.6f}m")
+        
+        res = self.robot.movel(target_pose, a=0.1, v=0.1)
+        if res != 0:
+            print(f"Failed to move in server frame with error code: {res}")
+            return res
+        
+        time.sleep(0.5)
+        print("[INFO] Successfully moved in server frame")
         return 0
 
     def movel_to_correct_tcp_pose(self, tcp_x_to_rack=[1, 0, 0], tcp_y_to_rack=[0, 0, -1], tcp_z_to_rack=[0, 1, 0], angle_deg=0):
@@ -464,10 +733,11 @@ class UROperateWobj:
         
         Args:
             index: Server index (default: 14)
-            execution_order: List of integers [1,2,3] representing movement sequence along rack axes.
-                            1=X axis, 2=Y axis, 3=Z axis
-                            e.g., [1,2,3] means move along X first, then Y, then Z
-                            e.g., [1,3,2] means move along X first, then Z, then Y (default)
+            execution_order: List of 3 integers [x_order, y_order, z_order] representing execution order.
+                            Each value (1-3) indicates when that axis should move.
+                            Position in list: [X-axis, Y-axis, Z-axis]
+                            e.g., [1, 3, 2] means X=1st, Y=3rd, Z=2nd → execute [X, Z, Y]
+                            e.g., [2, 3, 1] means X=2nd, Y=3rd, Z=1st → execute [Z, X, Y] (default)
             offset_in_rack: List [x, y, z] offset in rack coordinate system to apply to target position (default: [0, 0, 0])
                            e.g., [0.1, 0, 0] adds 0.1m along rack X axis
         
@@ -495,40 +765,54 @@ class UROperateWobj:
             print(f"       Received: {execution_order}")
             return -1
         
-        # Step 1: Generate server frame in rack coordinate system
-        print(f"\nStep 1: Generating server frame for index {index} in rack coordinate system...")
-        server_frame_in_rack = self.server_frame_generator.generate_server_frame_in_rack(index)
-        
-        if server_frame_in_rack is None:
-            print("Failed to generate server frame in rack")
-            return -1
-        
-        # Extract server2rack transformation matrix
-        server2rack = server_frame_in_rack['target_server_transformation_matrix_in_rack']
-        print(f"✓ Server frame generated successfully")
-        
-        # Apply offset in rack coordinate system
-        offset_array = np.array(offset_in_rack)
-        if np.linalg.norm(offset_array) > 0:
-            print(f"Applying offset in rack coordinate system: ({offset_array[0]:.6f}, {offset_array[1]:.6f}, {offset_array[2]:.6f})")
-            # Add offset to the translation part of server2rack matrix
-            server2rack[:3, 3] += offset_array
-            print(f"✓ Offset applied to server position in rack frame")
-        
-        # Step 2: Reload rack2base transformation matrix from service (in case it has changed)
-        print(f"\nStep 2: Reloading rack2base transformation matrix from service...")
+        # Step 1: Reload rack2base transformation matrix from service (in case it has changed)
+        print(f"\nStep 1: Reloading rack2base transformation matrix from service...")
         self._load_rack2base_from_service()
         
         if self.rack_transformation_matrix_in_base is None:
             print("Failed to reload rack2base transformation matrix")
             return -1
         
-        rack2base = self.rack_transformation_matrix_in_base
         print(f"✓ rack2base transformation matrix reloaded successfully")
         
-        # Step 3: Calculate server2base = rack2base @ server2rack
-        print(f"\nStep 3: Calculating server2base transformation...")
-        server2base = rack2base @ server2rack
+        # Step 2: Load server2base transformation matrix from Redis
+        print(f"\nStep 2: Loading server2base transformation matrix from Redis...")
+        
+        if self.robot_status_client is None:
+            print("Robot status client is not initialized")
+            return -1
+        
+        try:
+            server2base_matrix = self.robot_status_client.get_status('ur15', 'server2base_matrix')
+            if server2base_matrix is None:
+                print("Failed to get server2base_matrix from Redis")
+                return -1
+            
+            server2base = np.array(server2base_matrix)
+            
+            # Validate matrix shape (should be 4x4)
+            if server2base.shape != (4, 4):
+                print(f"Invalid server2base_matrix shape: {server2base.shape}, expected (4, 4)")
+                return -1
+            
+            print(f"✓ server2base transformation matrix loaded successfully from Redis")
+            
+            # Apply additional offset if provided
+            if offset_in_rack != [0, 0, 0]:
+                offset_array = np.array(offset_in_rack)
+                print(f"Applying additional offset in rack coordinate system: ({offset_array[0]:.6f}, {offset_array[1]:.6f}, {offset_array[2]:.6f})")
+                
+                # Transform offset from rack frame to base frame
+                rack_rotation = self.rack_transformation_matrix_in_base[:3, :3]
+                offset_in_base = rack_rotation @ offset_array
+                
+                # Apply offset to server position in base frame
+                server2base[:3, 3] += offset_in_base
+                print(f"✓ Offset applied to server position")
+            
+        except Exception as e:
+            print(f"Error loading server2base_matrix from Redis: {e}")
+            return -1
         
         # Extract target position (xyz) from server2base
         target_position = server2base[:3, 3]
@@ -546,10 +830,11 @@ class UROperateWobj:
         print(f"Using current TCP pose (rotation vector): ({current_rotation_vector[0]:.6f}, "
               f"{current_rotation_vector[1]:.6f}, {current_rotation_vector[2]:.6f})")
         
-        # Step 4: Execute movement in steps according to execution_order
-        print(f"\nStep 4: Moving robot to target position...")
+        # Step 3: Execute movement in steps according to execution_order
+        print(f"\nStep 3: Moving robot to target position...")
         
         # Extract rack coordinate system axes from transformation matrix
+        rack2base = self.rack_transformation_matrix_in_base
         rack_rotation = rack2base[:3, :3]
         # Normalize axes to ensure they are unit vectors for accurate projection
         rack_axes = {
@@ -573,12 +858,21 @@ class UROperateWobj:
         }
         
         print(f"Movement in rack frame: X={movement_components[1]:.6f}, Y={movement_components[2]:.6f}, Z={movement_components[3]:.6f}")
-        print(f"Execution order: {[axis_names[i] for i in execution_order]}")
+        
+        # Convert execution_order from [x_order, y_order, z_order] format to actual execution sequence
+        # e.g., [2, 3, 1] means: X=2nd, Y=3rd, Z=1st → execute [Z, X, Y]
+        execution_sequence = [0] * 3
+        for axis_id in range(1, 4):  # 1=X, 2=Y, 3=Z
+            order_position = execution_order[axis_id - 1]  # Get the order for this axis
+            execution_sequence[order_position - 1] = axis_id  # Place axis_id at the correct position
+        
+        print(f"Execution order [X, Y, Z]: {execution_order}")
+        print(f"Execution sequence: {[axis_names[i] for i in execution_sequence]}")
 
-        # Execute movements according to execution_order
+        # Execute movements according to execution_sequence
         accumulated_position = current_position.copy()
         
-        for step_idx, axis_id in enumerate(execution_order, start=1):
+        for step_idx, axis_id in enumerate(execution_sequence, start=1):
             axis_name = axis_names[axis_id]
             axis_vector = rack_axes[axis_id]
             movement_amount = movement_components[axis_id]
@@ -618,11 +912,11 @@ if __name__ == "__main__":
     try:
         # Parse command line arguments
         parser = argparse.ArgumentParser(description='UR Robot Operation with Wobj')
-        parser.add_argument('--robot_ip', type=str, default='192.168.1.15',
+        parser.add_argument('--robot-ip', type=str, default='192.168.1.15',
                             help='Robot IP address (default: 192.168.1.15)')
-        parser.add_argument('--robot_port', type=int, default=30002,
+        parser.add_argument('--robot-port', type=int, default=30002,
                             help='Robot port (default: 30002)')
-        parser.add_argument('--server_index', type=int, default=14,
+        parser.add_argument('--server-index', type=int, default=14,
                             help='Server index (default: 14)')
         
         args = parser.parse_args()

@@ -40,7 +40,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty'))
 try:
     from camera_calibration_toolkit.core.eye_in_hand_calibration import EyeInHandCalibrator
     from camera_calibration_toolkit.core.intrinsic_calibration import IntrinsicCalibrator
-    from camera_calibration_toolkit.core.calibration_patterns import get_pattern_manager
+    from camera_calibration_toolkit.core.calibration_patterns import load_pattern_from_json
 except ImportError as e:
     print(f"❌ Error importing camera_calibration_toolkit: {e}")
     print("Please ensure the camera_calibration_toolkit is properly installed.")
@@ -91,16 +91,16 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def load_pattern_config(config_file, verbose=False):
+def load_pattern_from_config(config_file, verbose=False):
     """
-    Load calibration pattern configuration from JSON file.
+    Load and create calibration pattern from JSON configuration file.
     
     Args:
         config_file: Path to chessboard_config.json file
         verbose: Whether to print loading information
         
     Returns:
-        Dictionary containing pattern parameters
+        Calibration pattern object created from JSON config
     """
     if not os.path.exists(config_file):
         raise FileNotFoundError(f"Configuration file not found: {config_file}")
@@ -111,32 +111,22 @@ def load_pattern_config(config_file, verbose=False):
     with open(config_file, 'r') as f:
         config_data = json.load(f)
     
-    # Validate pattern type
-    if config_data.get('pattern_id') != 'charuco_board':
-        raise ValueError(f"Invalid pattern type: {config_data.get('pattern_id')}. Expected 'charuco_board'")
-    
-    # Extract parameters with defaults
-    params = config_data.get('parameters', {})
-    
-    # Use config values directly
-    pattern_params = {
-        'width': params.get('width', 9),
-        'height': params.get('height', 12),
-        'square_size': params.get('square_size', 0.03),
-        'marker_size': params.get('marker_size', 0.0225),
-        'dictionary_id': params.get('dictionary_id', 7),
-        'name': config_data.get('name', 'ChArUco Board'),
-        'description': config_data.get('description', '')
-    }
+    # Load pattern directly from JSON using the toolkit's loader
+    pattern = load_pattern_from_json(config_data)
     
     if verbose:
-        print(f"   Pattern: {pattern_params['name']}")
-        print(f"   Board size: {pattern_params['width']}×{pattern_params['height']} squares")
-        print(f"   Square size: {pattern_params['square_size']}m ({pattern_params['square_size']*1000:.1f}mm)")
-        print(f"   Marker size: {pattern_params['marker_size']}m ({pattern_params['marker_size']*1000:.1f}mm)")
-        print(f"   Dictionary ID: {pattern_params['dictionary_id']}")
+        print(f"   Pattern: {config_data.get('name', 'Unknown')}")
+        print(f"   Pattern ID: {config_data.get('pattern_id', 'Unknown')}")
+        if 'parameters' in config_data:
+            params = config_data['parameters']
+            if 'width' in params and 'height' in params:
+                print(f"   Board size: {params['width']}×{params['height']} squares")
+            if 'square_size' in params:
+                print(f"   Square size: {params['square_size']}m ({params['square_size']*1000:.1f}mm)")
+            if 'marker_size' in params:
+                print(f"   Marker size: {params['marker_size']}m ({params['marker_size']*1000:.1f}mm)")
     
-    return pattern_params
+    return pattern
 
 
 def load_calibration_data(data_dir, verbose=False):
@@ -221,48 +211,7 @@ def load_calibration_data(data_dir, verbose=False):
     return images, end2base_matrices, image_filenames
 
 
-def create_charuco_pattern(width, height, square_size, marker_size, dictionary_id, verbose=False):
-    """
-    Create ChArUco board calibration pattern.
-    
-    Args:
-        width: Number of squares along width
-        height: Number of squares along height
-        square_size: Square size in meters
-        marker_size: Marker size in meters
-        dictionary_id: ArUco dictionary ID
-        verbose: Whether to print pattern information
-        
-    Returns:
-        CharucoBoard pattern object
-    """
-    pattern_manager = get_pattern_manager()
-    
-    if verbose:
-        print(f"\n🎯 Creating ChArUco Board Pattern:")
-        print(f"   Board size: {width}×{height} squares")
-        print(f"   Square size: {square_size}m ({square_size*1000:.1f}mm)")
-        print(f"   Marker size: {marker_size}m ({marker_size*1000:.1f}mm)")
-        print(f"   Dictionary ID: {dictionary_id}")
-    
-    try:
-        charuco_pattern = pattern_manager.create_pattern(
-            'charuco_board',
-            width=width,
-            height=height,
-            square_size=square_size,
-            marker_size=marker_size,
-            dictionary_id=dictionary_id
-        )
-        
-        if verbose:
-            print(f"   ✅ ChArUco pattern created successfully")
-        
-        return charuco_pattern
-        
-    except Exception as e:
-        print(f"❌ Failed to create ChArUco pattern: {e}")
-        raise
+
 
 
 def perform_intrinsic_calibration(images, pattern, verbose=False):
@@ -513,8 +462,8 @@ def main():
         # Use the config file path from arguments (already has default value)
         config_file = args.config_file
         
-        # Load pattern configuration
-        pattern_params = load_pattern_config(config_file, verbose=args.verbose)
+        # Load pattern directly from JSON config (correct method)
+        calibration_pattern = load_pattern_from_config(config_file, verbose=args.verbose)
         
         # Load calibration data
         images, end2base_matrices, image_filenames = load_calibration_data(
@@ -528,26 +477,16 @@ def main():
             print(f"   Please capture more calibration images.")
             return 1
         
-        # Create ChArUco pattern
-        charuco_pattern = create_charuco_pattern(
-            pattern_params['width'],
-            pattern_params['height'],
-            pattern_params['square_size'],
-            pattern_params['marker_size'],
-            pattern_params['dictionary_id'],
-            verbose=args.verbose
-        )
-        
         # Perform intrinsic calibration
         intrinsic_results, intrinsic_calibrator = perform_intrinsic_calibration(
-            images, charuco_pattern, verbose=args.verbose
+            images, calibration_pattern, verbose=args.verbose
         )
         
         # Perform eye-in-hand calibration
         eye_in_hand_result, eye_in_hand_calibrator = perform_eye_in_hand_calibration(
             images,
             end2base_matrices,
-            charuco_pattern,
+            calibration_pattern,
             intrinsic_results['camera_matrix'],
             intrinsic_results['distortion_coefficients'],
             verbose=args.verbose
@@ -561,7 +500,7 @@ def main():
             eye_in_hand_result,
             eye_in_hand_calibrator,
             image_filenames,
-            pattern_params,
+            None,  # pattern_params no longer used
             verbose=args.verbose
         )
         

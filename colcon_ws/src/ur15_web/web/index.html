@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UR15 Web Interface</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/tailwind.js"></script>
     <style>
         /* Custom styles for video container */
         .video-container {
@@ -687,7 +687,8 @@
                         </div>
                         
                         <!-- Row 3: Validate Result -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        <!-- First row: 2 columns -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
                             <!-- Draw Chessboard Corners -->
                             <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 0.5rem; cursor: pointer;">
                                 <input type="checkbox" id="cornerDetectCheckbox" onchange="toggleCornerDetect()" style="width: 18px; height: 18px; cursor: pointer;">
@@ -698,6 +699,10 @@
                                 <input type="checkbox" id="validateCalibrationCheckbox" onchange="toggleValidation()" style="width: 18px; height: 18px; cursor: pointer;">
                                 <span style="font-weight: 600;">🎯 Draw UR15 Base</span>
                             </label>
+                        </div>
+                        
+                        <!-- Second row: 2 columns -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
                             <!-- Draw GB200 Rack -->
                             <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 0.5rem; cursor: pointer;">
                                 <input type="checkbox" id="drawRackCheckbox" onchange="toggleDrawRack()" style="width: 18px; height: 18px; cursor: pointer;">
@@ -707,6 +712,15 @@
                             <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(236, 72, 153, 0.1); border: 1px solid rgba(236, 72, 153, 0.3); border-radius: 0.5rem; cursor: pointer;">
                                 <input type="checkbox" id="drawKeypointsCheckbox" onchange="toggleDrawKeypoints()" style="width: 18px; height: 18px; cursor: pointer;">
                                 <span style="font-weight: 600;">📍 Draw Keypoints</span>
+                            </label>
+                        </div>
+                        
+                        <!-- Third row: 1 column (centered) -->
+                        <div style="display: flex; justify-content: center;">
+                            <!-- Draw GB200 Server -->
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(245, 101, 101, 0.1); border: 1px solid rgba(245, 101, 101, 0.3); border-radius: 0.5rem; cursor: pointer; width: 48%;">
+                                <input type="checkbox" id="drawServerCheckbox" onchange="toggleDrawServer()" style="width: 18px; height: 18px; cursor: pointer;">
+                                <span style="font-weight: 600;">🖥️ Draw GB200 Server</span>
                             </label>
                         </div>
                         
@@ -829,48 +843,44 @@
                             </button>
                         </div>
                         
-                        <!-- Row 2: locate unlock_knob and execute unlock_knob -->
+                        <!-- Row 2: execute unlock_knob -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <button id="locateUnlockKnobBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateUnlockKnob()">
-                                <span>🔓</span>
-                                <span>Locate Unlock Knob</span>
-                            </button>
                             <button id="executeUnlockKnobBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeUnlockKnob()">
                                 <span>🔧</span>
                                 <span>Execute Unlock Knob</span>
                             </button>
+                            <button id="executePutFrameBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executePutFrame()">
+                                <span>🎯</span>
+                                <span>Execute Put Frame</span>
+                            </button>
                         </div>
                         
-                        <!-- Row 3: locate open_handle and execute open_handle -->
+                        <!-- Row 3: execute open_handle -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <button id="locateOpenHandleBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateOpenHandle()">
-                                <span>🕹️</span>
-                                <span>Locate Open Handle</span>
-                            </button>
                             <button id="executeOpenHandleBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeOpenHandle()">
                                 <span>👜</span>
                                 <span>Execute Open Handle</span>
                             </button>
+                            <button id="executeUnlockKnobInsertBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeUnlockKnobInsert()">
+                                <span>🔑</span>
+                                <span>Execute Unlock Knob2</span>
+                            </button>
                         </div>
                         
-                        <!-- Row 4: locate close_left and execute close_left -->
+                        <!-- Row 4: execute close_left -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <button id="locateCloseLeftBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateCloseLeft()">
-                                <span>⬅️</span>
-                                <span>Locate Close Left</span>
-                            </button>
                             <button id="executeCloseLeftBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeCloseLeft()">
                                 <span>◀️</span>
                                 <span>Execute Close Left</span>
                             </button>
+                            <button id="executeCloseHandlesBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeCloseHandles()">
+                                <span>🤝</span>
+                                <span>Execute Close Handles</span>
+                            </button>
                         </div>
                         
-                        <!-- Row 5: locate close_right and execute close_right -->
+                        <!-- Row 5: execute close_right -->
                         <div style="display: flex; gap: 0.5rem;">
-                            <button id="locateCloseRightBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="locateCloseRight()">
-                                <span>➡️</span>
-                                <span>Locate Close Right</span>
-                            </button>
                             <button id="executeCloseRightBtn" style="flex: 1; min-width: 0;" class="responsive-btn bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" onclick="executeCloseRight()">
                                 <span>▶️</span>
                                 <span>Execute Close Right</span>

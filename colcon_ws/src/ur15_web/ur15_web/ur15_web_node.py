@@ -80,6 +80,8 @@ class UR15WebNode(Node):
         self.declare_parameter('calib_data_dir', '/tmp/ur15_cam_calibration_data')
         self.declare_parameter('calib_result_dir', '/tmp/ur15_cam_calibration_result')
         self.declare_parameter('chessboard_config', '/tmp/ur15_cam_calibration_data/chessboard_config.json')
+        self.declare_parameter('image_labeling_port', 8007)
+        self.declare_parameter('workflow_config_center_port', 8008)
         
         # Get parameters
         self.camera_topic = self.get_parameter('camera_topic').value
@@ -90,6 +92,8 @@ class UR15WebNode(Node):
         self.calibration_data_dir = self.get_parameter('calib_data_dir').value
         self.calibration_result_dir = self.get_parameter('calib_result_dir').value
         self.chessboard_config = self.get_parameter('chessboard_config').value
+        self.image_labeling_port = self.get_parameter('image_labeling_port').value
+        self.workflow_config_center_port = self.get_parameter('workflow_config_center_port').value
         
         # Use only the specified port, clear it if occupied
         try:
@@ -189,10 +193,18 @@ class UR15WebNode(Node):
         
         # Robot state data
         self.joint_positions = []
-        self.tcp_pose = None
         self.robot_data_lock = threading.Lock()
         self.last_joint_update = None
-        self.last_tcp_update = None
+        
+        # 30003 real-time data interface
+        self.rt_socket = None
+        self.rt_connected = False
+        self.rt_socket_lock = threading.Lock()
+        
+        # Cached real-time data from background thread
+        self.cached_joint_positions = None
+        self.cached_tcp_pose = None
+        self.cached_data_lock = threading.Lock()
         
         # UR15 robot control
         self.ur15_robot = None
@@ -201,9 +213,18 @@ class UR15WebNode(Node):
         self.corner_detection_enabled = False
         self.corner_detection_params = {}
         self.draw_rack_enabled = False
+        self.draw_server_enabled = False
         self.draw_keypoints_enabled = False
         self.ur15_lock = threading.Lock()
         self._init_ur15_connection()
+        
+        # Initialize 30003 real-time data connection
+        self._init_rt_data_connection()
+        
+        # Start background thread to read real-time data
+        self.rt_thread_running = True
+        self.rt_thread = threading.Thread(target=self._rt_data_reader_thread, daemon=True)
+        self.rt_thread.start()
         
         # Child process management
         self.child_processes = []
@@ -270,16 +291,6 @@ class UR15WebNode(Node):
         )
         
         self.get_logger().info("Subscribed to /joint_states topic")
-        
-        # Subscribe to TCP pose topic
-        self.tcp_pose_subscription = self.create_subscription(
-            PoseStamped,
-            '/tcp_pose_broadcaster/pose',
-            self.tcp_pose_callback,
-            10
-        )
-        
-        self.get_logger().info("Subscribed to /tcp_pose_broadcaster/pose topic")
         
         # Setup Flask app
         web_dir = os.path.join(get_package_share_directory('ur15_web'), 'web')
@@ -410,6 +421,24 @@ class UR15WebNode(Node):
                 self.get_logger().info("Disconnected from UR15 robot")
             except Exception as e:
                 self.get_logger().error(f"Error disconnecting from robot: {e}")
+        
+        # Stop real-time data reader thread
+        self.rt_thread_running = False
+        if hasattr(self, 'rt_thread') and self.rt_thread and self.rt_thread.is_alive():
+            try:
+                self.rt_thread.join(timeout=2)
+                self.get_logger().info("Real-time data reader thread stopped")
+            except Exception as e:
+                self.get_logger().error(f"Error stopping RT thread: {e}")
+        
+        # Close 30003 connection
+        if self.rt_socket is not None:
+            try:
+                self.rt_socket.close()
+                self.rt_connected = False
+                self.get_logger().info("Disconnected from real-time data port 30003")
+            except Exception as e:
+                self.get_logger().error(f"Error closing port 30003: {e}")
     
     def _simplify_path(self, path):
         """Simplify path by replacing home directory with ~."""
@@ -441,6 +470,114 @@ class UR15WebNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error initializing UR15 connection: {e}")
             self.ur15_robot = None
+    
+    def _init_rt_data_connection(self):
+        """Initialize persistent connection to 30003 port for real-time data."""
+        try:
+            self.get_logger().info(f"Connecting to real-time data port 30003 at {self.ur15_ip}...")
+            self.rt_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Set timeout to 0.5s - robot sends at ~10Hz (100ms intervals)
+            # Timeout should be longer than packet interval to avoid false timeouts
+            self.rt_socket.settimeout(0.5)
+            self.rt_socket.connect((self.ur15_ip, 30003))
+            self.rt_connected = True
+            self.get_logger().info("Successfully connected to real-time data port 30003")
+        except Exception as e:
+            self.get_logger().warning(f"Failed to connect to port 30003: {e}")
+            self.rt_socket = None
+            self.rt_connected = False
+    
+    def _rt_data_reader_thread(self):
+        """Background thread to continuously read from 30003 and update cache."""
+        import struct
+        
+        self.get_logger().info("Real-time data reader thread started")
+        
+        while self.rt_thread_running:
+            if not self.rt_connected or not self.rt_socket:
+                time.sleep(0.1)
+                continue
+            
+            try:
+                with self.rt_socket_lock:
+                    # 30003 port packets start with 4-byte message size (should be 1060 or 1116)
+                    # Read the first 4 bytes to get packet size
+                    size_data = b''
+                    while len(size_data) < 4:
+                        try:
+                            chunk = self.rt_socket.recv(4 - len(size_data))
+                            if not chunk:
+                                self.get_logger().warning("Connection closed by robot")
+                                self.rt_connected = False
+                                break
+                            size_data += chunk
+                        except socket.timeout:
+                            continue
+                    
+                    if len(size_data) < 4:
+                        continue
+                    
+                    # Parse message size
+                    msg_size = struct.unpack('!I', size_data)[0]
+                    
+                    # Validate message size (typical sizes are 1060 or 1116)
+                    if msg_size < 1000 or msg_size > 2000:
+                        self.get_logger().warning(f"Invalid message size: {msg_size}, resync")
+                        continue
+                    
+                    # Read the rest of the packet
+                    data = size_data  # Include size in data
+                    while len(data) < msg_size:
+                        try:
+                            chunk = self.rt_socket.recv(msg_size - len(data))
+                            if not chunk:
+                                self.get_logger().warning("Connection closed during packet read")
+                                self.rt_connected = False
+                                break
+                            data += chunk
+                        except socket.timeout:
+                            continue
+                    
+                    if len(data) < msg_size:
+                        continue
+                    
+                    # Parse joint positions (bytes 252-299 from start of message)
+                    joint_positions = []
+                    for i in range(6):
+                        value = struct.unpack('!d', data[252 + i*8:252 + (i+1)*8])[0]
+                        joint_positions.append(value)
+                    
+                    # Parse TCP pose (bytes 444-491 from start of message)
+                    tcp_pose = []
+                    for i in range(6):
+                        value = struct.unpack('!d', data[444 + i*8:444 + (i+1)*8])[0]
+                        tcp_pose.append(value)
+                    
+                    # Update cache
+                    with self.cached_data_lock:
+                        self.cached_joint_positions = joint_positions
+                        self.cached_tcp_pose = tcp_pose
+                
+            except socket.timeout:
+                # Timeout is normal when no data available
+                pass
+            except Exception as e:
+                self.get_logger().warning(f"Error reading from port 30003: {e}")
+                self.rt_connected = False
+                time.sleep(1)  # Wait before retry
+                
+        self.get_logger().info("Real-time data reader thread stopped")
+    
+    def _read_rt_data(self, data_type):
+        """Read cached data from background thread."""
+        with self.cached_data_lock:
+            if data_type == "actual_joint_positions":
+                return self.cached_joint_positions
+            elif data_type == "actual_tcp_pose":
+                return self.cached_tcp_pose
+            else:
+                self.get_logger().error(f"Unknown data type: {data_type}")
+                return None
     
     def destroy_node(self):
         """Override destroy_node to clean up UR15 connection."""
@@ -640,29 +777,7 @@ class UR15WebNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error processing joint states: {e}")
     
-    def tcp_pose_callback(self, msg):
-        """Callback function for receiving TCP pose."""
-        try:
-            with self.robot_data_lock:
-                pose = msg.pose
-                self.tcp_pose = {
-                    'x': pose.position.x * 1000.0,  # Convert to mm
-                    'y': pose.position.y * 1000.0,
-                    'z': pose.position.z * 1000.0,
-                    'qx': pose.orientation.x,
-                    'qy': pose.orientation.y,
-                    'qz': pose.orientation.z,
-                    'qw': pose.orientation.w
-                }
-                self.last_tcp_update = time.time()
-            
-            if not hasattr(self, '_first_tcp_logged'):
-                self.get_logger().info(f"First TCP pose received!")
-                self._first_tcp_logged = True
-                
-        except Exception as e:
-            self.get_logger().error(f"Error processing TCP pose: {e}")
-    
+
     def push_web_log(self, message, log_type='info'):
         """Push a message to the web log queue."""
         import time
@@ -740,20 +855,36 @@ class UR15WebNode(Node):
                 has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
                 has_extrinsic = self.cam2end_matrix is not None and self.target2base_matrix is not None
             
-            with self.robot_data_lock:
-                joint_positions = list(self.joint_positions) if self.joint_positions else []
-                tcp_pose = dict(self.tcp_pose) if self.tcp_pose else None
-                last_joint_update = self.last_joint_update
-                last_tcp_update = self.last_tcp_update
+            # Read real-time data from 30003 port
+            joint_positions_rad = self._read_rt_data("actual_joint_positions")
+            tcp_pose_raw = self._read_rt_data("actual_tcp_pose")
+            
+            # Convert joint positions from radians to degrees
+            joint_positions = []
+            if joint_positions_rad:
+                joint_positions = [j * 180.0 / np.pi for j in joint_positions_rad]
+            
+            # Convert TCP pose from meters and axis-angle to mm and quaternion-like format
+            tcp_pose = None
+            if tcp_pose_raw:
+                # tcp_pose_raw is [x, y, z, rx, ry, rz] in meters and radians (axis-angle)
+                # Convert to mm for position
+                tcp_pose = {
+                    'x': tcp_pose_raw[0] * 1000.0,  # m to mm
+                    'y': tcp_pose_raw[1] * 1000.0,
+                    'z': tcp_pose_raw[2] * 1000.0,
+                    'rx': tcp_pose_raw[3],  # Keep as axis-angle in radians
+                    'ry': tcp_pose_raw[4],
+                    'rz': tcp_pose_raw[5]
+                }
             
             with self.ur15_lock:
                 freedrive_active = self.freedrive_active
                 robot_connected = self.ur15_robot is not None
             
-            # Check if data is recent (within last 2 seconds)
-            current_time = time.time()
-            joint_data_valid = last_joint_update and (current_time - last_joint_update) < 2.0
-            tcp_data_valid = last_tcp_update and (current_time - last_tcp_update) < 2.0
+            # Data is always valid if we got it from 30003
+            joint_data_valid = joint_positions is not None and len(joint_positions) > 0
+            tcp_data_valid = tcp_pose is not None
             
             # Read board type from chessboard config
             board_type = None
@@ -788,7 +919,7 @@ class UR15WebNode(Node):
                 'joint_positions': joint_positions if joint_data_valid else [],
                 'tcp_pose': tcp_pose if tcp_data_valid else None,
                 'freedrive_active': freedrive_active,
-                'robot_connected': robot_connected,
+                'robot_connected': robot_connected and self.rt_connected,
                 'board_type': board_type,
                 'board_type_display': board_type_display,
                 'board_type_loaded': board_type_loaded
@@ -965,7 +1096,7 @@ class UR15WebNode(Node):
             
             # Use the same hostname as the request to build workflow config center URL
             host = request.host.split(':')[0]  # Extract hostname without port
-            workflow_url = f'http://{host}:8008'
+            workflow_url = f'http://{host}:{self.workflow_config_center_port}'
             
             self.get_logger().info(f"Redirecting to workflow config center: {workflow_url}")
             
@@ -1027,7 +1158,7 @@ class UR15WebNode(Node):
                 encoded_image_path = quote(image_path)
                 
                 # Build labeling URL with optional labels parameter
-                labeling_url = f'http://{host}:8007?imageUrl={image_url}&imagePath={encoded_image_path}'
+                labeling_url = f'http://{host}:{self.image_labeling_port}?imageUrl={image_url}&imagePath={encoded_image_path}'
                 
                 # If JSON file exists, add labelsUrl parameter
                 if os.path.exists(json_path):
@@ -1526,6 +1657,43 @@ class UR15WebNode(Node):
                 
                 # Set to robot_status (robot_status_redis doesn't need node parameter)
                 if set_to_status('ur15', 'rack_operating_unit_id', operating_unit):
+                    # Calculate initial server2base as the unit position on the rack
+                    try:
+                        # Get rack2base_matrix from robot_status
+                        rack2base_matrix = self.status_client.get_status('ur15', 'rack2base_matrix')
+                        if rack2base_matrix is None:
+                            self.get_logger().warning("rack2base_matrix not found in robot_status, cannot calculate server2base")
+                        elif self.server_frame_generator is None:
+                            self.get_logger().warning("server_frame_generator not initialized, cannot calculate server2base")
+                        else:
+                            # Generate server frame in rack coordinate system
+                            self.get_logger().info(f"Generating server frame for unit {operating_unit} in rack coordinate system...")
+                            server_frame_in_rack = self.server_frame_generator.generate_server_frame_in_rack(operating_unit)
+                            
+                            if server_frame_in_rack is not None:
+                                # Extract server2rack transformation matrix
+                                server2rack = server_frame_in_rack['target_server_transformation_matrix_in_rack']
+                                
+                                # Convert rack2base to numpy array
+                                rack2base = np.array(rack2base_matrix)
+                                
+                                # Calculate server2base = rack2base @ server2rack
+                                server2base = rack2base @ server2rack
+                                
+                                # Upload server2base_matrix to robot_status
+                                if set_to_status('ur15', 'server2base_matrix', server2base):
+                                    server_position = server2base[:3, 3]
+                                    self.get_logger().info(f"Successfully calculated and set server2base_matrix for unit {operating_unit}")
+                                    self.get_logger().info(f"Server position in base: ({server_position[0]:.6f}, {server_position[1]:.6f}, {server_position[2]:.6f})")
+                                else:
+                                    self.get_logger().warning("Failed to set server2base_matrix to robot_status")
+                            else:
+                                self.get_logger().warning(f"Failed to generate server frame for unit {operating_unit}")
+                    except Exception as e:
+                        self.get_logger().error(f"Error calculating server2base: {e}")
+                        import traceback
+                        traceback.print_exc()
+
                     self.get_logger().info(f"Successfully set rack_operating_unit_id to robot_status: {operating_unit}")
                     return jsonify({
                         'success': True,
@@ -1812,6 +1980,40 @@ class UR15WebNode(Node):
                     'enabled': False
                 })
         
+        @self.app.route('/toggle_draw_server', methods=['POST'])
+        def toggle_draw_server():
+            """Toggle GB200 server drawing on/off."""
+            from flask import jsonify, request
+            
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+                
+                self.draw_server_enabled = enable
+                
+                if enable:
+                    self.get_logger().info("GB200 server drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 server drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("GB200 server drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'GB200 server drawing disabled',
+                        'enabled': False
+                    })
+                    
+            except Exception as e:
+                self.get_logger().error(f"Error toggling server drawing: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+        
         @self.app.route('/toggle_draw_keypoints', methods=['POST'])
         def toggle_draw_keypoints():
             """Toggle keypoints drawing on/off."""
@@ -1955,6 +2157,7 @@ class UR15WebNode(Node):
             """Get the count of images in the calibration directory."""
             from flask import jsonify, request
             import glob
+            import re
             
             try:
                 request_data = request.get_json() or {}
@@ -1967,10 +2170,16 @@ class UR15WebNode(Node):
                         'count': 0
                     })
                 
-                # Count JSON files (assuming each image has a corresponding JSON, excluding chessboard_config.json)
-                json_files = [f for f in glob.glob(os.path.join(directory, '*.json')) 
-                             if not f.endswith('chessboard_config.json')]
-                count = len(json_files)
+                # Count only numbered JPG files (e.g., 0.jpg, 1.jpg, 2.jpg)
+                jpg_files = glob.glob(os.path.join(directory, '*.jpg'))
+                numbered_jpg_files = []
+                for jpg_file in jpg_files:
+                    filename = os.path.basename(jpg_file)
+                    # Check if filename is purely numeric (e.g., "0.jpg", "123.jpg")
+                    if re.match(r'^\d+\.jpg$', filename):
+                        numbered_jpg_files.append(jpg_file)
+                
+                count = len(numbered_jpg_files)
                 
                 return jsonify({
                     'success': True,
@@ -2010,11 +2219,31 @@ class UR15WebNode(Node):
                              if not f.endswith('chessboard_config.json')]
                 
                 if delete_all:
-                    # Delete all images and JSON files (excluding chessboard_config.json)
+                    # Delete all numbered calibration images and their corresponding JSON files
                     jpg_files = glob.glob(os.path.join(directory, '*.jpg'))
-                    total_deleted = len(json_files) + len(jpg_files)
                     
-                    for file in json_files + jpg_files:
+                    # Filter to only numbered jpg files (e.g., 0.jpg, 1.jpg, 2.jpg)
+                    numbered_jpg_files = []
+                    for jpg_file in jpg_files:
+                        filename = os.path.basename(jpg_file)
+                        # Check if filename is purely numeric (e.g., "0.jpg", "123.jpg")
+                        if re.match(r'^\d+\.jpg$', filename):
+                            numbered_jpg_files.append(jpg_file)
+                    
+                    # Build list of files to delete: numbered jpg files + their corresponding json files
+                    files_to_delete = []
+                    files_to_delete.extend(numbered_jpg_files)
+                    
+                    # For each numbered jpg file, add its corresponding json file if it exists
+                    for jpg_file in numbered_jpg_files:
+                        basename = os.path.splitext(jpg_file)[0]
+                        json_file = basename + '.json'
+                        if os.path.exists(json_file):
+                            files_to_delete.append(json_file)
+                    
+                    total_deleted = len(files_to_delete)
+                    
+                    for file in files_to_delete:
                         try:
                             os.remove(file)
                         except Exception as e:
@@ -2022,7 +2251,7 @@ class UR15WebNode(Node):
                     
                     return jsonify({
                         'success': True,
-                        'message': f'Successfully deleted all {total_deleted} calibration files (chessboard_config.json preserved)'
+                        'message': f'Successfully deleted all {total_deleted} numbered calibration files (other files preserved)'
                     })
                 
                 # Delete specific image
@@ -3117,201 +3346,10 @@ class UR15WebNode(Node):
                     'message': str(e)
                 })
         
-        @self.app.route('/locate_unlock_knob', methods=['POST'])
-        def locate_unlock_knob():
-            """Execute locate unlock knob script (ur_locate.py --operation-name unlock_knob)."""
-            from flask import jsonify
-            import subprocess
-            import threading
-            
-            try:
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                script_path = os.path.join(scripts_dir, 'ur_locate.py')
-                if not os.path.exists(script_path):
-                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
-                
-                cmd = ['python3', script_path, '--operation-name', 'unlock_knob']
-                self.get_logger().info(f"Locate unlock knob command: {' '.join(cmd)}")
-                
-                def monitor_process():
-                    try:
-                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
-                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                        with self.process_lock:
-                            self.child_processes.append(process)
-                        
-                        self.get_logger().info(f"Started locate unlock knob script with PID: {process.pid}")
-                        return_code = process.wait()
-                        self.get_logger().info(f"Locate unlock knob script finished with return code: {return_code}")
-                        
-                        if return_code == 0:
-                            self.push_web_log("✅ Locate unlock knob completed successfully!", 'success')
-                        else:
-                            self.push_web_log(f"❌ Locate unlock knob failed with return code: {return_code}", 'error')
-                    except Exception as e:
-                        self.get_logger().error(f"Error in locate unlock knob monitor thread: {e}")
-                        self.push_web_log(f"❌ Locate unlock knob error: {str(e)}", 'error')
-                
-                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
-                monitor_thread.start()
-                self.push_web_log("🔓 Starting locate unlock knob process...", 'info')
-                
-                return jsonify({'success': True, 'message': 'Locate unlock knob script started'})
-            except Exception as e:
-                self.get_logger().error(f"Error starting locate unlock knob script: {e}")
-                self.push_web_log(f"❌ Failed to start locate unlock knob: {str(e)}", 'error')
-                return jsonify({'success': False, 'message': str(e)})
-        
-        @self.app.route('/locate_open_handle', methods=['POST'])
-        def locate_open_handle():
-            """Execute locate open handle script (ur_locate.py --operation-name open_handle)."""
-            from flask import jsonify
-            import subprocess
-            import threading
-            
-            try:
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                script_path = os.path.join(scripts_dir, 'ur_locate.py')
-                if not os.path.exists(script_path):
-                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
-                
-                cmd = ['python3', script_path, '--operation-name', 'open_handle']
-                self.get_logger().info(f"Locate open handle command: {' '.join(cmd)}")
-                
-                def monitor_process():
-                    try:
-                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
-                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                        with self.process_lock:
-                            self.child_processes.append(process)
-                        
-                        self.get_logger().info(f"Started locate open handle script with PID: {process.pid}")
-                        return_code = process.wait()
-                        self.get_logger().info(f"Locate open handle script finished with return code: {return_code}")
-                        
-                        if return_code == 0:
-                            self.push_web_log("✅ Locate open handle completed successfully!", 'success')
-                        else:
-                            self.push_web_log(f"❌ Locate open handle failed with return code: {return_code}", 'error')
-                    except Exception as e:
-                        self.get_logger().error(f"Error in locate open handle monitor thread: {e}")
-                        self.push_web_log(f"❌ Locate open handle error: {str(e)}", 'error')
-                
-                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
-                monitor_thread.start()
-                self.push_web_log("🕹️ Starting locate open handle process...", 'info')
-                
-                return jsonify({'success': True, 'message': 'Locate open handle script started'})
-            except Exception as e:
-                self.get_logger().error(f"Error starting locate open handle script: {e}")
-                self.push_web_log(f"❌ Failed to start locate open handle: {str(e)}", 'error')
-                return jsonify({'success': False, 'message': str(e)})
-        
-        @self.app.route('/locate_close_left', methods=['POST'])
-        def locate_close_left():
-            """Execute locate close left script (ur_locate.py --operation-name close_left)."""
-            from flask import jsonify
-            import subprocess
-            import threading
-            
-            try:
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                script_path = os.path.join(scripts_dir, 'ur_locate.py')
-                if not os.path.exists(script_path):
-                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
-                
-                cmd = ['python3', script_path, '--operation-name', 'close_left']
-                self.get_logger().info(f"Locate close left command: {' '.join(cmd)}")
-                
-                def monitor_process():
-                    try:
-                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
-                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                        with self.process_lock:
-                            self.child_processes.append(process)
-                        
-                        self.get_logger().info(f"Started locate close left script with PID: {process.pid}")
-                        return_code = process.wait()
-                        self.get_logger().info(f"Locate close left script finished with return code: {return_code}")
-                        
-                        if return_code == 0:
-                            self.push_web_log("✅ Locate close left completed successfully!", 'success')
-                        else:
-                            self.push_web_log(f"❌ Locate close left failed with return code: {return_code}", 'error')
-                    except Exception as e:
-                        self.get_logger().error(f"Error in locate close left monitor thread: {e}")
-                        self.push_web_log(f"❌ Locate close left error: {str(e)}", 'error')
-                
-                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
-                monitor_thread.start()
-                self.push_web_log("⬅️ Starting locate close left process...", 'info')
-                
-                return jsonify({'success': True, 'message': 'Locate close left script started'})
-            except Exception as e:
-                self.get_logger().error(f"Error starting locate close left script: {e}")
-                self.push_web_log(f"❌ Failed to start locate close left: {str(e)}", 'error')
-                return jsonify({'success': False, 'message': str(e)})
-        
-        @self.app.route('/locate_close_right', methods=['POST'])
-        def locate_close_right():
-            """Execute locate close right script (ur_locate.py --operation-name close_right)."""
-            from flask import jsonify
-            import subprocess
-            import threading
-            
-            try:
-                scripts_dir = get_scripts_directory()
-                if scripts_dir is None:
-                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
-                
-                script_path = os.path.join(scripts_dir, 'ur_locate.py')
-                if not os.path.exists(script_path):
-                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
-                
-                cmd = ['python3', script_path, '--operation-name', 'close_right']
-                self.get_logger().info(f"Locate close right command: {' '.join(cmd)}")
-                
-                def monitor_process():
-                    try:
-                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
-                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                        with self.process_lock:
-                            self.child_processes.append(process)
-                        
-                        self.get_logger().info(f"Started locate close right script with PID: {process.pid}")
-                        return_code = process.wait()
-                        self.get_logger().info(f"Locate close right script finished with return code: {return_code}")
-                        
-                        if return_code == 0:
-                            self.push_web_log("✅ Locate close right completed successfully!", 'success')
-                        else:
-                            self.push_web_log(f"❌ Locate close right failed with return code: {return_code}", 'error')
-                    except Exception as e:
-                        self.get_logger().error(f"Error in locate close right monitor thread: {e}")
-                        self.push_web_log(f"❌ Locate close right error: {str(e)}", 'error')
-                
-                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
-                monitor_thread.start()
-                self.push_web_log("➡️ Starting locate close right process...", 'info')
-                
-                return jsonify({'success': True, 'message': 'Locate close right script started'})
-            except Exception as e:
-                self.get_logger().error(f"Error starting locate close right script: {e}")
-                self.push_web_log(f"❌ Failed to start locate close right: {str(e)}", 'error')
-                return jsonify({'success': False, 'message': str(e)})
         
         @self.app.route('/execute_unlock_knob', methods=['POST'])
         def execute_unlock_knob():
-            """Execute unlock knob script (ur_op_unlock_knob.py)."""
+            """Execute unlock knob script (ur_wobj_unlock_knob.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3321,11 +3359,22 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_op_unlock_knob.py')
+                script_path = os.path.join(scripts_dir, 'ur_wobj_unlock_knob.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
                 self.get_logger().info(f"Execute unlock knob command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3359,7 +3408,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_open_handle', methods=['POST'])
         def execute_open_handle():
-            """Execute open handle script (ur_op_open_handle.py)."""
+            """Execute open handle script (ur_wobj_open_handle.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3369,11 +3418,22 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_op_open_handle.py')
+                script_path = os.path.join(scripts_dir, 'ur_wobj_open_handle.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
                 self.get_logger().info(f"Execute open handle command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3407,7 +3467,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_close_left', methods=['POST'])
         def execute_close_left():
-            """Execute close left script (ur_op_close_left.py)."""
+            """Execute close left script (ur_wobj_close_left.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3417,11 +3477,22 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_op_close_left.py')
+                script_path = os.path.join(scripts_dir, 'ur_wobj_close_left.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
                 self.get_logger().info(f"Execute close left command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3455,7 +3526,7 @@ class UR15WebNode(Node):
         
         @self.app.route('/execute_close_right', methods=['POST'])
         def execute_close_right():
-            """Execute close right script (ur_op_close_right.py)."""
+            """Execute close right script (ur_wobj_close_right.py)."""
             from flask import jsonify
             import subprocess
             import threading
@@ -3465,11 +3536,22 @@ class UR15WebNode(Node):
                 if scripts_dir is None:
                     return jsonify({'success': False, 'message': 'Could not find scripts directory'})
                 
-                script_path = os.path.join(scripts_dir, 'ur_op_close_right.py')
+                script_path = os.path.join(scripts_dir, 'ur_wobj_close_right.py')
                 if not os.path.exists(script_path):
                     return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
                 
-                cmd = ['python3', script_path]
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
                 self.get_logger().info(f"Execute close right command: {' '.join(cmd)}")
                 
                 def monitor_process():
@@ -3499,6 +3581,183 @@ class UR15WebNode(Node):
             except Exception as e:
                 self.get_logger().error(f"Error starting execute close right script: {e}")
                 self.push_web_log(f"❌ Failed to start execute close right: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_put_frame', methods=['POST'])
+        def execute_put_frame():
+            """Execute put frame script (ur_wobj_put_frame.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_wobj_put_frame.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
+                self.get_logger().info(f"Execute put frame command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute put frame script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute put frame script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute put frame completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute put frame failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute put frame monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute put frame error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🎯 Starting execute put frame process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute put frame script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute put frame script: {e}")
+                self.push_web_log(f"❌ Failed to start execute put frame: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_unlock_knob_insert', methods=['POST'])
+        def execute_unlock_knob_insert():
+            """Execute unlock knob insert script (ur_wobj_unlock_knob_insert.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_wobj_unlock_knob_insert.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
+                self.get_logger().info(f"Execute unlock knob insert command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute unlock knob insert script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute unlock knob insert script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute unlock knob insert completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute unlock knob insert failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute unlock knob insert monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute unlock knob insert error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🔑 Starting execute unlock knob insert process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute unlock knob insert script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute unlock knob insert script: {e}")
+                self.push_web_log(f"❌ Failed to start execute unlock knob insert: {str(e)}", 'error')
+                return jsonify({'success': False, 'message': str(e)})
+        
+        @self.app.route('/execute_close_handles', methods=['POST'])
+        def execute_close_handles():
+            """Execute close handles script (ur_wobj_close_handles.py)."""
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({'success': False, 'message': 'Could not find scripts directory'})
+                
+                script_path = os.path.join(scripts_dir, 'ur_wobj_close_handles.py')
+                if not os.path.exists(script_path):
+                    return jsonify({'success': False, 'message': f'Script not found: {script_path}'})
+                
+                # Get rack_operating_unit_id from Redis
+                try:
+                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                except Exception as e:
+                    self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
+                    operating_unit_id = None
+                
+                if operating_unit_id is None:
+                    operating_unit_id = 14  # Default to 14 if not set
+                    self.get_logger().warning(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
+                
+                cmd = ['python3', script_path, '--server-index', str(operating_unit_id)]
+                self.get_logger().info(f"Execute close handles command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(cmd, cwd=os.path.dirname(script_path),
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(f"Started execute close handles script with PID: {process.pid}")
+                        return_code = process.wait()
+                        self.get_logger().info(f"Execute close handles script finished with return code: {return_code}")
+                        
+                        if return_code == 0:
+                            self.push_web_log("✅ Execute close handles completed successfully!", 'success')
+                        else:
+                            self.push_web_log(f"❌ Execute close handles failed with return code: {return_code}", 'error')
+                    except Exception as e:
+                        self.get_logger().error(f"Error in execute close handles monitor thread: {e}")
+                        self.push_web_log(f"❌ Execute close handles error: {str(e)}", 'error')
+                
+                monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+                monitor_thread.start()
+                self.push_web_log("🤝 Starting execute close handles process...", 'info')
+                
+                return jsonify({'success': True, 'message': 'Execute close handles script started'})
+            except Exception as e:
+                self.get_logger().error(f"Error starting execute close handles script: {e}")
+                self.push_web_log(f"❌ Failed to start execute close handles: {str(e)}", 'error')
                 return jsonify({'success': False, 'message': str(e)})
         
         # Asset route must come BEFORE the main report route to avoid conflicts
@@ -3586,24 +3845,21 @@ class UR15WebNode(Node):
                 distortion_coefficients = self.distortion_coefficients.copy()
                 cam2end_matrix = self.cam2end_matrix.copy()
             
-            # Get current TCP pose
-            with self.robot_data_lock:
-                if self.tcp_pose is None:
-                    return None
-                x = self.tcp_pose['x'] / 1000.0  # Convert mm to m
-                y = self.tcp_pose['y'] / 1000.0
-                z = self.tcp_pose['z'] / 1000.0
-                qx = self.tcp_pose['qx']
-                qy = self.tcp_pose['qy']
-                qz = self.tcp_pose['qz']
-                qw = self.tcp_pose['qw']
+            # Get current TCP pose from 30003 port (real-time data)
+            tcp_pose_raw = self._read_rt_data("actual_tcp_pose")
+            if tcp_pose_raw is None:
+                return None
             
-            # Convert quaternion to rotation matrix
-            R = np.array([
-                [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qz*qw), 2*(qx*qz + qy*qw)],
-                [2*(qx*qy + qz*qw), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qx*qw)],
-                [2*(qx*qz - qy*qw), 2*(qy*qz + qx*qw), 1 - 2*(qx**2 + qy**2)]
-            ])
+            # tcp_pose_raw is [x, y, z, rx, ry, rz] in meters and radians (axis-angle)
+            x = tcp_pose_raw[0]  # Already in meters
+            y = tcp_pose_raw[1]
+            z = tcp_pose_raw[2]
+            rx = tcp_pose_raw[3]  # Axis-angle in radians
+            ry = tcp_pose_raw[4]
+            rz = tcp_pose_raw[5]
+            
+            # Convert axis-angle to rotation matrix
+            R = self._rotvec_to_matrix(rx, ry, rz)
             
             # Build end2base transformation matrix
             end2base_matrix = np.eye(4)
@@ -3687,48 +3943,52 @@ class UR15WebNode(Node):
                 thickness=2
             )
 
-            # Calculate server2camera transformation for GB200 server
-            # Get Operating Unit value from robot_status
-            try:
-                operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
-            except Exception as e:
-                self.get_logger().debug(f"Failed to get rack_operating_unit_id: {e}")
-                operating_unit_id = None
-            
-            if operating_unit_id is None:
-                operating_unit_id = 14  # Default to 14 if not set
-                self.get_logger().debug(f"rack_operating_unit_id not found, using default: {operating_unit_id}")
-            
-            # Generate server frame in rack coordinate system using class instance
-            if self.server_frame_generator is None:
-                self.get_logger().warn("Server frame generator not initialized")
-                return frame
-            
-            result = self.server_frame_generator.generate_server_frame_in_rack(index=operating_unit_id)
-            
-            if result is not None:
-                # Get server2rack transformation matrix
-                server2rack_matrix = result['target_server_transformation_matrix_in_rack']
-                
-                # Calculate server2camera transformation
-                # server2camera = base2camera @ rack2base @ server2rack
-                server2camera = base2camera @ rack2base_matrix @ server2rack_matrix
-                
-                # Draw GB200 server model with server2camera extrinsic
-                frame = draw_utils.draw_model_on_image(
-                    frame,
-                    intrinsic=params['intrinsic'],
-                    extrinsic=server2camera,
-                    model=self.gb200server_model,
-                    distortion=params['distortion'],
-                    thickness=2
-                )
-            else:
-                self.get_logger().warn(f"Failed to generate server frame for unit {operating_unit_id}")
-
 
         except Exception as e:
             self.get_logger().error(f"Error projecting rack to image: {e}")
+        
+        return frame
+    
+    def project_server_to_image(self, frame):
+        """Project GB200 server to image using server2base_matrix directly from Redis."""
+        try:
+            # Get camera parameters using helper function
+            params = self._get_camera_calib_params()
+            if params is None:
+                self.get_logger().warn("Camera calibration parameters not available for server drawing")
+                return frame
+            
+            # Get server2base_matrix directly from Redis ur15 namespace
+            try:
+                server2base_matrix = self.status_client.get_status('ur15', 'server2base_matrix')
+            except Exception as e:
+                self.get_logger().debug(f"Failed to get server2base_matrix: {e}")
+                return frame
+            
+            if server2base_matrix is None:
+                self.get_logger().debug("server2base_matrix is None, skipping server drawing")
+                return frame
+            
+            # Convert to numpy array
+            server2base_matrix = np.array(server2base_matrix)
+            
+            # Calculate server2camera transformation
+            # server2camera = base2camera @ server2base
+            base2camera = params['extrinsic']
+            server2camera = base2camera @ server2base_matrix
+            
+            # Draw GB200 server model with server2camera extrinsic
+            frame = draw_utils.draw_model_on_image(
+                frame,
+                intrinsic=params['intrinsic'],
+                extrinsic=server2camera,
+                model=self.gb200server_model,
+                distortion=params['distortion'],
+                thickness=2
+            )
+
+        except Exception as e:
+            self.get_logger().error(f"Error projecting server to image: {e}")
         
         return frame
     
@@ -3859,6 +4119,10 @@ class UR15WebNode(Node):
                         # Draw GB200 rack if enabled
                         if self.draw_rack_enabled:
                             frame = self.project_rack_to_image(frame)
+                        
+                        # Draw GB200 server if enabled
+                        if self.draw_server_enabled:
+                            frame = self.project_server_to_image(frame)
                         
                         # Draw keypoints if enabled
                         if self.draw_keypoints_enabled:

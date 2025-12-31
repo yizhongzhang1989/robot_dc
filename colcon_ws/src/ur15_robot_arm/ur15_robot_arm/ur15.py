@@ -249,7 +249,7 @@ class UR15Robot:
         
         return result
 
-    def movel(self, pose, a=1.2, v=0.25, t=0, r=0, blocking=True, threshold=0.001):
+    def movel(self, pose, a=1.2, v=0.25, t=0, r=0, blocking=True, pos_threshold=0.001, rot_threshold=0.01):
         """
         Move to position (linear in tool-space)
         
@@ -260,7 +260,8 @@ class UR15Robot:
             t: Time [s]
             r: Blend radius [m]
             blocking: If True, wait until motion completes (default: True)
-            threshold: Position threshold in meters for xyz and radians for rotation (default: 0.001)
+            pos_threshold: Position threshold in meters (default: 0.001m = 1mm)
+            rot_threshold: Rotation threshold in radians (default: 0.01rad ≈ 0.57°)
         """
         # Format pose
         target_pose = None
@@ -284,6 +285,29 @@ class UR15Robot:
             import math
             time.sleep(0.1)  # Initial delay to let motion start
             
+            def rot_error_ur(r_actual, r_target):
+                """Calculate rotation error between two axis-angle vectors using scipy Rotation"""
+                try:
+                    from scipy.spatial.transform import Rotation as R
+                    import numpy as np
+                    
+                    Ra = R.from_rotvec(r_actual)
+                    Rt = R.from_rotvec(r_target)
+                    R_err = Rt.inv() * Ra
+                    return np.linalg.norm(R_err.as_rotvec())
+                except ImportError:
+                    # Fallback to simple angle difference if scipy not available
+                    def angle_diff(a1, a2):
+                        diff = a1 - a2
+                        while diff > math.pi:
+                            diff -= 2 * math.pi
+                        while diff < -math.pi:
+                            diff += 2 * math.pi
+                        return abs(diff)
+                    
+                    diff = [angle_diff(r_actual[i], r_target[i]) for i in range(3)]
+                    return math.sqrt(sum(d**2 for d in diff))
+            
             max_wait_time = 60  # Maximum wait time in seconds
             start_time = time.time()
             
@@ -294,15 +318,18 @@ class UR15Robot:
                     time.sleep(0.1)
                     continue
                 
-                # Check if all pose elements are within threshold
-                all_close = True
-                for i in range(6):
-                    if abs(actual_pose[i] - target_pose[i]) > threshold:
-                        all_close = False
-                        break
+                # Calculate position error (Euclidean distance)
+                pos_err = math.sqrt(
+                    (actual_pose[0] - target_pose[0])**2 +
+                    (actual_pose[1] - target_pose[1])**2 +
+                    (actual_pose[2] - target_pose[2])**2
+                )
                 
-                if all_close:
-                    # Motion complete
+                # Calculate rotation error using scipy Rotation for proper axis-angle handling
+                rot_err = rot_error_ur(actual_pose[3:6], target_pose[3:6])
+                
+                # Check if both position and rotation are within thresholds
+                if pos_err <= pos_threshold and rot_err <= rot_threshold:
                     return 0
                 
                 time.sleep(0.05)  # Check every 50ms

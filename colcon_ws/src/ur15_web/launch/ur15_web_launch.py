@@ -93,6 +93,24 @@ def generate_launch_description():
         description='JSON file containing chessboard pattern configuration'
     )
     
+    # Get service ports from config
+    all_config = config.get_all()
+    services_config = all_config.get('services', {})
+    image_labeling_port = services_config.get('image_labeling', {}).get('port', 8007)
+    workflow_config_center_port = services_config.get('workflow_config_center', {}).get('port', 8008)
+    
+    image_labeling_port_arg = DeclareLaunchArgument(
+        'image_labeling_port',
+        default_value=str(image_labeling_port),
+        description='Port for image labeling service'
+    )
+    
+    workflow_config_center_port_arg = DeclareLaunchArgument(
+        'workflow_config_center_port',
+        default_value=str(workflow_config_center_port),
+        description='Port for workflow config center service'
+    )
+    
     # Get launch configurations
     ur15_ip = LaunchConfiguration('ur15_ip')
     camera_topic = LaunchConfiguration('camera_topic')
@@ -102,6 +120,8 @@ def generate_launch_description():
     calib_data_dir = LaunchConfiguration('calib_data_dir')
     calib_result_dir = LaunchConfiguration('calib_result_dir')
     chessboard_config = LaunchConfiguration('chessboard_config')
+    image_labeling_port = LaunchConfiguration('image_labeling_port')
+    workflow_config_center_port = LaunchConfiguration('workflow_config_center_port')
     
     # UR15 web node
     ur15_web_node = Node(
@@ -117,7 +137,9 @@ def generate_launch_description():
             'dataset_dir': dataset_dir,
             'calib_data_dir': calib_data_dir,
             'calib_result_dir': calib_result_dir,
-            'chessboard_config': chessboard_config
+            'chessboard_config': chessboard_config,
+            'image_labeling_port': image_labeling_port,
+            'workflow_config_center_port': workflow_config_center_port
         }]
     )
     
@@ -131,6 +153,8 @@ def generate_launch_description():
         calib_data_dir_arg,
         calib_result_dir_arg,
         chessboard_config_arg,
+        image_labeling_port_arg,
+        workflow_config_center_port_arg,
         
         # Launch nodes
         ur15_web_node

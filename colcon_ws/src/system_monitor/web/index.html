@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager Interface</title>
+    <script src="tailwind.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        /* Status Bar Styles */
+        .status-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 2px solid #e5e7eb;
+            border-radius: 0;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+            padding: 0.75rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 0.75rem;
+        }
+        
+        /* Add padding to body to prevent content from being hidden under fixed status bar */
+        body {
+            padding-top: 120px;
+        }
+        
+        .status-bar-title {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-family: 'Inter', 'SF Pro Display', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #374151;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 0.5rem 0.4rem;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        
+        .status-bar-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .status-bar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .status-bar-item {
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 6px;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            transition: all 0.2s;
+            position: relative;
+            min-height: 60px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .status-bar-item:hover {
+            background: rgba(255, 255, 255, 0.95);
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-bar-label {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+            font-weight: 500;
+            color: #64748b;
+            font-size: 0.7rem;
+            line-height: 1;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .status-bar-value {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+            font-weight: 700;
+            color: #1e293b;
+            font-size: 1rem;
+            text-align: left;
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            line-height: 1.2;
+        }
+        
+        .status-bar-value.connected {
+            color: #10b981 !important;
+        }
+        
+        .status-bar-value.disconnected {
+            color: #ef4444 !important;
+        }
+        
+        .status-bar-value.warning {
+            color: #f59e0b !important;
+        }
+        
+        .status-bar-value.orange {
+            color: #fb923c !important;
+        }
+        
+        .status-bar-value.blue {
+            color: #3b82f6 !important;
+        }
+        
+        /* Clickable item styles */
+        .status-bar-item.clickable {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .status-bar-item.clickable:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .status-bar-item.clickable:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Row layout */
+        .status-bar-grid-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .status-bar-grid-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        /* Panel with vertical title style */
+        .panel-with-title {
+            display: flex;
+            gap: 0.75rem;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 0.75rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .panel-title {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-family: 'Inter', 'SF Pro Display', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #374151;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 0.5rem 0.4rem;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        
+        .panel-content {
+            flex: 1;
+            min-width: 0;
+            background: transparent;
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
+            display: flex;
+        }
+        
+        /* Custom scrollbar styles */
+        .scrollable-column {
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
+        }
+        
+        .scrollable-column::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .scrollable-column::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        .scrollable-column::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+        
+        .scrollable-column::-webkit-scrollbar-thumb:hover {
+            background-color: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-full font-sans">
+    <!-- Modal Dialog -->
+    <div id="messageModal" class="hidden fixed inset-0 z-50" style="display: none;">
+        <div class="fixed inset-0 bg-gray-600 bg-opacity-50" onclick="closeModal()"></div>
+        <div class="fixed inset-0 flex items-center justify-center p-4">
+            <div class="relative p-5 border w-96 max-w-full shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 id="modalTitle" class="text-lg font-semibold text-gray-900">Message</h3>
+                    <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="mt-2 px-2 py-3">
+                    <p id="modalMessage" class="text-sm text-gray-600"></p>
+                </div>
+                <div class="flex justify-end mt-4">
+                    <button onclick="closeModal()" id="modalCloseBtn" class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                        OK
+                    </button>
+                </div>
+            </div>
+        </div>
+        </div>
+    </div>
+    
+    <!-- Status Bar (Fixed at top) -->
+    <div class="max-w-full px-4">
+        <div class="status-bar">
+            <div class="status-bar-title">
+                Status
+            </div>
+            <div class="status-bar-content">
+                <div class="status-bar-grid-row">
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">UR15 Connection</div>
+                        <div id="statusBarUR15Connection" class="status-bar-value warning">Checking...</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">Courier Connection</div>
+                        <div id="statusBarCourierConnection" class="status-bar-value warning">Checking...</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">AMR Connection</div>
+                        <div id="statusBarAMRConnection" class="status-bar-value warning">Checking...</div>
+                    </div>
+                    <div class="status-bar-item">
+                        <div class="status-bar-label">UR15 RTDE Status</div>
+                        <div id="statusBarRtdeConnection" class="status-bar-value warning">Checking...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Navigation Area and Robot Monitor -->
+    <div class="w-full px-4">
+        <div class="flex gap-4" style="height: calc(100vh - 120px);">
+            <!-- Quick Navigation (left half) -->
+            <div class="w-1/3 scrollable-column" style="overflow-y: auto; max-height: 100%; padding-right: 8px;">
+                <div class="panel-with-title">
+                    <div class="panel-title">
+                        Quick Navigation
+                    </div>
+                    <div class="panel-content">
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem; width: 100%;">
+                            <!-- UR15 Dashboard Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnUR15" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    🤖 UR15 Dashboard
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorUR15"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextUR15">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- AMR Dashboard Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnAMR" class="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    🚗 AMR Dashboard
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorAMR"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextAMR">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Courier Dashboard Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnCourier" class="flex-1 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    🚃 Courier Dashboard
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorCourier"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextCourier">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Robot Status Redis Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnRobotStatus" class="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    💽 Robot Status Redis
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorRedis"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextRedis">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Positioning Service Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnPositioning" class="flex-1 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    📸 Positioning Service
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorPositioning"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextPositioning">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Labeling Service Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnLabeling" class="flex-1 px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    🪬 Labeling Service
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorLabeling"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextLabeling">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Workflow Service Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnWorkflow" class="flex-1 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    🎏 Workflow Service
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorWorkflow"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextWorkflow">Checking</span>
+                                </div>
+                            </div>
+                            
+                            <!-- FFPP Server Row -->
+                            <div class="flex items-center gap-4 p-1 bg-gray-50 rounded-lg border">
+                                <button id="btnFFPP" class="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                    💻 FFPP Server
+                                </button>
+                                <div class="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-gray-200 min-w-[90px]">
+                                    <div class="w-3 h-3 rounded-full bg-gray-400" id="statusIndicatorFFPP"></div>
+                                    <span class="text-sm text-gray-700 font-medium" id="statusTextFFPP">Checking</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Position Control Panel -->
+                <div class="panel-with-title mt-4">
+                    <div class="panel-title">
+                        Position Control Panel
+                    </div>
+                    <div class="panel-content" style="padding: 0.75rem;">
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
+                            <!-- Task Position Button -->
+                            <button id="btnTaskPosition" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                🦿 Task Position
+                            </button>
+                            
+                            <!-- Home Position Button -->
+                            <button id="btnHomePosition" class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-md shadow-sm transition-colors duration-200">
+                                🏠 Home Position
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Demo Operation Panel -->
+                <div class="panel-with-title mt-4">
+                    <div class="panel-title">
+                        Demo Operation Panel
+                    </div>
+                    <div class="panel-content">
+                        <div style="display: flex; flex-direction: column; width: 100%;">
+                            <!-- Operation Unit Input -->
+                            <div class="mb-4 pb-4 border-b border-gray-300">
+                                <div class="flex items-center gap-3">
+                                    <label for="operationUnitInput" class="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                                        Operation Unit:
+                                    </label>
+                                    <input 
+                                        type="number" 
+                                        id="operationUnitInput" 
+                                        class="w-32 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                        placeholder="8-25"
+                                        min="8"
+                                        max="25"
+                                    />
+                                    <button 
+                                        id="btnSetOperationUnit" 
+                                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200"
+                                    >
+                                        Set Unit
+                                    </button>
+                                    <div id="operationUnitStatus" class="flex items-center gap-2 min-w-[100px]">
+                                        <span class="text-sm font-medium text-gray-500">Not Set</span>
+                                    </div>
+                                </div>
+                            </div>
+                        
+                            <div class="space-y-2">
+                            <!-- Step 0 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep0" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep0" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 0:</span> AMR from home to arm dock
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot0" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText0" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 1 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep1" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep1" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 1:</span> AMR move arms from DOCK to SIDE
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot1" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText1" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 2 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep2" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep2" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 2:</span> UR15 rack positioning
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot2" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText2" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 3 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep3" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep3" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 3:</span> UR15 get tool_rotate
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot3" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText3" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 4 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep4" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep4" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 4:</span> UR15 unlock knobs
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot4" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText4" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 5 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep5" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep5" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 5:</span> UR15 tool exchange (rotate→pushpull)
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot5" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText5" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 6 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep6" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep6" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 6:</span> UR15 open handles
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot6" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText6" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 7 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep7" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep7" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 7:</span> UR15 close left handle
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot7" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText7" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 8 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep8" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep8" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 8:</span> UR15 close right handle
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot8" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText8" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 9 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep9" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep9" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 9:</span> UR15 tool exchange (pushpull→extract)
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot9" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText9" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 10 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep10" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep10" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 10:</span> UR15 move to target position
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot10" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText10" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 11 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep11" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep11" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 11:</span> AMR courier to extraction position
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot11" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText11" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 12 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep12" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep12" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 12:</span> UR15 extract server
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot12" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText12" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 13 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep13" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep13" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 13:</span> AMR courier back to dock
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot13" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText13" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 14 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep14" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep14" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 14:</span> UR15 return tool_extract & get frame
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot14" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText14" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 15 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep15" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep15" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 15:</span> UR15 put frame
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot15" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText15" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 16 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep16" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep16" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 16:</span> UR15 get tool_extract
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot16" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText16" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 17 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep17" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep17" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 17:</span> UR15 move to target position
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot17" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText17" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 18 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep18" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep18" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 18:</span> AMR courier to insertion position
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot18" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText18" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 19 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep19" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep19" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 19:</span> UR15 insert server
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot19" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText19" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 20 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep20" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep20" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 20:</span> AMR courier back to dock
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot20" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText20" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 21 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep21" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep21" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 21:</span> UR15 tool exchange (extract→rotate)
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot21" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText21" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 22 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep22" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep22" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 22:</span> UR15 unlock knob insert
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot22" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText22" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 23 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep23" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep23" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 23:</span> UR15 tool exchange (rotate→pushpull)
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot23" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText23" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 24 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep24" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep24" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 24:</span> UR15 close handles
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot24" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText24" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 25 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep25" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep25" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 25:</span> UR15 return tool_pushpull
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot25" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText25" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 26 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep26" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep26" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 26:</span> UR15 movej to home (J6→J1)
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot26" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText26" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 27 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep27" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep27" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 27:</span> AMR arm from side to dock
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot27" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText27" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Step 28 -->
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="chkStep28" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <button id="btnStep28" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm transition-colors duration-200 text-left">
+                                    <span class="font-bold">Step 28:</span> AMR back to home position
+                                </button>
+                                <div class="flex items-center gap-2 min-w-[100px]">
+                                    <span id="statusDot28" class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                                    <span id="statusText28" class="text-xs font-medium text-gray-600">Pending</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Control buttons -->
+                            <div class="mt-4 pt-4 border-t border-gray-300 space-y-2">
+                                <div class="flex gap-2">
+                                    <button id="btnSelectAll" class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold rounded-md shadow-sm transition-colors duration-200">
+                                        ☑️ Select All Steps
+                                    </button>
+                                    <button id="btnExecuteSelected" class="flex-1 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-md shadow-sm transition-colors duration-200">
+                                        ▶️ Execute Selected Steps
+                                    </button>
+                                </div>
+                                <button id="btnExecuteAll" class="w-full px-3 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-bold rounded-md shadow-sm transition-colors duration-200">
+                                    ▶️ Execute All Steps
+                                </button>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- UR15 Robot Monitor (right half) -->
+            <div class="w-2/3 scrollable-column" style="overflow-y: auto; max-height: 100%; padding-right: 8px;">
+                <div class="panel-with-title">
+                    <div class="panel-title">
+                        UR15 Robot Monitor
+                    </div>
+                    <div class="panel-content">
+                        <div style="width: 100%;">
+                            
+                            <!-- Robot Status Section -->
+                            <div class="mb-4">
+                                <h4 class="text-base font-bold text-gray-800 mb-3 tracking-wide uppercase text-sm">📊 System Status</h4>
+                                <div class="grid grid-cols-4 gap-2 text-sm">
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Controller State</div>
+                                        <div id="robotMode" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Safety Mode</div>
+                                        <div id="safetyMode" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Program State</div>
+                                        <div id="runtimeState" class="font-mono text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Speed Scaling</div>
+                                        <div id="speedScaling" class="font-mono text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- TCP Pose Section -->
+                            <div class="mb-4">
+                                <h4 class="text-base font-bold text-gray-800 mb-2 tracking-wide uppercase text-sm">📍 TCP Pose</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">X</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpPosX" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">m</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Y</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpPosY" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">m</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Z</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpPosZ" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">m</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">RX</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpRotX" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">RY</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpRotY" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">RZ</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpRotZ" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Joint Positions Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🦾 Joint Angles</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J1</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint1" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J2</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint2" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J3</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint3" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J4</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint4" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J5</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint5" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J6</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="joint6" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Power and Temperature Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🔋 Power & Temperature</h4>
+                                <div class="grid grid-cols-4 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Main Voltage</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="mainVoltage" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">V</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Robot Current</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="robotCurrent" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Temperature</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="toolTemperature" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">TCP Force Scalar</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpForceScalar" class="text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- I/O Status Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🔌 I/O Status</h4>
+                                <div class="grid grid-cols-4 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Digital Input</div>
+                                        <div id="digitalInputBits" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Digital Output</div>
+                                        <div id="digitalOutputBits" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Analog Input 0</div>
+                                        <div id="analogInput0" class="font-mono text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Analog Input 1</div>
+                                        <div id="analogInput1" class="font-mono text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- TCP Speed Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🚀 TCP Speed</h4>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Linear Speed</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpLinearSpeed" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">m/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Angular Speed</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="tcpAngularSpeed" class="text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Joint Velocities Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">⚙️ Joint Velocities</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J1</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel1" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J2</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel2" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J3</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel3" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J4</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel4" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J5</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel5" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J6</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointVel6" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">rad/s</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Joint Currents Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">⚡ Joint Currents</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J1</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur1" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J2</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur2" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J3</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur3" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J4</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur4" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J5</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur5" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J6</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointCur6" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">A</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Joint Temperatures Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🌡 Joint Temperatures</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J1</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp1" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J2</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp2" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J3</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp3" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J4</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp4" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J5</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp5" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">J6</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="jointTemp6" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">°C</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tool Data Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">📋 Tool Data</h4>
+                                <div class="grid grid-cols-4 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Analog Input 0</div>
+                                        <div id="toolAnalogInput0" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Analog Input 1</div>
+                                        <div id="toolAnalogInput1" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Output Voltage</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="toolOutputVoltage" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">V</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Tool Output Current</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="toolOutputCurrent" class="text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">mA</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Payload Information Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🔩 Payload Information</h4>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Payload Mass</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="payloadMass" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">kg</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Actual Momentum</div>
+                                        <div id="actualMomentum" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Execution Time Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">⏰ Execution Time</h4>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Actual Time</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="actualExecutionTime" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">ms</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Target Time</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="targetExecutionTime" class="text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">ms</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- UR15 Force Sensor Data (Independent Panel) -->
+                <div class="panel-with-title mt-4">
+                    <div class="panel-title">
+                        UR15 Force Sensor Data
+                    </div>
+                    <div class="panel-content">
+                        <div style="width: 100%;">
+                            
+                            <!-- Force/Torque Values Display -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">🔧 Sensor Values</h4>
+                                <div class="grid grid-cols-6 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Fx</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="forceFx" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(59, 130, 246);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Fy</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="forceFy" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(16, 185, 129);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Fz</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="forceFz" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(249, 115, 22);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Mx</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="torqueMx" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(139, 92, 246);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">Nm</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">My</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="torqueMy" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(236, 72, 153);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">Nm</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Mz</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="torqueMz" class="font-bold" style="font-size: 1rem; line-height: 1.2; color: rgb(234, 179, 8);">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">Nm</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Force Chart -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">📈 Force Trend</h4>
+                                <div class="bg-white p-3 rounded-lg border border-gray-200">
+                                    <div style="position: relative; height: 200px;">
+                                        <canvas id="forceChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Torque Chart -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">📉 Torque Trend</h4>
+                                <div class="bg-white p-3 rounded-lg border border-gray-200">
+                                    <div style="position: relative; height: 200px;">
+                                        <canvas id="torqueChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Courier Robot Monitor -->
+                <div class="panel-with-title mt-4">
+                    <div class="panel-title">
+                        Courier Robot Monitor
+                    </div>
+                    <div class="panel-content">
+                        <div style="width: 100%;">
+                            
+                            <!-- System Information Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">ℹ️ System Information</h4>
+                                <div class="grid grid-cols-5 gap-2 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Task State</div>
+                                        <div id="platformTaskState" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Target Server ID</div>
+                                        <div id="courierServerId" class="font-mono text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Frequency</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierFrequency" class="text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">Hz</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Max Force Limit</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierMaxForceLimit" class="text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Force Limit Status</div>
+                                        <div id="platformForceLimitStatus" class="font-mono text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Component Status Section -->
+                            <div class="mb-4">
+                                <h4 class="text-base font-bold text-gray-800 mb-3 tracking-wide uppercase text-sm">⚙️ Component Status</h4>
+                                <div class="grid grid-cols-3 gap-2 text-sm">
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Platform State</div>
+                                        <div id="platformMovementState" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Pushrod State</div>
+                                        <div id="pushrodMovementState" class="font-mono text-green-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="text-slate-500 font-medium whitespace-nowrap overflow-hidden uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Control Mode</div>
+                                        <div id="platformControlMode" class="font-mono text-orange-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sensor Data Section -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2 tracking-wide uppercase">📊 Sensor Data</h4>
+                                <div class="grid grid-cols-4 gap-1 text-xs">
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Current Height</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierHeight" class="text-blue-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">mm</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Left Force</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierLeftForce" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Right Force</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierRightForce" class="text-red-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-2 rounded">
+                                        <div class="text-slate-500 font-medium uppercase tracking-wider" style="font-size: 0.7rem; line-height: 1; margin-bottom: 0.25rem;">Combined Force</div>
+                                        <div class="font-mono flex justify-between items-center gap-2">
+                                            <span id="courierCombinedForce" class="text-purple-600 font-bold" style="font-size: 1rem; line-height: 1.2;">--</span>
+                                            <span class="text-gray-600 text-xs font-medium ml-2">N</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content Area -->
+    <div class="max-w-7xl mx-auto px-4">
+        <!-- Content will be added here -->
+    </div>
+    
+    <!-- JavaScript -->
+    <script src="/js/task_manager.js"></script>
+</body>
+</html>
