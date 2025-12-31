@@ -560,7 +560,8 @@ class UR15WebNode(Node):
                 
             except socket.timeout:
                 # Timeout is normal when no data available
-                pass
+                # Small sleep to prevent busy waiting
+                time.sleep(0.01)
             except Exception as e:
                 self.get_logger().warning(f"Error reading from port 30003: {e}")
                 self.rt_connected = False
