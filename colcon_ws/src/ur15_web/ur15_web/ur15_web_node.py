@@ -307,6 +307,40 @@ class UR15WebNode(Node):
         # Create a timer to load calibration parameters after async cache is populated
         self._load_calib_retry_count = 0
         self._load_calib_timer = self.create_timer(0.5, self._load_calibration_from_status)
+        
+        # Create a timer to update robot_status with robot pose data (for other components)
+        self.robot_state_update_timer = self.create_timer(0.2, self._update_robot_status_timer_callback)
+    
+    def _update_robot_status_timer_callback(self):
+        """Timer callback to periodically update robot_status with current robot state.
+        This ensures robot_status is continuously updated for other components to use,
+        independent of the web interface."""
+        try:
+            with self.ur15_lock:
+                if self.ur15_robot is None:
+                    return
+                
+                # Get joint positions and TCP pose
+                try:
+                    joint_positions_rad = self.ur15_robot.get_actual_joint_positions()
+                    tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                    
+                    # Update robot_status with joint positions (in degrees)
+                    if joint_positions_rad:
+                        joint_positions_deg = np.array([j * 180.0 / np.pi for j in joint_positions_rad], dtype=np.float64)
+                        self.status_client.set_status('ur15', 'joint_positions', joint_positions_deg)
+                    
+                    # Update robot_status with TCP pose [x, y, z, rx, ry, rz]
+                    if tcp_pose_raw:
+                        tcp_pose_array = np.array(tcp_pose_raw, dtype=np.float64)
+                        self.status_client.set_status('ur15', 'tcp_pose', tcp_pose_array)
+                        
+                except Exception as e:
+                    # Silently fail to avoid spamming logs
+                    pass
+        except Exception as e:
+            # Outer exception handler
+            pass
     
     def _load_calibration_from_status(self):
         """Load calibration parameters from robot_status service."""
@@ -494,9 +528,29 @@ class UR15WebNode(Node):
         self.get_logger().info("Real-time data reader thread started")
         
         while self.rt_thread_running:
+            # Check connection and attempt reconnection if needed
             if not self.rt_connected or not self.rt_socket:
-                time.sleep(0.1)
-                continue
+                self.get_logger().info("Attempting to (re)connect to port 30003...")
+                try:
+                    # Close existing socket if any
+                    if self.rt_socket:
+                        try:
+                            self.rt_socket.close()
+                        except:
+                            pass
+                    
+                    # Create new connection
+                    self.rt_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    self.rt_socket.settimeout(0.5)
+                    self.rt_socket.connect((self.ur15_ip, 30003))
+                    self.rt_connected = True
+                    self.get_logger().info("Successfully connected to port 30003")
+                except Exception as e:
+                    self.get_logger().warning(f"Connection failed: {e}, retrying in 2 seconds...")
+                    self.rt_socket = None
+                    self.rt_connected = False
+                    time.sleep(2)
+                    continue
             
             try:
                 with self.rt_socket_lock:
@@ -560,11 +614,19 @@ class UR15WebNode(Node):
                 
             except socket.timeout:
                 # Timeout is normal when no data available
-                pass
+                # Small sleep to prevent busy waiting
+                time.sleep(0.01)
             except Exception as e:
                 self.get_logger().warning(f"Error reading from port 30003: {e}")
+                # Close socket and mark for reconnection
+                try:
+                    if self.rt_socket:
+                        self.rt_socket.close()
+                except:
+                    pass
+                self.rt_socket = None
                 self.rt_connected = False
-                time.sleep(1)  # Wait before retry
+                time.sleep(1)  # Wait before reconnection attempt
                 
         self.get_logger().info("Real-time data reader thread stopped")
     
@@ -855,34 +917,36 @@ class UR15WebNode(Node):
                 has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
                 has_extrinsic = self.cam2end_matrix is not None and self.target2base_matrix is not None
             
-            # Read real-time data from 30003 port
-            joint_positions_rad = self._read_rt_data("actual_joint_positions")
-            tcp_pose_raw = self._read_rt_data("actual_tcp_pose")
-            
-            # Convert joint positions from radians to degrees
+            # Read robot data using UR15Robot (more reliable than 30003 port)
             joint_positions = []
-            if joint_positions_rad:
-                joint_positions = [j * 180.0 / np.pi for j in joint_positions_rad]
-            
-            # Convert TCP pose from meters and axis-angle to mm and quaternion-like format
             tcp_pose = None
-            if tcp_pose_raw:
-                # tcp_pose_raw is [x, y, z, rx, ry, rz] in meters and radians (axis-angle)
-                # Convert to mm for position
-                tcp_pose = {
-                    'x': tcp_pose_raw[0] * 1000.0,  # m to mm
-                    'y': tcp_pose_raw[1] * 1000.0,
-                    'z': tcp_pose_raw[2] * 1000.0,
-                    'rx': tcp_pose_raw[3],  # Keep as axis-angle in radians
-                    'ry': tcp_pose_raw[4],
-                    'rz': tcp_pose_raw[5]
-                }
             
             with self.ur15_lock:
                 freedrive_active = self.freedrive_active
                 robot_connected = self.ur15_robot is not None
+                
+                if self.ur15_robot is not None:
+                    try:
+                        # Get joint positions in radians and convert to degrees
+                        joint_positions_rad = self.ur15_robot.get_actual_joint_positions()
+                        if joint_positions_rad:
+                            joint_positions = [j * 180.0 / np.pi for j in joint_positions_rad]
+                        
+                        # Get TCP pose [x, y, z, rx, ry, rz] in meters and radians
+                        tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                        if tcp_pose_raw:
+                            tcp_pose = {
+                                'x': tcp_pose_raw[0] * 1000.0,  # m to mm
+                                'y': tcp_pose_raw[1] * 1000.0,
+                                'z': tcp_pose_raw[2] * 1000.0,
+                                'rx': tcp_pose_raw[3],  # Keep as axis-angle in radians
+                                'ry': tcp_pose_raw[4],
+                                'rz': tcp_pose_raw[5]
+                            }
+                    except Exception as e:
+                        self.get_logger().debug(f"Error reading robot data: {e}")
             
-            # Data is always valid if we got it from 30003
+            # Data is valid if we got it
             joint_data_valid = joint_positions is not None and len(joint_positions) > 0
             tcp_data_valid = tcp_pose is not None
             
@@ -919,7 +983,7 @@ class UR15WebNode(Node):
                 'joint_positions': joint_positions if joint_data_valid else [],
                 'tcp_pose': tcp_pose if tcp_data_valid else None,
                 'freedrive_active': freedrive_active,
-                'robot_connected': robot_connected and self.rt_connected,
+                'robot_connected': robot_connected,
                 'board_type': board_type,
                 'board_type_display': board_type_display,
                 'board_type_loaded': board_type_loaded
@@ -3845,8 +3909,15 @@ class UR15WebNode(Node):
                 distortion_coefficients = self.distortion_coefficients.copy()
                 cam2end_matrix = self.cam2end_matrix.copy()
             
-            # Get current TCP pose from 30003 port (real-time data)
-            tcp_pose_raw = self._read_rt_data("actual_tcp_pose")
+            # Get current TCP pose using UR15Robot (more reliable)
+            tcp_pose_raw = None
+            with self.ur15_lock:
+                if self.ur15_robot is not None:
+                    try:
+                        tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                    except Exception as e:
+                        self.get_logger().debug(f"Error getting TCP pose: {e}")
+            
             if tcp_pose_raw is None:
                 return None
             
