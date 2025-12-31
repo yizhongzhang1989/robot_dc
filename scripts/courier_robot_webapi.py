@@ -49,7 +49,7 @@ class CourierRobotWebAPI:
             # Silently fail and return None if config cannot be loaded
             return None
     
-    def __init__(self, base_url=None, verbose=True):
+    def __init__(self, base_url=None, verbose=False):
         """
         Initialize courier robot controller
         
@@ -57,7 +57,7 @@ class CourierRobotWebAPI:
             base_url: HTTP server base URL (default: read from config/robot_config.yaml, 
                      fallback to http://192.168.1.3:8090 if config not found)
                      Can override by passing explicit URL
-            verbose: If True, automatically print command results (default: True)
+            verbose: If True, automatically print command results (default: False)
         """
         # Determine base URL priority: explicit parameter > config file > hardcoded default
         if base_url is None:
@@ -418,11 +418,17 @@ class CourierRobotWebAPI:
         
         # If blocking, wait for completion
         if self.verbose:
-            print(f"✅ Platform UP command sent, waiting for completion...")
+            print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
         
-        wait_result = self._wait_for_completion(timeout=timeout)
-        result.update(wait_result)
-        return result
+        completion = self._wait_for_completion(timeout=timeout)
+        
+        # Only print completion message if successful (not aborted by reset)
+        if completion['success'] and self.verbose:
+            print(f"✅ Platform UP completed")
+        elif self.verbose and completion.get('error') != 'Aborted by reset':
+            print(f"❌ Task failed: {completion.get('error', 'unknown')}")
+        
+        return completion
     
     def platform_down(self, blocking=True, timeout=300):
         """
@@ -468,11 +474,17 @@ class CourierRobotWebAPI:
         
         # If blocking, wait for completion
         if self.verbose:
-            print(f"✅ Platform DOWN command sent, waiting for completion...")
+            print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
         
-        wait_result = self._wait_for_completion(timeout=timeout)
-        result.update(wait_result)
-        return result
+        completion = self._wait_for_completion(timeout=timeout)
+        
+        # Only print completion message if successful (not aborted by reset)
+        if completion['success'] and self.verbose:
+            print(f"✅ Platform DOWN completed")
+        elif self.verbose and completion.get('error') != 'Aborted by reset':
+            print(f"❌ Task failed: {completion.get('error', 'unknown')}")
+        
+        return completion
     
     def platform_stop(self):
         """
@@ -832,11 +844,17 @@ class CourierRobotWebAPI:
         
         # If blocking, wait for completion
         if self.verbose:
-            print(f"✅ Pushrod UP command sent, waiting for completion...")
+            print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
         
-        wait_result = self._wait_for_completion(timeout=timeout)
-        result.update(wait_result)
-        return result
+        completion = self._wait_for_completion(timeout=timeout)
+        
+        # Only print completion message if successful (not aborted by reset)
+        if completion['success'] and self.verbose:
+            print(f"✅ Pushrod UP completed")
+        elif self.verbose and completion.get('error') != 'Aborted by reset':
+            print(f"❌ Task failed: {completion.get('error', 'unknown')}")
+        
+        return completion
     
     def pushrod_down(self, blocking=True, timeout=300):
         """
@@ -882,11 +900,17 @@ class CourierRobotWebAPI:
         
         # If blocking, wait for completion
         if self.verbose:
-            print(f"✅ Pushrod DOWN command sent, waiting for completion...")
+            print(f"⏳ Waiting for completion (timeout: {timeout}s)...")
         
-        wait_result = self._wait_for_completion(timeout=timeout)
-        result.update(wait_result)
-        return result
+        completion = self._wait_for_completion(timeout=timeout)
+        
+        # Only print completion message if successful (not aborted by reset)
+        if completion['success'] and self.verbose:
+            print(f"✅ Pushrod DOWN completed")
+        elif self.verbose and completion.get('error') != 'Aborted by reset':
+            print(f"❌ Task failed: {completion.get('error', 'unknown')}")
+        
+        return completion
     
     def pushrod_stop(self):
         """

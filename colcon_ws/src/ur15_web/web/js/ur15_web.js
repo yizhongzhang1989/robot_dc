@@ -5,6 +5,9 @@ let validationActive = false;
 let cornerDetectionEnabled = false;
 let currentOperationPath = ''; // Store the full operation path
 
+// Rack position management
+let selectedRack = null;
+
 // Robot state update throttling
 let lastRobotStateUpdate = 0;
 let pendingRobotStateUpdate = null;
@@ -992,17 +995,36 @@ function sendRobotStateToStatus(jointPositions, tcpPose) {
     }
     
     if (tcpPose) {
-        // Convert TCP pose from mm and quaternion to m and axis-angle (rad)
-        const axisAngle = quaternionToAxisAngle(tcpPose.qx, tcpPose.qy, tcpPose.qz, tcpPose.qw);
+        // Check if tcpPose already contains axis-angle (rx, ry, rz) or quaternion (qx, qy, qz, qw)
+        let rxRad, ryRad, rzRad;
+        
+        if (tcpPose.hasOwnProperty('rx') && tcpPose.hasOwnProperty('ry') && tcpPose.hasOwnProperty('rz')) {
+            // Already in axis-angle format (from 30003 port), rx/ry/rz are already in radians
+            rxRad = tcpPose.rx;
+            ryRad = tcpPose.ry;
+            rzRad = tcpPose.rz;
+        } else if (tcpPose.hasOwnProperty('qx') && tcpPose.hasOwnProperty('qy') && 
+                   tcpPose.hasOwnProperty('qz') && tcpPose.hasOwnProperty('qw')) {
+            // Convert from quaternion to axis-angle
+            const axisAngle = quaternionToAxisAngle(tcpPose.qx, tcpPose.qy, tcpPose.qz, tcpPose.qw);
+            // quaternionToAxisAngle returns degrees, convert to radians
+            rxRad = axisAngle.rx * Math.PI / 180.0;
+            ryRad = axisAngle.ry * Math.PI / 180.0;
+            rzRad = axisAngle.rz * Math.PI / 180.0;
+        } else {
+            // Invalid format, skip tcp_pose
+            console.warn('TCP pose has invalid format, skipping');
+            return;
+        }
         
         // Send as array in order: [x, y, z, rx, ry, rz] for numpy conversion
         dataToSend.tcp_pose = [
             tcpPose.x / 1000.0,  // x in meters
             tcpPose.y / 1000.0,  // y in meters
             tcpPose.z / 1000.0,  // z in meters
-            axisAngle.rx * Math.PI / 180.0,  // rx in radians
-            axisAngle.ry * Math.PI / 180.0,  // ry in radians
-            axisAngle.rz * Math.PI / 180.0   // rz in radians
+            rxRad,               // rx in radians
+            ryRad,               // ry in radians
+            rzRad                // rz in radians
         ];
     }
     
@@ -1128,8 +1150,8 @@ function updateStatus() {
         // Update TCP pose in Control Panel
         if (data.tcp_pose) {
             const pose = data.tcp_pose;
-            // Convert quaternion to axis-angle representation
-            const axisAngle = quaternionToAxisAngle(pose.qx, pose.qy, pose.qz, pose.qw);
+            // Data from 30003 port is already in axis-angle format (rx, ry, rz in radians)
+            // Convert radians to degrees for display
             
             // Update position values (only if not being edited)
             const tcpXElement = document.getElementById('tcpXValue');
@@ -1149,13 +1171,14 @@ function updateStatus() {
                 tcpZElement.value = pose.z.toFixed(1);
             }
             if (tcpRXElement && document.activeElement !== tcpRXElement) {
-                tcpRXElement.value = axisAngle.rx.toFixed(1);
+                // Convert from radians to degrees
+                tcpRXElement.value = (pose.rx * 180 / Math.PI).toFixed(1);
             }
             if (tcpRYElement && document.activeElement !== tcpRYElement) {
-                tcpRYElement.value = axisAngle.ry.toFixed(1);
+                tcpRYElement.value = (pose.ry * 180 / Math.PI).toFixed(1);
             }
             if (tcpRZElement && document.activeElement !== tcpRZElement) {
-                tcpRZElement.value = axisAngle.rz.toFixed(1);
+                tcpRZElement.value = (pose.rz * 180 / Math.PI).toFixed(1);
             }
         } else {
             // Set all TCP values to no data state (only if not being edited)
@@ -1210,6 +1233,9 @@ function openDeleteImageModal() {
     
     // Display current directory
     document.getElementById('deleteImageDirDisplay').textContent = calibDataPath;
+    
+    // Show calculating... while fetching
+    document.getElementById('deleteImageCountDisplay').textContent = 'calculating...';
     
     // Fetch image count from backend
     fetch('/get_image_count', {
@@ -2211,6 +2237,9 @@ async function disableCornerDetect() {
 // Draw GB200 Rack Functions
 let drawRackEnabled = false;
 
+// Draw GB200 Server Functions
+let drawServerEnabled = false;
+
 // Draw Keypoints Functions
 let drawKeypointsEnabled = false;
 
@@ -2245,6 +2274,44 @@ async function toggleDrawRack() {
         }
     } catch (error) {
         logToWeb(`Error toggling rack drawing: ${error.message}`, 'error');
+        // Revert checkbox on error
+        checkbox.checked = !checkbox.checked;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
+async function toggleDrawServer() {
+    const checkbox = document.getElementById('drawServerCheckbox');
+    checkbox.disabled = true;
+    
+    try {
+        const response = await fetch('/toggle_draw_server', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: checkbox.checked })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            drawServerEnabled = data.enabled;
+            checkbox.checked = data.enabled;
+            
+            if (data.enabled) {
+                logToWeb('Draw GB200 server enabled', 'success');
+            } else {
+                logToWeb('Draw GB200 server disabled', 'info');
+            }
+        } else {
+            logToWeb(`Failed to toggle server drawing: ${data.message}`, 'error');
+            // Revert checkbox on failure
+            checkbox.checked = !checkbox.checked;
+        }
+    } catch (error) {
+        logToWeb(`Error toggling server drawing: ${error.message}`, 'error');
         // Revert checkbox on error
         checkbox.checked = !checkbox.checked;
     } finally {
@@ -2339,40 +2406,6 @@ function locateLastOperation() {
     });
 }
 
-function locateUnlockKnob() {
-    logToWeb('🔓 Locate Unlock Knob button clicked', 'info');
-    
-    const btn = document.getElementById('locateUnlockKnobBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    
-    fetch('/locate_unlock_knob', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb(`✅ ${data.message}`, 'success');
-        } else {
-            logToWeb(`❌ Error: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        logToWeb(`❌ Network error: ${error.message}`, 'error');
-    })
-    .finally(() => {
-        setTimeout(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }, 2000);
-    });
-}
-
 function executeUnlockKnob() {
     logToWeb('🔧 Execute Unlock Knob button clicked', 'info');
     
@@ -2383,40 +2416,6 @@ function executeUnlockKnob() {
     }
     
     fetch('/execute_unlock_knob', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb(`✅ ${data.message}`, 'success');
-        } else {
-            logToWeb(`❌ Error: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        logToWeb(`❌ Network error: ${error.message}`, 'error');
-    })
-    .finally(() => {
-        setTimeout(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }, 2000);
-    });
-}
-
-function locateOpenHandle() {
-    logToWeb('🕹️ Locate Open Handle button clicked', 'info');
-    
-    const btn = document.getElementById('locateOpenHandleBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    
-    fetch('/locate_open_handle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })
@@ -2475,40 +2474,6 @@ function executeOpenHandle() {
     });
 }
 
-function locateCloseLeft() {
-    logToWeb('⬅️ Locate Close Left button clicked', 'info');
-    
-    const btn = document.getElementById('locateCloseLeftBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    
-    fetch('/locate_close_left', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            logToWeb(`✅ ${data.message}`, 'success');
-        } else {
-            logToWeb(`❌ Error: ${data.message}`, 'error');
-        }
-    })
-    .catch(error => {
-        logToWeb(`❌ Network error: ${error.message}`, 'error');
-    })
-    .finally(() => {
-        setTimeout(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }, 2000);
-    });
-}
-
 function executeCloseLeft() {
     logToWeb('◀️ Execute Close Left button clicked', 'info');
     
@@ -2543,16 +2508,16 @@ function executeCloseLeft() {
     });
 }
 
-function locateCloseRight() {
-    logToWeb('➡️ Locate Close Right button clicked', 'info');
+function executeCloseRight() {
+    logToWeb('▶️ Execute Close Right button clicked', 'info');
     
-    const btn = document.getElementById('locateCloseRightBtn');
+    const btn = document.getElementById('executeCloseRightBtn');
     if (btn) {
         btn.disabled = true;
         btn.classList.add('opacity-50', 'cursor-not-allowed');
     }
     
-    fetch('/locate_close_right', {
+    fetch('/execute_close_right', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })
@@ -2577,16 +2542,84 @@ function locateCloseRight() {
     });
 }
 
-function executeCloseRight() {
-    logToWeb('▶️ Execute Close Right button clicked', 'info');
+function executePutFrame() {
+    logToWeb('🎯 Execute Put Frame button clicked', 'info');
     
-    const btn = document.getElementById('executeCloseRightBtn');
+    const btn = document.getElementById('executePutFrameBtn');
     if (btn) {
         btn.disabled = true;
         btn.classList.add('opacity-50', 'cursor-not-allowed');
     }
     
-    fetch('/execute_close_right', {
+    fetch('/execute_put_frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeUnlockKnobInsert() {
+    logToWeb('🔑 Execute Unlock Knob Insert button clicked', 'info');
+    
+    const btn = document.getElementById('executeUnlockKnobInsertBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_unlock_knob_insert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            logToWeb(`✅ ${data.message}`, 'success');
+        } else {
+            logToWeb(`❌ Error: ${data.message}`, 'error');
+        }
+    })
+    .catch(error => {
+        logToWeb(`❌ Network error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }, 2000);
+    });
+}
+
+function executeCloseHandles() {
+    logToWeb('🤝 Execute Close Handles button clicked', 'info');
+    
+    const btn = document.getElementById('executeCloseHandlesBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    fetch('/execute_close_handles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })

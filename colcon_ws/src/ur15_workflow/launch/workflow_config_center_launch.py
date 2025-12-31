@@ -24,6 +24,7 @@ def generate_launch_description():
     # Load configuration
     config = ConfigManager()
     service_config = config.get('services.workflow_config_center')
+    ur15_config = config.get_robot('ur15')
     
     # Get paths
     workspace_root = get_workspace_root()
@@ -43,16 +44,32 @@ def generate_launch_description():
         description='Host address for the web service'
     )
     
+    ur15_ip_arg = DeclareLaunchArgument(
+        'ur15_ip',
+        default_value=ur15_config.get('robot.ip'),
+        description='UR15 robot IP address'
+    )
+    
+    ur15_port_arg = DeclareLaunchArgument(
+        'ur15_port',
+        default_value=str(ur15_config.get('robot.ports.control')),
+        description='UR15 robot control port'
+    )
+    
     # Get launch configurations
     port = LaunchConfiguration('port')
     host = LaunchConfiguration('host')
+    ur15_ip = LaunchConfiguration('ur15_ip')
+    ur15_port = LaunchConfiguration('ur15_port')
     
     # Define the web service process (direct Python/Flask launch)
     web_process = ExecuteProcess(
         cmd=[
             'python3', launch_script,
             '--host', host,
-            '--port', port
+            '--port', port,
+            '--ur15-ip', ur15_ip,
+            '--ur15-port', ur15_port
         ],
         output='screen',
         name='workflow_config_center_web',
@@ -66,6 +83,8 @@ def generate_launch_description():
         # Arguments
         port_arg,
         host_arg,
+        ur15_ip_arg,
+        ur15_port_arg,
         
         # Process
         web_process
