@@ -13,6 +13,9 @@
   <exec_depend>leadshine_motor</exec_depend>
   <exec_depend>duco_robot_arm</exec_depend>
   <exec_depend>robot_arm_web</exec_depend>
+  <exec_depend>common</exec_depend>
+  <exec_depend>ur15_robot_arm</exec_depend>
+  <exec_depend>ur15_web</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
