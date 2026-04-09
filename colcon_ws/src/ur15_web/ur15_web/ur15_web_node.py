@@ -95,6 +95,9 @@ class UR15WebNode(Node):
         self.image_labeling_port = self.get_parameter('image_labeling_port').value
         self.workflow_config_center_port = self.get_parameter('workflow_config_center_port').value
         
+        # Ensure directories exist
+        os.makedirs(self.calibration_data_dir, exist_ok=True)
+        
         # Use only the specified port, clear it if occupied
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

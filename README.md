@@ -1,6 +1,129 @@
 # Robot DC Control System
 
-A modular ROS 2-based control system for DC motors over RS-485 Modbus RTU, featuring centralized Modbus management, motor control, web interface, and simulation support. Designed for Jetson-based robot platforms with easy extensibility.
+A modular ROS 2-based control system for the DC robot, which consists of a dual-arm robot (UR15 + Duco GCR5-910) and a lift robot platform. Features centralized Modbus management, multi-robot coordination, web dashboards, camera calibration, 3D positioning, and Redis-based status management.
+
+---
+
+## Prerequisites
+
+* **OS:** Ubuntu 22.04 (x86_64 or Jetson ARM64)
+* **ROS 2:** Humble Hawksbill (`ros-humble-desktop` or `ros-humble-base`)
+* **Python:** 3.10+
+* **Git** (with submodule support)
+* **Redis** server (for `robot_status_redis`)
+* **Robot Vision System** (on a separate machine):
+  The `scripts/ThirdParty/robot_vision` system must be deployed on a dedicated machine with GPU support. This provides the FlowFormer++ (FFPP) keypoint tracking server used by the 3D positioning service. After setup, note the FFPP server URL (e.g., `http://<vision-machine-ip>:8001`) and set it in `config/robot_config.yaml` under:
+  - `services.positioning_3d.ffpp_url`
+  - `shared.network.ffpp_server.url`
+
+---
+
+## Quick Start
+
+1. **Clone and initialize submodules:**
+
+   ```bash
+   git clone <repo-url> robot_dc
+   cd robot_dc
+   git submodule update --init --recursive
+   ```
+
+2. **Copy and edit the centralized configuration file:**
+
+   This single config file is shared by all modules across the system.
+
+   ```bash
+   cp config/robot_config.example.yaml config/robot_config.yaml
+   # Edit config/robot_config.yaml with your robot IP addresses, camera URLs,
+   # FFPP server URL, etc.
+   ```
+
+3. **Install Redis (Required for robot_status_redis):**
+
+   ```bash
+   sudo apt-get update && sudo apt-get install redis-server
+   pip3 install redis
+   sudo systemctl start redis-server
+   sudo systemctl enable redis-server
+   redis-cli ping  # Should return "PONG"
+   ```
+
+4. **Install Python dependencies:**
+
+   ```bash
+   pip3 install -r requirements.txt
+   ```
+
+5. **Build and source the workspace:**
+
+   ```bash
+   cd colcon_ws
+   colcon build
+   source install/setup.bash
+   ```
+
+   > **Tip:** Add `source ~/Documents/robot_dc/colcon_ws/install/setup.bash` to your `~/.bashrc` so the workspace is sourced automatically in every new terminal.
+
+6. **Launch the UR15 system (all modules):** (see [UR15 Manual](doc/ur15_manual.md) for details)
+
+   ```bash
+   ros2 launch robot_bringup ur15_bringup.py
+   ```
+
+   This starts all enabled modules defined in `config/robot_config.yaml` under `ur15.launch_modules`:
+   | Module | Default Port | Description |
+   |--------|------|-------------|
+   | `robot_status_redis` | 8005 | Redis status store + web dashboard |
+   | `positioning_3d_service` | 8004 | 3D positioning (requires FFPP server) |
+   | `image_labeling_service` | 8007 | Image annotation tool |
+   | `camcalib_web_service` | 8006 | Camera calibration |
+   | `ur15_workflow` | 8008 | Workflow config center |
+   | `ur15_robot_arm` | — | UR robot driver |
+   | `camera_node` | 8019 | RTSP camera → ROS2 + MJPEG |
+   | `ur15_web` | 8030 | Main web dashboard |
+
+   Disable any module by setting `enabled: false` in the config if the corresponding hardware is not connected.
+
+7. **Launch the lift robot system:**
+
+   ```bash
+   ros2 launch robot_bringup lift_robot_bringup.py
+   ```
+
+8. **Launch in simulation mode (no physical hardware):**
+
+   ```bash
+   ros2 launch robot_bringup simulate_motor_launch.py
+   ```
+
+---
+
+## Key Points
+
+* **ROS 2 workspace** is located inside `colcon_ws/` with all source packages under `src/`.
+* Each ROS 2 package contains its own detailed README.
+* Individual package README files (relative paths):
+
+  * [cam\_node](colcon_ws/src/cam_node/README.md)
+  * [leadshine\_motor](colcon_ws/src/leadshine_motor/README.md)
+  * [modbus\_driver](colcon_ws/src/modbus_driver/README.md)
+  * [robot\_status](colcon_ws/src/robot_status/README.md) - Original file-based status management
+  * [robot\_status\_redis](colcon_ws/src/robot_status_redis/README.md) - **Recommended** high-performance Redis-based status management
+  * [robot\_teleop](colcon_ws/src/robot_teleop/README.md)
+  * [robot\_web](colcon_ws/src/robot_web/README.md)
+* Shared interfaces are in [`modbus_driver_interfaces`](colcon_ws/src/modbus_driver_interfaces).
+* Documentation and troubleshooting FAQs are available in the `doc/FAQ/` folder:
+
+  * [Enable CH340 USB serial on Jetson](doc/FAQ/enable_ch340_usb_serial_on_jetson.md)
+  * [Setup joystick support in ROS 2](doc/FAQ/setup_joystick_ros2.md)
+* Utility scripts for motor jogging and serial port detection are located in the [`scripts/`](scripts) directory.
+* Python dependencies are listed in [`requirements.txt`](requirements.txt).
+
+---
+
+## Remote Inspecting
+
+For remote visual monitoring of the robot or workspace, you can launch a USB camera video stream server using the script located at [`scripts/webcam_server.py`](scripts/webcam_server.py).
 
 ---
 
@@ -68,135 +191,9 @@ robot_dc/
 │   ├── ur_wobj_*.py               # Implementation of task operation 
 │   ├── force_sensor_*.py          # Force sensor utilities
 │   └── ...                        # Additional utility scripts
-├── install.sh                     # Setup helper script
 ├── requirements.txt               # Python dependencies
 └── README.md                      # This file - global project overview
 ```
-
----
-
-## Key Points
-
-* **ROS 2 workspace** is located inside `colcon_ws/` with all source packages under `src/`.
-* Each ROS 2 package contains its own detailed README.
-* Individual package README files (relative paths):
-
-  * [cam\_node](colcon_ws/src/cam_node/README.md)
-  * [leadshine\_motor](colcon_ws/src/leadshine_motor/README.md)
-  * [modbus\_driver](colcon_ws/src/modbus_driver/README.md)
-  * [robot\_status](colcon_ws/src/robot_status/README.md) - Original file-based status management
-  * [robot\_status\_redis](colcon_ws/src/robot_status_redis/README.md) - **Recommended** high-performance Redis-based status management
-  * [robot\_teleop](colcon_ws/src/robot_teleop/README.md)
-  * [robot\_web](colcon_ws/src/robot_web/README.md)
-* Shared interfaces are in [`modbus_driver_interfaces`](colcon_ws/src/modbus_driver_interfaces).
-* Documentation and troubleshooting FAQs are available in the `doc/FAQ/` folder:
-
-  * [Enable CH340 USB serial on Jetson](doc/FAQ/enable_ch340_usb_serial_on_jetson.md)
-  * [Setup joystick support in ROS 2](doc/FAQ/setup_joystick_ros2.md)
-* Utility scripts for motor jogging and serial port detection are located in the [`scripts/`](scripts) directory.
-* Use [`install.sh`](install.sh) to set up dependencies and environment quickly.
-* Python dependencies are listed in [`requirements.txt`](requirements.txt).
-
----
-
-## Quick Start
-
-1. **Install Redis (Required for robot_status_redis):**
-
-   ```bash
-   # Install Redis server
-   sudo apt-get update
-   sudo apt-get install redis-server
-   
-   # Install Python Redis client
-   pip3 install redis
-   
-   # Start Redis and enable auto-start on boot
-   sudo systemctl start redis-server
-   sudo systemctl enable redis-server
-   
-   # Verify Redis is running
-   redis-cli ping  # Should return "PONG"
-   ```
-
-2. **Build and source the workspace:**
-
-   ```bash
-   cd colcon_ws
-   colcon build
-   source install/setup.bash
-   ```
-
-3. **Launch the robot status system (Redis-based, recommended):**
-
-   ```bash
-   # Launch with web dashboard at http://localhost:8005
-   ros2 launch robot_status_redis robot_status_launch.py
-   
-   # Or with custom settings
-   ros2 launch robot_status_redis robot_status_launch.py \
-     web_port:=8080 \
-     auto_save_file_path:=/path/to/status.json
-   ```
-
-4. **Launch the full robot system (real hardware):**
-
-   ```bash
-   ros2 launch robot_bringup robot_launch.py
-   ```
-
-5. **Alternatively, run in simulation mode (no physical hardware required):**
-
-   ```bash
-   ros2 launch robot_bringup simulate_motor_launch.py
-   ```
-
-6. **Use robot status in your Python code:**
-
-   ```python
-   from robot_status_redis.client_utils import RobotStatusClient
-   import numpy as np
-   
-   # Create client (no ROS2 node required)
-   client = RobotStatusClient()
-   
-   # Store any Python object (dict, numpy arrays, custom classes)
-   client.set_status('robot1', 'pose', {'x': 1.5, 'y': 2.3, 'z': 0.5})
-   client.set_status('robot1', 'camera_matrix', np.eye(3))
-   
-   # Retrieve with original types preserved
-   pose = client.get_status('robot1', 'pose')  # Returns dict
-   matrix = client.get_status('robot1', 'camera_matrix')  # Returns numpy array
-   
-   # View all status at http://localhost:8005
-   ```
-
-7. **Access the web interface for control and monitoring:**
-
-   Open a browser and navigate to:
-
-   ```
-   http://<hostname>:8000  # Main robot control
-   http://<hostname>:8005  # Robot status dashboard
-   ```
-
-   > On Linux, you may need to allow ports 8000 and 8005 through your firewall to access from other PCs.
-
-8. **Take camera snapshots via the web interface:**
-
-   The system includes a dual-camera RTSP snapshot service. Once the system is running, you can:
-   - Access the web interface at `http://<hostname>:8000`
-   - Use the "Take Snapshot" button to capture images from both cameras
-   - Images are automatically displayed in the web interface
-   - Service endpoint: `/snapshot` (std_srvs/srv/Trigger)
-
-9. **Refer to individual package READMEs for usage examples, APIs, and command formats.**
-
----
-
-## Remote Inspecting
-
-For remote visual monitoring of the robot or workspace, you can launch a USB camera video stream server using the script located at [`scripts/webcam_server.py`](scripts/webcam_server.py).
 
 1. **Start the webcam server**
 

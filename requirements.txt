@@ -10,6 +10,7 @@ python-socketio
 thrift>=0.13.0
 numpy>=1.24.0,<2.0.0
 opencv-python
+redis
 rclpy
 ur-rtde
 git+https://github.com/UniversalRobots/RTDE_Python_Client_Library.git@v2.7.12
