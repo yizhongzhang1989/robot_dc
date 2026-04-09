@@ -28,7 +28,9 @@ A modular ROS 2-based control system for the DC robot, which consists of a dual-
    git submodule update --init --recursive
    ```
 
-2. **Copy and edit the configuration file:**
+2. **Copy and edit the centralized configuration file:**
+
+   This single config file is shared by all modules across the system.
 
    ```bash
    cp config/robot_config.example.yaml config/robot_config.yaml
@@ -62,14 +64,14 @@ A modular ROS 2-based control system for the DC robot, which consists of a dual-
 
    > **Tip:** Add `source ~/Documents/robot_dc/colcon_ws/install/setup.bash` to your `~/.bashrc` so the workspace is sourced automatically in every new terminal.
 
-6. **Launch the UR15 system (all modules):**
+6. **Launch the UR15 system (all modules):** (see [UR15 Manual](doc/ur15_manual.md) for details)
 
    ```bash
    ros2 launch robot_bringup ur15_bringup.py
    ```
 
    This starts all enabled modules defined in `config/robot_config.yaml` under `ur15.launch_modules`:
-   | Module | Port | Description |
+   | Module | Default Port | Description |
    |--------|------|-------------|
    | `robot_status_redis` | 8005 | Redis status store + web dashboard |
    | `positioning_3d_service` | 8004 | 3D positioning (requires FFPP server) |
