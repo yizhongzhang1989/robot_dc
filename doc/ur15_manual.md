@@ -23,116 +23,39 @@ The UR15 subsystem includes:
 
 ## 2. Configuration
 
-All UR15 settings are in `config/robot_config.yaml`. Key sections:
+All UR15 settings are in `config/robot_config.yaml`. Key items to update:
 
-### 2.1 Robot Connection
+- **`ur15.robot.ip`** — UR15 robot IP address (default: `192.168.1.15`). The robot must be in **Remote Control mode**.
+- **`ur15.launch_modules`** — List of modules launched by `ur15_bringup.py`. Set `enabled: false` on any module to skip it (e.g., if hardware is not connected).
+- **`ur15.camera.ip`** / **`ur15.camera.rtsp_url`** — IP camera address and RTSP stream URL. This is configured for the IP camera used in the Beijing Lab. If you are not using this type of camera, disable the `camera_node` module in `launch_modules`. Other modules that need an image feed can subscribe directly to the ROS 2 topic (`/ur15_camera/image_raw`) from any image source.
+- **`services.positioning_3d.ffpp_url`** — FlowFormer++ server URL for 3D positioning.
 
-```yaml
-ur15:
-  robot:
-    type: "ur15"
-    ip: "192.168.1.15"        # Robot IP address
-    ports:
-      control: 30002          # URScript command interface
-      dashboard: 29999        # Dashboard server (power, brake, program control)
-      rtde: 30004             # Real-time data exchange
-      modbus: 502             # Modbus TCP
-      rs485: 54321            # RS485 serial communication
-    launch_rviz: false
-    max_velocity: 1.0
-    max_acceleration: 1.4
-```
-
-The robot must be in **Remote Control mode** (not local Teach Pendant mode) for programmatic control.
-
-### 2.2 Tool Definitions
-
-Four end-effector tools are defined with flange-to-tip offsets:
-
-```yaml
-  tool:
-    tool_rotate:    { length: 0.325, angle_z: -31 }
-    tool_pushpull:  { length: 0.325, angle_z: -31 }
-    tool_frame:     { length: 0.345, angle_z: -33 }
-    tool_extract:   { length: 0.225, angle_z: -31 }
-```
-
-- `length` — distance from flange to tool tip (meters)
-- `angle_z` — rotation offset around Z axis (degrees)
-
-### 2.3 Camera
-
-```yaml
-  camera:
-    name: "UR15Camera"
-    ip: "192.168.1.101"
-    rtsp_url: "rtsp://admin:123456@192.168.1.101/stream0"
-    server_port: 8019         # MJPEG web stream
-    topic: "/ur15_camera/image_raw"
-    stream_fps: 25
-    jpeg_quality: 75
-    max_width: 800
-    publish_ros_image: true
-```
-
-### 2.4 Web Interface
-
-```yaml
-  web:
-    port: 8030
-    camera_topic: "/ur15_camera/image_raw"
-    dataset_path: "dataset"
-    calibration_data_path: "temp/ur15_cam_calibration_data"
-    calibration_result_path: "temp/ur15_cam_calibration_result"
-    chessboard_config_path: "temp/ur15_cam_calibration_data/chessboard_config.json"
-    rack_positions: "temp/ur15_rack_positions.json"
-```
-
-### 2.5 Camera Calibration
-
-```yaml
-  calibration:
-    chessboard:
-      rows: 9
-      cols: 6
-      square_size: 0.025      # meters
-    collect:
-      num_poses: 20
-      delay_seconds: 2
-```
-
-### 2.6 Launch Modules
-
-The `ur15.launch_modules` list controls which modules are started by the bringup launch. Each module can be individually enabled/disabled:
-
-```yaml
-  launch_modules:
-    - package: "robot_status_redis"
-      launch_file: "robot_status_launch.py"
-      delay: 0.0
-      enabled: true           # Set to false to skip
-    # ... (8 modules total)
-```
-
-### 2.7 Service Ports
-
-Shared services are configured under the `services` section:
-
-| Service | Config Key | Default Port |
-|---------|-----------|-------------|
-| Robot Status Redis | `services.robot_status_redis.web.port` | 8005 |
-| 3D Positioning | `services.positioning_3d.port` | 8004 |
-| Image Labeling | `services.image_labeling.port` | 8007 |
-| Camera Calibration | `services.camcalib_web.port` | 8006 |
-| Workflow Config Center | `services.workflow_config_center.port` | 8008 |
-
-The FlowFormer++ server URL is set at `services.positioning_3d.ffpp_url` (e.g., `http://10.172.100.34:8001`).
+See `config/robot_config.example.yaml` for the full reference with all available settings (tool definitions, calibration parameters, web ports, etc.).
 
 ---
 
-## 3. Launching
+## 3. Preparation
 
-### 3.1 Full System Launch
+### 3.1 Prepare Chessboard Configuration
+
+A chessboard (or ChArUco board) is needed for camera calibration. After the first launch of the UR15 system, the directory `temp/ur15_cam_calibration_data` is automatically created.
+
+To generate the chessboard configuration:
+
+1. Launch the system: `ros2 launch robot_bringup ur15_bringup.py`
+2. Open the Camera Calibration Web at `http://<host>:8006`
+3. Go to the **Pattern Generator** page
+4. Configure the pattern to match the physical chessboard you are using (rows, columns, square size, etc.)
+5. Download the generated JSON configuration file
+6. Place it at `temp/ur15_cam_calibration_data/chessboard_config.json`
+
+This file is referenced by `ur15.web.chessboard_config_path` in `robot_config.yaml` and is used during calibration data collection and processing. The configuration will be loaded automatically the next time you launch the UR15 system.
+
+---
+
+## 4. Launching
+
+### 4.1 Full System Launch
 
 Start all enabled UR15 modules:
 
@@ -142,7 +65,7 @@ ros2 launch robot_bringup ur15_bringup.py
 
 This sequentially launches each module from `ur15.launch_modules`. The `ur15_web` module has a 5-second delay to allow the camera node to initialize first.
 
-### 3.2 Individual Module Launch
+### 4.2 Individual Module Launch
 
 Launch specific modules independently:
 
@@ -163,7 +86,7 @@ ros2 launch camera_node ur15_cam_launch.py
 ros2 launch ur15_web ur15_web_launch.py
 ```
 
-### 3.3 Disabling Modules
+### 4.3 Disabling Modules
 
 To skip a module (e.g., when hardware is not connected), set `enabled: false` in `robot_config.yaml`:
 
@@ -176,7 +99,7 @@ To skip a module (e.g., when hardware is not connected), set `enabled: false` in
 
 ---
 
-## 4. Web Interfaces
+## 5. Web Interfaces
 
 After launch, the following web interfaces are available:
 
@@ -192,7 +115,7 @@ After launch, the following web interfaces are available:
 
 ---
 
-## 5. ROS 2 Topics and Services
+## 6. ROS 2 Topics and Services
 
 ### Topics
 
@@ -215,7 +138,7 @@ After launch, the following web interfaces are available:
 
 ---
 
-## 6. Robot Control API
+## 7. Robot Control API
 
 The `UR15Robot` class (`ur15_robot_arm.ur15`) provides direct socket-based control:
 
@@ -244,7 +167,7 @@ Commands are sent as URScript over TCP, formatted as `def myProg():\n  {command}
 
 ---
 
-## 7. Dashboard Control
+## 8. Dashboard Control
 
 Use the dashboard interface (port 29999) for robot state management:
 
@@ -260,43 +183,26 @@ Operations available:
 
 ---
 
-## 8. Camera Calibration
+## 9. Camera Calibration
 
-### 8.1 Data Collection
+For the full hand-eye calibration process (image collection, auto capture, calibration, report review, and validation), see the dedicated guide: [Hand-Eye Calibration Guide](handeye_calibration.md).
 
-Collect calibration images and robot poses via the web UI at `:8030`, or use the script:
+Summary of steps:
+1. Manually capture at least 30 chessboard images from varied angles via the web dashboard at `:8030`
+2. Run auto capture to re-take images without hand shake
+3. Calibrate (intrinsic + hand-eye) via the web UI or `python3 scripts/ur_cam_calibrate.py`
+4. Review calibration reports (reprojection error, camera matrix, hand-eye transform)
+5. Validate accuracy using base projection overlay in the web dashboard
 
-```bash
-python3 scripts/ur_capture.py
-```
-
-This captures images from the camera while recording the robot's TCP pose at each position. Data is saved to `temp/ur15_cam_calibration_data/`.
-
-**Settings**: 9×6 chessboard, 25mm square size, 20 poses with 2-second delays (configurable in `ur15.calibration`).
-
-### 8.2 Run Calibration
-
-```bash
-python3 scripts/ur_cam_calibrate.py
-```
-
-Performs:
-1. Intrinsic calibration (camera matrix, distortion coefficients)
-2. Eye-in-hand (hand-eye) calibration using ChArUco board
-3. Generates calibration report
-4. Saves results to `temp/ur15_cam_calibration_result/`
-
-### 8.3 Web-Based Calibration
-
-Use the camera calibration service at `http://<host>:8006` for an interactive calibration workflow with image upload, visualization, and result export.
+Results are saved to `temp/ur15_cam_calibration_result/`.
 
 ---
 
-## 9. Workflow System
+## 10. Workflow System
 
 The workflow engine executes JSON-defined task sequences combining robot movements, image capture, and 3D positioning.
 
-### 9.1 Running a Workflow
+### 10.1 Running a Workflow
 
 ```bash
 # Via CLI
@@ -308,7 +214,7 @@ ros2 run ur15_workflow run_workflow --config workflow.json --dry-run
 
 Or use the Workflow Config Center at `http://<host>:8008` to create, edit, and run workflows.
 
-### 9.2 Workflow Format
+### 10.2 Workflow Format
 
 ```json
 {
@@ -339,7 +245,7 @@ Or use the Workflow Config Center at `http://<host>:8008` to create, edit, and r
 }
 ```
 
-### 9.3 Operation Types
+### 10.3 Operation Types
 
 | Type | Description |
 |------|-------------|
@@ -352,7 +258,7 @@ Example workflows are in `colcon_ws/src/ur15_workflow/examples/`.
 
 ---
 
-## 10. Rack Positioning (Calibration Workflow)
+## 11. Rack Positioning (Calibration Workflow)
 
 The rack positioning workflow locates a GB200 server rack using multi-view 3D positioning:
 
@@ -366,7 +272,7 @@ See [calibration_guideline.md](calibration_guideline.md) for step-by-step instru
 
 ---
 
-## 11. Utility Scripts
+## 12. Utility Scripts
 
 Key scripts in `scripts/` for UR15 operations:
 
@@ -386,7 +292,7 @@ Key scripts in `scripts/` for UR15 operations:
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Issue | Solution |
 |-------|---------|
