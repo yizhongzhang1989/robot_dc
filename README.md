@@ -12,9 +12,18 @@ A modular ROS 2-based control system for the DC robot, which consists of a dual-
 * **Git** (with submodule support)
 * **Redis** server (for `robot_status_redis`)
 * **Robot Vision System** (on a separate machine):
-  The `scripts/ThirdParty/robot_vision` system must be deployed on a dedicated machine with GPU support. This provides the FlowFormer++ (FFPP) keypoint tracking server used by the 3D positioning service. After setup, note the FFPP server URL (e.g., `http://<vision-machine-ip>:8001`) and set it in `config/robot_config.yaml` under:
-  - `services.positioning_3d.ffpp_url`
-  - `shared.network.ffpp_server.url`
+  The [`scripts/ThirdParty/robot_vision`](scripts/ThirdParty/robot_vision/README.md) system must be deployed on a dedicated machine with GPU support. This provides the FlowFormer++ (FFPP) keypoint tracking server used by the 3D positioning service. After setup, set the FFPP server URL in `config/robot_config.yaml`:
+  ```yaml
+  services:
+    positioning_3d:
+      ffpp_url: "http://<vision-machine-ip>:8101"  # Note: http:// prefix is required
+
+  shared:
+    network:
+      ffpp_server:
+        url: "http://<vision-machine-ip>:8101"
+  ```
+  Replace `<vision-machine-ip>` with the actual IP of the machine running the FFPP server. Both entries must be updated.
 
 ---
 
