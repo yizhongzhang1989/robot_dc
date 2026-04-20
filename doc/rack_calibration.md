@@ -14,48 +14,44 @@ This document describes how to calibrate the GB200 server rack position using th
     positioning_3d:
       ffpp_url: "http://<vision-machine-ip>:8101"  # http:// prefix is required
   ```
+- The robot is placed at the working position. 
 
 ---
 
 ## Stage 1: Create a Dataset (One-time Preparation)
 
-In this stage, you capture reference images of the rack corners and label keypoints. This dataset is used by the positioning service to track these points in new views.
+In this stage, you capture reference images of the rack's 4 corners and label them. This dataset is used by the positioning service to track these points in new views.
 
 ### 1.1 Capture Reference Images
 
-Open the UR15 web dashboard at `http://<host>:8030`.
+Open the UR15 web dashboard at `http://<host>:8030`. Place the robot at its working position and enable freedrive mode.
 
 <img src="images/rack_calib_ui.jpg" width="600">
 
 In the **Dataset Panel**:
 
-1. Set **OperationName** to `rack_bottom_left`
-2. Click **Capture Reference 1**
-3. Click **Go To Label Latest Reference 1** — this opens the image labeling tool at `:8007`
+1. Set **OperationName** to `rack_top` and click **Set**
+2. Move the robot to look at the top of the rack, then click **Capture Reference 1**
 
-### 1.2 Label Bottom Corners
-
-In the labeling web interface:
+### 1.2 Label Top Corners
 
 <img src="images/image_labeling.jpg" width="600">
 
-1. Label the keypoint **`GB200_Rack_Bottom_Left_Corner`**
-2. Label the keypoint **`GB200_Rack_Bottom_Right_Corner`**
-3. Click **Save**
+1. Click **Go To Label Latest Reference 1** — this opens the image labeling tool at `:8007`
+2. Label the keypoint **`GB200_Rack_Top_Left_Corner`**
+3. Label the keypoint **`GB200_Rack_Top_Right_Corner`**
+4. Click **Save to Server**
 
-### 1.3 Capture and Label Top Corners
+### 1.3 Capture and Label Remaining Corners
 
-Back in the Dataset Panel:
+Repeat the process above to capture images that cover all four corners. The positioning system references corners by name, so corner names must match exactly (case-sensitive):
 
-1. Set **OperationName** to `rack_top_left`
-2. Click **Capture Reference 1**
-3. Click **Go To Label Latest Reference 1**
+- `GB200_Rack_Top_Left_Corner`
+- `GB200_Rack_Top_Right_Corner`
+- `GB200_Rack_Bottom_Left_Corner`
+- `GB200_Rack_Bottom_Right_Corner`
 
-In the labeling web:
-
-1. Label the keypoint **`GB200_Rack_Top_Left_Corner`**
-2. Label the keypoint **`GB200_Rack_Top_Right_Corner`**
-3. Click **Save**
+The number of images is flexible — each image should contain at least one keypoint. For best results, capture clear images where the corners are easy to identify.
 
 ---
 
