@@ -46,12 +46,16 @@ In the **Dataset Panel**:
 
 Repeat the process above to capture images that cover all four corners. The positioning system references corners by name, so corner names must match exactly (case-sensitive):
 
+The following corner names are used by the default workflow template (`workflow_example_positioning_fitting.json`). You must use these exact names (case-sensitive) so that the workflow can match labeled keypoints to the 3D model points during fitting:
+
 - `GB200_Rack_Top_Left_Corner`
 - `GB200_Rack_Top_Right_Corner`
 - `GB200_Rack_Bottom_Left_Corner`
 - `GB200_Rack_Bottom_Right_Corner`
 
-The number of images is flexible — each image should contain at least one keypoint. For best results, capture clear images where the corners are easy to identify.
+If you use different names, you must also update the `template_points` in the workflow accordingly.
+
+The number of images is flexible — each image should contain at least one keypoint, the same corner could be labeled in multiple images. For best results, capture clear images where the corners are easy to identify.
 
 ---
 
@@ -61,15 +65,20 @@ In this stage, you configure a positioning workflow that defines the robot poses
 
 ### 2.1 Load Workflow Template
 
-1. Go to the **Workflow Panel** in the web dashboard, or open the Workflow Config Center at `http://<host>:8008`
+1. Click **Go To Workflow Config Center** to open the workflow dashboard
 2. Click **Load Template** and select `workflow_example_positioning_fitting.json`
-3. Rename the file if needed
+3. Give the workflow a name if needed
+
+<img src="images/workflow_editor_ui.jpg" width="600">
 
 ### 2.2 Configure Workflow
 
-Modify the workflow parameters:
+Switch to **Modular View** for easier inspection and editing. Modify the following parameters:
 
-- **`movej_to_pose`** — Use freedrive mode to move the robot to desired observation poses, then record the joint values into the workflow
+- **`movej_to_pose`** — Enable freedrive mode, move the robot to the desired observation poses, then record the joint values into the workflow
+
+<img src="images/workflow_joints_ui.jpg" width="600">
+
 - **`upload_view` → `reference_name`** — Adjust if your reference names differ (default: `rack_bottom_left`, `rack_top_left`, etc.)
 - **`get_result_fitting` → `template_points`** — Define the 3D model points for fitting:
 
@@ -84,7 +93,11 @@ Modify the workflow parameters:
 
 These coordinates define the rack geometry in local frame (meters). Adjust to match your physical rack dimensions (see `shared.GB200_rack` in `robot_config.yaml`).
 
-### 2.3 Save Workflow
+### 2.3 Add Intermediate Waypoints
+
+The `movej_to_pose` command moves the robot via joint-space linear interpolation, which may cause collisions with the rack in tight spaces. To avoid this, insert additional `movej_to_pose` entries as intermediate waypoints to control the robot's path between observation poses.
+
+### 2.4 Save Workflow
 
 Click **Save Workflow**. The JSON file is stored and can be reused for all future calibrations.
 
