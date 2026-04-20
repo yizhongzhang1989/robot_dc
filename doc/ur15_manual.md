@@ -260,15 +260,13 @@ Example workflows are in `colcon_ws/src/ur15_workflow/examples/`.
 
 ## 11. Rack Positioning (Calibration Workflow)
 
-The rack positioning workflow locates a GB200 server rack using multi-view 3D positioning:
+The rack positioning workflow locates a GB200 server rack using multi-view 3D positioning. It has three stages:
 
-1. Enter freedrive mode and move the robot to capture reference views of rack corners
-2. Label keypoints (e.g., `GB200_Rack_Bottom_Left_Corner`) in the image labeling tool at `:8007`
-3. Load a positioning workflow template (e.g., `wf_rack_location_simplify.json`) in the workflow config center at `:8008`
-4. Modify poses as needed, then run the workflow
-5. Verify results using "Draw GB200 Rack" in the web dashboard at `:8030`
+1. **Create a dataset** (one-time) — capture reference images and label rack corner keypoints
+2. **Create a workflow** (one-time) — configure robot poses and 3D fitting parameters
+3. **Run workflow online** (each time) — execute the workflow to compute the rack position, verify with "Draw GB200 Rack"
 
-See [calibration_guideline.md](calibration_guideline.md) for step-by-step instructions.
+See [Rack Calibration Guide](rack_calibration.md) for the detailed step-by-step process.
 
 ---
 
