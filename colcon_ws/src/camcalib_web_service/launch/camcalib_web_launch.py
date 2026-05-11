@@ -16,6 +16,7 @@ from launch.substitutions import LaunchConfiguration
 from common.config_manager import ConfigManager
 from common.workspace_utils import get_workspace_root
 import os
+import sys
 
 
 def generate_launch_description():
@@ -47,10 +48,12 @@ def generate_launch_description():
     port = LaunchConfiguration('port')
     host = LaunchConfiguration('host')
     
-    # Define the web service process (direct Flask launch, no ROS node wrapper)
+    # Define the web service process (Flask launched via `python -m flask` so it
+    # does not depend on the `flask` console script being on PATH, e.g. when
+    # `~/.local/bin` is not exported in the calling shell).
     web_process = ExecuteProcess(
         cmd=[
-            'flask', '--app', app_path, 'run',
+            sys.executable, '-m', 'flask', '--app', app_path, 'run',
             '--host', host,
             '--port', port
         ],
