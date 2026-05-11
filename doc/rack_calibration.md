@@ -103,13 +103,13 @@ Click **Save Workflow**. The JSON file is stored and can be reused for all futur
 
 ---
 
-## Stage 3: Run Workflow Online (Repeated Each Time)
+## Stage 3: Run Workflow on the Dashboard
 
-This is the operational stage — run the saved workflow to compute the rack position.
+This is the operational stage — run the saved workflow from the web dashboard to compute the rack position. Use this when you want a one-click interactive run with the camera overlay verification.
 
 ### 3.1 Execute Workflow
 
-In the **Workflow Panel**:
+In the **Workflow Panel** of the UR15 dashboard (`http://<host>:8030`):
 
 1. Click **Refresh** to reload the workflow list
 2. Select the saved JSON workflow file
@@ -123,14 +123,107 @@ The workflow will:
 5. Compute the 3D rack position via model fitting
 6. Save the result (`rack2base_matrix`) to robot status
 
-**Troubleshooting**: If the workflow fails, run it via CLI for detailed error output:
-
-```bash
-ros2 run ur15_workflow run_workflow --config <workflow_file>.json
-```
+Progress and completion status are streamed back to the dashboard's log panel.
 
 ### 3.2 Verify Results
 
-In the web dashboard at `http://<host>:8030`, enable **Draw GB200 Rack** to overlay the 3D rack model on the live camera feed.
+In the web dashboard, enable **Draw GB200 Rack** to overlay the 3D rack model on the live camera feed.
 
 If the projected rack aligns with the physical rack in the image, the calibration is successful. The computed `rack2base_matrix` (rack-to-robot-base transformation) is stored in robot status and available for downstream tasks.
+
+---
+
+## Stage 4: Run Workflow with a Script
+
+Running the workflow from a terminal (instead of the dashboard) is useful for:
+
+- Debugging — full stdout/stderr is visible in the terminal
+- Batch/scripted runs (e.g. automated tests, CI, calibration sweeps)
+- Headless operation when no browser is available
+- Reusing rack calibration inside other Python programs
+
+The repo ships a thin wrapper, [scripts/ur_rack_calibration.py](../scripts/ur_rack_calibration.py), that drives the same `ros2 run ur15_workflow run_workflow.py` command the dashboard's **Run Current Selected Workflow** button uses, then reads the resulting `rack2base_matrix` and `rack_points_3d` back from the robot status service.
+
+### 4.1 Quick Start — Use the Wrapper Script
+
+Saved workflows live under `temp/workflow_files/` in the workspace. Pass the basename:
+
+```bash
+python3 scripts/ur_rack_calibration.py localize_rack_at_working_pos.json
+```
+
+Or an absolute path:
+
+```bash
+python3 scripts/ur_rack_calibration.py /abs/path/to/<workflow_file>.json
+```
+
+The script:
+
+1. Spawns `ros2 run ur15_workflow run_workflow.py --config <resolved_path>` and streams its output to the terminal.
+2. After successful completion, fetches `rack2base_matrix` and `rack_points_3d` from robot status (Redis, namespace `ur15`).
+3. Pretty-prints both arrays.
+
+Exit codes: `0` success · `2` workflow file not found · `3` cannot reach Redis · `4` `rack2base_matrix` not in status · `127` `ros2` not on PATH · otherwise the workflow's own non-zero return code.
+
+### 4.2 Use as a Library — `RackCalibrator` Class
+
+The wrapper exposes a reusable class so rack calibration can be triggered from other scripts/services:
+
+```python
+from ur_rack_calibration import RackCalibrator
+
+cal = RackCalibrator()
+cal.set_config('localize_rack_at_working_pos.json')   # basename or abs path
+rc = cal.run()                                        # runs the ros2 workflow synchronously
+result = cal.get_result()                             # dict of result arrays
+
+matrix = result['rack2base_matrix']                   # 4x4 numpy.ndarray (or None)
+points = result['rack_points_3d']                     # 4x3 numpy.ndarray (or None)
+```
+
+Or in one line:
+
+```python
+result = RackCalibrator(config='localize_rack_at_working_pos.json').calibrate()
+```
+
+Key members:
+
+| Member | Description |
+| --- | --- |
+| `RackCalibrator(config=None, namespace='ur15', result_keys=('rack2base_matrix', 'rack_points_3d'), status_client=None)` | Constructor. All args optional; pass `status_client` to inject a custom/mock `RobotStatusClient`, or `result_keys` to fetch a different set of status keys. |
+| `set_config(config)` | Resolve a basename (under `temp/workflow_files/`) or absolute path. Raises `FileNotFoundError` if missing. |
+| `run()` → `int` | Spawn `ros2 run ur15_workflow run_workflow.py --config <path>`. Returns the exit code. Raises `RuntimeError` if no config set, `FileNotFoundError` if `ros2` is not on PATH. |
+| `get_result()` → `dict` | Read all configured `result_keys` from robot status and return them as a dict (values are `numpy.ndarray` or `None` if not stored). Does **not** run the workflow — call this anytime to inspect the last computed result. |
+| `calibrate()` → `Optional[dict]` | Convenience: `run()` followed by `get_result()`. Returns `None` if the workflow exited non-zero. |
+| `config` (property) | Currently configured absolute workflow path, or `None`. |
+| `last_returncode` (property) | Exit code of the most recent `run()`, or `None`. |
+
+Because `get_result()` is independent of `run()`, you can also use the class purely to read the most recent calibration result without re-running the workflow:
+
+```python
+result = RackCalibrator().get_result()   # latest stored values
+matrix = result['rack2base_matrix']
+```
+
+### 4.3 Underlying Commands (For Reference)
+
+If you want to bypass the wrapper, the same operations are available as raw commands:
+
+```bash
+# Equivalent to RackCalibrator.run()
+ros2 run ur15_workflow run_workflow.py \
+    --config /home/robot/Documents/robot_dc/temp/workflow_files/<workflow_file>.json
+
+# Validate the workflow without moving the robot
+ros2 run ur15_workflow run_workflow.py --config <workflow_file>.json --dry-run
+
+# Equivalent HTTP call (mirrors the dashboard button exactly)
+curl -X POST http://<host>:8030/run_workflow \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow_file": "<workflow_file>.json"}'
+```
+
+The runner prints each operation's status (`✓ Completed`, `✗ Failed`, `⊘ Skipped`) and a final summary. On success, `rack2base_matrix` and `rack_points_3d` are written to robot status under namespace `ur15`.
+
