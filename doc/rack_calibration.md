@@ -227,3 +227,108 @@ curl -X POST http://<host>:8030/run_workflow \
 
 The runner prints each operation's status (`✓ Completed`, `✗ Failed`, `⊘ Skipped`) and a final summary. On success, `rack2base_matrix` and `rack_points_3d` are written to robot status under namespace `ur15`.
 
+---
+
+## Stage 5: Localize TCP — Record and Replay Poses in the Rack Frame
+
+Once `rack2base_matrix` exists in robot status, you can save TCP poses **relative to the rack** and replay them later. Because each saved pose is stored in the rack frame (not the robot base frame), it remains valid even after the robot base is moved — as long as Stage 3 has been re-run to refresh `rack2base_matrix` at the new location.
+
+Typical uses:
+
+- Teach approach/grasp poses once on a reference rack, then replay them on any other rack of the same model after re-running rack calibration.
+- Quickly jog the TCP back to a known landmark (e.g. `top_handle`, `left_knob`) during debugging.
+- Embed the same record/replay primitive inside other Python tools.
+
+Saved poses live as JSON files under `temp/tcp_poses/<name>.json` and contain the 4×4 `tcp_in_rack` matrix plus a timestamp. The dashboard panel and the script both read/write the same directory, so a pose recorded from one is immediately visible to the other.
+
+The math is intentionally tiny:
+
+- **Record**: `tcp_in_rack = inv(rack2base) @ tcp_in_base`
+- **Replay**: `tcp_in_base = rack2base @ tcp_in_rack` (uses the **current** `rack2base_matrix`, not the value at record time)
+
+### 5.1 Quick Start — Dashboard Panel
+
+The web dashboard at `http://<host>:8030` includes a **Localize TCP** panel (between the Workflow and Operation panels):
+
+1. **Refresh** — reload the dropdown list of saved poses from `temp/tcp_poses/`.
+2. **Record** — type a name (letters/digits/`_`/`-`), then click 💾. The current live TCP pose is captured and written to `temp/tcp_poses/<name>.json` in the rack frame.
+3. **Move To Selected Pose** — pick a name from the dropdown and click 🎯. The pose is converted to base frame using the current `rack2base_matrix` and sent as a single `movel`.
+4. **Delete** — remove the selected JSON file.
+
+All actions stream their stdout to the on-page log panel.
+
+### 5.2 Use as a Script — `scripts/ur_tcp_localizer.py`
+
+The same operations are available from the terminal via [scripts/ur_tcp_localizer.py](../scripts/ur_tcp_localizer.py):
+
+```bash
+# Capture the current live TCP pose and save it as "approach_left_knob"
+python3 scripts/ur_tcp_localizer.py record approach_left_knob
+
+# Move the TCP back to a previously saved pose
+python3 scripts/ur_tcp_localizer.py move approach_left_knob
+
+# Optional: override movel speed/acceleration (defaults: a=0.1, v=0.1)
+python3 scripts/ur_tcp_localizer.py move approach_left_knob --a 0.05 --v 0.05
+
+# List / delete saved poses
+python3 scripts/ur_tcp_localizer.py list
+python3 scripts/ur_tcp_localizer.py delete approach_left_knob
+```
+
+The script reads `config/robot_config.yaml` for the UR15 IP/port and connects to Redis on `localhost:6379` for the rack matrix — no extra arguments needed.
+
+### 5.3 Use as a Library — `TCPLocalizer` Class
+
+The wrapper exposes a reusable class so the same record/replay primitive can be embedded in other workflows:
+
+```python
+from ur_tcp_localizer import TCPLocalizer
+
+with TCPLocalizer() as loc:
+    loc.record('approach_left_knob')          # capture current TCP → rack frame JSON
+    ...
+    loc.move_to('approach_left_knob')         # replay by name (default a=v=0.1)
+    loc.move_to('approach_left_knob', a=0.05, v=0.05)
+```
+
+For ad-hoc poses that have not been saved to disk, pass a 4×4 matrix directly:
+
+```python
+import numpy as np
+from ur_tcp_localizer import TCPLocalizer
+
+tcp_in_rack = np.eye(4)
+tcp_in_rack[:3, 3] = [0.1, -0.2, 0.05]        # 10 cm, -20 cm, 5 cm in rack frame
+
+loc = TCPLocalizer()
+loc.move_to_pose_in_rack(tcp_in_rack, label='approach_top')
+```
+
+Key members:
+
+| Member | Description |
+| --- | --- |
+| `TCPLocalizer(poses_dir=None, robot_ip=None, robot_port=None, namespace='ur15', rack2base_key='rack2base_matrix', status_client=None, robot=None)` | Constructor. All args optional — defaults read `config/robot_config.yaml` and connect lazily. Inject `status_client` / `robot` for testing. |
+| `record(name)` → `Path` | Read the live TCP pose, convert to the rack frame using the current `rack2base_matrix`, and write `temp/tcp_poses/<name>.json`. Raises `RuntimeError` if `rack2base_matrix` is missing. |
+| `move_to(name, a=0.1, v=0.1)` → `int` | Load a saved pose and replay it. Returns the `movel` exit code. |
+| `move_to_pose_in_rack(tcp_in_rack, a=0.1, v=0.1, label='<inline>')` → `int` | Replay a 4×4 matrix directly (numpy.ndarray or nested-list). Validates shape (raises `ValueError` if not `(4, 4)`). `label` is cosmetic — only used in log output. |
+| `get_pose_in_rack(name)` → `np.ndarray` | Load a saved pose without moving. |
+| `list_poses()` → `list[str]` | Names of all saved poses. |
+| `delete_pose(name)` | Remove a saved pose file. |
+| `pose_path(name)` → `Path` | Resolve the on-disk path for a pose name. |
+| `close()` / `__enter__` / `__exit__` | Release the UR15 connection. The context-manager form is recommended. |
+
+Common exceptions:
+
+- `RuntimeError` — `rack2base_matrix` not present in robot status. Run Stage 3 first.
+- `ConnectionError` — the UR15 is not reachable at the configured IP/port.
+- `FileNotFoundError` — the pose name was never recorded.
+- `ValueError` — invalid pose name (only letters, digits, `_`, `-` allowed) or wrong matrix shape.
+
+### 5.4 Notes
+
+- Saved poses are tied to the rack model, not to a specific calibration run. If you move the robot base and re-run Stage 3, the same `<name>.json` files immediately produce correct base-frame targets again.
+- `record` captures the TCP pose **at the moment the call is made**, including any tool offset configured in the UR controller. Keep the same tool active when replaying.
+- The dashboard panel and the script share `temp/tcp_poses/` — a pose recorded on the dashboard can be replayed via the script and vice versa.
+
