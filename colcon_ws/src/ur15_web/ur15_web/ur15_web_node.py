@@ -1156,6 +1156,202 @@ class UR15WebNode(Node):
                     'message': str(e)
                 }), 500
         
+        # ----------------------------------------------------------------
+        # Localize TCP — record / replay TCP poses defined in rack frame
+        # ----------------------------------------------------------------
+        @self.app.route('/get_tcp_poses', methods=['GET'])
+        def get_tcp_poses():
+            """List saved TCP poses (basenames, no .json suffix)."""
+            from flask import jsonify
+            from common.workspace_utils import get_workspace_root
+            import glob
+            
+            try:
+                workspace_root = get_workspace_root()
+                if not workspace_root:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Could not find workspace root',
+                        'poses': []
+                    }), 500
+                
+                poses_dir = os.path.join(workspace_root, 'temp', 'tcp_poses')
+                os.makedirs(poses_dir, exist_ok=True)
+                
+                json_files = glob.glob(os.path.join(poses_dir, '*.json'))
+                pose_names = sorted(
+                    os.path.splitext(os.path.basename(f))[0] for f in json_files
+                )
+                
+                return jsonify({
+                    'status': 'success',
+                    'poses': pose_names,
+                    'directory': poses_dir
+                })
+            except Exception as e:
+                self.get_logger().error(f"Error listing TCP poses: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'poses': []
+                }), 500
+        
+        def _validate_tcp_pose_name(name):
+            """Defensive name check; matches TCPLocalizer's own validation."""
+            if not isinstance(name, str) or not name:
+                return False, 'Pose name is required'
+            if name.strip() != name:
+                return False, 'Pose name cannot have leading/trailing whitespace'
+            for bad in ('/', '\\', '..', '\x00'):
+                if bad in name:
+                    return False, f"Pose name contains invalid character '{bad}'"
+            if name in ('.', '..'):
+                return False, f"Pose name '{name}' is reserved"
+            return True, ''
+        
+        def _spawn_tcp_localizer(subcommand, name, action_label, extra_args=None):
+            """Run `python3 scripts/ur_tcp_localizer.py <subcommand> <name>` in a thread.
+            
+            Returns a Flask jsonify response.
+            """
+            from flask import jsonify
+            import subprocess
+            import threading
+            
+            ok, err = _validate_tcp_pose_name(name)
+            if not ok:
+                return jsonify({'success': False, 'message': err}), 400
+            
+            try:
+                scripts_dir = get_scripts_directory()
+                if scripts_dir is None:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Could not find scripts directory'
+                    }), 500
+                
+                script_path = os.path.join(scripts_dir, 'ur_tcp_localizer.py')
+                if not os.path.exists(script_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Script not found: {script_path}'
+                    }), 404
+                
+                cmd = ['python3', script_path, subcommand, name]
+                if extra_args:
+                    cmd.extend(extra_args)
+                self.get_logger().info(f"{action_label} command: {' '.join(cmd)}")
+                
+                def monitor_process():
+                    try:
+                        process = subprocess.Popen(
+                            cmd,
+                            cwd=os.path.dirname(script_path),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                        )
+                        with self.process_lock:
+                            self.child_processes.append(process)
+                        
+                        self.get_logger().info(
+                            f"Started {action_label} script with PID: {process.pid}"
+                        )
+                        stdout, _ = process.communicate()
+                        return_code = process.returncode
+                        self.get_logger().info(
+                            f"{action_label} finished with return code: {return_code}"
+                        )
+                        
+                        if return_code == 0:
+                            self.push_web_log(
+                                f"✅ {action_label} succeeded: '{name}'", 'success'
+                            )
+                        else:
+                            tail = (stdout or '').strip().splitlines()[-1:] or ['']
+                            self.push_web_log(
+                                f"❌ {action_label} failed (rc={return_code}): {tail[0]}",
+                                'error',
+                            )
+                            self.get_logger().error(
+                                f"{action_label} stdout:\n{stdout}"
+                            )
+                    except Exception as exc:
+                        self.get_logger().error(
+                            f"Error in {action_label} monitor thread: {exc}"
+                        )
+                        self.push_web_log(
+                            f"❌ {action_label} error: {str(exc)}", 'error'
+                        )
+                
+                threading.Thread(target=monitor_process, daemon=True).start()
+                self.push_web_log(
+                    f"🎯 Starting {action_label} for '{name}'...", 'info'
+                )
+                return jsonify({
+                    'success': True,
+                    'message': f"{action_label} started for '{name}'"
+                })
+            except Exception as exc:
+                self.get_logger().error(f"Error starting {action_label}: {exc}")
+                self.push_web_log(
+                    f"❌ Failed to start {action_label}: {str(exc)}", 'error'
+                )
+                return jsonify({'success': False, 'message': str(exc)}), 500
+        
+        @self.app.route('/record_tcp_pose', methods=['POST'])
+        def record_tcp_pose():
+            """Record the current TCP pose in rack frame under a user-chosen name."""
+            from flask import request
+            data = request.get_json(silent=True) or {}
+            name = data.get('name', '')
+            return _spawn_tcp_localizer('record', name, 'Record TCP pose')
+        
+        @self.app.route('/move_to_tcp_pose', methods=['POST'])
+        def move_to_tcp_pose():
+            """Move the TCP to a previously saved rack-frame pose."""
+            from flask import request
+            data = request.get_json(silent=True) or {}
+            name = data.get('name', '')
+            return _spawn_tcp_localizer('move', name, 'Move TCP to pose')
+        
+        @self.app.route('/delete_tcp_pose', methods=['POST'])
+        def delete_tcp_pose():
+            """Delete a saved TCP pose JSON file."""
+            from flask import request, jsonify
+            from common.workspace_utils import get_workspace_root
+            
+            data = request.get_json(silent=True) or {}
+            name = data.get('name', '')
+            ok, err = _validate_tcp_pose_name(name)
+            if not ok:
+                return jsonify({'success': False, 'message': err}), 400
+            
+            try:
+                workspace_root = get_workspace_root()
+                if not workspace_root:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Could not find workspace root'
+                    }), 500
+                
+                pose_path = os.path.join(
+                    workspace_root, 'temp', 'tcp_poses', f'{name}.json'
+                )
+                if not os.path.exists(pose_path):
+                    return jsonify({
+                        'success': False,
+                        'message': f"Pose '{name}' does not exist"
+                    }), 404
+                
+                os.remove(pose_path)
+                self.get_logger().info(f"Deleted TCP pose: {pose_path}")
+                self.push_web_log(f"🗑️ Deleted TCP pose '{name}'", 'info')
+                return jsonify({'success': True, 'message': f"Deleted '{name}'"})
+            except Exception as exc:
+                self.get_logger().error(f"Error deleting TCP pose: {exc}")
+                return jsonify({'success': False, 'message': str(exc)}), 500
+        
         @self.app.route('/workflow_config_center_url', methods=['GET'])
         def workflow_config_center_url():
             """Return the URL for workflow configuration center."""

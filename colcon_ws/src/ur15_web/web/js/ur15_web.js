@@ -485,6 +485,156 @@ function goToWorkflowConfigCenter() {
     });
 }
 
+// ============================================================
+// Localize TCP — record / replay TCP poses in rack frame
+// ============================================================
+function loadTcpPoses() {
+    fetch('/get_tcp_poses', { method: 'GET' })
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('tcpPoseFiles');
+            if (!select) return;
+            const previous = select.value;
+            select.innerHTML = '';
+            
+            if (data.status === 'success' && data.poses && data.poses.length > 0) {
+                const def = document.createElement('option');
+                def.value = '';
+                def.textContent = 'Select a saved TCP pose';
+                select.appendChild(def);
+                
+                data.poses.forEach(name => {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    select.appendChild(opt);
+                });
+                
+                // Re-select previous if still present
+                if (previous && data.poses.includes(previous)) {
+                    select.value = previous;
+                }
+                logToWeb(`Loaded ${data.poses.length} TCP pose(s)`, 'info');
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No saved TCP poses';
+                select.appendChild(opt);
+            }
+        })
+        .catch(error => {
+            logToWeb(`Error loading TCP poses: ${error.message}`, 'error');
+            const select = document.getElementById('tcpPoseFiles');
+            if (select) select.innerHTML = '<option value="">Error loading poses</option>';
+        });
+}
+
+function recordTcpPose() {
+    const input = document.getElementById('newTcpPoseName');
+    const name = input ? input.value.trim() : '';
+    if (!name) {
+        logToWeb('Please enter a name for the TCP pose first', 'warning');
+        showMessage('Please enter a pose name', 'warning');
+        return;
+    }
+    
+    logToWeb(`💾 Recording TCP pose '${name}'...`, 'info');
+    
+    fetch('/record_tcp_pose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                logToWeb(`✅ ${data.message}`, 'success');
+                // Refresh dropdown after a short delay so the new file appears
+                setTimeout(loadTcpPoses, 800);
+                if (input) input.value = '';
+            } else {
+                logToWeb(`❌ Error: ${data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            logToWeb(`❌ Network error: ${error.message}`, 'error');
+        });
+}
+
+function moveToSavedTcpPose() {
+    const select = document.getElementById('tcpPoseFiles');
+    const name = select ? select.value : '';
+    if (!name) {
+        logToWeb('Please select a saved TCP pose first', 'warning');
+        showMessage('Please select a TCP pose', 'warning');
+        return;
+    }
+    
+    const btn = document.getElementById('moveToTcpPoseBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+    
+    logToWeb(`🎯 Moving TCP to '${name}'...`, 'info');
+    
+    fetch('/move_to_tcp_pose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                logToWeb(`✅ ${data.message}`, 'success');
+            } else {
+                logToWeb(`❌ Error: ${data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            logToWeb(`❌ Network error: ${error.message}`, 'error');
+        })
+        .finally(() => {
+            setTimeout(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }, 2000);
+        });
+}
+
+function deleteTcpPose() {
+    const select = document.getElementById('tcpPoseFiles');
+    const name = select ? select.value : '';
+    if (!name) {
+        logToWeb('Please select a saved TCP pose first', 'warning');
+        showMessage('Please select a TCP pose', 'warning');
+        return;
+    }
+    if (!confirm(`Delete saved TCP pose '${name}'?`)) {
+        return;
+    }
+    
+    fetch('/delete_tcp_pose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                logToWeb(`✅ ${data.message}`, 'success');
+                loadTcpPoses();
+            } else {
+                logToWeb(`❌ Error: ${data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            logToWeb(`❌ Network error: ${error.message}`, 'error');
+        });
+}
+
 function labelLastCapturedImage() {
     logToWeb('Preparing ref_img_1 for labeling...', 'info');
     
@@ -1770,6 +1920,9 @@ window.onload = function() {
     
     // Load workflow files
     loadWorkflowFiles();
+    
+    // Load saved TCP poses (Localize TCP panel)
+    loadTcpPoses();
     
     logToWeb('UR15 Web Interface loaded', 'success');
     logToWeb('System ready for operation', 'info');

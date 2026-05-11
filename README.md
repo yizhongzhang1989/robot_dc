@@ -47,11 +47,21 @@ A modular ROS 2-based control system for the DC robot, which consists of a dual-
    # FFPP server URL, etc.
    ```
 
-3. **Install Redis (Required for robot_status_redis):**
+   > **Firewall:** Make sure all network ports listed in `config/robot_config.yaml` are allowed through your firewall (e.g. `sudo ufw allow <port>`), otherwise the web dashboards, cameras, and robot interfaces will not be reachable.
+
+3. **Install system dependencies:**
+
+   These APT packages are required for the UR15 driver, RTSP camera probing, and Redis status backend.
+
+   - `redis-server` — backend for `robot_status_redis`
+   - `ffmpeg` — provides `ffprobe`, used by `camera_node` to detect RTSP stream resolution
+   - `ros-humble-ur` — UR ROS 2 driver metapackage (provides `ur_robot_driver`, `ur_dashboard_msgs`, `ur_msgs`, etc.)
 
    ```bash
-   sudo apt-get update && sudo apt-get install redis-server
-   pip3 install redis
+   sudo apt-get update
+   sudo apt-get install -y redis-server ffmpeg ros-humble-ur
+
+   # Start and enable Redis
    sudo systemctl start redis-server
    sudo systemctl enable redis-server
    redis-cli ping  # Should return "PONG"

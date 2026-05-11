@@ -827,6 +827,48 @@
                 </div>
             </div>
             
+            <!-- Localize TCP Panel -->
+            <div class="panel-with-title">
+                <div class="panel-title">
+                    Localize TCP
+                </div>
+                <div class="panel-content">
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
+                        <!-- Saved Pose Dropdown -->
+                        <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
+                            <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">Saved Poses:</span>
+                            <select id="tcpPoseFiles" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200" style="width: 100%;" title="Select a saved TCP pose">
+                                <option value="">Loading...</option>
+                            </select>
+                            <button onclick="loadTcpPoses()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Refresh saved TCP poses">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                        
+                        <!-- New Pose Name Input -->
+                        <div style="display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                            <span class="text-xs font-medium text-gray-600 whitespace-nowrap" style="font-size: 0.7rem;">New Name:</span>
+                            <input type="text" id="newTcpPoseName" class="text-sm text-gray-700 font-mono px-3 py-1 bg-white rounded border border-gray-200" style="width: 100%;" placeholder="e.g. approach_left_knob" title="Name for the TCP pose to record">
+                            <button onclick="recordTcpPose()" class="bg-teal-500 hover:bg-teal-600 text-white font-bold px-2.5 py-1 rounded-lg transition-colors shadow-md hover:shadow-lg whitespace-nowrap text-sm" title="Record current TCP pose under this name">
+                                💾 Record
+                            </button>
+                        </div>
+                        
+                        <!-- Move + Delete buttons -->
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button id="moveToTcpPoseBtn" onclick="moveToSavedTcpPose()" style="flex: 1; min-width: 0;" class="responsive-btn bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Move TCP to the selected saved pose">
+                                <span>🎯</span>
+                                <span>Move To Selected Pose</span>
+                            </button>
+                            <button onclick="deleteTcpPose()" class="responsive-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Delete the selected saved pose" style="min-width: 0;">
+                                <span>🗑️</span>
+                                <span>Delete</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Operation Panel -->
             <div class="panel-with-title">
                 <div class="panel-title">
