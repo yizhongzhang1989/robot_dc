@@ -7,6 +7,163 @@ function getApiBaseUrl() {
     return window.location.origin;
 }
 
+// Resolve which robot this editor session is operating on.
+//
+// The workflow config center is a single Flask service shared by every
+// dashboard, so the editor itself cannot know which robot opened it.
+// Each dashboard passes its own robot namespace via the query string
+// (e.g. http://localhost:8008/?robot=ur10e). If the parameter is missing
+// we fall back to 'ur15' for backward compatibility with older bookmarks
+// and standalone launches.
+function getActiveRobotName() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const robot = params.get('robot');
+        if (robot && robot.length > 0) {
+            return robot;
+        }
+    } catch (e) {
+        // URLSearchParams not available — extremely unlikely in supported
+        // browsers, just fall through.
+    }
+    return 'ur15';
+}
+
+// Per-robot defaults for the workflow JSON's top-level ``context`` block.
+//
+// Populated once at editor load time by loadContextDefaults() which calls
+// GET /api/<robot>/context_defaults. The backend resolves each key from
+// robot_status_redis (populated at launch by each web node) and falls back
+// to hardcoded ur15 values if the namespace is unknown or Redis is down.
+//
+// Consumers (createNewWorkflow, drop-onto-empty paths) call
+// buildDefaultContext() instead of inlining ur15-specific literals, so the
+// editor always pre-fills the right robot's IP/camera/etc.
+let contextDefaultsCache = null;
+
+const HARDCODED_CONTEXT_FALLBACK = Object.freeze({
+    status_namespace: 'ur15',
+    robot_ip: '192.168.1.15',
+    robot_port: 30002,
+    robot_type: 'ur15',
+    camera_topic: '/ur15_camera/image_raw',
+});
+
+async function loadContextDefaults() {
+    const robotName = getActiveRobotName();
+    try {
+        const response = await fetch(`${getApiBaseUrl()}/api/${encodeURIComponent(robotName)}/context_defaults`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        if (!data.success || !data.defaults) {
+            throw new Error(data.error || 'Malformed response');
+        }
+        contextDefaultsCache = {
+            defaults: data.defaults,
+            sources: data.sources || {},
+            robot: data.robot || robotName,
+        };
+        console.log('Context defaults loaded for', robotName, contextDefaultsCache);
+        return contextDefaultsCache;
+    } catch (e) {
+        console.warn(`Failed to fetch context defaults for '${robotName}', using hardcoded fallback:`, e);
+        contextDefaultsCache = {
+            defaults: { ...HARDCODED_CONTEXT_FALLBACK, status_namespace: robotName },
+            sources: {},
+            robot: robotName,
+        };
+        return contextDefaultsCache;
+    }
+}
+
+// Return a fresh copy of the context block to seed new/empty workflows
+// with. Uses cached defaults if available, otherwise the hardcoded
+// ur15-shaped fallback (and tags status_namespace with the active robot
+// so even a cold-start editor doesn't silently target the wrong robot).
+function buildDefaultContext() {
+    if (contextDefaultsCache && contextDefaultsCache.defaults) {
+        return { ...contextDefaultsCache.defaults };
+    }
+    return { ...HARDCODED_CONTEXT_FALLBACK, status_namespace: getActiveRobotName() };
+}
+
+// Rewrite an existing context block (typically loaded from a template
+// that was authored against a different robot) so that robot-identity
+// keys point at the active robot.
+//
+// Semantics, per key:
+//   - source 'redis' or 'request' (server has a real value)  → ALWAYS override
+//   - source 'fallback' (server has no real value, just a guess) → only fill
+//     when the template didn't provide one, so any user-customized values
+//     survive a template load.
+//
+// If contextDefaultsCache is null (load failed at startup) we add only
+// status_namespace so the loaded template never silently targets the
+// wrong robot.
+function applyRobotDefaultsToContext(templateContext) {
+    const ctx = { ...(templateContext || {}) };
+    if (!contextDefaultsCache || !contextDefaultsCache.defaults) {
+        ctx.status_namespace = getActiveRobotName();
+        return ctx;
+    }
+    const { defaults, sources } = contextDefaultsCache;
+    for (const [key, value] of Object.entries(defaults)) {
+        const source = sources ? sources[key] : undefined;
+        if (source === 'redis' || source === 'request') {
+            ctx[key] = value;
+        } else if (!(key in ctx) || ctx[key] === undefined || ctx[key] === null) {
+            ctx[key] = value;
+        }
+    }
+    return ctx;
+}
+
+// Align a freshly-instantiated template step (e.g. just dropped onto the
+// editor) with the workflow's current context block. The shipped
+// workflow_template.json is authored against ur15 and contains literal
+// values like camera_topic="/ur15_camera/image_raw" and
+// status_namespace="ur15" — without this rewrite, dropping a capture or
+// positioning node into a ur10e workflow would silently use the ur15
+// camera/namespace.
+//
+// Rule: for every top-level key the template step declares, if the
+// current context block defines the same key, copy the context value
+// onto the step. Keys that don't appear in context are left untouched,
+// so handler-specific parameters (move_type, robot_pose, timeout, ...)
+// stay as the template's defaults.
+function applyContextToTemplateStep(step, context) {
+    if (!step || !context) {
+        return step;
+    }
+    for (const key of Object.keys(step)) {
+        if (Object.prototype.hasOwnProperty.call(context, key)) {
+            const ctxValue = context[key];
+            if (ctxValue !== undefined && ctxValue !== null && ctxValue !== '') {
+                step[key] = ctxValue;
+            }
+        }
+    }
+    return step;
+}
+
+// Pull the current context block out of the editor, returning {} if the
+// editor is empty or unparseable so callers can still operate on a fresh
+// workflow.
+function getCurrentEditorContext() {
+    try {
+        const editor = document.getElementById('jsonEditor');
+        if (!editor || !editor.value.trim()) {
+            return {};
+        }
+        const data = JSON.parse(editor.value);
+        return (data && data.context) || {};
+    } catch (e) {
+        return {};
+    }
+}
+
 // Load workflow templates
 let workflowTemplates = null;
 
@@ -207,14 +364,10 @@ function createNewWorkflow() {
     // 确保文件名以.json结尾
     const originalFileName = fileName.endsWith('.json') ? fileName : fileName + '.json';
     
-    // 创建空的workflow配置
+    // 创建空的workflow配置 — context is seeded with the active robot's
+    // defaults (fetched from /api/<robot>/context_defaults at page load).
     const emptyWorkflow = {
-        "context": {
-            "robot_ip": "192.168.1.15",
-            "robot_port": 30002,
-            "camera_topic": "/ur15_camera/image_raw",
-            "positioning_service_url": "http://localhost:8004"
-        },
+        "context": buildDefaultContext(),
         "workflow": []
     };
     
@@ -445,24 +598,34 @@ function loadSelectedTemplate() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Rewrite the template's context to match this dashboard's
+                // active robot. Templates are shipped with hardcoded ur15
+                // identity values; the editor opened from the ur10e dashboard
+                // would otherwise persist those into a brand-new workflow.
+                // See applyRobotDefaultsToContext for the override policy.
+                const rewritten = {
+                    ...data.content,
+                    context: applyRobotDefaultsToContext(data.content && data.content.context),
+                };
+
                 // 更新编辑器内容
                 const editor = document.getElementById('jsonEditor');
                 if (editor) {
-                    editor.value = JSON.stringify(data.content, null, 2);
+                    editor.value = JSON.stringify(rewritten, null, 2);
                 }
                 
                 // 确定最终的文件名
                 const originalFileName = newFilename || 'default_name.json';
                 
                 closeLoadTemplateModal();
-                console.log('Loaded template:', data.filename, `as ${originalFileName}`);
+                console.log('Loaded template:', data.filename, `as ${originalFileName}`, '(context retargeted to', getActiveRobotName(), ')');
                 checkWorkflowLoaded(); // Update drag state after loading
                 
                 // 更新 Modular View
                 renderModularView();
                 
                 // 尝试创建文件，如果已存在则自动生成新文件名
-                tryCreateWorkflowFile(originalFileName, data.content, originalFileName)
+                tryCreateWorkflowFile(originalFileName, rewritten, originalFileName)
                     .then(result => {
                         if (result.success) {
                             // 更新文件名显示为实际保存的文件名
@@ -572,7 +735,32 @@ function closeInfoModal() {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Initializing Workflow Config Center...');
-    
+
+    // Surface which robot this editor session targets so users editing
+    // a workflow from the ur10e dashboard don't accidentally load ur15
+    // joint angles.
+    try {
+        const robotName = getActiveRobotName();
+        const titleEl = document.querySelector('h1.title');
+        if (titleEl && !titleEl.dataset.robotBadgeApplied) {
+            titleEl.textContent = `Workflow Config Center [${robotName}]`;
+            titleEl.dataset.robotBadgeApplied = '1';
+        }
+        document.title = `Workflow Config Center [${robotName}]`;
+    } catch (e) {
+        console.warn('Failed to apply robot badge:', e);
+    }
+
+    // Pre-fetch per-robot context defaults so "New Workflow" / template
+    // / drop-onto-empty paths can seed the JSON with the active robot's
+    // IP/camera/etc. Non-blocking-on-failure: buildDefaultContext()
+    // falls back to a hardcoded ur15-shaped object on any error.
+    try {
+        await loadContextDefaults();
+    } catch (error) {
+        console.error('Context defaults loading error:', error);
+    }
+
     // Load workflow templates first (non-blocking if it fails)
     try {
         await loadWorkflowTemplates();
@@ -675,9 +863,6 @@ function handleDrop(e) {
             return;
         }
         
-        // Use the complete template as the new step
-        const newStep = template;
-        
         // Get current JSON content
         const editor = document.getElementById('jsonEditor');
         let workflowData;
@@ -690,13 +875,10 @@ function handleDrop(e) {
                 return;
             }
         } else {
-            // Create default workflow structure
+            // Create default workflow structure seeded with the active
+            // robot's per-namespace context (see buildDefaultContext).
             workflowData = {
-                context: {
-                    robot_ip: "192.168.1.15",
-                    robot_port: 30002,
-                    use_real_robot: true
-                },
+                context: buildDefaultContext(),
                 workflow: []
             };
         }
@@ -705,6 +887,11 @@ function handleDrop(e) {
         if (!workflowData.workflow) {
             workflowData.workflow = [];
         }
+        
+        // Align the template's context-bound fields (camera_topic,
+        // status_namespace, ...) with the workflow's current context
+        // before inserting.
+        const newStep = applyContextToTemplateStep(template, workflowData.context || {});
         
         // Add new step to workflow
         workflowData.workflow.push(newStep);
@@ -925,9 +1112,6 @@ function handleModularDrop(e) {
             return;
         }
         
-        // Use the complete template as the new step
-        const newStep = template;
-        
         // Get current JSON content
         const editor = document.getElementById('jsonEditor');
         let workflowData;
@@ -940,13 +1124,10 @@ function handleModularDrop(e) {
                 return;
             }
         } else {
-            // Create default workflow structure
+            // Create default workflow structure seeded with the active
+            // robot's per-namespace context (see buildDefaultContext).
             workflowData = {
-                context: {
-                    robot_ip: "192.168.1.15",
-                    robot_port: 30002,
-                    use_real_robot: true
-                },
+                context: buildDefaultContext(),
                 workflow: []
             };
         }
@@ -973,6 +1154,11 @@ function handleModularDrop(e) {
                 }
             }
         }
+        
+        // Align the template's context-bound fields (camera_topic,
+        // status_namespace, ...) with the workflow's current context
+        // before inserting.
+        const newStep = applyContextToTemplateStep(template, workflowData.context || {});
         
         // Insert new step at the determined position
         workflowData.workflow.splice(insertIndex, 0, newStep);
@@ -1202,13 +1388,16 @@ function closeEditParamsModal() {
 
 async function loadJointAngles() {
     try {
-        // Get actual joint positions directly from UR15 robot
-        const response = await fetch(`${getApiBaseUrl()}/api/ur15/actual_joint_positions`, {
+        // Get actual joint positions directly from the active robot.
+        // The active robot is determined per-dashboard via the ?robot=
+        // URL query parameter — see getActiveRobotName().
+        const robotName = getActiveRobotName();
+        const response = await fetch(`${getApiBaseUrl()}/api/${encodeURIComponent(robotName)}/actual_joint_positions`, {
             method: 'GET'
         });
         
         if (!response.ok) {
-            throw new Error('Failed to get joint positions from robot');
+            throw new Error(`Failed to get joint positions from ${robotName}`);
         }
         
         const data = await response.json();
@@ -1524,8 +1713,13 @@ function handleStepDrop(e) {
                     insertIndex = dropIndex + 1;
                 }
                 
+                // Align the template's context-bound fields (camera_topic,
+                // status_namespace, ...) with the workflow's current
+                // context before inserting.
+                const alignedStep = applyContextToTemplateStep(template, workflowData.context || {});
+                
                 // Insert new step
-                workflowData.workflow.splice(insertIndex, 0, template);
+                workflowData.workflow.splice(insertIndex, 0, alignedStep);
                 
                 // Update editor
                 editor.value = JSON.stringify(workflowData, null, 2);

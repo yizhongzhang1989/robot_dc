@@ -11,81 +11,89 @@ Usage:
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from common.config_manager import ConfigManager
 from common.workspace_utils import get_workspace_root
 import os
 
 
+# UR robot config keys we want to expose to the workflow editor for live
+# joint-pose readback. The set is small and known, so we hard-list it here
+# instead of trying to enumerate every top-level key in robot_config.yaml
+# (which would also include non-UR robots / lift / cam).
+_UR_ROBOT_KEYS = ('ur15', 'ur10e')
+
+
+def _build_robot_args(context, *args, **kwargs):
+    """Append one --robot NAME:IP:PORT flag per UR robot in robot_config.yaml.
+
+    Done inside an OpaqueFunction so we can read the config at launch
+    time (the launch arg defaults are also pulled from the config but
+    this function is what wires the multi-robot --robot flag).
+    """
+    config = ConfigManager()
+    workspace_root = get_workspace_root()
+    launch_script = os.path.join(workspace_root, 'colcon_ws', 'src', 'ur_workflow',
+                                 'web', 'workflow_api.py')
+
+    host = LaunchConfiguration('host').perform(context)
+    port = LaunchConfiguration('port').perform(context)
+
+    cmd = ['python3', launch_script, '--host', host, '--port', port]
+
+    registered = []
+    for name in _UR_ROBOT_KEYS:
+        try:
+            robot_cfg = config.get_robot(name)
+        except Exception:
+            continue
+        ip = robot_cfg.get('robot.ip')
+        ctrl_port = robot_cfg.get('robot.ports.control', 30002)
+        if not ip:
+            continue
+        cmd.extend(['--robot', f'{name}:{ip}:{ctrl_port}'])
+        registered.append((name, ip, ctrl_port))
+
+    if not registered:
+        print('[workflow_config_center_launch] WARNING: no UR robots found in '
+              'robot_config.yaml; the editor "Load Joint Angles" button will '
+              'return 503.')
+    else:
+        for name, ip, p in registered:
+            print(f'[workflow_config_center_launch] --robot {name}:{ip}:{p}')
+
+    return [ExecuteProcess(
+        cmd=cmd,
+        output='screen',
+        name='workflow_config_center_web',
+        sigterm_timeout='2',
+        sigkill_timeout='2',
+        emulate_tty=True,
+    )]
+
+
 def generate_launch_description():
     """Generate launch description for workflow config center service."""
-    
-    # Load configuration
+
+    # Load configuration just to compute default args.
     config = ConfigManager()
     service_config = config.get('services.workflow_config_center')
-    ur15_config = config.get_robot('ur15')
-    
-    # Get paths
-    workspace_root = get_workspace_root()
-    launch_script = os.path.join(workspace_root, 'colcon_ws', 'src', 'ur_workflow', 
-                                  'web', 'workflow_api.py')
-    
-    # Declare launch arguments with defaults from config
+
     port_arg = DeclareLaunchArgument(
         'port',
         default_value=str(service_config['port']),
         description='Port for the web service'
     )
-    
+
     host_arg = DeclareLaunchArgument(
         'host',
         default_value=service_config['host'],
         description='Host address for the web service'
     )
-    
-    ur15_ip_arg = DeclareLaunchArgument(
-        'ur15_ip',
-        default_value=ur15_config.get('robot.ip'),
-        description='UR15 robot IP address'
-    )
-    
-    ur15_port_arg = DeclareLaunchArgument(
-        'ur15_port',
-        default_value=str(ur15_config.get('robot.ports.control')),
-        description='UR15 robot control port'
-    )
-    
-    # Get launch configurations
-    port = LaunchConfiguration('port')
-    host = LaunchConfiguration('host')
-    ur15_ip = LaunchConfiguration('ur15_ip')
-    ur15_port = LaunchConfiguration('ur15_port')
-    
-    # Define the web service process (direct Python/Flask launch)
-    web_process = ExecuteProcess(
-        cmd=[
-            'python3', launch_script,
-            '--host', host,
-            '--port', port,
-            '--ur15-ip', ur15_ip,
-            '--ur15-port', ur15_port
-        ],
-        output='screen',
-        name='workflow_config_center_web',
-        # Use process group for proper signal handling
-        sigterm_timeout='2',
-        sigkill_timeout='2',
-        emulate_tty=True,
-    )
-    
+
     return LaunchDescription([
-        # Arguments
         port_arg,
         host_arg,
-        ur15_ip_arg,
-        ur15_port_arg,
-        
-        # Process
-        web_process
+        OpaqueFunction(function=_build_robot_args),
     ])

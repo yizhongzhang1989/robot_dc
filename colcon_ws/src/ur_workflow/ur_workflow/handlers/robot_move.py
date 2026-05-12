@@ -28,6 +28,51 @@ class RobotMoveHandler(OperationHandler):
     Handler for robot movement operations
     """
     
+    @staticmethod
+    def _resolve_robot_endpoint(context: Dict[str, Any]):
+        """Resolve (ip, port, source) for the robot this workflow targets.
+        
+        Resolution order:
+        
+        1. ``status_namespace`` from the workflow's context → look up
+           ``robot_ip``/``robot_port`` published in robot_status_redis at
+           launch time by each web node. This is the preferred path because
+           it lets workflows be namespace-only (e.g.
+           ``{"context": {"status_namespace": "ur10e"}}``) and stay correct
+           if a robot's IP changes in robot_config.yaml without re-editing
+           any JSON.
+        2. ``robot_ip``/``robot_port`` set directly in the workflow's
+           ``context`` block — legacy form, still honored.
+        3. Hardcoded ``192.168.1.15:30002`` as a last-resort default to
+           preserve the previous behavior for very old workflow JSONs.
+        
+        Returns ``(ip, port, source)`` where ``source`` is one of
+        ``'status_redis'``, ``'context'``, ``'fallback'``.
+        """
+        # Try robot_status_redis first.
+        namespace = context.get('status_namespace')
+        client = context.get('robot_status_client')
+        if namespace and client is not None:
+            try:
+                redis_ip = client.get_status(namespace, 'robot_ip')
+                redis_port = client.get_status(namespace, 'robot_port')
+            except Exception as exc:  # noqa: BLE001
+                print(f"    ⚠ Failed to read robot endpoint from "
+                      f"robot_status[{namespace}]: {exc}")
+                redis_ip = None
+                redis_port = None
+            if redis_ip:
+                port = int(redis_port) if redis_port else 30002
+                return redis_ip, port, 'status_redis'
+        
+        # Fall back to the legacy per-workflow context values, then the
+        # ur15 hardcoded defaults so we never lose backward compatibility.
+        ctx_ip = context.get('robot_ip')
+        ctx_port = context.get('robot_port')
+        if ctx_ip:
+            return ctx_ip, int(ctx_port) if ctx_port else 30002, 'context'
+        return '192.168.1.15', 30002, 'fallback'
+    
     def execute(self, operation: Dict[str, Any], context: Dict[str, Any], 
                 previous_results: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -47,12 +92,17 @@ class RobotMoveHandler(OperationHandler):
             # Get robot from context or create new instance
             robot = context.get('robot')
             if robot is None:
-                robot_ip = context.get('robot_ip', '192.168.1.15')
-                robot_port = context.get('robot_port', 30002)
+                robot_ip, robot_port, source = self._resolve_robot_endpoint(context)
+                print(f"    Connecting to robot at {robot_ip}:{robot_port} (source: {source})")
                 robot = UR15Robot(robot_ip, robot_port)
                 if robot.open() != 0:
-                    return {'status': 'error', 'error': f'Failed to connect to robot at {robot_ip}:{robot_port}'}
+                    return {'status': 'error',
+                            'error': f'Failed to connect to robot at {robot_ip}:{robot_port}'}
                 context['robot'] = robot
+                # Stash the resolved endpoint so subsequent handlers (and
+                # error messages) see what we actually connected to.
+                context['robot_ip'] = robot_ip
+                context['robot_port'] = robot_port
             
             # Resolve target pose
             target_pose = self._resolve_parameter(operation.get('robot_pose'), context)

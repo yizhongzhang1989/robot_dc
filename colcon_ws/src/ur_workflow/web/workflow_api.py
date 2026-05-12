@@ -31,11 +31,18 @@ except Exception as e:
     print(f"✗ Failed to initialize RobotStatusClient: {e}")
     print("  Robot status endpoints will not be available")
 
-# Initialize UR15Robot for direct robot communication
-# Will be initialized after parsing command-line arguments
-ur15_robot = None
-ur15_ip_arg = None
-ur15_port_arg = None
+# Robot client registry — populated at startup from --robot CLI args (one
+# entry per UR robot in robot_config.yaml). Each entry is a dict with
+# 'ip' and 'port' string values; the actual UR15Robot socket is lazy-opened
+# on first /api/<robot_name>/actual_joint_positions request and cached
+# under 'robot'. This service is shared by every dashboard, so we must
+# never assume only one robot is connected — historically the editor read
+# joints from a hard-coded ur15 connection, which silently fed ur15 joints
+# into ur10e workflows.
+robot_clients = {}  # robot_name → {'ip': str, 'port': int, 'robot': UR15Robot|None}
+# Legacy alias for the previous single-robot endpoint, set to whichever
+# entry was configured with --robot ur15 (or the first one if no ur15).
+_legacy_default_robot_name = None
 
 
 @app.route('/api/workflow', methods=['POST'])
@@ -261,37 +268,153 @@ def get_robot_status(namespace, key):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/ur15/actual_joint_positions', methods=['GET'])
-def get_actual_joint_positions():
-    """Get actual joint positions directly from UR15 robot (in radians)"""
+@app.route('/api/robots', methods=['GET'])
+def list_robots():
+    """List configured robots that joint-position queries can be sent to."""
+    return jsonify({
+        'success': True,
+        'robots': [
+            {'name': name, 'ip': entry['ip'], 'port': entry['port']}
+            for name, entry in robot_clients.items()
+        ],
+        'default': _legacy_default_robot_name,
+    })
+
+
+# Workflow-context defaults that the editor falls back on if the robot's
+# namespace is unknown or robot_status_redis is unreachable. Historically
+# the editor was ur15-only so these mirror the legacy hardcoded values.
+# Note: positioning_service_url is intentionally NOT included — the
+# workflow runner now resolves it from robot_config.yaml at launch time
+# (see runner._resolve_positioning_service_url), so embedding it in every
+# new workflow JSON only creates drift between the JSON and the config.
+_FALLBACK_CONTEXT_DEFAULTS = {
+    'status_namespace': 'ur15',
+    'robot_ip': '192.168.1.15',
+    'robot_port': 30002,
+    'robot_type': 'ur15',
+    'camera_topic': '/ur15_camera/image_raw',
+}
+
+
+@app.route('/api/<robot_name>/context_defaults', methods=['GET'])
+def get_context_defaults(robot_name):
+    """Return per-robot defaults for a workflow's top-level ``context`` block.
+
+    The editor calls this at load time (with the active robot's namespace
+    derived from ``?robot=<ns>``) so that "New Workflow", template loads
+    and drop-onto-empty paths can pre-fill the JSON with the right values
+    for the robot the dashboard is editing for.
+
+    Resolution order per key:
+      1. value stored in robot_status_redis under ``robot_name`` namespace
+         (populated at launch time by each web node's
+         ``_publish_static_robot_info``)
+      2. ``_FALLBACK_CONTEXT_DEFAULTS`` (ur15-shaped) — used when no client
+         exists, the value is missing, or the lookup raises.
+
+    The response always returns a populated ``defaults`` dict and a
+    per-key ``sources`` map ('redis' or 'fallback') so the UI can surface
+    which values are real and which are guesses.
+    """
+    defaults = dict(_FALLBACK_CONTEXT_DEFAULTS)
+    sources = {k: 'fallback' for k in defaults}
+    # status_namespace is the only key the editor knows for certain: it's
+    # whatever the dashboard passed us via ?robot=...
+    defaults['status_namespace'] = robot_name
+    sources['status_namespace'] = 'request'
+
+    # positioning_service_url is intentionally omitted: it's resolved by
+    # the workflow runner from robot_config.yaml at launch time, not
+    # baked per-workflow.
+
+    redis_backed_keys = ('robot_ip', 'robot_port', 'robot_type', 'camera_topic')
+
+    if robot_status_client is None:
+        return jsonify({
+            'success': True,
+            'robot': robot_name,
+            'defaults': defaults,
+            'sources': sources,
+            'warning': 'robot_status_client unavailable; using fallback values',
+        })
+
+    for key in redis_backed_keys:
+        try:
+            value = robot_status_client.get_status(robot_name, key)
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠ context_defaults: get_status({robot_name}, {key}) raised: {exc}")
+            continue
+        if value is None or value == '':
+            continue
+        # robot_port is stored as int; everything else is a plain string. We
+        # don't attempt smart coercion beyond that — the editor consumes the
+        # values verbatim.
+        defaults[key] = value
+        sources[key] = 'redis'
+
+    return jsonify({
+        'success': True,
+        'robot': robot_name,
+        'defaults': defaults,
+        'sources': sources,
+    })
+
+
+def _get_or_open_robot(robot_name: str):
+    """Return a connected UR15Robot for ``robot_name`` or (None, error_msg)."""
+    entry = robot_clients.get(robot_name)
+    if entry is None:
+        return None, f"Robot '{robot_name}' is not configured on this service"
+
+    robot = entry.get('robot')
+    if robot is None:
+        # Lazy import — keeps the service importable on hosts without
+        # ur_robot_arm installed (e.g. during unit testing).
+        try:
+            from ur_robot_arm.ur15 import UR15Robot
+        except Exception as exc:  # noqa: BLE001
+            return None, f"UR15Robot module unavailable: {exc}"
+        robot = UR15Robot(entry['ip'], entry['port'])
+        entry['robot'] = robot
+
+    if not getattr(robot, 'connected', False):
+        rc = robot.open()
+        if rc != 0:
+            return None, f"Failed to connect to robot '{robot_name}' at {entry['ip']}:{entry['port']}"
+    return robot, None
+
+
+@app.route('/api/<robot_name>/actual_joint_positions', methods=['GET'])
+def get_actual_joint_positions(robot_name):
+    """Get actual joint positions for ``robot_name`` (in radians).
+
+    ``robot_name`` is the same key used in robot_config.yaml (e.g. 'ur15',
+    'ur10e'). The legacy ``/api/ur15/actual_joint_positions`` route remains
+    available — it maps to whichever robot the service was launched with
+    as ur15.
+    """
     try:
-        if ur15_robot is None:
-            return jsonify({'success': False, 'error': 'UR15Robot not available'}), 503
-        
-        # Open connection if not already connected
-        if not ur15_robot.connected:
-            result = ur15_robot.open()
-            if result != 0:
-                return jsonify({'success': False, 'error': 'Failed to connect to robot'}), 503
-        
-        # Get actual joint positions (already in radians)
-        joint_positions = ur15_robot.get_actual_joint_positions()
-        
+        robot, err = _get_or_open_robot(robot_name)
+        if robot is None:
+            return jsonify({'success': False, 'error': err}), 503
+
+        joint_positions = robot.get_actual_joint_positions()
         if joint_positions is None:
             return jsonify({'success': False, 'error': 'Failed to read joint positions from robot'}), 500
-        
-        # Convert numpy array to list for JSON serialization
+
         import numpy as np
         if isinstance(joint_positions, np.ndarray):
             joint_positions = joint_positions.tolist()
-        
+
         return jsonify({
             'success': True,
+            'robot': robot_name,
             'value': joint_positions,
             'unit': 'radians',
-            'description': 'Actual joint positions from UR15 robot'
+            'description': f'Actual joint positions from {robot_name} robot',
         })
-        
+
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -324,39 +447,68 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Workflow Config Center API Server')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host address')
     parser.add_argument('--port', type=int, default=8008, help='Port number')
-    parser.add_argument('--ur15-ip', type=str, default=None, help='UR15 robot IP address')
-    parser.add_argument('--ur15-port', type=int, default=30002, help='UR15 robot control port')
+    parser.add_argument(
+        '--robot',
+        action='append',
+        default=[],
+        metavar='NAME:IP:PORT',
+        help='Register a robot for joint-position queries. May be repeated. '
+             'Format: name:ip[:port] (port defaults to 30002). The "name" '
+             'must match the robot key in robot_config.yaml and the URL '
+             'path /api/<name>/actual_joint_positions used by the editor. '
+             'Example: --robot ur15:192.168.1.15 --robot ur10e:192.168.1.16'
+    )
+    # Legacy single-robot CLI (still respected; kept so older launch files
+    # don't break). Effectively equivalent to --robot ur15:<ip>:<port>.
+    parser.add_argument('--ur15-ip', type=str, default=None,
+                        help='[Deprecated, use --robot] UR15 robot IP address')
+    parser.add_argument('--ur15-port', type=int, default=30002,
+                        help='[Deprecated, use --robot] UR15 robot control port')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     args = parser.parse_args()
-    
-    # Initialize UR15Robot with command-line arguments
-    ur15_ip_arg = args.ur15_ip
-    ur15_port_arg = args.ur15_port
-    
-    if ur15_ip_arg:
-        try:
-            import sys
-            # Add ur_robot_arm package to path
-            colcon_src = Path(get_workspace_root()) / 'colcon_ws' / 'src'
-            ur15_pkg_path = colcon_src / 'ur_robot_arm'
-            if ur15_pkg_path.exists():
-                sys.path.insert(0, str(ur15_pkg_path))
-            
-            from ur_robot_arm.ur15 import UR15Robot
-            # Update the global ur15_robot variable
-            ur15_robot = UR15Robot(ur15_ip_arg, ur15_port_arg)
-            # Update the module-level variable by accessing globals()
-            globals()['ur15_robot'] = ur15_robot
-            print(f"✓ UR15Robot initialized (IP: {ur15_ip_arg}, Port: {ur15_port_arg})")
-        except Exception as e:
-            print(f"✗ Failed to initialize UR15Robot: {e}")
-            print("  Direct robot joint position endpoint will not be available")
+
+    # Build the robot registry from --robot occurrences plus the legacy
+    # --ur15-ip flag.
+    def _add_robot(name: str, ip: str, port: int):
+        if not name or not ip:
+            return
+        if name in robot_clients:
+            print(f"⚠ Duplicate --robot {name}, keeping first entry")
+            return
+        robot_clients[name] = {'ip': ip, 'port': int(port), 'robot': None}
+        print(f"✓ Registered robot '{name}' at {ip}:{port}")
+
+    for spec in args.robot:
+        parts = spec.split(':')
+        if len(parts) == 2:
+            name, ip = parts
+            port = 30002
+        elif len(parts) == 3:
+            name, ip, port_s = parts
+            try:
+                port = int(port_s)
+            except ValueError:
+                print(f"✗ Bad --robot spec '{spec}': port must be an int. Skipping.")
+                continue
+        else:
+            print(f"✗ Bad --robot spec '{spec}'. Expected name:ip[:port]. Skipping.")
+            continue
+        _add_robot(name, ip, port)
+
+    if args.ur15_ip:
+        _add_robot('ur15', args.ur15_ip, args.ur15_port)
+
+    if robot_clients:
+        # Prefer 'ur15' if registered; otherwise fall back to the first robot.
+        _legacy_default_robot_name = 'ur15' if 'ur15' in robot_clients else next(iter(robot_clients))
     else:
-        print("⚠ UR15 IP not provided, direct robot joint position endpoint will not be available")
-    
+        print("⚠ No robots registered. /api/<name>/actual_joint_positions will return 503.")
+        print("  Use --robot NAME:IP[:PORT] (or legacy --ur15-ip) to enable joint readback.")
+
     print(f"Workflow API Server starting...")
     print(f"Workflow config directory: {WORKFLOW_CONFIG_DIR}")
+    print(f"Registered robots: {list(robot_clients.keys()) or '(none)'}")
     print(f"Server running on http://{args.host}:{args.port}")
     print(f"Open browser: http://localhost:{args.port}")
     

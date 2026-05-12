@@ -86,6 +86,11 @@ class UR15WebNode(Node):
         # 'ur15' so existing callers/configs keep working unchanged; for ur10e
         # the launch file passes 'ur10e' so the two robots stay isolated.
         self.declare_parameter('robot_namespace', 'ur15')
+        # Robot model identifier (e.g. 'ur15', 'ur10e'). Published once to
+        # robot_status_redis at startup so workflow consumers can fetch it
+        # by namespace without hardcoding model assumptions. Defaults to the
+        # same value as robot_namespace when not provided explicitly.
+        self.declare_parameter('robot_type', '')
         # Prefix on joint names in the shared /joint_states topic. Defaults to
         # empty (matches the ur15 driver's joint_state_broadcaster output). For
         # ur10e the launch file passes 'ur10e_' so this instance only consumes
@@ -105,6 +110,9 @@ class UR15WebNode(Node):
         self.image_labeling_port = self.get_parameter('image_labeling_port').value
         self.workflow_config_center_port = self.get_parameter('workflow_config_center_port').value
         self.robot_namespace = self.get_parameter('robot_namespace').value
+        # robot_type defaults to whatever robot_namespace is (so a launch that
+        # only sets robot_namespace='ur10e' still publishes a sensible type).
+        self.robot_type = self.get_parameter('robot_type').value or self.robot_namespace
         self.joint_prefix = self.get_parameter('joint_prefix').value
         # Expected joint name set for this robot. We use a set lookup in the
         # /joint_states callback so we silently drop messages from the other
@@ -266,6 +274,15 @@ class UR15WebNode(Node):
         self.status_client = RobotStatusClient(self)
         self.get_logger().info("Status service client created")
         
+        # Publish this robot's static, launch-time configuration to
+        # robot_status_redis under our namespace. Workflow handlers (and any
+        # other consumer that only knows the robot's namespace) can then read
+        # 'robot_ip', 'robot_port', 'camera_topic', 'robot_type' from Redis
+        # instead of hardcoding values or re-parsing robot_config.yaml. Live
+        # values (joint_positions, tcp_pose, calibration matrices) are updated
+        # by other code paths elsewhere in this file.
+        self._publish_static_robot_info()
+        
         # Create Dashboard client for freedrive control (doesn't interrupt External Control)
         from ur_dashboard_msgs.srv import RawRequest
         self.dashboard_client = self.create_client(RawRequest, '/dashboard_client/raw_request')
@@ -426,6 +443,57 @@ class UR15WebNode(Node):
     def __del__(self):
         """Destructor to clean up resources."""
         self.cleanup()
+    
+    def _publish_static_robot_info(self):
+        """Publish this robot's static launch-time info to robot_status_redis.
+        
+        Writes the following keys under ``self.robot_namespace``:
+        
+        - ``robot_ip``    : str  — robot's network address (e.g. '192.168.1.15')
+        - ``robot_port``  : int  — robot's primary control port (e.g. 30002)
+        - ``robot_type``  : str  — robot model identifier (e.g. 'ur15', 'ur10e')
+        - ``camera_topic``: str  — ROS topic for this robot's camera image stream
+        
+        These values are static per launch and let workflow handlers (or any
+        consumer that only knows the robot's namespace) discover everything
+        needed to talk to the robot without hardcoding addresses or
+        re-parsing robot_config.yaml. Failures are logged but non-fatal: the
+        rest of the node still functions if Redis is temporarily unavailable.
+        """
+        if self.status_client is None:
+            self.get_logger().warning(
+                "Skipping static robot info publish: no status client"
+            )
+            return
+        
+        static_info = {
+            'robot_ip': self.ur15_ip,
+            'robot_port': int(self.ur15_port),
+            'robot_type': self.robot_type,
+            'camera_topic': self.camera_topic,
+        }
+        
+        ok_keys = []
+        failed_keys = []
+        for key, value in static_info.items():
+            try:
+                if self.status_client.set_status(self.robot_namespace, key, value):
+                    ok_keys.append(key)
+                else:
+                    failed_keys.append(key)
+            except Exception as exc:  # noqa: BLE001
+                failed_keys.append(f"{key} ({exc})")
+        
+        if ok_keys:
+            self.get_logger().info(
+                f"Published static info to robot_status[{self.robot_namespace}]: "
+                f"{', '.join(ok_keys)}"
+            )
+        if failed_keys:
+            self.get_logger().warning(
+                f"Failed to publish to robot_status[{self.robot_namespace}]: "
+                f"{', '.join(failed_keys)}"
+            )
     
     def cleanup(self):
         """Clean up all resources including child processes."""
@@ -1419,10 +1487,18 @@ class UR15WebNode(Node):
         def workflow_config_center_url():
             """Return the URL for workflow configuration center."""
             from flask import jsonify, request
+            from urllib.parse import quote
             
             # Use the same hostname as the request to build workflow config center URL
             host = request.host.split(':')[0]  # Extract hostname without port
-            workflow_url = f'http://{host}:{self.workflow_config_center_port}'
+            # The workflow editor is a singleton service shared by every
+            # dashboard, so we tag the URL with our robot_namespace. The
+            # frontend reads ?robot=<ns> to know which robot's joints to
+            # query when the user clicks "Load Joint Angles".
+            workflow_url = (
+                f'http://{host}:{self.workflow_config_center_port}'
+                f'/?robot={quote(self.robot_namespace, safe="")}'
+            )
             
             self.get_logger().info(f"Redirecting to workflow config center: {workflow_url}")
             

@@ -114,15 +114,27 @@ class WorkflowEngine:
         for idx, operation in enumerate(self.workflow, 1):
             operation_id = operation.get('id', f'operation_{idx}')
             operation_type = operation.get('type', 'unknown')
-            
-            print(f"\n>>> [{idx}/{len(self.workflow)}] Executing: {operation_id}")
+
+            # Disambiguate when the same id is reused (e.g. multiple
+            # `movej_to_pose` steps in a row). Without this, repeated keys
+            # silently overwrite earlier entries in self.results, so the
+            # final log and the summary report only the LAST occurrence as
+            # if the earlier ones never ran.
+            result_key = operation_id
+            if result_key in self.results:
+                suffix = 2
+                while f"{operation_id}#{suffix}" in self.results:
+                    suffix += 1
+                result_key = f"{operation_id}#{suffix}"
+
+            print(f"\n>>> [{idx}/{len(self.workflow)}] Executing: {result_key}")
             print(f"    Type: {operation_type}")
             
             try:
                 # Check if this operation should be skipped based on conditions
                 if not self._check_conditions(operation):
                     print("    ⊘ Skipped (conditions not met)")
-                    self.results[operation_id] = {
+                    self.results[result_key] = {
                         'status': 'skipped',
                         'reason': 'conditions_not_met'
                     }
@@ -135,7 +147,7 @@ class WorkflowEngine:
                 
                 # Store result
                 result['elapsed_time'] = op_elapsed
-                self.results[operation_id] = result
+                self.results[result_key] = result
                 
                 # Check if operation succeeded
                 if result.get('status') == 'success':
@@ -145,12 +157,12 @@ class WorkflowEngine:
                     
                     # Check if we should stop on failure
                     if operation.get('stop_on_failure', False):
-                        print(f"\n✗ Workflow stopped due to failure in '{operation_id}'")
+                        print(f"\n✗ Workflow stopped due to failure in '{result_key}'")
                         break
                 
             except KeyboardInterrupt:
-                print(f"\n\n🛑 Workflow interrupted by user at '{operation_id}'")
-                self.results[operation_id] = {
+                print(f"\n\n🛑 Workflow interrupted by user at '{result_key}'")
+                self.results[result_key] = {
                     'status': 'interrupted',
                     'error': 'User interrupted'
                 }
@@ -161,13 +173,13 @@ class WorkflowEngine:
                 import traceback
                 traceback.print_exc()
                 
-                self.results[operation_id] = {
+                self.results[result_key] = {
                     'status': 'error',
                     'error': str(e)
                 }
                 
                 if operation.get('stop_on_failure', False):
-                    print(f"\n✗ Workflow stopped due to exception in '{operation_id}'")
+                    print(f"\n✗ Workflow stopped due to exception in '{result_key}'")
                     break
         
         # Print summary
@@ -267,11 +279,21 @@ class WorkflowEngine:
         print(f"  Skipped: {skipped_count}")
         print(f"Total time: {total_elapsed:.2f}s")
         print()
-        
-        for operation in self.workflow:
-            operation_id = operation.get('id', 'unknown')
-            if operation_id in self.results:
-                result = self.results[operation_id]
+
+        # Walk the workflow in order, regenerating the same disambiguation
+        # logic as execute(), so each step shows its own result entry even
+        # when the same operation id repeats.
+        seen_ids: Dict[str, int] = {}
+        for idx, operation in enumerate(self.workflow, 1):
+            operation_id = operation.get('id', f'operation_{idx}')
+            seen_ids[operation_id] = seen_ids.get(operation_id, 0) + 1
+            if seen_ids[operation_id] == 1:
+                key = operation_id
+            else:
+                key = f"{operation_id}#{seen_ids[operation_id]}"
+
+            if key in self.results:
+                result = self.results[key]
                 status = result.get('status', 'unknown')
                 elapsed = result.get('elapsed_time', 0)
                 
@@ -282,12 +304,12 @@ class WorkflowEngine:
                     'interrupted': '🛑'
                 }.get(status, '?')
                 
-                print(f"  {status_symbol} {operation_id}: {status.upper()} ({elapsed:.2f}s)")
+                print(f"  {status_symbol} {key}: {status.upper()} ({elapsed:.2f}s)")
                 
                 if 'error' in result:
                     print(f"      Error: {result['error']}")
             else:
-                print(f"  ⊘ {operation_id}: NOT EXECUTED")
+                print(f"  ⊘ {key}: NOT EXECUTED")
         
         print("="*70)
     

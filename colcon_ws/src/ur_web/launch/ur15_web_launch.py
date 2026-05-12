@@ -57,6 +57,13 @@ def generate_launch_description():
         description='Namespace used for this robot in robot_status_redis'
     )
     
+    robot_type_arg = DeclareLaunchArgument(
+        'robot_type',
+        default_value=ur15_config.get('robot.type', 'ur15'),
+        description='Robot model identifier (e.g. ur15, ur10e) published to '
+                    'robot_status_redis so workflow consumers can discover it'
+    )
+    
     camera_topic_arg = DeclareLaunchArgument(
         'camera_topic',
         default_value=ur15_config.get('web.camera_topic'),
@@ -129,6 +136,7 @@ def generate_launch_description():
     image_labeling_port = LaunchConfiguration('image_labeling_port')
     workflow_config_center_port = LaunchConfiguration('workflow_config_center_port')
     robot_namespace = LaunchConfiguration('robot_namespace')
+    robot_type = LaunchConfiguration('robot_type')
     
     # UR15 web node
     ur15_web_node = Node(
@@ -148,6 +156,7 @@ def generate_launch_description():
             'image_labeling_port': image_labeling_port,
             'workflow_config_center_port': workflow_config_center_port,
             'robot_namespace': robot_namespace,
+            'robot_type': robot_type,
         }]
     )
     
@@ -164,6 +173,7 @@ def generate_launch_description():
         image_labeling_port_arg,
         workflow_config_center_port_arg,
         robot_namespace_arg,
+        robot_type_arg,
         
         # Launch nodes
         ur15_web_node

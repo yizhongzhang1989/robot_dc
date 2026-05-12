@@ -125,9 +125,17 @@ class RobotWorkflowRunner:
         """
         context = self.workflow_engine.context
         
-        # Initialize Positioning Service
+        # Initialize Positioning Service.
+        # Source of truth at launch time is robot_config.yaml
+        # (services.positioning_3d.{host,port}). The workflow JSON's
+        # context.positioning_service_url is only consulted as a last
+        # resort so legacy workflows keep working; new workflows should
+        # not need to set it at all. After resolving the URL we mirror
+        # it back into context so downstream handlers can still read
+        # context['positioning_service_url'] if they want to.
         if Positioning3DWebAPIClient is not None:
-            positioning_service_url = context.get('positioning_service_url', 'http://localhost:8004')
+            positioning_service_url = self._resolve_positioning_service_url(context)
+            context['positioning_service_url'] = positioning_service_url
             try:
                 positioning_client = Positioning3DWebAPIClient(service_url=positioning_service_url)
                 health = positioning_client.check_health()
@@ -163,6 +171,39 @@ class RobotWorkflowRunner:
                 print(f"✗ Failed to initialize RobotStatusClient: {e}")
         else:
             print("⊘ RobotStatusClient not available (module not imported)")
+    
+    @staticmethod
+    def _resolve_positioning_service_url(context: dict) -> str:
+        """Resolve the positioning service URL at workflow launch time.
+        
+        Resolution order:
+          1. ``services.positioning_3d`` from robot_config.yaml — single source
+             of truth for everyone in the system.
+          2. ``context['positioning_service_url']`` from the workflow JSON —
+             only used if the config lookup fails (e.g. ConfigManager cannot
+             be imported, the service block is missing, etc.). Lets legacy
+             workflows keep running.
+          3. Hardcoded ``http://localhost:8004`` — last-ditch default.
+        """
+        try:
+            from common.config_manager import ConfigManager
+            config = ConfigManager()
+            service_config = config.get('services.positioning_3d') or {}
+            host = service_config.get('host') or 'localhost'
+            port = service_config.get('port')
+            if port:
+                # Treat 0.0.0.0 as a bind-everywhere address that should be
+                # contacted on localhost from the workflow runner.
+                connect_host = 'localhost' if host == '0.0.0.0' else host
+                url = f'http://{connect_host}:{port}'
+                print(f"  positioning_service_url ← robot_config.yaml: {url}")
+                return url
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ⚠ Failed to read services.positioning_3d from config: {exc}")
+        
+        fallback = context.get('positioning_service_url', 'http://localhost:8004')
+        print(f"  positioning_service_url ← context/fallback: {fallback}")
+        return fallback
     
     def execute(self) -> dict:
         """

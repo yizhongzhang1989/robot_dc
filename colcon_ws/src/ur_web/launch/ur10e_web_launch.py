@@ -48,6 +48,13 @@ def generate_launch_description():
         description='Namespace used for this robot in robot_status_redis'
     )
 
+    robot_type_arg = DeclareLaunchArgument(
+        'robot_type',
+        default_value=ur10e_config.get('robot.type', 'ur10e'),
+        description='Robot model identifier (e.g. ur15, ur10e) published to '
+                    'robot_status_redis so workflow consumers can discover it'
+    )
+
     joint_prefix_arg = DeclareLaunchArgument(
         'joint_prefix',
         default_value='ur10e_',
@@ -128,6 +135,7 @@ def generate_launch_description():
     image_labeling_port_cfg = LaunchConfiguration('image_labeling_port')
     workflow_config_center_port_cfg = LaunchConfiguration('workflow_config_center_port')
     robot_namespace = LaunchConfiguration('robot_namespace')
+    robot_type = LaunchConfiguration('robot_type')
     joint_prefix = LaunchConfiguration('joint_prefix')
 
     # Distinct node name so this instance does not collide with ur15_web_node.
@@ -150,6 +158,7 @@ def generate_launch_description():
             'image_labeling_port': image_labeling_port_cfg,
             'workflow_config_center_port': workflow_config_center_port_cfg,
             'robot_namespace': robot_namespace,
+            'robot_type': robot_type,
             'joint_prefix': joint_prefix,
         }]
     )
@@ -166,6 +175,7 @@ def generate_launch_description():
         image_labeling_port_arg,
         workflow_config_center_port_arg,
         robot_namespace_arg,
+        robot_type_arg,
         joint_prefix_arg,
         ur10e_web_node,
     ])
