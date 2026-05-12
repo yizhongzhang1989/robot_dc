@@ -122,6 +122,81 @@ ur15:
       delay_seconds: 2
 
 # ============================================================================
+# UR10e Robot Configuration (second UR arm for dual-robot setups)
+# ============================================================================
+# Mirrors the ur15 block; used by dual_ur_bringup.py. Ports/topics are disjoint
+# from ur15 so the two robots can coexist in one ROS graph.
+ur10e:
+  robot:
+    type: "ur10e"           # Robot type for ur_robot_driver
+    ip: "192.168.1.16"      # UR10e robot IP address
+    ros_namespace: "ur10e"  # ROS namespace under which all driver nodes/topics live
+    ports:
+      control: 30002
+      dashboard: 29999
+      rtde: 30004
+      modbus: 502
+      rs485: 54321
+    launch_rviz: false
+    max_velocity: 1.0
+    max_acceleration: 1.4
+    joint_names:
+      - "shoulder_pan_joint"
+      - "shoulder_lift_joint"
+      - "elbow_joint"
+      - "wrist_1_joint"
+      - "wrist_2_joint"
+      - "wrist_3_joint"
+
+  # Launch configuration: per-robot modules only (singletons run from ur15.launch_modules)
+  launch_modules:
+    - package: "ur_robot_arm"
+      launch_file: "ur10e_control_launch.py"
+      delay: 0.0
+      enabled: true
+    - package: "camera_node"
+      launch_file: "ur10e_cam_launch.py"
+      delay: 0.0
+      enabled: true
+    - package: "ur_web"
+      launch_file: "ur10e_web_launch.py"
+      delay: 5.0
+      enabled: true
+
+  # Camera configuration (shares the physical 192.168.1.102 camera with duco;
+  # NOTE: duco and ur10e must not run simultaneously when sharing this camera)
+  camera:
+    name: "UR10eCamera"
+    ip: "192.168.1.102"
+    rtsp_url: "rtsp://admin:123456@192.168.1.102/stream0"
+    server_port: 8021       # disjoint from duco.camera.server_port (8020) and ur15 (8019)
+    topic: "/ur10e_camera/image_raw"
+    stream_fps: 25
+    jpeg_quality: 75
+    max_width: 800
+    publish_ros_image: true
+
+  # Web service configuration
+  web:
+    port: 8031              # disjoint from ur15.web.port (8030)
+    camera_topic: "/ur10e_camera/image_raw"
+    dataset_path: "dataset_ur10e"
+    calibration_data_path: "temp/ur10e_cam_calibration_data"
+    calibration_result_path: "temp/ur10e_cam_calibration_result"
+    chessboard_config_path: "temp/ur10e_cam_calibration_data/chessboard_config.json"
+    rack_positions: "temp/ur10e_rack_positions.json"
+
+  # Camera calibration settings
+  calibration:
+    chessboard:
+      rows: 9
+      cols: 6
+      square_size: 0.025
+    collect:
+      num_poses: 20
+      delay_seconds: 2
+
+# ============================================================================
 # Duco Robot Configuration (GCR5-910)
 # ============================================================================
 duco:
@@ -166,7 +241,7 @@ services:
   positioning_3d:
     host: "0.0.0.0"
     port: 8004
-    ffpp_url: "http://10.172.100.34:8101"  # UPDATE: FlowFormer++ server URL
+    ffpp_url: "http://10.172.100.39:8101"  # UPDATE: FlowFormer++ server URL
     dataset_path: "dataset"
   
   # Camera Calibration Web Service
@@ -205,7 +280,7 @@ shared:
     
     # FlowFormer++ server for keypoint tracking
     ffpp_server:
-      url: "http://10.172.100.34:8101"  # FFPP server URL
+      url: "http://10.172.100.39:8101"  # FFPP server URL
 
   GB200_rack:
     rack_inner_width: 0.550
