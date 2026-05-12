@@ -1,4 +1,4 @@
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 import time
 import socket
 import math

@@ -47,7 +47,7 @@ def get_workspace_root() -> Optional[str]:
         from ament_index_python.packages import get_package_share_directory
         
         # Try to get any known package in our workspace
-        for package_name in ['common', 'ur15_web', 'camera_node', 'robot_status_redis']:
+        for package_name in ['common', 'ur_web', 'camera_node', 'robot_status_redis']:
             try:
                 package_dir = get_package_share_directory(package_name)
                 current = package_dir

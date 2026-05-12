@@ -78,7 +78,7 @@ PY
 ```bash
 cd /home/robot/Documents/robot_dc/colcon_ws && source install/setup.bash
 python3 - <<'PY'
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 import time
 r = UR15Robot("192.168.1.16", 30002); r.open()
 r.popup("Hello from URSim", title="Mock Robot")

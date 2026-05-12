@@ -162,7 +162,7 @@ scripts/ThirdParty/robot_vision/web/positioning_3d/
 
 ## Related Packages
 
-- `ur15_web` - UR15 robot web interface
+- `ur_web` - UR15 robot web interface
 - `robot_arm_web` - DUCO robot arm web interface
 - `camera_node` - Camera streaming node
 

@@ -3,7 +3,7 @@
 Lightweight RViz visualization for a UR robot, driven by direct **URScript polling** instead of `ur_robot_driver` / `ros2_control`.
 
 It is intended for the workflow used in this repo, where the arm is commanded
-via [`ur15_robot_arm.ur15.UR15Robot`](../ur15_robot_arm/ur15_robot_arm/ur15.py)
+via [`ur_robot_arm.ur15.UR15Robot`](../ur_robot_arm/ur_robot_arm/ur15.py)
 (direct primary-port URScript on TCP 30002). RViz just needs joint angles —
 we read them from the same URScript socket and republish as `JointState`.
 
@@ -73,7 +73,7 @@ small motion via URScript:
 ```bash
 source ~/Documents/robot_dc/colcon_ws/install/setup.bash
 python3 - <<'PY'
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 r = UR15Robot('192.168.1.16', 30002); r.open()
 q = list(r.get_actual_joint_positions())
 print('start', q)

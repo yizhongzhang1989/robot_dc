@@ -27,7 +27,7 @@ import json
 import os
 import time
 import argparse
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 from cv_bridge import CvBridge
 import cv2
 import sys

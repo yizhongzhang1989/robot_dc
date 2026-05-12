@@ -31,7 +31,7 @@ except AttributeError:
     pass
 os.environ.setdefault("PYTHONUNBUFFERED", "1")
 
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 
 
 def parse_args():

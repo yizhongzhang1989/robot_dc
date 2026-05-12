@@ -345,7 +345,7 @@ class TaskManager:
         
         try:
             # Build ros2 run command
-            command = ['ros2', 'run', 'ur15_workflow', 'run_workflow.py', '--config', workflow_file]
+            command = ['ros2', 'run', 'ur_workflow', 'run_workflow.py', '--config', workflow_file]
             
             print(f"🚀 Running command: {' '.join(command)}")
             

@@ -16,9 +16,9 @@ import sys
 import os
 from flask import Flask, render_template_string, Response
 
-# Add ur15_robot_arm to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../colcon_ws/src/ur15_robot_arm'))
-from ur15_robot_arm.ur15 import UR15Robot
+# Add ur_robot_arm to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../colcon_ws/src/ur_robot_arm'))
+from ur_robot_arm.ur15 import UR15Robot
 
 
 def find_available_port(start_port=8030, max_attempts=10):

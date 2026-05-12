@@ -142,7 +142,7 @@ Running the workflow from a terminal (instead of the dashboard) is useful for:
 - Headless operation when no browser is available
 - Reusing rack calibration inside other Python programs
 
-The repo ships a thin wrapper, [scripts/ur_rack_calibration.py](../scripts/ur_rack_calibration.py), that drives the same `ros2 run ur15_workflow run_workflow.py` command the dashboard's **Run Current Selected Workflow** button uses, then reads the resulting `rack2base_matrix` and `rack_points_3d` back from the robot status service.
+The repo ships a thin wrapper, [scripts/ur_rack_calibration.py](../scripts/ur_rack_calibration.py), that drives the same `ros2 run ur_workflow run_workflow.py` command the dashboard's **Run Current Selected Workflow** button uses, then reads the resulting `rack2base_matrix` and `rack_points_3d` back from the robot status service.
 
 ### 4.1 Quick Start — Use the Wrapper Script
 
@@ -160,7 +160,7 @@ python3 scripts/ur_rack_calibration.py /abs/path/to/<workflow_file>.json
 
 The script:
 
-1. Spawns `ros2 run ur15_workflow run_workflow.py --config <resolved_path>` and streams its output to the terminal.
+1. Spawns `ros2 run ur_workflow run_workflow.py --config <resolved_path>` and streams its output to the terminal.
 2. After successful completion, fetches `rack2base_matrix` and `rack_points_3d` from robot status (Redis, namespace `ur15`).
 3. Pretty-prints both arrays.
 
@@ -194,7 +194,7 @@ Key members:
 | --- | --- |
 | `RackCalibrator(config=None, namespace='ur15', result_keys=('rack2base_matrix', 'rack_points_3d'), status_client=None)` | Constructor. All args optional; pass `status_client` to inject a custom/mock `RobotStatusClient`, or `result_keys` to fetch a different set of status keys. |
 | `set_config(config)` | Resolve a basename (under `temp/workflow_files/`) or absolute path. Raises `FileNotFoundError` if missing. |
-| `run()` → `int` | Spawn `ros2 run ur15_workflow run_workflow.py --config <path>`. Returns the exit code. Raises `RuntimeError` if no config set, `FileNotFoundError` if `ros2` is not on PATH. |
+| `run()` → `int` | Spawn `ros2 run ur_workflow run_workflow.py --config <path>`. Returns the exit code. Raises `RuntimeError` if no config set, `FileNotFoundError` if `ros2` is not on PATH. |
 | `get_result()` → `dict` | Read all configured `result_keys` from robot status and return them as a dict (values are `numpy.ndarray` or `None` if not stored). Does **not** run the workflow — call this anytime to inspect the last computed result. |
 | `calibrate()` → `Optional[dict]` | Convenience: `run()` followed by `get_result()`. Returns `None` if the workflow exited non-zero. |
 | `config` (property) | Currently configured absolute workflow path, or `None`. |
@@ -213,11 +213,11 @@ If you want to bypass the wrapper, the same operations are available as raw comm
 
 ```bash
 # Equivalent to RackCalibrator.run()
-ros2 run ur15_workflow run_workflow.py \
+ros2 run ur_workflow run_workflow.py \
     --config /home/robot/Documents/robot_dc/temp/workflow_files/<workflow_file>.json
 
 # Validate the workflow without moving the robot
-ros2 run ur15_workflow run_workflow.py --config <workflow_file>.json --dry-run
+ros2 run ur_workflow run_workflow.py --config <workflow_file>.json --dry-run
 
 # Equivalent HTTP call (mirrors the dashboard button exactly)
 curl -X POST http://<host>:8030/run_workflow \

@@ -6,7 +6,7 @@ Provides a reusable `RackCalibrator` class plus a CLI entry point. The class
 is intended to be imported and used from other scripts/services.
 
 The class:
-  1. Spawns `ros2 run ur15_workflow run_workflow.py --config <workflow.json>`
+  1. Spawns `ros2 run ur_workflow run_workflow.py --config <workflow.json>`
      (the exact same command the dashboard's "Run Current Selected Workflow"
      button uses).
   2. After the workflow exits successfully, reads `rack2base_matrix` and
@@ -33,7 +33,7 @@ Prerequisites:
     - UR15 bringup must already be running:
         ros2 launch robot_bringup ur15_bringup.py
     - Redis-backed robot_status service must be reachable (default: localhost:6379)
-    - The colcon workspace must be sourced so `ros2 run ur15_workflow` resolves
+    - The colcon workspace must be sourced so `ros2 run ur_workflow` resolves
 """
 
 import argparse
@@ -117,7 +117,7 @@ def format_matrix(value) -> str:
 class RackCalibrator:
     """Run a rack-calibration workflow and retrieve the resulting state.
 
-    The workflow is executed via `ros2 run ur15_workflow run_workflow.py
+    The workflow is executed via `ros2 run ur_workflow run_workflow.py
     --config <path>` — the same code path used by the dashboard's "Run
     Workflow" button. After successful execution the 4x4 `rack2base_matrix`
     and the four `rack_points_3d` are read from the Redis-backed robot
@@ -187,7 +187,7 @@ class RackCalibrator:
             )
 
         cmd = [
-            'ros2', 'run', 'ur15_workflow', 'run_workflow.py',
+            'ros2', 'run', 'ur_workflow', 'run_workflow.py',
             '--config', str(self._workflow_path),
         ]
         print(f">>> Running: {' '.join(cmd)}\n")
@@ -267,7 +267,7 @@ class RackCalibrator:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Run a rack-calibration workflow via `ros2 run ur15_workflow` "
+            "Run a rack-calibration workflow via `ros2 run ur_workflow` "
             "and print the resulting rack2base_matrix and rack_points_3d "
             "from robot status."
         )

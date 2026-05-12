@@ -3,7 +3,7 @@ lift_robot(courier robot), AMR, UR15
 
 二、demo task必需的启动文件：
 D:\MyWorks\MSRA\robot_dc\scripts\ThirdParty\seer_control\app_dc_demo_2025.py
-D:\MyWorks\MSRA\robot_dc\colcon_ws\src\ur15_web\launch\ur15_bringup.py
+D:\MyWorks\MSRA\robot_dc\colcon_ws\src\ur_web\launch\ur15_bringup.py
 D:\MyWorks\MSRA\robot_dc\colcon_ws\src\robot_bringup\launch\lift_robot_bringup.py
 D:\MyWorks\MSRA\robot_dc\colcon_ws\src\system_monitor\launch\system_monitor_launch.py
 
@@ -17,7 +17,7 @@ D:\MyWorks\MSRA\robot_dc\colcon_ws\src\system_monitor\launch\system_monitor_laun
 四、demo有关脚本关系说明：
 1. 这里demo_task_manager.py主要调用了D:\MyWorks\MSRA\robot_dc\scripts\demo_amr_functions.py的类来控制AMR，调用D:\MyWorks\MSRA\robot_dc\scripts\courier_robot_webapi.py的类来控制CourierRobot，调用D:\MyWorks\MSRA\robot_dc\scripts\ur_operate_tools.py中的类来管理工具的调用（函数名字感觉写的可以看懂）。调用scripts/ur_wobj_*.py --server-index xx来实现相应的operation（顺序是unlock_knob->open_handle->close_left->close_right->extract_server->put_frame->insert_server->unlock_knob_insert->close_handles）。每一个子脚本都可以在robot_status_redis上有正确的rack positioning结果后独立运行。并且可以通过输入参数server-index进行换层，现在实验室最上层那个坏的服务器的index=16。
 2. D:\MyWorks\MSRA\robot_dc\scripts\urscripts_function_test.py这个脚本中是远程模式下URScripts一些基本函数的测试脚本。
-3. D:\MyWorks\MSRA\robot_dc\colcon_ws\src\ur15_robot_arm\ur15_robot_arm\ur15.py这个是我自己写的封装库，包括FTC的、freedrive以及movej、move_tcp等基础函数。
+3. D:\MyWorks\MSRA\robot_dc\colcon_ws\src\ur_robot_arm\ur_robot_arm\ur15.py这个是我自己写的封装库，包括FTC的、freedrive以及movej、move_tcp等基础函数。
 4. D:\MyWorks\MSRA\robot_dc\scripts\ur_dashboard_control.py这个可以通过29999这个port替代示教器上的基础控制操作。
 5. 我今天给您发的那个workspace.zip里有我的dataset文件夹和temp文件夹（里面有workflow_file有一个简化的rack location demo，以及scripts中某些脚本会生成的调试文件）
 

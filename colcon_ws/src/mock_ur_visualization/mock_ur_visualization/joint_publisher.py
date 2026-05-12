@@ -5,7 +5,7 @@ sensor_msgs/JointState at a configurable rate.
 
 This is the "no ur_robot_driver / no ros2_control" path to RViz visualization.
 Use it whenever you want to *see* the robot move in RViz but you control the
-arm via direct URScript (e.g. ur15_robot_arm.UR15Robot) rather than ROS
+arm via direct URScript (e.g. ur_robot_arm.UR15Robot) rather than ROS
 controllers.
 
 Parameters (declare on launch or via --ros-args -p name:=value):
@@ -25,7 +25,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
 # Re-use the proven URScript client from this repo.
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 
 
 # URScript reports joints in this order; the standard UR URDF uses these names.

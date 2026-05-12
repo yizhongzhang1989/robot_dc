@@ -16,7 +16,7 @@ from datetime import datetime
 from scipy.spatial.transform import Rotation as R
 
 # Robot control imports
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 
 # ROS2 imports
 import rclpy

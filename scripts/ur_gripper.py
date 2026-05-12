@@ -7,7 +7,7 @@ This script returns the push tool to its storage location (reverse of Get_push_t
 import sys
 import os
 
-# Add the ur15_robot_arm module to path
+# Add the ur_robot_arm module to path
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'colcon_ws', 'src'))
     from common.workspace_utils import get_workspace_root
@@ -15,7 +15,7 @@ try:
 except ImportError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.abspath(os.path.join(current_dir, '..'))
-ur15_path = os.path.join(repo_root, 'colcon_ws/src/ur15_robot_arm/ur15_robot_arm')
+ur15_path = os.path.join(repo_root, 'colcon_ws/src/ur_robot_arm/ur_robot_arm')
 sys.path.append(ur15_path)
 
 from ur15 import UR15Robot

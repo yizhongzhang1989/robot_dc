@@ -40,7 +40,7 @@ Usage (library):
 Prerequisites:
     - UR15 bringup running and reachable on the network.
     - ``rack2base_matrix`` populated in robot status (run Stage 3 first).
-    - The colcon workspace is sourced so ``ur15_robot_arm`` and
+    - The colcon workspace is sourced so ``ur_robot_arm`` and
       ``robot_status_redis`` can be imported.
 """
 
@@ -59,7 +59,7 @@ from scipy.spatial.transform import Rotation as R
 # Make the colcon install tree importable so we can use RobotStatusClient
 # and UR15Robot without requiring the user to source setup.bash beforehand.
 _WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
-for _pkg in ('robot_status_redis', 'ur15_robot_arm'):
+for _pkg in ('robot_status_redis', 'ur_robot_arm'):
     _install_root = _WORKSPACE_ROOT / 'colcon_ws' / 'install' / _pkg
     _candidates = [
         _install_root / 'local' / 'lib' / 'python3.10' / 'dist-packages',
@@ -81,7 +81,7 @@ for _pkg in ('robot_status_redis', 'ur15_robot_arm'):
 from robot_status_redis.client_utils import RobotStatusClient  # noqa: E402
 
 try:
-    from ur15_robot_arm.ur15 import UR15Robot  # noqa: E402
+    from ur_robot_arm.ur15 import UR15Robot  # noqa: E402
 except ImportError as _exc:  # pragma: no cover
     UR15Robot = None
     _UR15_IMPORT_ERROR = _exc

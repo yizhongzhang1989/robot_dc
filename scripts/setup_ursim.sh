@@ -364,7 +364,7 @@ cat <<EOF
 ║   1. Open the Polyscope GUI in a browser.                            ║
 ║   2. Power on the robot, release brakes (or use the dashboard cmd).  ║
 ║   3. Test from Python:                                               ║
-║        from ur15_robot_arm.ur15 import UR15Robot                     ║
+║        from ur_robot_arm.ur15 import UR15Robot                     ║
 ║        r = UR15Robot("${TARGET_IP}", 30002); r.open()                       
 ║        r.popup("hi"); r.close()                                      ║
 ║                                                                      ║

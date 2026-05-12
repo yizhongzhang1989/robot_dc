@@ -22,6 +22,6 @@
 
 6. In Workflow Panel, Refesh -> select json file -> Run Current Selected Workflow
 
-    -> *if it has problems, use "ros2 run ur15_workflow run_workflow.py --config xxx.json" to check detailed problems
+    -> *if it has problems, use "ros2 run ur_workflow run_workflow.py --config xxx.json" to check detailed problems
 
 7.  "Draw GB200 Rack" to check the result.
