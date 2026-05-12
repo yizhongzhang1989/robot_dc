@@ -13,6 +13,22 @@ let lastRobotStateUpdate = 0;
 let pendingRobotStateUpdate = null;
 const ROBOT_STATE_UPDATE_INTERVAL = 1000; // Update every 1 second
 
+// Robot identity for this dashboard (populated once at startup via
+// /dashboard_info). Used to tag Localize-TCP requests with the right
+// robot so the dual-UR pipeline reads/writes the matching per-robot
+// poses dir and status namespace.
+let currentRobotNamespace = 'ur15';
+function fetchDashboardInfo() {
+    return fetch('/dashboard_info', { method: 'GET' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (data && data.robot_namespace) {
+                currentRobotNamespace = data.robot_namespace;
+            }
+        })
+        .catch(() => { /* keep default */ });
+}
+
 // Web Log Functions
 function logToWeb(message, type = 'info') {
     const logContainer = document.getElementById('webLogContainer');
@@ -543,7 +559,7 @@ function recordTcpPose() {
     fetch('/record_tcp_pose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name })
+        body: JSON.stringify({ name: name, robot: currentRobotNamespace })
     })
         .then(response => response.json())
         .then(data => {
@@ -581,7 +597,7 @@ function moveToSavedTcpPose() {
     fetch('/move_to_tcp_pose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name })
+        body: JSON.stringify({ name: name, robot: currentRobotNamespace })
     })
         .then(response => response.json())
         .then(data => {
@@ -1921,8 +1937,11 @@ window.onload = function() {
     // Load workflow files
     loadWorkflowFiles();
     
-    // Load saved TCP poses (Localize TCP panel)
-    loadTcpPoses();
+    // Fetch this dashboard's robot identity, then load that robot's
+    // saved TCP poses (Localize TCP panel). The fetch is async; we
+    // chain loadTcpPoses() so the dropdown is populated with the
+    // correct per-robot pose list once the namespace is known.
+    fetchDashboardInfo().then(loadTcpPoses);
     
     logToWeb('UR15 Web Interface loaded', 'success');
     logToWeb('System ready for operation', 'info');

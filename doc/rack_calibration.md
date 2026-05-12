@@ -239,7 +239,15 @@ Typical uses:
 - Quickly jog the TCP back to a known landmark (e.g. `top_handle`, `left_knob`) during debugging.
 - Embed the same record/replay primitive inside other Python tools.
 
-Saved poses live as JSON files under `temp/tcp_poses/<name>.json` and contain the 4×4 `tcp_in_rack` matrix plus a timestamp. The dashboard panel and the script both read/write the same directory, so a pose recorded from one is immediately visible to the other.
+Saved poses live as flat JSON files under `temp/tcp_poses/<name>.json` and contain a single field — the 4×4 `tcp_in_rack` matrix — for example:
+
+```json
+{ "tcp_in_rack": [[...], [...], [...], [0, 0, 0, 1]] }
+```
+
+Because the pose is stored as pure rack-frame geometry (no robot identity, no capture context), **the same JSON can be replayed by any robot whose `rack2base_matrix` is up to date**. Both UR15 and UR10e share the same `temp/tcp_poses/` directory — a pose recorded on one arm can be replayed by the other.
+
+> **Migration**: any older per-robot layout (`temp/tcp_poses/ur15/`, `temp/tcp_poses/ur10e/`) is automatically flattened into `temp/tcp_poses/` the first time `TCPLocalizer` is constructed. Extra metadata fields in older JSONs are stripped so only `tcp_in_rack` remains. The migration is one-shot and idempotent.
 
 The math is intentionally tiny:
 
@@ -248,35 +256,36 @@ The math is intentionally tiny:
 
 ### 5.1 Quick Start — Dashboard Panel
 
-The web dashboard at `http://<host>:8030` includes a **Localize TCP** panel (between the Workflow and Operation panels):
+The web dashboard at `http://<host>:8030` (UR15) and `http://<host>:8031` (UR10e) each include a **Localize TCP** panel (between the Workflow and Operation panels). The dropdown list of saved poses is shared across both dashboards; only the **Record** and **Move To** actions are tied to the dashboard's own robot — that's the arm that physically performs the action.
 
-1. **Refresh** — reload the dropdown list of saved poses from `temp/tcp_poses/`.
-2. **Record** — type a name (letters/digits/`_`/`-`), then click 💾. The current live TCP pose is captured and written to `temp/tcp_poses/<name>.json` in the rack frame.
-3. **Move To Selected Pose** — pick a name from the dropdown and click 🎯. The pose is converted to base frame using the current `rack2base_matrix` and sent as a single `movel`.
-4. **Delete** — remove the selected JSON file.
+1. **Refresh** — reload the (shared) dropdown list of saved poses.
+2. **Record** — type a name (letters/digits/`_`/`-`), then click 💾. This dashboard's robot captures its current TCP pose and writes it to `temp/tcp_poses/<name>.json` in the rack frame.
+3. **Move To Selected Pose** — pick a name from the dropdown and click 🎯. The pose is converted to base frame using this dashboard's robot's current `rack2base_matrix` and sent as a single `movel`.
+4. **Delete** — remove the selected JSON file (shared across both dashboards).
 
 All actions stream their stdout to the on-page log panel.
 
 ### 5.2 Use as a Script — `scripts/ur_tcp_localizer.py`
 
-The same operations are available from the terminal via [scripts/ur_tcp_localizer.py](../scripts/ur_tcp_localizer.py):
+The same operations are available from the terminal via [scripts/ur_tcp_localizer.py](../scripts/ur_tcp_localizer.py). `--robot` is **required** for every subcommand (there is no default); it only selects which arm physically records or moves — the pose store itself is shared:
 
 ```bash
-# Capture the current live TCP pose and save it as "approach_left_knob"
-python3 scripts/ur_tcp_localizer.py record approach_left_knob
+# Record a pose by driving the UR15 to the target and capturing it
+python3 scripts/ur_tcp_localizer.py --robot ur15 record approach_left_knob
 
-# Move the TCP back to a previously saved pose
-python3 scripts/ur_tcp_localizer.py move approach_left_knob
+# Replay the same pose with the UR10e (after the UR10e has its own rack2base_matrix)
+python3 scripts/ur_tcp_localizer.py --robot ur10e move approach_left_knob
+
+# list / delete operate on the shared store, but --robot is still required
+# (kept symmetric across subcommands so scripts are explicit about which arm).
+python3 scripts/ur_tcp_localizer.py --robot ur15 list
+python3 scripts/ur_tcp_localizer.py --robot ur15 delete approach_left_knob
 
 # Optional: override movel speed/acceleration (defaults: a=0.1, v=0.1)
-python3 scripts/ur_tcp_localizer.py move approach_left_knob --a 0.05 --v 0.05
-
-# List / delete saved poses
-python3 scripts/ur_tcp_localizer.py list
-python3 scripts/ur_tcp_localizer.py delete approach_left_knob
+python3 scripts/ur_tcp_localizer.py --robot ur15 move approach_left_knob --a 0.05 --v 0.05
 ```
 
-The script reads `config/robot_config.yaml` for the UR15 IP/port and connects to Redis on `localhost:6379` for the rack matrix — no extra arguments needed.
+For each robot, the script reads `config/robot_config.yaml` for that robot's IP / control port / `status_namespace` and connects to Redis on `localhost:6379` for the rack matrix. `--robot` is the only thing that selects which arm to drive.
 
 ### 5.3 Use as a Library — `TCPLocalizer` Class
 
@@ -285,10 +294,13 @@ The wrapper exposes a reusable class so the same record/replay primitive can be 
 ```python
 from ur_tcp_localizer import TCPLocalizer
 
-with TCPLocalizer() as loc:
+# Record on the UR15 — robot_name is required (no default)
+with TCPLocalizer(robot_name='ur15') as loc:
     loc.record('approach_left_knob')          # capture current TCP → rack frame JSON
-    ...
-    loc.move_to('approach_left_knob')         # replay by name (default a=v=0.1)
+
+# Replay the same pose on the UR10e — same JSON, different arm
+with TCPLocalizer(robot_name='ur10e') as loc:
+    loc.move_to('approach_left_knob')         # default a=v=0.1
     loc.move_to('approach_left_knob', a=0.05, v=0.05)
 ```
 
@@ -301,34 +313,36 @@ from ur_tcp_localizer import TCPLocalizer
 tcp_in_rack = np.eye(4)
 tcp_in_rack[:3, 3] = [0.1, -0.2, 0.05]        # 10 cm, -20 cm, 5 cm in rack frame
 
-loc = TCPLocalizer()
-loc.move_to_pose_in_rack(tcp_in_rack, label='approach_top')
+with TCPLocalizer(robot_name='ur10e') as loc:
+    loc.move_to_pose_in_rack(tcp_in_rack, label='approach_top')
 ```
 
 Key members:
 
 | Member | Description |
 | --- | --- |
-| `TCPLocalizer(poses_dir=None, robot_ip=None, robot_port=None, namespace='ur15', rack2base_key='rack2base_matrix', status_client=None, robot=None)` | Constructor. All args optional — defaults read `config/robot_config.yaml` and connect lazily. Inject `status_client` / `robot` for testing. |
-| `record(name)` → `Path` | Read the live TCP pose, convert to the rack frame using the current `rack2base_matrix`, and write `temp/tcp_poses/<name>.json`. Raises `RuntimeError` if `rack2base_matrix` is missing. |
-| `move_to(name, a=0.1, v=0.1)` → `int` | Load a saved pose and replay it. Returns the `movel` exit code. |
+| `TCPLocalizer(robot_name, poses_dir=None, robot_ip=None, robot_port=None, namespace=None, rack2base_key='rack2base_matrix', status_client=None, robot=None)` | Constructor. `robot_name` is **required** (e.g. `'ur15'` or `'ur10e'`) and selects which block of `config/robot_config.yaml` to read for IP / control port / status namespace; everything else can be overridden explicitly. Inject `status_client` / `robot` for testing. |
+| `record(name)` → `Path` | Read the live TCP pose, convert to the rack frame using the current `rack2base_matrix`, and write `temp/tcp_poses/<name>.json` containing only the 4×4 `tcp_in_rack` matrix. Raises `RuntimeError` if `rack2base_matrix` is missing. |
+| `move_to(name, a=0.1, v=0.1)` → `int` | Load a saved pose and replay it on the configured robot. Returns the `movel` exit code. |
 | `move_to_pose_in_rack(tcp_in_rack, a=0.1, v=0.1, label='<inline>')` → `int` | Replay a 4×4 matrix directly (numpy.ndarray or nested-list). Validates shape (raises `ValueError` if not `(4, 4)`). `label` is cosmetic — only used in log output. |
 | `get_pose_in_rack(name)` → `np.ndarray` | Load a saved pose without moving. |
-| `list_poses()` → `list[str]` | Names of all saved poses. |
-| `delete_pose(name)` | Remove a saved pose file. |
+| `list_poses()` → `list[str]` | Names of all saved poses in the shared store. |
+| `delete_pose(name)` | Remove a saved pose file from the shared store. |
 | `pose_path(name)` → `Path` | Resolve the on-disk path for a pose name. |
-| `close()` / `__enter__` / `__exit__` | Release the UR15 connection. The context-manager form is recommended. |
+| `close()` / `__enter__` / `__exit__` | Release the robot connection. The context-manager form is recommended. |
 
 Common exceptions:
 
-- `RuntimeError` — `rack2base_matrix` not present in robot status. Run Stage 3 first.
-- `ConnectionError` — the UR15 is not reachable at the configured IP/port.
+- `ValueError` — `robot_name` missing/empty, invalid pose name (only letters, digits, `_`, `-` allowed), or wrong matrix shape.
+- `KeyError` — `robot_name` is not in `config/robot_config.yaml` and has no legacy default.
+- `RuntimeError` — `rack2base_matrix` not present in this robot's status namespace. Run Stage 3 first.
+- `ConnectionError` — the robot is not reachable at the configured IP/port.
 - `FileNotFoundError` — the pose name was never recorded.
-- `ValueError` — invalid pose name (only letters, digits, `_`, `-` allowed) or wrong matrix shape.
 
 ### 5.4 Notes
 
+- Saved poses are **robot-agnostic**: each JSON contains only a single 4×4 rack-frame matrix, so any robot whose `rack2base_matrix` is up to date can replay any pose. There is only one shared store at `temp/tcp_poses/`.
 - Saved poses are tied to the rack model, not to a specific calibration run. If you move the robot base and re-run Stage 3, the same `<name>.json` files immediately produce correct base-frame targets again.
-- `record` captures the TCP pose **at the moment the call is made**, including any tool offset configured in the UR controller. Keep the same tool active when replaying.
+- `record` captures the TCP pose **at the moment the call is made**, including any tool offset configured in the UR controller. Make sure both arms agree on the same tool / TCP frame if you plan to share poses between them.
 - The dashboard panel and the script share `temp/tcp_poses/` — a pose recorded on the dashboard can be replayed via the script and vice versa.
 

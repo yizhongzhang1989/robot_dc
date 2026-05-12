@@ -1296,30 +1296,73 @@ class UR15WebNode(Node):
         # ----------------------------------------------------------------
         # Localize TCP — record / replay TCP poses defined in rack frame
         # ----------------------------------------------------------------
+        def _resolve_tcp_robot(value):
+            """Pick the robot for a TCP-localize request.
+
+            Falls back to this web instance's own robot_namespace when the
+            caller did not specify one. Sanitises the value so it's safe
+            to use as a directory name and as a subprocess argument.
+            """
+            candidate = (value or '').strip() if isinstance(value, str) else ''
+            if not candidate:
+                candidate = self.robot_namespace
+            # Only allow simple identifiers — same character class we use
+            # elsewhere for robot/status namespaces.
+            if not candidate or any(
+                c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'
+                for c in candidate
+            ):
+                return None
+            return candidate
+
+        def _tcp_poses_dir():
+            """Return the flat shared TCP-pose directory (robot-agnostic).
+
+            All saved poses live as ``temp/tcp_poses/<name>.json`` and contain
+            only the rack-frame TCP matrix, so any robot can replay any pose.
+            """
+            from common.workspace_utils import get_workspace_root
+            workspace_root = get_workspace_root()
+            if not workspace_root:
+                return None
+            return os.path.join(workspace_root, 'temp', 'tcp_poses')
+
+        @self.app.route('/dashboard_info', methods=['GET'])
+        def dashboard_info():
+            """Identify which robot this Flask instance is serving.
+
+            The JS layer calls this once at page load so it can tag every
+            Localize-TCP request with the right robot name (the same web
+            UI is served by both the ur15 and ur10e instances).
+            """
+            from flask import jsonify
+            return jsonify({
+                'robot_namespace': self.robot_namespace,
+                'robot_type': self.robot_type,
+            })
+
         @self.app.route('/get_tcp_poses', methods=['GET'])
         def get_tcp_poses():
-            """List saved TCP poses (basenames, no .json suffix)."""
+            """List saved TCP poses (shared by all robots)."""
             from flask import jsonify
-            from common.workspace_utils import get_workspace_root
             import glob
-            
+
             try:
-                workspace_root = get_workspace_root()
-                if not workspace_root:
+                poses_dir = _tcp_poses_dir()
+                if poses_dir is None:
                     return jsonify({
                         'status': 'error',
                         'message': 'Could not find workspace root',
                         'poses': []
                     }), 500
-                
-                poses_dir = os.path.join(workspace_root, 'temp', 'tcp_poses')
+
                 os.makedirs(poses_dir, exist_ok=True)
-                
+
                 json_files = glob.glob(os.path.join(poses_dir, '*.json'))
                 pose_names = sorted(
                     os.path.splitext(os.path.basename(f))[0] for f in json_files
                 )
-                
+
                 return jsonify({
                     'status': 'success',
                     'poses': pose_names,
@@ -1346,8 +1389,8 @@ class UR15WebNode(Node):
                 return False, f"Pose name '{name}' is reserved"
             return True, ''
         
-        def _spawn_tcp_localizer(subcommand, name, action_label, extra_args=None):
-            """Run `python3 scripts/ur_tcp_localizer.py <subcommand> <name>` in a thread.
+        def _spawn_tcp_localizer(subcommand, name, action_label, robot, extra_args=None):
+            """Run `python3 scripts/ur_tcp_localizer.py --robot <robot> <subcommand> <name>` in a thread.
             
             Returns a Flask jsonify response.
             """
@@ -1374,10 +1417,10 @@ class UR15WebNode(Node):
                         'message': f'Script not found: {script_path}'
                     }), 404
                 
-                cmd = ['python3', script_path, subcommand, name]
+                cmd = ['python3', script_path, '--robot', robot, subcommand, name]
                 if extra_args:
                     cmd.extend(extra_args)
-                self.get_logger().info(f"{action_label} command: {' '.join(cmd)}")
+                self.get_logger().info(f"{action_label} [{robot}] command: {' '.join(cmd)}")
                 
                 def monitor_process():
                     try:
@@ -1402,12 +1445,12 @@ class UR15WebNode(Node):
                         
                         if return_code == 0:
                             self.push_web_log(
-                                f"✅ {action_label} succeeded: '{name}'", 'success'
+                                f"✅ {action_label} succeeded [{robot}]: '{name}'", 'success'
                             )
                         else:
                             tail = (stdout or '').strip().splitlines()[-1:] or ['']
                             self.push_web_log(
-                                f"❌ {action_label} failed (rc={return_code}): {tail[0]}",
+                                f"❌ {action_label} failed [{robot}] (rc={return_code}): {tail[0]}",
                                 'error',
                             )
                             self.get_logger().error(
@@ -1423,11 +1466,11 @@ class UR15WebNode(Node):
                 
                 threading.Thread(target=monitor_process, daemon=True).start()
                 self.push_web_log(
-                    f"🎯 Starting {action_label} for '{name}'...", 'info'
+                    f"🎯 Starting {action_label} [{robot}] for '{name}'...", 'info'
                 )
                 return jsonify({
                     'success': True,
-                    'message': f"{action_label} started for '{name}'"
+                    'message': f"{action_label} started for '{name}' [{robot}]"
                 })
             except Exception as exc:
                 self.get_logger().error(f"Error starting {action_label}: {exc}")
@@ -1439,24 +1482,29 @@ class UR15WebNode(Node):
         @self.app.route('/record_tcp_pose', methods=['POST'])
         def record_tcp_pose():
             """Record the current TCP pose in rack frame under a user-chosen name."""
-            from flask import request
+            from flask import request, jsonify
             data = request.get_json(silent=True) or {}
             name = data.get('name', '')
-            return _spawn_tcp_localizer('record', name, 'Record TCP pose')
+            robot = _resolve_tcp_robot(data.get('robot'))
+            if robot is None:
+                return jsonify({'success': False, 'message': 'Invalid robot name'}), 400
+            return _spawn_tcp_localizer('record', name, 'Record TCP pose', robot)
         
         @self.app.route('/move_to_tcp_pose', methods=['POST'])
         def move_to_tcp_pose():
             """Move the TCP to a previously saved rack-frame pose."""
-            from flask import request
+            from flask import request, jsonify
             data = request.get_json(silent=True) or {}
             name = data.get('name', '')
-            return _spawn_tcp_localizer('move', name, 'Move TCP to pose')
+            robot = _resolve_tcp_robot(data.get('robot'))
+            if robot is None:
+                return jsonify({'success': False, 'message': 'Invalid robot name'}), 400
+            return _spawn_tcp_localizer('move', name, 'Move TCP to pose', robot)
         
         @self.app.route('/delete_tcp_pose', methods=['POST'])
         def delete_tcp_pose():
-            """Delete a saved TCP pose JSON file."""
+            """Delete a saved TCP pose JSON file (shared across robots)."""
             from flask import request, jsonify
-            from common.workspace_utils import get_workspace_root
             
             data = request.get_json(silent=True) or {}
             name = data.get('name', '')
@@ -1465,16 +1513,14 @@ class UR15WebNode(Node):
                 return jsonify({'success': False, 'message': err}), 400
             
             try:
-                workspace_root = get_workspace_root()
-                if not workspace_root:
+                poses_dir = _tcp_poses_dir()
+                if poses_dir is None:
                     return jsonify({
                         'success': False,
                         'message': 'Could not find workspace root'
                     }), 500
                 
-                pose_path = os.path.join(
-                    workspace_root, 'temp', 'tcp_poses', f'{name}.json'
-                )
+                pose_path = os.path.join(poses_dir, f'{name}.json')
                 if not os.path.exists(pose_path):
                     return jsonify({
                         'success': False,
