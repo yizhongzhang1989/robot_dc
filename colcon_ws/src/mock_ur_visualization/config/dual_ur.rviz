@@ -6,7 +6,8 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /RobotModel1
+        - /UR15_RobotModel1
+        - /UR10e_RobotModel1
       Splitter Ratio: 0.5
     Tree Height: 600
   - Class: rviz_common/Selection
@@ -42,11 +43,17 @@ Visualization Manager:
       Frames:
         All Enabled: true
       Marker Scale: 0.25
-      Name: TF
+      Name: TF (shared)
       Show Arrows: true
       Show Axes: true
       Show Names: false
       Value: true
+    # ----------------------------------------------------------------
+    # UR15 RobotModel — subscribes to /ur15/robot_description (latched
+    # URDF published by ur15's namespaced robot_state_publisher).
+    # ur15 keeps unprefixed link names (base_link, tool0, ...) for
+    # backward compatibility with the rest of the codebase.
+    # ----------------------------------------------------------------
     - Alpha: 1
       Class: rviz_default_plugins/RobotModel
       Collision Enabled: false
@@ -57,11 +64,7 @@ Visualization Manager:
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        # Relative topic — resolved under the namespace this RViz is
-        # launched in. visualize.launch.py wraps everything (including
-        # rviz2) in PushRosNamespace('mock') by default, so this picks
-        # up /mock/robot_description published by the mock RSP.
-        Value: robot_description
+        Value: /ur15/robot_description
       Enabled: true
       Links:
         All Links Enabled: true
@@ -72,7 +75,39 @@ Visualization Manager:
       Mass Properties:
         Inertia: false
         Mass: false
-      Name: RobotModel
+      Name: UR15_RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+    # ----------------------------------------------------------------
+    # UR10e RobotModel — subscribes to /ur10e/robot_description.
+    # Frame names in the URDF carry the ``ur10e_`` prefix from
+    # tf_prefix:=ur10e_, so they sit alongside ur15's unprefixed
+    # frames in the shared global /tf tree without colliding.
+    # ----------------------------------------------------------------
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /ur10e/robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: UR10e_RobotModel
       TF Prefix: ""
       Update Interval: 0
       Value: true
@@ -80,7 +115,11 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: base_link
+    # 'world' is published by static_transform_publisher entries in
+    # dual_ur_bringup.py (world → base_link for ur15, world →
+    # ur10e_base_link for ur10e). Edit those offsets to match the
+    # physical cell layout.
+    Fixed Frame: world
     Frame Rate: 30
   Name: root
   Tools:
@@ -96,11 +135,11 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.5
+      Distance: 4.0
       Focal Point:
-        X: 0
+        X: 0.75
         Y: 0
-        Z: 0.3
+        Z: 0.5
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05
       Name: Current View
@@ -122,4 +161,3 @@ Window Geometry:
     collapsed: false
   Views:
     collapsed: false
-  Width: 1200

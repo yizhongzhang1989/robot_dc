@@ -8,6 +8,10 @@ Use it whenever you want to *see* the robot move in RViz but you control the
 arm via direct URScript (e.g. ur_robot_arm.UR15Robot) rather than ROS
 controllers.
 
+The message is published on the *relative* topic ``joint_states`` so the
+launch file can push the whole node under any namespace it likes
+(``visualize.launch.py`` pushes it under ``/mock`` by default).
+
 Parameters (declare on launch or via --ros-args -p name:=value):
   robot_ip   (str)   IP of the robot          [default: 192.168.1.16]
   port       (int)   URScript primary port    [default: 30002]
@@ -71,8 +75,8 @@ class JointPublisher(Node):
         self.timer = self.create_timer(period, self._tick)
 
         self.get_logger().info(
-            f"polling {self.robot_ip}:{self.port} at {self.rate_hz:.1f} Hz → /joint_states "
-            f"(frame_id={self.frame_id}, prefix='{prefix}')"
+            f"polling {self.robot_ip}:{self.port} at {self.rate_hz:.1f} Hz → "
+            f"<ns>/joint_states (frame_id={self.frame_id}, prefix='{prefix}')"
         )
 
     # ------------------------------------------------------------------

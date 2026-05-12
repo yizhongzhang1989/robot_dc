@@ -3,64 +3,73 @@
 visualize.launch.py — RViz visualization of a real or simulated UR robot,
 driven by direct URScript polling (no ur_robot_driver required).
 
-What it starts:
-  1. robot_state_publisher    — publishes /tf from the UR URDF + /joint_states
-  2. joint_publisher          — polls the robot's URScript port, publishes /joint_states
-  3. rviz2                    — with a preset config showing the UR robot model
+Single-arm visualization. This is what you want for hand-eye calibration,
+rack calibration debugging, or any time you have a UR sitting on the
+network and you want to *see* it in RViz without bringing up ros2_control.
 
-Args:
-  robot_name                 If non-empty, robot_ip/port/ur_type defaults are
-                             looked up from config/robot_config.yaml under
-                             ``<robot_name>.robot.{ip,ports.control,type}``.
-                             Examples: ``robot_name:=ur15`` or
-                             ``robot_name:=ur10e``. When empty (default), the
-                             explicit args below are used as-is.
-  robot_ip                   IP of the robot           (default 192.168.1.16)
-  port                       URScript primary port     (default 30002)
-  ur_type                    UR model for the URDF     (default ur10e; one of
-                                                        ur3/5/10[e], ur7e/12e/16e,
-                                                        ur8long, ur15/18/20/30)
-  rate_hz                    joint poll/publish rate   (default 30.0)
-  rviz                       launch RViz               (default true)
-  use_robot_state_publisher  start our own RSP         (default true; set false
-                                                        when ur_robot_driver or
-                                                        another launch is already
-                                                        publishing /robot_description
-                                                        and /tf — avoids the
-                                                        "two-models flicker")
-  use_joint_publisher        start our URScript poller (default true; set false
-                                                        when ur_robot_driver is
-                                                        already publishing
-                                                        /joint_states)
+What it starts (all under the ``/mock`` ROS namespace by default so it
+never races with a real driver running in the same graph):
+
+  1. robot_state_publisher    — publishes ``/mock/robot_description`` and
+                                ``/tf`` from the UR URDF
+  2. mock_ur_joint_publisher  — polls the robot's URScript port and
+                                publishes ``/mock/joint_states``
+  3. rviz2                    — preset config (visualize.rviz) shows the
+                                robot model from ``/mock/robot_description``
+
+Args (most common first):
+  robot_name     If set (e.g. ``ur15`` / ``ur10e``), robot_ip / port /
+                 ur_type defaults are auto-loaded from
+                 ``config/robot_config.yaml`` under
+                 ``<robot_name>.robot.{ip, ports.control, type}``.
+                 Default: ``ur15``.
+
+  rviz           Launch RViz2. Default: ``true``.
+
+  namespace      ROS namespace under which this visualization stack
+                 lives. Default: ``mock``. Change only if you need
+                 multiple simultaneous mock visualizations (rare).
+
+  rate_hz        URScript poll / JointState publish rate. Default: 30.
+
+  robot_ip       Override the IP looked up via ``robot_name``. Default:
+                 192.168.1.16 (used only when robot_name is empty).
+
+  port           Override the URScript primary port. Default: 30002.
+
+  ur_type        Override the URDF model. Default: ur10e.
+
+  joint_prefix   Advanced. Prefix prepended to URDF link/joint names and
+                 to the published JointState names. Use only when this
+                 stack shares a global TF tree with other robots (e.g.
+                 the dual_ur_bringup pipeline). Leave empty (default)
+                 for plain single-arm visualization.
 
 Examples:
-  # Visualize ur15 (auto-load IP/type from robot_config.yaml):
+  # Visualize ur15 (auto-loads IP/type from robot_config.yaml):
   ros2 launch mock_ur_visualization visualize.launch.py robot_name:=ur15
 
-  # Visualize ur10e (auto-load IP/type from robot_config.yaml):
+  # Visualize ur10e:
   ros2 launch mock_ur_visualization visualize.launch.py robot_name:=ur10e
 
-  # Standalone with explicit args (legacy / no config dependency):
+  # Visualize a robot not in robot_config.yaml — explicit args:
   ros2 launch mock_ur_visualization visualize.launch.py \\
-        robot_ip:=192.168.1.16 ur_type:=ur10e
+        robot_name:='' robot_ip:=192.168.1.50 ur_type:=ur10e
 
-  # Attach mode — alongside a running dual_ur_bringup. The bringup already
-  # publishes /tf, /robot_description and /joint_states for BOTH robots
-  # (ur15 unprefixed, ur10e with tf_prefix=ur10e_), so neither RSP nor the
-  # URScript joint poller is needed here. Works for either robot:
-  ros2 launch mock_ur_visualization visualize.launch.py \\
-        robot_name:=ur15 \\
-        use_robot_state_publisher:=false use_joint_publisher:=false
-  ros2 launch mock_ur_visualization visualize.launch.py \\
-        robot_name:=ur10e \\
-        use_robot_state_publisher:=false use_joint_publisher:=false
+  # Headless (joint_states + robot_description only, no RViz window):
+  ros2 launch mock_ur_visualization visualize.launch.py robot_name:=ur15 rviz:=false
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, GroupAction, OpaqueFunction
 from launch.conditions import IfCondition
-from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
+from launch.substitutions import (
+    Command,
+    FindExecutable,
+    LaunchConfiguration,
+    PathJoinSubstitution,
+)
+from launch_ros.actions import Node, PushRosNamespace, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
@@ -73,12 +82,11 @@ _UR_MODEL_CHOICES = [
 
 
 def _launch_setup(context, *args, **kwargs):
-    """Resolve LaunchConfigurations and (optionally) override from config.
+    """Resolve LaunchConfigurations (with optional robot_config.yaml lookup).
 
     Run inside an OpaqueFunction so we can do string-typed lookups against
     robot_config.yaml before building the Node actions.
     """
-
     robot_name = LaunchConfiguration("robot_name").perform(context)
     robot_ip = LaunchConfiguration("robot_ip").perform(context)
     port = LaunchConfiguration("port").perform(context)
@@ -109,11 +117,13 @@ def _launch_setup(context, *args, **kwargs):
 
     rate_hz = LaunchConfiguration("rate_hz")
     rviz = LaunchConfiguration("rviz")
-    joint_prefix = LaunchConfiguration("joint_prefix")
-    use_rsp = LaunchConfiguration("use_robot_state_publisher")
-    use_jp = LaunchConfiguration("use_joint_publisher")
+    namespace = LaunchConfiguration("namespace")
+    joint_prefix = LaunchConfiguration("joint_prefix").perform(context)
 
-    # Build the URDF on the fly from ur_description's xacro.
+    # Build the URDF on the fly from ur_description's xacro. tf_prefix is
+    # set from joint_prefix so when this stack runs inside a shared TF
+    # tree (dual_ur_bringup) the link/joint frame names are disjoint from
+    # other robots' frames.
     description_path = PathJoinSubstitution([
         FindPackageShare("ur_description"), "urdf", "ur.urdf.xacro",
     ])
@@ -134,7 +144,6 @@ def _launch_setup(context, *args, **kwargs):
         name="mock_ur_robot_state_publisher",
         output="screen",
         parameters=[robot_description],
-        condition=IfCondition(use_rsp),
     )
 
     joint_publisher = Node(
@@ -147,9 +156,8 @@ def _launch_setup(context, *args, **kwargs):
             "port": int(port),
             "rate_hz": rate_hz,
             "joint_prefix": joint_prefix,
-            "frame_id": "base_link",
+            "frame_id": f"{joint_prefix}base_link" if joint_prefix else "base_link",
         }],
-        condition=IfCondition(use_jp),
     )
 
     rviz_config = PathJoinSubstitution([
@@ -164,43 +172,66 @@ def _launch_setup(context, *args, **kwargs):
         condition=IfCondition(rviz),
     )
 
-    return [robot_state_publisher, joint_publisher, rviz_node]
+    # Wrap everything (including RViz) in the same namespace push so the
+    # RViz config's relative ``robot_description`` topic resolves to
+    # ``/<namespace>/robot_description`` — exactly what the RSP publishes.
+    # /tf stays global so RViz can render frames either way.
+    return [
+        GroupAction([
+            PushRosNamespace(namespace),
+            SetRemap("tf", "/tf"),
+            SetRemap("tf_static", "/tf_static"),
+            robot_state_publisher,
+            joint_publisher,
+            rviz_node,
+        ]),
+    ]
 
 
 def generate_launch_description() -> LaunchDescription:
     args = [
-        DeclareLaunchArgument("robot_name", default_value="",
-                              description="If set (e.g. 'ur15', 'ur10e'), "
-                                          "robot_ip/port/ur_type are auto-loaded "
-                                          "from config/robot_config.yaml."),
-        DeclareLaunchArgument("robot_ip", default_value="192.168.1.16",
-                              description="IP of the UR robot / URSim mock "
-                                          "(ignored when robot_name is set)."),
-        DeclareLaunchArgument("port", default_value="30002",
-                              description="URScript primary port "
-                                          "(ignored when robot_name is set)."),
-        DeclareLaunchArgument("ur_type", default_value="ur10e",
-                              choices=_UR_MODEL_CHOICES,
-                              description="UR model to use for the URDF "
-                                          "(ignored when robot_name is set)."),
-        DeclareLaunchArgument("rate_hz", default_value="30.0",
-                              description="JointState publish rate (Hz)."),
-        DeclareLaunchArgument("rviz", default_value="true",
-                              description="Launch RViz2."),
-        DeclareLaunchArgument("joint_prefix", default_value="",
-                              description="Optional prefix for joint names."),
         DeclareLaunchArgument(
-            "use_robot_state_publisher", default_value="true",
-            description="Start our own robot_state_publisher + load the UR URDF. "
-                        "Set false when another launch (e.g. ur_robot_driver or "
-                        "dual_ur_bringup) is already publishing /robot_description "
-                        "and /tf — this avoids the duplicate-RSP flicker in RViz."),
+            "robot_name",
+            default_value="ur15",
+            description="If non-empty (e.g. 'ur15', 'ur10e'), "
+                        "robot_ip/port/ur_type are auto-loaded from "
+                        "config/robot_config.yaml. Set to '' to use the "
+                        "explicit robot_ip/port/ur_type args below.",
+        ),
         DeclareLaunchArgument(
-            "use_joint_publisher", default_value="true",
-            description="Start our URScript joint poller. Set false when "
-                        "ur_robot_driver / ros2_control (or dual_ur_bringup) "
-                        "is already publishing /joint_states."),
+            "rviz", default_value="true",
+            description="Launch RViz2 with the preset visualize.rviz config.",
+        ),
+        DeclareLaunchArgument(
+            "namespace", default_value="mock",
+            description="ROS namespace for the entire visualization stack "
+                        "(robot_state_publisher + joint_publisher + rviz2). "
+                        "Default 'mock' keeps it out of the way of any real "
+                        "driver running in the same ROS graph.",
+        ),
+        DeclareLaunchArgument(
+            "rate_hz", default_value="30.0",
+            description="URScript poll / JointState publish rate (Hz).",
+        ),
+        DeclareLaunchArgument(
+            "robot_ip", default_value="192.168.1.16",
+            description="IP of the UR robot (used only when robot_name='').",
+        ),
+        DeclareLaunchArgument(
+            "port", default_value="30002",
+            description="URScript primary port (used only when robot_name='').",
+        ),
+        DeclareLaunchArgument(
+            "ur_type", default_value="ur10e", choices=_UR_MODEL_CHOICES,
+            description="UR model for the URDF (used only when robot_name='').",
+        ),
+        DeclareLaunchArgument(
+            "joint_prefix", default_value="",
+            description="Advanced. Prefix for URDF link/joint names and "
+                        "JointState names. Used by the dual_ur_bringup "
+                        "pipeline; leave empty for plain single-arm "
+                        "visualization.",
+        ),
     ]
 
     return LaunchDescription(args + [OpaqueFunction(function=_launch_setup)])
-

@@ -98,7 +98,7 @@ You should see the popup on the Polyscope teach pendant and `delta j0: 0.2` prin
 
 ## 5. Visualize the mock in RViz
 
-Drive RViz from the same URScript port `UR15Robot` uses — no `ur_robot_driver` needed (avoids RTDE port-30004 contention with the rest of this repo's stack).
+The [`mock_ur_visualization`](../colcon_ws/src/mock_ur_visualization) package drives RViz from the same URScript port `UR15Robot` uses — no `ur_robot_driver` needed (avoids RTDE port-30004 contention with the rest of this repo's stack). It launches a single arm: `robot_state_publisher` + a URScript-polling joint publisher + RViz2, all under the `/mock` ROS namespace so it never collides with a real driver running in the same graph.
 
 Build once:
 
@@ -108,33 +108,59 @@ colcon build --symlink-install --packages-select mock_ur_visualization
 source install/setup.bash
 ```
 
-Then launch one of:
+### Launch by robot name
+
+When the robot is in [`config/robot_config.yaml`](../config/robot_config.yaml), the IP, port and `ur_type` are auto-loaded:
 
 ```bash
-# Preferred — pulls IP / port / ur_type from config/robot_config.yaml.
-ros2 launch mock_ur_visualization visualize.launch.py robot_name:=ur10e
+# Visualize the UR15
 ros2 launch mock_ur_visualization visualize.launch.py robot_name:=ur15
 
-# Explicit args (no config dependency — useful for URSim on a non-standard IP)
-ros2 launch mock_ur_visualization visualize.launch.py \
-    robot_ip:=192.168.1.16 ur_type:=ur10e
-
-# Attach mode (RViz only) — alongside a running dual_ur_bringup / ur15_bringup.
-# Uses /tf, /robot_description and /joint_states already published by the
-# bringup, so neither robot_state_publisher nor the URScript joint poller is
-# started. Works for either robot:
-ros2 launch mock_ur_visualization visualize.launch.py \
-    robot_name:=ur15 \
-    use_robot_state_publisher:=false use_joint_publisher:=false
-
-ros2 launch mock_ur_visualization visualize.launch.py \
-    robot_name:=ur10e \
-    use_robot_state_publisher:=false use_joint_publisher:=false
+# Visualize the UR10e
+ros2 launch mock_ur_visualization visualize.launch.py robot_name:=ur10e
 ```
 
-> Attach mode against `dual_ur_bringup` for ur10e: in RViz set **Fixed Frame** to `ur10e_base_link` (the bringup loads the ur10e URDF with `tf_prefix=ur10e_`, so all link / joint frames carry that prefix).
+An RViz2 window opens with the UR model live-tracking the robot's joint positions at 30 Hz. Re-run the `movej` from §4 in a second terminal and the arm in RViz tracks the motion live.
 
-Re-run the `movej` from §4 in a second terminal and the arm in RViz tracks the motion live. Full reference: [colcon_ws/src/mock_ur_visualization/README.md](../colcon_ws/src/mock_ur_visualization/README.md).
+### Launch a URSim / unregistered robot
+
+For a URSim container or any robot not in `robot_config.yaml`, set `robot_name:=''` and pass the IP and model explicitly:
+
+```bash
+ros2 launch mock_ur_visualization visualize.launch.py \
+    robot_name:='' robot_ip:=192.168.56.101 ur_type:=ur10e
+```
+
+`ur_type` accepts any UR model supported by [`ur_description`](https://github.com/UniversalRobots/Universal_Robots_ROS2_Description): `ur3`, `ur5`, `ur10`, `ur3e`, `ur5e`, `ur7e`, `ur10e`, `ur12e`, `ur16e`, `ur8long`, `ur15`, `ur18`, `ur20`, `ur30`.
+
+### What it publishes
+
+| Topic | Type | Source |
+| --- | --- | --- |
+| `/mock/robot_description` | `std_msgs/String` (latched) | `robot_state_publisher` from `ur.urdf.xacro` |
+| `/mock/joint_states` | `sensor_msgs/JointState` @ 30 Hz | `mock_ur_joint_publisher` polling URScript port 30002 |
+| `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | global, so any other RViz can subscribe too |
+
+### Common launch arguments
+
+| Arg | Default | What it does |
+| --- | --- | --- |
+| `robot_name` | `ur15` | Looks up `robot.{ip,type,ports.control}` from `config/robot_config.yaml`. Set to `''` to use the explicit args below. |
+| `rviz` | `true` | Set `false` for a headless run (RSP + joint publisher only). |
+| `namespace` | `mock` | Where the stack lives. Change only if you need multiple mock stacks simultaneously (e.g. `namespace:=mock_ur15`). |
+| `rate_hz` | `30.0` | URScript poll / `JointState` publish rate. |
+| `robot_ip` | `192.168.1.16` | Used only when `robot_name:=''`. |
+| `port` | `30002` | URScript primary port; used only when `robot_name:=''`. |
+| `ur_type` | `ur10e` | URDF model; used only when `robot_name:=''`. |
+| `joint_prefix` | `""` | Advanced. Prefix for URDF link/joint and `JointState` names. Used by the dual-arm pipeline; leave empty for plain single-arm visualization. |
+
+### Tips
+
+- This launch only **reads** from the robot (URScript `get_actual_joint_positions`). It is safe to run alongside `ur_web` or any other URScript client.
+- If RViz comes up empty, check that the joint publisher could reach the robot — it logs `connect to <ip>:30002 failed` and retries with exponential backoff.
+- The RViz config (`Fixed Frame: base_link`) and the latched `robot_description` topic mean the robot model renders the instant the first `/mock/joint_states` message arrives.
+
+Full reference: [colcon_ws/src/mock_ur_visualization/README.md](../colcon_ws/src/mock_ur_visualization/README.md).
 
 ---
 

@@ -27,19 +27,22 @@ class UR15RobotArmNode(Node):
         self.current_joint_states = None
         self.current_tcp_pose = None
         
-        # Subscribe to joint states from UR driver
+        # Subscribe to joint states from UR driver.
+        # Relative name — when this node is launched under /ur15/
+        # (PushROSNamespace), this becomes /ur15/joint_states.
         self.joint_state_sub = self.create_subscription(
             JointState,
-            '/joint_states',
+            'joint_states',
             self.joint_state_callback,
             10,
             callback_group=self.callback_group
         )
         
-        # Subscribe to TCP pose (if available from ur_robot_driver)
+        # Subscribe to TCP pose (if available from ur_robot_driver).
+        # Relative for the same reason.
         self.tcp_pose_sub = self.create_subscription(
             PoseStamped,
-            '/cartesian_motion_controller/current_pose',
+            'cartesian_motion_controller/current_pose',
             self.tcp_pose_callback,
             10,
             callback_group=self.callback_group
@@ -48,7 +51,7 @@ class UR15RobotArmNode(Node):
         # Publisher for target pose commands
         self.target_pose_pub = self.create_publisher(
             PoseStamped,
-            '/target_frame',
+            'target_frame',
             10,
             callback_group=self.callback_group
         )
@@ -56,7 +59,7 @@ class UR15RobotArmNode(Node):
         # Publisher for robot status
         self.status_pub = self.create_publisher(
             String,
-            '/ur_robot_arm/status',
+            'ur_robot_arm/status',
             10,
             callback_group=self.callback_group
         )
@@ -69,8 +72,9 @@ class UR15RobotArmNode(Node):
         )
         
         self.get_logger().info('UR15 Robot Arm Node started successfully')
-        self.get_logger().info('Subscribed to: /joint_states, /cartesian_motion_controller/current_pose')
-        self.get_logger().info('Publishing to: /target_frame, /ur_robot_arm/status')
+        self.get_logger().info('Subscribed to: joint_states, cartesian_motion_controller/current_pose '
+                               '(resolved under this node\'s namespace)')
+        self.get_logger().info('Publishing to: target_frame, ur_robot_arm/status')
     
     def joint_state_callback(self, msg):
         """

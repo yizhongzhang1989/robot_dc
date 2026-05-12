@@ -7,9 +7,9 @@ Assumes ur_control and camera are already running.
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace, SetRemap
 from common.config_manager import ConfigManager
 from common.workspace_utils import get_workspace_root
 from pathlib import Path
@@ -138,7 +138,11 @@ def generate_launch_description():
     robot_namespace = LaunchConfiguration('robot_namespace')
     robot_type = LaunchConfiguration('robot_type')
     
-    # UR15 web node
+    # UR15 web node — lives under /<robot_namespace>/ so its relative
+    # ``joint_states`` subscription and ``dashboard_client/raw_request``
+    # service client resolve to the namespaced topics published by the
+    # ur15 driver. Camera topic stays absolute (camera publishes at
+    # global scope; see ur15_cam_launch.py).
     ur15_web_node = Node(
         package='ur_web',
         executable='ur15_web_node',
@@ -160,6 +164,13 @@ def generate_launch_description():
         }]
     )
     
+    namespaced_web = GroupAction([
+        PushRosNamespace(robot_namespace),
+        SetRemap('tf', '/tf'),
+        SetRemap('tf_static', '/tf_static'),
+        ur15_web_node,
+    ])
+    
     return LaunchDescription([
         # Arguments
         ur15_ip_arg,
@@ -175,6 +186,6 @@ def generate_launch_description():
         robot_namespace_arg,
         robot_type_arg,
         
-        # Launch nodes
-        ur15_web_node
+        # Launch nodes (under /<robot_namespace>/)
+        namespaced_web,
     ])

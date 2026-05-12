@@ -283,9 +283,12 @@ class UR15WebNode(Node):
         # by other code paths elsewhere in this file.
         self._publish_static_robot_info()
         
-        # Create Dashboard client for freedrive control (doesn't interrupt External Control)
+        # Create Dashboard client for freedrive control (doesn't interrupt External Control).
+        # Relative service name — when this node lives under /ur15/
+        # (PushROSNamespace), this resolves to /ur15/dashboard_client/raw_request,
+        # which is where the namespaced ur_dashboard_client.launch.py serves it.
         from ur_dashboard_msgs.srv import RawRequest
-        self.dashboard_client = self.create_client(RawRequest, '/dashboard_client/raw_request')
+        self.dashboard_client = self.create_client(RawRequest, 'dashboard_client/raw_request')
         self.get_logger().info("Dashboard client created for freedrive control")
         
         # Initialize GenerateServerFrame for server coordinate calculations
@@ -324,15 +327,18 @@ class UR15WebNode(Node):
         
         self.get_logger().info(f"Subscribed to camera topic: {self.camera_topic}")
         
-        # Subscribe to joint states topic
+        # Subscribe to joint states topic.
+        # Relative name — the namespace push at launch resolves this to
+        # /<robot_namespace>/joint_states, matching the namespaced
+        # joint_state_broadcaster published by ur_control.
         self.joint_states_subscription = self.create_subscription(
             JointState,
-            '/joint_states',
+            'joint_states',
             self.joint_states_callback,
             10
         )
         
-        self.get_logger().info("Subscribed to /joint_states topic")
+        self.get_logger().info("Subscribed to joint_states topic (resolved under this node's namespace)")
         
         # Setup Flask app
         web_dir = os.path.join(get_package_share_directory('ur_web'), 'web')

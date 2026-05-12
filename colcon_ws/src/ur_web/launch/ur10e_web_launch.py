@@ -13,9 +13,9 @@ the ur10e values here. Renaming the node parameters is a future cleanup.
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace, SetRemap
 from common.config_manager import ConfigManager
 from common.workspace_utils import get_workspace_root
 from pathlib import Path
@@ -162,6 +162,16 @@ def generate_launch_description():
             'joint_prefix': joint_prefix,
         }]
     )
+    
+    # Wrap under /<robot_namespace>/ (matching ur10e_control_launch.py),
+    # but keep /tf and /tf_static global so RViz can show both robots
+    # from a single TF tree.
+    namespaced_web = GroupAction([
+        PushRosNamespace(robot_namespace),
+        SetRemap('tf', '/tf'),
+        SetRemap('tf_static', '/tf_static'),
+        ur10e_web_node,
+    ])
 
     return LaunchDescription([
         ur_ip_arg,
@@ -177,5 +187,5 @@ def generate_launch_description():
         robot_namespace_arg,
         robot_type_arg,
         joint_prefix_arg,
-        ur10e_web_node,
+        namespaced_web,
     ])
