@@ -61,12 +61,13 @@ def generate_launch_description():
         description='Launch RViz for visualization'
     )
 
-    # Namespace under which the entire ur15 driver stack lives. Defaults to
-    # the robot's status_namespace so the ROS topic prefix matches the
-    # robot_status_redis key prefix (single source of identity).
+    # Namespace under which the entire ur15 driver stack lives. Defaults
+    # to the top-level robot key ('ur15') from robot_config.yaml so the
+    # ROS topic prefix matches the robot_status_redis key prefix
+    # (single source of identity).
     robot_namespace_arg = DeclareLaunchArgument(
         'robot_namespace',
-        default_value=ur15_config.get('robot.status_namespace', 'ur15'),
+        default_value='ur15',
         description='ROS namespace under which the ur15 driver stack lives '
                     '(controller_manager, joint_states, robot_description). '
                     '/tf and /tf_static remain global.'

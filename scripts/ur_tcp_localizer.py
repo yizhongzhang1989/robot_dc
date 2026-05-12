@@ -115,24 +115,28 @@ RACK2BASE_KEY = 'rack2base_matrix'
 _LEGACY_PER_ROBOT_SUBDIRS = ('ur15', 'ur10e')
 # Hard-coded fallbacks used only when robot_config.yaml is missing.
 # Other robots must be present in the config or have their IP/port
-# passed explicitly.
+# passed explicitly. The status namespace always equals the top-level
+# robot key (``robot_name``), so it's not stored here.
 _LEGACY_DEFAULTS = {
     'ur15': {
         'robot_ip': '192.168.1.15',
         'robot_port': 30002,
-        'status_namespace': 'ur15',
     },
 }
 
 
 def _load_robot_config(robot_name: str) -> dict:
-    """Look up a robot's IP / control port / status namespace from
+    """Look up a robot's IP / control port from
     ``config/robot_config.yaml``.
 
     Returns a dict with keys ``robot_ip``, ``robot_port``,
-    ``status_namespace``. Falls back to ``_LEGACY_DEFAULTS[robot_name]``
-    (currently only defined for ``ur15``) if the file is missing or the
-    relevant block is absent.
+    ``status_namespace``. ``status_namespace`` is always ``robot_name``
+    — the top-level YAML key (e.g. ``ur15``, ``ur10e``) is the
+    namespace used by ``robot_status_redis``.
+
+    Falls back to ``_LEGACY_DEFAULTS[robot_name]`` (currently only
+    defined for ``ur15``) if the file is missing or the relevant block
+    is absent.
 
     Raises ``KeyError`` if the requested robot is not in the config and
     has no legacy fallback.
@@ -145,7 +149,7 @@ def _load_robot_config(robot_name: str) -> dict:
                 f"robot '{robot_name}' is not configured (no robot_config.yaml "
                 f"and no legacy default)."
             )
-        return dict(fallback)
+        return {**fallback, 'status_namespace': robot_name}
     try:
         with open(config_path, 'r') as f:
             cfg = yaml.safe_load(f) or {}
@@ -155,7 +159,7 @@ def _load_robot_config(robot_name: str) -> dict:
                 f"robot '{robot_name}' is not configured (robot_config.yaml "
                 f"unreadable and no legacy default)."
             )
-        return dict(fallback)
+        return {**fallback, 'status_namespace': robot_name}
 
     block = cfg.get(robot_name) or {}
     robot = block.get('robot') or {}
@@ -164,16 +168,14 @@ def _load_robot_config(robot_name: str) -> dict:
             raise KeyError(
                 f"robot '{robot_name}' is not in robot_config.yaml and has "
                 f"no legacy default. Add a top-level '{robot_name}:' block "
-                f"with robot.ip / robot.ports.control / robot.status_namespace."
+                f"with robot.ip / robot.ports.control."
             )
-        return dict(fallback)
+        return {**fallback, 'status_namespace': robot_name}
     ports = robot.get('ports') or {}
     return {
         'robot_ip': robot.get('ip', (fallback or {}).get('robot_ip')),
         'robot_port': ports.get('control', (fallback or {}).get('robot_port', 30002)),
-        'status_namespace': robot.get(
-            'status_namespace', (fallback or {}).get('status_namespace', robot_name)
-        ),
+        'status_namespace': robot_name,
     }
 
 

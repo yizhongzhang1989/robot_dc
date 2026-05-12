@@ -192,12 +192,13 @@ Key members:
 
 | Member | Description |
 | --- | --- |
-| `RackCalibrator(config=None, namespace='ur15', result_keys=('rack2base_matrix', 'rack_points_3d'), status_client=None)` | Constructor. All args optional; pass `status_client` to inject a custom/mock `RobotStatusClient`, or `result_keys` to fetch a different set of status keys. |
-| `set_config(config)` | Resolve a basename (under `temp/workflow_files/`) or absolute path. Raises `FileNotFoundError` if missing. |
+| `RackCalibrator(config=None, namespace=None, result_keys=('rack2base_matrix', 'rack_points_3d'), status_client=None)` | Constructor. All args optional; `namespace` defaults to `None`, in which case `set_config()` auto-detects it from the workflow JSON (the `positioning` step that writes `rack2base_matrix` carries `status_namespace`). Pass an explicit string to pin it. `status_client` accepts a custom/mock `RobotStatusClient`; `result_keys` lets you fetch a different set of status keys. |
+| `set_config(config)` | Resolve a basename (under `temp/workflow_files/`) or absolute path. Auto-detects `namespace` from the workflow JSON unless the constructor pinned one. Raises `FileNotFoundError` if missing. |
 | `run()` → `int` | Spawn `ros2 run ur_workflow run_workflow.py --config <path>`. Returns the exit code. Raises `RuntimeError` if no config set, `FileNotFoundError` if `ros2` is not on PATH. |
-| `get_result()` → `dict` | Read all configured `result_keys` from robot status and return them as a dict (values are `numpy.ndarray` or `None` if not stored). Does **not** run the workflow — call this anytime to inspect the last computed result. |
+| `get_result()` → `dict` | Read all configured `result_keys` from robot status under `self.namespace` and return them as a dict (values are `numpy.ndarray` or `None` if not stored). Does **not** run the workflow — call this anytime to inspect the last computed result. |
 | `calibrate()` → `Optional[dict]` | Convenience: `run()` followed by `get_result()`. Returns `None` if the workflow exited non-zero. |
 | `config` (property) | Currently configured absolute workflow path, or `None`. |
+| `namespace` (property) | Status-redis namespace currently in use (auto-detected from the workflow unless overridden). |
 | `last_returncode` (property) | Exit code of the most recent `run()`, or `None`. |
 
 Because `get_result()` is independent of `run()`, you can also use the class purely to read the most recent calibration result without re-running the workflow:
@@ -285,7 +286,7 @@ python3 scripts/ur_tcp_localizer.py --robot ur15 delete approach_left_knob
 python3 scripts/ur_tcp_localizer.py --robot ur15 move approach_left_knob --a 0.05 --v 0.05
 ```
 
-For each robot, the script reads `config/robot_config.yaml` for that robot's IP / control port / `status_namespace` and connects to Redis on `localhost:6379` for the rack matrix. `--robot` is the only thing that selects which arm to drive.
+For each robot, the script reads `config/robot_config.yaml` for that robot's IP / control port (under the top-level `ur15:` / `ur10e:` block) and connects to Redis on `localhost:6379` for the rack matrix. The top-level robot key is also the namespace used in `robot_status_redis`. `--robot` is the only thing that selects which arm to drive.
 
 ### 5.3 Use as a Library — `TCPLocalizer` Class
 

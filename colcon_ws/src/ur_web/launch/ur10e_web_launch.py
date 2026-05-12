@@ -44,8 +44,9 @@ def generate_launch_description():
 
     robot_namespace_arg = DeclareLaunchArgument(
         'robot_namespace',
-        default_value=ur10e_config.get('robot.status_namespace', 'ur10e'),
-        description='Namespace used for this robot in robot_status_redis'
+        default_value='ur10e',
+        description='Namespace used for this robot in robot_status_redis '
+                    '(matches the top-level robot key in robot_config.yaml).'
     )
 
     robot_type_arg = DeclareLaunchArgument(

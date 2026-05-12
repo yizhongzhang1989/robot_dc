@@ -10,8 +10,12 @@ The class:
      (the exact same command the dashboard's "Run Current Selected Workflow"
      button uses).
   2. After the workflow exits successfully, reads `rack2base_matrix` and
-     `rack_points_3d` from the Redis-backed robot status service under the
-     `ur15` namespace.
+     `rack_points_3d` from the Redis-backed robot status service. The
+     namespace is auto-detected from the workflow JSON itself (the
+     `positioning` step that writes `rack2base_matrix` carries
+     `status_namespace`), so the same script works for both `ur15` and
+     `ur10e` without any CLI flags. Pass ``namespace=...`` to the
+     constructor to override the detection.
 
 Usage (CLI):
     # Use a workflow file from temp/workflow_files/ (basename only)
@@ -73,8 +77,53 @@ from robot_status_redis.client_utils import RobotStatusClient  # noqa: E402
 
 
 WORKFLOW_DIR = _WORKSPACE_ROOT / 'temp' / 'workflow_files'
-STATUS_NAMESPACE = 'ur15'
+FALLBACK_STATUS_NAMESPACE = 'ur15'
 RESULT_KEYS = ('rack2base_matrix', 'rack_points_3d')
+
+
+def _detect_status_namespace(
+    workflow_path: Path,
+    fallback: str = FALLBACK_STATUS_NAMESPACE,
+) -> Optional[str]:
+    """Pull the robot_status_redis namespace out of a workflow JSON.
+
+    Resolution order:
+      1. The first ``positioning`` step whose ``local2world_matrix_name``
+         is ``'rack2base_matrix'`` — that step's ``status_namespace`` is
+         the one the workflow will write the rack matrix under, so it's
+         also the one we must read it back from.
+      2. The workflow's top-level ``context.status_namespace`` (rarely
+         present but honoured for symmetry with the workflow runner).
+      3. ``fallback`` (defaults to ``'ur15'``).
+
+    Returns ``None`` only if the file cannot be read or parsed; in that
+    case the caller should keep its existing namespace.
+    """
+    try:
+        with open(workflow_path, 'r') as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if isinstance(data, dict):
+        for step in data.get('workflow', []) or []:
+            if not isinstance(step, dict):
+                continue
+            if step.get('type') != 'positioning':
+                continue
+            if step.get('local2world_matrix_name') != 'rack2base_matrix':
+                continue
+            ns = step.get('status_namespace')
+            if ns:
+                return ns
+
+        ctx = data.get('context')
+        if isinstance(ctx, dict):
+            ns = ctx.get('status_namespace')
+            if ns:
+                return ns
+
+    return fallback
 
 
 def resolve_workflow_path(workflow_arg: str) -> Path:
@@ -135,11 +184,14 @@ class RackCalibrator:
     def __init__(
         self,
         config: Optional[str] = None,
-        namespace: str = STATUS_NAMESPACE,
+        namespace: Optional[str] = None,
         result_keys: tuple = RESULT_KEYS,
         status_client: Optional[RobotStatusClient] = None,
     ):
-        self._namespace = namespace
+        # If the caller pins a namespace, ``set_config()`` will leave it
+        # alone; otherwise we auto-detect from the workflow JSON.
+        self._explicit_namespace = namespace
+        self._namespace = namespace or FALLBACK_STATUS_NAMESPACE
         self._result_keys = tuple(result_keys)
         self._status_client = status_client
         self._workflow_path: Optional[Path] = None
@@ -154,6 +206,11 @@ class RackCalibrator:
         Accepts a basename under `temp/workflow_files/` or an absolute path.
         Returns the resolved absolute path.
 
+        Side effect: unless the constructor was called with an explicit
+        ``namespace=``, the ``status_namespace`` to read results back
+        from is auto-detected from the workflow JSON (see
+        :func:`_detect_status_namespace`).
+
         Raises:
             FileNotFoundError: if the resolved file does not exist.
         """
@@ -161,12 +218,25 @@ class RackCalibrator:
         if not path.exists():
             raise FileNotFoundError(f"Workflow file not found: {path}")
         self._workflow_path = path
+        if self._explicit_namespace is None:
+            detected = _detect_status_namespace(path)
+            if detected:
+                self._namespace = detected
         return path
 
     @property
     def config(self) -> Optional[Path]:
         """Currently configured workflow file (absolute path) or None."""
         return self._workflow_path
+
+    @property
+    def namespace(self) -> str:
+        """Status-redis namespace this calibrator reads results from.
+
+        Auto-detected from the workflow JSON on ``set_config()`` unless
+        the constructor was called with an explicit ``namespace=``.
+        """
+        return self._namespace
 
     # ------------------------------------------------------------------- run
     def run(self) -> int:
@@ -308,14 +378,14 @@ def main() -> int:
     matrix = result.get('rack2base_matrix')
     if matrix is None:
         print(
-            f"✗ 'rack2base_matrix' not found under namespace '{STATUS_NAMESPACE}'.\n"
+            f"✗ 'rack2base_matrix' not found under namespace '{cal.namespace}'.\n"
             "  The workflow may have failed to compute a result.",
             file=sys.stderr,
         )
         return 4
 
     for key, value in result.items():
-        print(f"\n{key} (namespace='{STATUS_NAMESPACE}'):")
+        print(f"\n{key} (namespace='{cal.namespace}'):")
         if value is None:
             print("  <not stored>")
         else:
