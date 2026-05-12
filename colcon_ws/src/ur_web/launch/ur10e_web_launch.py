@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-UR15 Web Launch File
+UR10e Web Launch File
 
-This launch file starts only the UR15 web node.
-Assumes ur_control and camera are already running.
+Starts a second ``ur15_web_node`` instance (the executable name is unchanged
+to avoid touching node entry points) configured from ``ur10e.web`` /
+``ur10e.robot`` in robot_config.yaml. Uses a distinct node name
+(``ur10e_web_node``) and disjoint web port so it coexists with the ur15 web.
+
+NOTE: the underlying node still declares its parameters as ``ur15_ip`` /
+``ur15_port`` (these describe "the UR's IP and control port"); we feed them
+the ur10e values here. Renaming the node parameters is a future cleanup.
 """
 
 from launch import LaunchDescription
@@ -16,147 +22,143 @@ from pathlib import Path
 
 
 def generate_launch_description():
-    # Load configuration
     config = ConfigManager()
-    ur15_config = config.get_robot('ur15')
-    
-    # Get workspace root for resolving relative paths
+    ur10e_config = config.get_robot('ur10e')
+
     workspace_root = Path(get_workspace_root())
-    
-    # Resolve paths (convert relative to absolute)
-    dataset_path = ur15_config.get('web.dataset_path')
-    dataset_path_obj = Path(dataset_path)
-    if not dataset_path_obj.is_absolute():
-        dataset_path = str(workspace_root / dataset_path)
-    
-    calib_data_path = ur15_config.get('web.calibration_data_path')
-    calib_data_path_obj = Path(calib_data_path)
-    if not calib_data_path_obj.is_absolute():
-        calib_data_path = str(workspace_root / calib_data_path)
-    
-    calib_result_path = ur15_config.get('web.calibration_result_path')
-    calib_result_path_obj = Path(calib_result_path)
-    if not calib_result_path_obj.is_absolute():
-        calib_result_path = str(workspace_root / calib_result_path)
-    
-    chessboard_config_path = ur15_config.get('web.chessboard_config_path')
-    chessboard_config_path_obj = Path(chessboard_config_path)
-    if not chessboard_config_path_obj.is_absolute():
-        chessboard_config_path = str(workspace_root / chessboard_config_path)
-    
-    # Declare arguments with defaults from config
-    ur15_ip_arg = DeclareLaunchArgument(
-        'ur15_ip',
-        default_value=ur15_config.get('robot.ip'),
-        description='IP address of the UR15 robot'
+
+    def _resolve(rel_or_abs: str) -> str:
+        p = Path(rel_or_abs)
+        return str(p if p.is_absolute() else workspace_root / p)
+
+    dataset_path = _resolve(ur10e_config.get('web.dataset_path'))
+    calib_data_path = _resolve(ur10e_config.get('web.calibration_data_path'))
+    calib_result_path = _resolve(ur10e_config.get('web.calibration_result_path'))
+    chessboard_config_path = _resolve(ur10e_config.get('web.chessboard_config_path'))
+
+    ur_ip_arg = DeclareLaunchArgument(
+        'ur10e_ip',
+        default_value=ur10e_config.get('robot.ip'),
+        description='IP address of the UR10e robot'
     )
-    
+
     robot_namespace_arg = DeclareLaunchArgument(
         'robot_namespace',
-        default_value=ur15_config.get('robot.status_namespace', 'ur15'),
+        default_value=ur10e_config.get('robot.status_namespace', 'ur10e'),
         description='Namespace used for this robot in robot_status_redis'
     )
-    
+
+    joint_prefix_arg = DeclareLaunchArgument(
+        'joint_prefix',
+        default_value='ur10e_',
+        description='Prefix used on the joint names on /joint_states that '
+                    'belong to this robot. The web node uses this to filter '
+                    'messages from the other robot on the shared topic and '
+                    'to look up J1..J6 by name.'
+    )
+
     camera_topic_arg = DeclareLaunchArgument(
         'camera_topic',
-        default_value=ur15_config.get('web.camera_topic'),
-        description='UR15 Camera topic name'
+        default_value=ur10e_config.get('web.camera_topic'),
+        description='UR10e camera topic name'
     )
-    
+
     web_port_arg = DeclareLaunchArgument(
         'web_port',
-        default_value=str(ur15_config.get('web.port')),
+        default_value=str(ur10e_config.get('web.port')),
         description='Web server port'
     )
-    
-    ur15_port_arg = DeclareLaunchArgument(
-        'ur15_port',
-        default_value=str(ur15_config.get('robot.ports.control')),
-        description='UR15 robot port'
+
+    ur_port_arg = DeclareLaunchArgument(
+        'ur10e_port',
+        default_value=str(ur10e_config.get('robot.ports.control')),
+        description='UR10e robot control port'
     )
-    
+
     dataset_dir_arg = DeclareLaunchArgument(
         'dataset_dir',
         default_value=dataset_path,
         description='Directory for storing dataset files'
     )
-    
+
     calib_data_dir_arg = DeclareLaunchArgument(
         'calib_data_dir',
         default_value=calib_data_path,
         description='Directory for camera calibration data'
     )
-    
+
     calib_result_dir_arg = DeclareLaunchArgument(
         'calib_result_dir',
         default_value=calib_result_path,
         description='Directory for camera calibration results'
     )
-    
+
     chessboard_config_arg = DeclareLaunchArgument(
         'chessboard_config',
         default_value=chessboard_config_path,
         description='JSON file containing chessboard pattern configuration'
     )
-    
-    # Get service ports from config
+
+    # Shared service ports (read from services.* — same singleton instances as ur15)
     all_config = config.get_all()
     services_config = all_config.get('services', {})
     image_labeling_port = services_config.get('image_labeling', {}).get('port', 8007)
     workflow_config_center_port = services_config.get('workflow_config_center', {}).get('port', 8008)
-    
+
     image_labeling_port_arg = DeclareLaunchArgument(
         'image_labeling_port',
         default_value=str(image_labeling_port),
-        description='Port for image labeling service'
+        description='Port for image labeling service (shared singleton)'
     )
-    
+
     workflow_config_center_port_arg = DeclareLaunchArgument(
         'workflow_config_center_port',
         default_value=str(workflow_config_center_port),
-        description='Port for workflow config center service'
+        description='Port for workflow config center service (shared singleton)'
     )
-    
-    # Get launch configurations
-    ur15_ip = LaunchConfiguration('ur15_ip')
+
+    ur_ip = LaunchConfiguration('ur10e_ip')
     camera_topic = LaunchConfiguration('camera_topic')
     web_port = LaunchConfiguration('web_port')
-    ur15_port = LaunchConfiguration('ur15_port')
+    ur_port = LaunchConfiguration('ur10e_port')
     dataset_dir = LaunchConfiguration('dataset_dir')
     calib_data_dir = LaunchConfiguration('calib_data_dir')
     calib_result_dir = LaunchConfiguration('calib_result_dir')
     chessboard_config = LaunchConfiguration('chessboard_config')
-    image_labeling_port = LaunchConfiguration('image_labeling_port')
-    workflow_config_center_port = LaunchConfiguration('workflow_config_center_port')
+    image_labeling_port_cfg = LaunchConfiguration('image_labeling_port')
+    workflow_config_center_port_cfg = LaunchConfiguration('workflow_config_center_port')
     robot_namespace = LaunchConfiguration('robot_namespace')
-    
-    # UR15 web node
-    ur15_web_node = Node(
+    joint_prefix = LaunchConfiguration('joint_prefix')
+
+    # Distinct node name so this instance does not collide with ur15_web_node.
+    # NOTE: parameter names below (`ur15_ip`, `ur15_port`) match what the node
+    # code declares; we are feeding them the ur10e values intentionally.
+    ur10e_web_node = Node(
         package='ur_web',
         executable='ur15_web_node',
-        name='ur15_web_node',
+        name='ur10e_web_node',
         output='screen',
         parameters=[{
             'camera_topic': camera_topic,
             'web_port': web_port,
-            'ur15_ip': ur15_ip,
-            'ur15_port': ur15_port,
+            'ur15_ip': ur_ip,
+            'ur15_port': ur_port,
             'dataset_dir': dataset_dir,
             'calib_data_dir': calib_data_dir,
             'calib_result_dir': calib_result_dir,
             'chessboard_config': chessboard_config,
-            'image_labeling_port': image_labeling_port,
-            'workflow_config_center_port': workflow_config_center_port,
+            'image_labeling_port': image_labeling_port_cfg,
+            'workflow_config_center_port': workflow_config_center_port_cfg,
             'robot_namespace': robot_namespace,
+            'joint_prefix': joint_prefix,
         }]
     )
-    
+
     return LaunchDescription([
-        # Arguments
-        ur15_ip_arg,
+        ur_ip_arg,
         camera_topic_arg,
         web_port_arg,
-        ur15_port_arg,
+        ur_port_arg,
         dataset_dir_arg,
         calib_data_dir_arg,
         calib_result_dir_arg,
@@ -164,7 +166,6 @@ def generate_launch_description():
         image_labeling_port_arg,
         workflow_config_center_port_arg,
         robot_namespace_arg,
-        
-        # Launch nodes
-        ur15_web_node
+        joint_prefix_arg,
+        ur10e_web_node,
     ])

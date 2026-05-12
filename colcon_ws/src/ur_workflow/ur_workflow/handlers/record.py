@@ -94,7 +94,8 @@ class RecordDataHandler(OperationHandler):
                 }
                 
                 # Load camera parameters
-                camera_params = self._load_camera_parameters(context)
+                status_namespace = operation.get('status_namespace', 'ur15')
+                camera_params = self._load_camera_parameters(context, status_namespace)
                 
                 # Prepare data structure (matching ur_capture.py format)
                 data = {
@@ -138,9 +139,11 @@ class RecordDataHandler(OperationHandler):
         except Exception as e:
             return {'status': 'error', 'error': str(e)}
     
-    def _load_camera_parameters(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _load_camera_parameters(self, context: Dict[str, Any],
+                                status_namespace: str = 'ur15') -> Dict[str, Any]:
         """
-        Load camera parameters from RobotStatusClient
+        Load camera parameters from RobotStatusClient under ``status_namespace``
+        (defaults to 'ur15' for backward compatibility with existing workflows).
         """
         camera_params = {
             'camera_matrix': None,
@@ -153,9 +156,9 @@ class RecordDataHandler(OperationHandler):
         if client:
             try:
                 # Try to get parameters from status service
-                cm = client.get_status("ur15", "camera_matrix")
-                dc = client.get_status("ur15", "distortion_coefficients")
-                c2e = client.get_status("ur15", "cam2end_matrix")
+                cm = client.get_status(status_namespace, "camera_matrix")
+                dc = client.get_status(status_namespace, "distortion_coefficients")
+                c2e = client.get_status(status_namespace, "cam2end_matrix")
                 
                 # Convert numpy arrays to lists for JSON serialization
                 if cm is not None: 

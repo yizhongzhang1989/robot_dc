@@ -111,19 +111,28 @@ source install/setup.bash
 Then launch one of:
 
 ```bash
-# Standalone — URSim mock at .16 (UR10e)
+# Preferred — pulls IP / port / ur_type from config/robot_config.yaml.
+ros2 launch mock_ur_visualization visualize.launch.py robot_name:=ur10e
+ros2 launch mock_ur_visualization visualize.launch.py robot_name:=ur15
+
+# Explicit args (no config dependency — useful for URSim on a non-standard IP)
 ros2 launch mock_ur_visualization visualize.launch.py \
     robot_ip:=192.168.1.16 ur_type:=ur10e
 
-# Standalone — real UR15 at .15
+# Attach mode (RViz only) — alongside a running dual_ur_bringup / ur15_bringup.
+# Uses /tf, /robot_description and /joint_states already published by the
+# bringup, so neither robot_state_publisher nor the URScript joint poller is
+# started. Works for either robot:
 ros2 launch mock_ur_visualization visualize.launch.py \
-    robot_ip:=192.168.1.15 ur_type:=ur15
+    robot_name:=ur15 \
+    use_robot_state_publisher:=false use_joint_publisher:=false
 
-# Alongside ur15_bringup (driver already publishes /robot_description, /tf
-# and /joint_states — skip ours to avoid the two-models flicker)
 ros2 launch mock_ur_visualization visualize.launch.py \
+    robot_name:=ur10e \
     use_robot_state_publisher:=false use_joint_publisher:=false
 ```
+
+> Attach mode against `dual_ur_bringup` for ur10e: in RViz set **Fixed Frame** to `ur10e_base_link` (the bringup loads the ur10e URDF with `tf_prefix=ur10e_`, so all link / joint frames carry that prefix).
 
 Re-run the `movej` from §4 in a second terminal and the arm in RViz tracks the motion live. Full reference: [colcon_ws/src/mock_ur_visualization/README.md](../colcon_ws/src/mock_ur_visualization/README.md).
 
@@ -164,7 +173,7 @@ For URScript / dashboard / RTDE work alone, this stack is **not** required.
 
 - **`get robot model` returns `UR10` for a UR10e simulator.** URSim quirk; the kinematics are correct. Don't branch on this string.
 - **`is in remote control -> false` after boot.** Direct URScript on 30002 still works. To use dashboard `play` you must enable Remote Control in Polyscope (Hamburger → Settings → System → Remote Control).
-- **Two `robot_state_publisher`s = RViz flicker.** If `ur15_bringup` is running, launch `mock_ur_visualization` with `use_robot_state_publisher:=false use_joint_publisher:=false`.
+- **Two `robot_state_publisher`s = RViz flicker.** If `ur15_bringup` / `dual_ur_bringup` is running, launch `mock_ur_visualization` in attach mode: add `use_robot_state_publisher:=false use_joint_publisher:=false`.
 - **`curl http://<IP>:29999/` fails.** Dashboard is not HTTP; it's a plain-text line protocol. Use `nc`, `bash`'s `/dev/tcp`, or a Python socket. The banner `Connected: Universal Robots Dashboard Server` is what fools `curl` into reporting `HTTP/0.9`.
 - **Polyscope GUI ports `5900` / `6080` need explicit forwarding.** Handled by `scripts/setup_ursim.sh`; vanilla `start_ursim.sh` forwards only `29999` + `30001-30004`.
 - **`docker ps` says permission denied right after first run.** Log out and back in, run `newgrp docker`, or prefix with `sudo` until you re-login.

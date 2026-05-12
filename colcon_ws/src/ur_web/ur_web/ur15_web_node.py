@@ -82,6 +82,16 @@ class UR15WebNode(Node):
         self.declare_parameter('chessboard_config', '/tmp/ur15_cam_calibration_data/chessboard_config.json')
         self.declare_parameter('image_labeling_port', 8007)
         self.declare_parameter('workflow_config_center_port', 8008)
+        # Namespace used when reading/writing to robot_status_redis. Defaults to
+        # 'ur15' so existing callers/configs keep working unchanged; for ur10e
+        # the launch file passes 'ur10e' so the two robots stay isolated.
+        self.declare_parameter('robot_namespace', 'ur15')
+        # Prefix on joint names in the shared /joint_states topic. Defaults to
+        # empty (matches the ur15 driver's joint_state_broadcaster output). For
+        # ur10e the launch file passes 'ur10e_' so this instance only consumes
+        # joint state messages whose joint names carry that prefix, ignoring
+        # the unprefixed ur15 messages that share the topic.
+        self.declare_parameter('joint_prefix', '')
         
         # Get parameters
         self.camera_topic = self.get_parameter('camera_topic').value
@@ -94,6 +104,18 @@ class UR15WebNode(Node):
         self.chessboard_config = self.get_parameter('chessboard_config').value
         self.image_labeling_port = self.get_parameter('image_labeling_port').value
         self.workflow_config_center_port = self.get_parameter('workflow_config_center_port').value
+        self.robot_namespace = self.get_parameter('robot_namespace').value
+        self.joint_prefix = self.get_parameter('joint_prefix').value
+        # Expected joint name set for this robot. We use a set lookup in the
+        # /joint_states callback so we silently drop messages from the other
+        # robot (which has a different prefix).
+        _ur_joint_suffixes = [
+            'shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
+            'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint',
+        ]
+        self._expected_joint_names = set(
+            self.joint_prefix + s for s in _ur_joint_suffixes
+        )
         
         # Ensure directories exist
         os.makedirs(self.calibration_data_dir, exist_ok=True)
@@ -331,12 +353,12 @@ class UR15WebNode(Node):
                     # Update robot_status with joint positions (in degrees)
                     if joint_positions_rad:
                         joint_positions_deg = np.array([j * 180.0 / np.pi for j in joint_positions_rad], dtype=np.float64)
-                        self.status_client.set_status('ur15', 'joint_positions', joint_positions_deg)
+                        self.status_client.set_status(self.robot_namespace, 'joint_positions', joint_positions_deg)
                     
                     # Update robot_status with TCP pose [x, y, z, rx, ry, rz]
                     if tcp_pose_raw:
                         tcp_pose_array = np.array(tcp_pose_raw, dtype=np.float64)
-                        self.status_client.set_status('ur15', 'tcp_pose', tcp_pose_array)
+                        self.status_client.set_status(self.robot_namespace, 'tcp_pose', tcp_pose_array)
                         
                 except Exception as e:
                     # Silently fail to avoid spamming logs
@@ -360,7 +382,7 @@ class UR15WebNode(Node):
             pending_count = 0
             for param_name, attr_name in params_to_load:
                 try:
-                    value = self.status_client.get_status('ur15', param_name, timeout_sec=2.0)
+                    value = self.status_client.get_status(self.robot_namespace, param_name, timeout_sec=2.0)
                 except Exception as e:
                     self.get_logger().debug(f"Failed to get {param_name}: {e}")
                     value = None
@@ -808,11 +830,52 @@ class UR15WebNode(Node):
     def joint_states_callback(self, msg):
         """Callback function for receiving joint states."""
         try:
+            # Reject joint states from the *other* robot. With two UR robots
+            # in the system, both joint_state_broadcasters publish onto the
+            # shared /joint_states topic but use different joint-name
+            # prefixes (e.g. '' vs 'ur10e_'). If the names in this message
+            # don't match what we expect for our robot, silently drop it so
+            # the other robot's positions don't overwrite ours.
+            if msg.name and not (set(msg.name) & self._expected_joint_names):
+                return
             with self.robot_data_lock:
-                # The joint order in /joint_states is:
-                # [shoulder_lift(J2), elbow(J3), wrist_1(J4), wrist_2(J5), wrist_3(J6), shoulder_pan(J1)]
-                # We need to rearrange to standard order: [J1, J2, J3, J4, J5, J6]
-                if len(msg.position) >= 6:
+                # The publisher's joint ordering depends on the source:
+                #   * ur_robot_driver's joint_state_broadcaster sorts joints
+                #     alphabetically by suffix:
+                #     [elbow, shoulder_lift, shoulder_pan, wrist_1, wrist_2, wrist_3]
+                #     — historically this code assumed the order
+                #     [shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, shoulder_pan].
+                #   * mock_ur_visualization.joint_publisher uses URScript order:
+                #     [shoulder_pan(J1), shoulder_lift(J2), elbow(J3), wrist_1(J4), wrist_2(J5), wrist_3(J6)].
+                # To handle both cleanly we map by joint name when names are
+                # provided, falling back to positional access if not.
+                if (
+                    msg.name
+                    and len(msg.name) == len(msg.position)
+                    and len(msg.position) >= 6
+                ):
+                    name_to_pos = {n: p for n, p in zip(msg.name, msg.position)}
+                    p = self.joint_prefix
+                    try:
+                        j1 = name_to_pos[p + 'shoulder_pan_joint']
+                        j2 = name_to_pos[p + 'shoulder_lift_joint']
+                        j3 = name_to_pos[p + 'elbow_joint']
+                        j4 = name_to_pos[p + 'wrist_1_joint']
+                        j5 = name_to_pos[p + 'wrist_2_joint']
+                        j6 = name_to_pos[p + 'wrist_3_joint']
+                    except KeyError:
+                        # Names didn't include the full expected set; bail
+                        # rather than producing scrambled positions.
+                        return
+                    self.joint_positions = [
+                        j1 * 180.0 / np.pi,
+                        j2 * 180.0 / np.pi,
+                        j3 * 180.0 / np.pi,
+                        j4 * 180.0 / np.pi,
+                        j5 * 180.0 / np.pi,
+                        j6 * 180.0 / np.pi,
+                    ]
+                elif len(msg.position) >= 6:
                     positions_radians = list(msg.position)
                     j1 = positions_radians[5]  # shoulder_pan (J1)
                     j2 = positions_radians[0]  # shoulder_lift (J2)
@@ -1406,7 +1469,7 @@ class UR15WebNode(Node):
                     }), 404
                 
                 # Temporarily store the ref_img_1 path in robot_status for serving
-                if not self.status_client.set_status('ur15', 'temp_label_image', image_path):
+                if not self.status_client.set_status(self.robot_namespace, 'temp_label_image', image_path):
                     self.get_logger().warning("Failed to set temp_label_image in robot_status")
                 
                 # Build the image URL that can be accessed from browser
@@ -1459,7 +1522,7 @@ class UR15WebNode(Node):
             try:
                 # Get temp_label_image path from robot_status service
                 try:
-                    image_path = self.status_client.get_status('ur15', 'temp_label_image', timeout_sec=2.0)
+                    image_path = self.status_client.get_status(self.robot_namespace, 'temp_label_image', timeout_sec=2.0)
                 except Exception as e:
                     self.get_logger().debug(f"Failed to get temp_label_image: {e}")
                     image_path = None
@@ -1491,7 +1554,7 @@ class UR15WebNode(Node):
             try:
                 # Get temp_label_image path from robot_status service
                 try:
-                    image_path = self.status_client.get_status('ur15', 'temp_label_image', timeout_sec=2.0)
+                    image_path = self.status_client.get_status(self.robot_namespace, 'temp_label_image', timeout_sec=2.0)
                 except Exception as e:
                     self.get_logger().debug(f"Failed to get temp_label_image: {e}")
                     image_path = None
@@ -1877,7 +1940,7 @@ class UR15WebNode(Node):
                     # Set operation name to robot_status (only if operation_name is valid)
                     if operation_name and operation_name != 'input operation name':
                         # robot_status_redis doesn't need node parameter
-                        if set_to_status('ur15', 'last_operation_name', operation_name):
+                        if set_to_status(self.robot_namespace, 'last_operation_name', operation_name):
                             self.get_logger().info(f"Successfully set last_operation_name to robot_status: {operation_name}")
                         else:
                             self.get_logger().warning(f"Failed to set last_operation_name to robot_status")
@@ -1919,11 +1982,11 @@ class UR15WebNode(Node):
                 self.get_logger().info(f"Setting operating unit to: {operating_unit}")
                 
                 # Set to robot_status (robot_status_redis doesn't need node parameter)
-                if set_to_status('ur15', 'rack_operating_unit_id', operating_unit):
+                if set_to_status(self.robot_namespace, 'rack_operating_unit_id', operating_unit):
                     # Calculate initial server2base as the unit position on the rack
                     try:
                         # Get rack2base_matrix from robot_status
-                        rack2base_matrix = self.status_client.get_status('ur15', 'rack2base_matrix')
+                        rack2base_matrix = self.status_client.get_status(self.robot_namespace, 'rack2base_matrix')
                         if rack2base_matrix is None:
                             self.get_logger().warning("rack2base_matrix not found in robot_status, cannot calculate server2base")
                         elif self.server_frame_generator is None:
@@ -1944,7 +2007,7 @@ class UR15WebNode(Node):
                                 server2base = rack2base @ server2rack
                                 
                                 # Upload server2base_matrix to robot_status
-                                if set_to_status('ur15', 'server2base_matrix', server2base):
+                                if set_to_status(self.robot_namespace, 'server2base_matrix', server2base):
                                     server_position = server2base[:3, 3]
                                     self.get_logger().info(f"Successfully calculated and set server2base_matrix for unit {operating_unit}")
                                     self.get_logger().info(f"Server position in base: ({server_position[0]:.6f}, {server_position[1]:.6f}, {server_position[2]:.6f})")
@@ -1994,7 +2057,7 @@ class UR15WebNode(Node):
                         # Convert to numpy array
                         joint_positions_array = np.array(joint_positions, dtype=np.float64)
                         # robot_status_redis doesn't need node parameter
-                        if set_to_status('ur15', 'joint_positions', joint_positions_array):
+                        if set_to_status(self.robot_namespace, 'joint_positions', joint_positions_array):
                             success_count += 1
                             self.get_logger().debug(f"Updated joint_positions to robot_status as numpy array")
                         else:
@@ -2008,7 +2071,7 @@ class UR15WebNode(Node):
                         # Convert to numpy array in order [x, y, z, rx, ry, rz]
                         tcp_pose_array = np.array(tcp_pose, dtype=np.float64)
                         # robot_status_redis doesn't need node parameter
-                        if set_to_status('ur15', 'tcp_pose', tcp_pose_array):
+                        if set_to_status(self.robot_namespace, 'tcp_pose', tcp_pose_array):
                             success_count += 1
                             self.get_logger().debug(f"Updated tcp_pose to robot_status as numpy array [x, y, z, rx, ry, rz]")
                         else:
@@ -2626,9 +2689,17 @@ class UR15WebNode(Node):
                 # Add data directory parameter (only pass data-dir, no positions-file)
                 if hasattr(self, 'calibration_data_dir') and self.calibration_data_dir:
                     cmd.extend(['--data-dir', self.calibration_data_dir])
+
+                # Add camera topic parameter. Without this the spawned script
+                # falls back to its hard-coded /ur15_camera/image_raw default,
+                # so the ur10e dashboard would correctly move the ur10e arm
+                # but record images from the ur15 camera.
+                if hasattr(self, 'camera_topic') and self.camera_topic:
+                    cmd.extend(['--camera-topic', self.camera_topic])
                 
                 self.get_logger().info(f"Auto collect command: {' '.join(cmd)}")
                 self.get_logger().info(f"Robot IP: {self.ur15_ip if hasattr(self, 'ur15_ip') else 'default'}")
+                self.get_logger().info(f"Camera topic: {self.camera_topic if hasattr(self, 'camera_topic') else 'default'}")
                 self.get_logger().info(f"Data directory: {self.calibration_data_dir if hasattr(self, 'calibration_data_dir') else 'default'}")
                 self.get_logger().info("Will use existing JSON files in data directory for positions")
                 
@@ -2866,7 +2937,7 @@ class UR15WebNode(Node):
                                         # Send all parameters
                                         success_count = 0
                                         for key, value in params.items():
-                                            if self.status_client.set_status('ur15', key, value):
+                                            if self.status_client.set_status(self.robot_namespace, key, value):
                                                 success_count += 1
                                         
                                         if success_count == len(params):
@@ -3206,7 +3277,7 @@ class UR15WebNode(Node):
                 # Upload the absolute path of ref_img_1.jpg to robot_status
                 try:
                     abs_ref_img_1_path = os.path.abspath(image_path)
-                    if self.status_client.set_status('ur15', 'last_picture', abs_ref_img_1_path):
+                    if self.status_client.set_status(self.robot_namespace, 'last_picture', abs_ref_img_1_path):
                         self.get_logger().info(f"✅ Uploaded last_picture path to robot_status: {abs_ref_img_1_path}")
                         self.push_web_log(f"✅ Saved last_picture path: {abs_ref_img_1_path}", 'success')
                     else:
@@ -3503,7 +3574,7 @@ class UR15WebNode(Node):
             
             try:
                 # Get last_operation_name from robot_status (robot_status_redis doesn't need node parameter)
-                operation_name = get_from_status('ur15', 'last_operation_name')
+                operation_name = get_from_status(self.robot_namespace, 'last_operation_name')
                 
                 if not operation_name:
                     return jsonify({
@@ -3628,7 +3699,7 @@ class UR15WebNode(Node):
                 
                 # Get rack_operating_unit_id from Redis
                 try:
-                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                    operating_unit_id = self.status_client.get_status(self.robot_namespace, 'rack_operating_unit_id')
                 except Exception as e:
                     self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
                     operating_unit_id = None
@@ -3687,7 +3758,7 @@ class UR15WebNode(Node):
                 
                 # Get rack_operating_unit_id from Redis
                 try:
-                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                    operating_unit_id = self.status_client.get_status(self.robot_namespace, 'rack_operating_unit_id')
                 except Exception as e:
                     self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
                     operating_unit_id = None
@@ -3746,7 +3817,7 @@ class UR15WebNode(Node):
                 
                 # Get rack_operating_unit_id from Redis
                 try:
-                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                    operating_unit_id = self.status_client.get_status(self.robot_namespace, 'rack_operating_unit_id')
                 except Exception as e:
                     self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
                     operating_unit_id = None
@@ -3805,7 +3876,7 @@ class UR15WebNode(Node):
                 
                 # Get rack_operating_unit_id from Redis
                 try:
-                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                    operating_unit_id = self.status_client.get_status(self.robot_namespace, 'rack_operating_unit_id')
                 except Exception as e:
                     self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
                     operating_unit_id = None
@@ -3864,7 +3935,7 @@ class UR15WebNode(Node):
                 
                 # Get rack_operating_unit_id from Redis
                 try:
-                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                    operating_unit_id = self.status_client.get_status(self.robot_namespace, 'rack_operating_unit_id')
                 except Exception as e:
                     self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
                     operating_unit_id = None
@@ -3923,7 +3994,7 @@ class UR15WebNode(Node):
                 
                 # Get rack_operating_unit_id from Redis
                 try:
-                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                    operating_unit_id = self.status_client.get_status(self.robot_namespace, 'rack_operating_unit_id')
                 except Exception as e:
                     self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
                     operating_unit_id = None
@@ -3982,7 +4053,7 @@ class UR15WebNode(Node):
                 
                 # Get rack_operating_unit_id from Redis
                 try:
-                    operating_unit_id = self.status_client.get_status('ur15', 'rack_operating_unit_id')
+                    operating_unit_id = self.status_client.get_status(self.robot_namespace, 'rack_operating_unit_id')
                 except Exception as e:
                     self.get_logger().warning(f"Failed to get rack_operating_unit_id: {e}")
                     operating_unit_id = None
@@ -4188,7 +4259,7 @@ class UR15WebNode(Node):
             
             # Get rack work object parameters - client handles caching internally
             try:
-                rack2base_matrix = self.status_client.get_status('ur15', 'rack2base_matrix')
+                rack2base_matrix = self.status_client.get_status(self.robot_namespace, 'rack2base_matrix')
             except Exception as e:
                 self.get_logger().debug(f"Failed to get rack2base_matrix: {e}")
                 return frame
@@ -4230,7 +4301,7 @@ class UR15WebNode(Node):
             
             # Get server2base_matrix directly from Redis ur15 namespace
             try:
-                server2base_matrix = self.status_client.get_status('ur15', 'server2base_matrix')
+                server2base_matrix = self.status_client.get_status(self.robot_namespace, 'server2base_matrix')
             except Exception as e:
                 self.get_logger().debug(f"Failed to get server2base_matrix: {e}")
                 return frame
@@ -4272,7 +4343,7 @@ class UR15WebNode(Node):
             
             # Get 3D points from robot_status - client handles caching internally
             try:
-                points_3d = self.status_client.get_status('ur15', 'last_points_3d')
+                points_3d = self.status_client.get_status(self.robot_namespace, 'last_points_3d')
             except Exception as e:
                 self.get_logger().debug(f"Failed to get last_points_3d: {e}")
                 return frame
@@ -4495,19 +4566,19 @@ class UR15WebNode(Node):
         try:
             # Read camera parameters from robot_status
             try:
-                camera_matrix = self.status_client.get_status('ur15', 'camera_matrix')
+                camera_matrix = self.status_client.get_status(self.robot_namespace, 'camera_matrix')
             except Exception as e:
                 self.get_logger().debug(f"Failed to get camera_matrix: {e}")
                 camera_matrix = None
             
             try:
-                distortion_coefficients = self.status_client.get_status('ur15', 'distortion_coefficients')
+                distortion_coefficients = self.status_client.get_status(self.robot_namespace, 'distortion_coefficients')
             except Exception as e:
                 self.get_logger().debug(f"Failed to get distortion_coefficients: {e}")
                 distortion_coefficients = None
             
             try:
-                cam2end_matrix = self.status_client.get_status('ur15', 'cam2end_matrix')
+                cam2end_matrix = self.status_client.get_status(self.robot_namespace, 'cam2end_matrix')
             except Exception as e:
                 self.get_logger().debug(f"Failed to get cam2end_matrix: {e}")
                 cam2end_matrix = None

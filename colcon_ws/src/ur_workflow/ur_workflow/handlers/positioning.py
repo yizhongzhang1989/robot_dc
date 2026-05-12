@@ -124,7 +124,10 @@ class PositioningHandler(OperationHandler):
                 return {'status': 'error', 'error': f'Pose data not found in context: {data_name}'}
             
             # Extract camera parameters from pose_data
-            intrinsic, distortion, extrinsic = self._load_camera_params_from_memory(pose_data, context)
+            status_namespace = operation.get('status_namespace', 'ur15')
+            intrinsic, distortion, extrinsic = self._load_camera_params_from_memory(
+                pose_data, context, status_namespace
+            )
             
             # Upload
             result = client.upload_view(
@@ -323,11 +326,14 @@ class PositioningHandler(OperationHandler):
         else:
             return 'filtered'
 
-    def _load_camera_params_from_memory(self, pose_data: Dict[str, Any], context: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _load_camera_params_from_memory(self, pose_data: Dict[str, Any], context: Dict[str, Any],
+                                        status_namespace: str = 'ur15') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Load camera parameters from memory.
-        Static params from RobotStatus (ur15 namespace).
-        Dynamic params (end2base) from pose_data dict.
+
+        Static params (camera_matrix, distortion_coefficients, cam2end_matrix) come from
+        RobotStatusClient under the ``status_namespace`` provided (defaults to 'ur15' for
+        backward compatibility). Dynamic params (end2base) come from ``pose_data``.
         """
         # Get end2base from pose_data (already numpy array)
         end2base = pose_data['end2base']
@@ -338,16 +344,16 @@ class PositioningHandler(OperationHandler):
             raise RuntimeError("RobotStatusClient not available in context")
             
         # Load static parameters from robot status
-        camera_matrix = client.get_status("ur15", "camera_matrix")
-        distortion_coefficients = client.get_status("ur15", "distortion_coefficients")
-        cam2end_matrix = client.get_status("ur15", "cam2end_matrix")
+        camera_matrix = client.get_status(status_namespace, "camera_matrix")
+        distortion_coefficients = client.get_status(status_namespace, "distortion_coefficients")
+        cam2end_matrix = client.get_status(status_namespace, "cam2end_matrix")
         
         if camera_matrix is None:
-            raise ValueError("camera_matrix not found in robot status (ur15)")
+            raise ValueError(f"camera_matrix not found in robot status ({status_namespace})")
         if distortion_coefficients is None:
-            raise ValueError("distortion_coefficients not found in robot status (ur15)")
+            raise ValueError(f"distortion_coefficients not found in robot status ({status_namespace})")
         if cam2end_matrix is None:
-            raise ValueError("cam2end_matrix not found in robot status (ur15)")
+            raise ValueError(f"cam2end_matrix not found in robot status ({status_namespace})")
             
         intrinsic = np.array(camera_matrix, dtype=np.float64)
         distortion = np.array(distortion_coefficients, dtype=np.float64)
