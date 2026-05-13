@@ -32,10 +32,10 @@ except ImportError:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(script_dir)
 
-ur_robot_arm_dir = os.path.join(project_root, 'colcon_ws', 'src', 'ur15_robot_arm')
+ur_robot_arm_dir = os.path.join(project_root, 'colcon_ws', 'src', 'ur_robot_arm')
 sys.path.insert(0, ur_robot_arm_dir)
 
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 
 
 class URMoveToTarget:

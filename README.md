@@ -83,25 +83,40 @@ A modular ROS 2-based control system for the DC robot, which consists of a dual-
 
    > **Tip:** Add `source ~/Documents/robot_dc/colcon_ws/install/setup.bash` to your `~/.bashrc` so the workspace is sourced automatically in every new terminal.
 
-6. **Launch the UR15 system (all modules):** (see [UR15 Manual](doc/ur15_manual.md) for details)
+6. **Launch the UR system:** (see [UR15 Manual](doc/ur15_manual.md) for details)
+
+   The cell can be launched as either a single UR15 arm or as a dual UR15 + ur10e setup. Both modes share the same per-robot module pattern — the dual-arm bringup is a superset that adds a second arm, a `world` anchor, and a shared RViz window.
 
    ```bash
+   # Dual-arm: ur15 + ur10e
+   ros2 launch robot_bringup dual_ur_bringup.py
+
+   # Single-arm: ur15 only
    ros2 launch robot_bringup ur15_bringup.py
    ```
 
-   This starts all enabled modules defined in `config/robot_config.yaml` under `ur15.launch_modules`:
-   | Module | Default Port | Description |
-   |--------|------|-------------|
-   | `robot_status_redis` | 8005 | Redis status store + web dashboard |
-   | `positioning_3d_service` | 8004 | 3D positioning (requires FFPP server) |
-   | `image_labeling_service` | 8007 | Image annotation tool |
-   | `camcalib_web_service` | 8006 | Camera calibration |
-   | `ur15_workflow` | 8008 | Workflow config center |
-   | `ur15_robot_arm` | — | UR robot driver |
-   | `camera_node` | 8019 | RTSP camera → ROS2 + MJPEG |
-   | `ur15_web` | 8030 | Main web dashboard |
+   The launch reads enabled modules from `config/robot_config.yaml`. The `ur15.launch_modules` block carries the **shared singletons** plus the ur15 per-robot stack; `ur10e.launch_modules` carries only the ur10e per-robot stack and is consumed by `dual_ur_bringup.py`. The following lists default settings for the robot in Beijing Lab, where mock ur10e is used (see [Mock UR](doc/mock_ur_robot.md)).
+
+   | Module | Default Port | Scope | Description |
+   |--------|------|-------|-------------|
+   | `robot_status_redis` | 8005 | shared singleton | Redis status store + web dashboard |
+   | `positioning_3d_service` | 8004 | shared singleton | 3D positioning (requires FFPP server) |
+   | `image_labeling_service` | 8007 | shared singleton | Image annotation tool |
+   | `camcalib_web_service` | 8006 | shared singleton | Camera calibration |
+   | `ur_workflow` | 8008 | shared singleton | Workflow config center |
+   | `ur_robot_arm` | — | per-robot | UR driver (ur15 / ur10e control launch) |
+   | `camera_node` | 8019 / 8021 | per-robot | RTSP camera → ROS2 + MJPEG (ur15 / ur10e) |
+   | `ur_web` | 8030 / 8031 | per-robot | Per-arm web dashboard (ur15 / ur10e) |
 
    Disable any module by setting `enabled: false` in the config if the corresponding hardware is not connected.
+
+   **Single-arm mode (`ur15_bringup.py`)** simply launches the singletons and the ur15 per-robot stack — nothing else.
+
+   **Dual-arm mode (`dual_ur_bringup.py`)** additionally launches the ur10e stack and keeps the two arms isolated where they must be:
+
+   - **ur15** — `192.168.1.15`, default ROS namespace, camera at `192.168.1.101`.
+   - **ur10e** — `192.168.1.16`, under the `/ur10e` ROS namespace, camera at `192.168.1.102`.
+
 
 7. **Launch the lift robot system:**
 

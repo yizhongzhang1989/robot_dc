@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation as R
 import json
 import os
 from datetime import datetime
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 from cv_bridge import CvBridge
 import cv2
 

@@ -10,10 +10,10 @@ The UR15 subsystem includes:
 
 | Component | Package | Description | Dashboard |
 |-----------|---------|-------------|-----------|
-| Robot driver | `ur15_robot_arm` | UR robot driver + arm control node | — |
+| Robot driver | `ur_robot_arm` | UR robot driver + arm control node | — |
 | Camera | `camera_node` | RTSP capture → ROS 2 image + MJPEG stream | :8019 |
-| Web dashboard | `ur15_web` | Main control & calibration UI | :8030 |
-| Workflow engine | `ur15_workflow` | JSON-based task sequencing | :8008 |
+| Web dashboard | `ur_web` | Main control & calibration UI | :8030 |
+| Workflow engine | `ur_workflow` | JSON-based task sequencing | :8008 |
 | 3D positioning | `positioning_3d_service` | Multi-view triangulation via FlowFormer++ | :8004 |
 | Image labeling | `image_labeling_service` | Web-based keypoint annotation | :8007 |
 | Camera calibration | `camcalib_web_service` | Intrinsic & eye-in-hand calibration | :8006 |
@@ -63,7 +63,7 @@ Start all enabled UR15 modules:
 ros2 launch robot_bringup ur15_bringup.py
 ```
 
-This sequentially launches each module from `ur15.launch_modules`. The `ur15_web` module has a 5-second delay to allow the camera node to initialize first.
+This sequentially launches each module from `ur15.launch_modules`. The `ur_web` module has a 5-second delay to allow the camera node to initialize first.
 
 ### 4.2 Individual Module Launch
 
@@ -71,19 +71,19 @@ Launch specific modules independently:
 
 ```bash
 # Robot driver only
-ros2 launch ur15_robot_arm ur15_control_launch.py
+ros2 launch ur_robot_arm ur15_control_launch.py
 
 # Robot driver + arm node
-ros2 launch ur15_robot_arm ur15_robot_arm.launch.py
+ros2 launch ur_robot_arm ur_robot_arm.launch.py
 
 # Robot driver + arm node + joystick
-ros2 launch ur15_robot_arm ur15_robot_arm_with_joy.launch.py
+ros2 launch ur_robot_arm ur15_robot_arm_with_joy.launch.py
 
 # Camera node
 ros2 launch camera_node ur15_cam_launch.py
 
 # Web interface
-ros2 launch ur15_web ur15_web_launch.py
+ros2 launch ur_web ur15_web_launch.py
 ```
 
 ### 4.3 Disabling Modules
@@ -91,7 +91,7 @@ ros2 launch ur15_web ur15_web_launch.py
 To skip a module (e.g., when hardware is not connected), set `enabled: false` in `robot_config.yaml`:
 
 ```yaml
-    - package: "ur15_robot_arm"
+    - package: "ur_robot_arm"
       launch_file: "ur15_control_launch.py"
       delay: 0.0
       enabled: false  # skip if UR15 not connected
@@ -125,7 +125,7 @@ After launch, the following web interfaces are available:
 | `/joint_states` | `sensor_msgs/JointState` | `ur_robot_driver` | Joint positions/velocities |
 | `/cartesian_motion_controller/current_pose` | `geometry_msgs/PoseStamped` | `ur_robot_driver` | Current TCP pose |
 | `/target_frame` | `geometry_msgs/PoseStamped` | `ur15_robot_arm_node` | Target pose commands |
-| `/ur15_robot_arm/status` | `std_msgs/String` | `ur15_robot_arm_node` | Robot status messages |
+| `/ur_robot_arm/status` | `std_msgs/String` | `ur15_robot_arm_node` | Robot status messages |
 
 ### Services (robot_status_redis)
 
@@ -140,10 +140,10 @@ After launch, the following web interfaces are available:
 
 ## 7. Robot Control API
 
-The `UR15Robot` class (`ur15_robot_arm.ur15`) provides direct socket-based control:
+The `UR15Robot` class (`ur_robot_arm.ur15`) provides direct socket-based control:
 
 ```python
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 
 robot = UR15Robot()
 robot.open("192.168.1.15", 30002)
@@ -206,10 +206,10 @@ The workflow engine executes JSON-defined task sequences combining robot movemen
 
 ```bash
 # Via CLI
-ros2 run ur15_workflow run_workflow --config /path/to/workflow.json
+ros2 run ur_workflow run_workflow --config /path/to/workflow.json
 
 # Dry-run validation
-ros2 run ur15_workflow run_workflow --config workflow.json --dry-run
+ros2 run ur_workflow run_workflow --config workflow.json --dry-run
 ```
 
 Or use the Workflow Config Center at `http://<host>:8008` to create, edit, and run workflows.
@@ -254,7 +254,7 @@ Or use the Workflow Config Center at `http://<host>:8008` to create, edit, and r
 | `record_data` | Record robot pose data |
 | `positioning` | 3D positioning operations (upload references, init session, get results) |
 
-Example workflows are in `colcon_ws/src/ur15_workflow/examples/`.
+Example workflows are in `colcon_ws/src/ur_workflow/examples/`.
 
 ---
 
@@ -296,7 +296,7 @@ Key scripts in `scripts/` for UR15 operations:
 |-------|---------|
 | Cannot connect to robot | Verify robot is in Remote Control mode and reachable at `192.168.1.15` |
 | Camera feed not showing | Check RTSP URL and camera IP `192.168.1.101`; verify with `ffplay rtsp://...` |
-| ur15_web starts before camera | Increase the delay for `ur15_web` in `launch_modules` (default: 5s) |
+| ur_web starts before camera | Increase the delay for `ur_web` in `launch_modules` (default: 5s) |
 | 3D positioning fails | Ensure FlowFormer++ server is running and `ffpp_url` is correctly set |
 | Redis connection error | Verify Redis is running: `redis-cli ping` should return `PONG` |
 | Port conflict | Check `ss -tlnp` for conflicting services on ports 8004–8030 |

@@ -5,14 +5,18 @@ UR Auto Collect Data Script
 This script automatically collects camera calibration data by:
 1. Reading joint angles from collect_positions.json
 2. Moving robot to each position using movej
-3. Capturing images from /ur15_camera/image_raw topic
+3. Capturing images from the configured camera image topic
+   (default ``/ur15_camera/image_raw``; pass ``--camera-topic`` to target a
+   different robot's camera, e.g. ``/ur10e_camera/image_raw``)
 4. Saving images and pose data in JSON format
 
 Usage:
     python3 ur_auto_collect_data.py [options]
     
 Options:
-    --robot-ip IP           IP address of UR15 robot (default: 192.168.1.15)
+    --robot-ip IP           IP address of UR robot (default: 192.168.1.15)
+    --camera-topic TOPIC    ROS image topic to subscribe to
+                            (default: /ur15_camera/image_raw)
     --positions-file FILE   Path to collect_positions.json file (optional, if not provided, will use existing JSON files in data-dir)
     --data-dir DIR          Directory to save collected data (default: ../temp/ur15_cam_calibration_data)
 """
@@ -27,7 +31,7 @@ import json
 import os
 import time
 import argparse
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 from cv_bridge import CvBridge
 import cv2
 import sys
@@ -44,7 +48,15 @@ def parse_arguments():
         '--robot-ip',
         type=str,
         default='192.168.1.15',
-        help='IP address of UR15 robot'
+        help='IP address of UR robot'
+    )
+
+    parser.add_argument(
+        '--camera-topic',
+        type=str,
+        default='/ur15_camera/image_raw',
+        help='ROS image topic to subscribe to (per-robot, e.g. '
+             '/ur15_camera/image_raw or /ur10e_camera/image_raw)'
     )
     
     parser.add_argument(
@@ -67,13 +79,15 @@ def parse_arguments():
 class URAutoCollectData(Node):
     def __init__(self, robot_ip="192.168.1.15", 
                  collect_positions_file=None,
-                 data_save_dir="../temp/ur15_cam_calibration_data"):
+                 data_save_dir="../temp/ur15_cam_calibration_data",
+                 camera_topic="/ur15_camera/image_raw"):
         super().__init__('ur_auto_collect_data')
         
-        # UR15 Robot connection
+        # UR Robot connection
         self.robot_ip = robot_ip
-        self.robot_port = 30002  # Fixed port for UR15
+        self.robot_port = 30002  # URScript primary port (same for UR15/UR10e)
         self.ur_robot = None
+        self.camera_topic = camera_topic
         
         # File paths - handle relative paths relative to script directory
         try:
@@ -124,7 +138,7 @@ class URAutoCollectData(Node):
         # Subscribe to camera image
         self.image_subscriber = self.create_subscription(
             Image,
-            '/ur15_camera/image_raw',
+            self.camera_topic,
             self.image_callback,
             10,
             callback_group=self.callback_group
@@ -132,6 +146,7 @@ class URAutoCollectData(Node):
         
         self.get_logger().info('UR Auto Collect Data Node started')
         self.get_logger().info(f'Save directory: {self.save_dir}')
+        self.get_logger().info(f'Camera topic: {self.camera_topic}')
         
         # Connect to UR robot
         self._connect_to_robot()
@@ -391,7 +406,8 @@ def main():
         collector = URAutoCollectData(
             robot_ip=args.robot_ip,
             collect_positions_file=args.positions_file,
-            data_save_dir=args.data_dir
+            data_save_dir=args.data_dir,
+            camera_topic=args.camera_topic
         )
         
         # Create executor for multithreaded spinning

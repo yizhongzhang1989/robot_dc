@@ -28,7 +28,7 @@ from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_pa
 
 
 # Robot control imports
-from ur15_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur15 import UR15Robot
 
 # ROS2 imports
 import rclpy
