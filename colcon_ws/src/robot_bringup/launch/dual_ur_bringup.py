@@ -115,10 +115,11 @@ def generate_launch_description():
     # CLI flag to enable/disable the dual-robot RViz window.
     rviz_arg = DeclareLaunchArgument(
         'rviz',
-        default_value='true',
+        default_value='false',
         description='Launch a single RViz window pre-configured to show '
                     'both robots from their namespaced /robot_description '
-                    'topics. Set false for headless bringup.',
+                    'topics. Defaults to false (headless); set rviz:=true to '
+                    'open the shared RViz view.',
     )
 
     rviz_config = PathJoinSubstitution([
