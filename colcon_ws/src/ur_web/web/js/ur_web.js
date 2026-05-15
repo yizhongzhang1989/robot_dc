@@ -1276,6 +1276,17 @@ function updateStatus() {
         
         // Update image topic in status bar
         document.getElementById('statusBarImageTopic').textContent = data.camera_topic;
+
+        // Update image resolution next to the camera topic. Empty/em-dash when
+        // no image has been received yet; live W×H when a frame is available.
+        const statusBarImageResolutionElement = document.getElementById('statusBarImageResolution');
+        if (statusBarImageResolutionElement) {
+            if (data.has_image && data.image_width && data.image_height) {
+                statusBarImageResolutionElement.textContent = `${data.image_width}×${data.image_height}`;
+            } else {
+                statusBarImageResolutionElement.textContent = '—';
+            }
+        }
         
         // Update data dir in path panel
         if (data.data_dir) {

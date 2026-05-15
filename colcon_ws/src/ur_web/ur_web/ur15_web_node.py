@@ -210,6 +210,11 @@ class UR15WebNode(Node):
         
         # Current image storage
         self.current_image = None
+        # Resolution of the most recently received image (None until first frame).
+        # Updated in image_callback under image_lock so the /get_status endpoint
+        # can report a live value even when the camera stream changes resolution.
+        self.image_width = None
+        self.image_height = None
         self.image_lock = threading.Lock()
         
         # Camera calibration parameters
@@ -893,6 +898,9 @@ class UR15WebNode(Node):
             
             with self.image_lock:
                 self.current_image = cv_image.copy()
+                # cv_image.shape == (H, W, C); track per-frame so we report
+                # the *current* resolution if the stream changes mid-session.
+                self.image_height, self.image_width = cv_image.shape[:2]
             
             if not hasattr(self, '_first_image_logged'):
                 self.get_logger().info(f"First image received! Size: {cv_image.shape}")
@@ -1044,7 +1052,10 @@ class UR15WebNode(Node):
         def get_status():
             """Get current status."""
             from flask import jsonify
-            has_image = self.current_image is not None
+            with self.image_lock:
+                has_image = self.current_image is not None
+                image_width = self.image_width
+                image_height = self.image_height
             
             # Debug log for camera status (disabled - not critical)
             # if hasattr(self, '_debug_counter'):
@@ -1117,6 +1128,8 @@ class UR15WebNode(Node):
             
             return jsonify({
                 'has_image': has_image,
+                'image_width': image_width,
+                'image_height': image_height,
                 'camera_topic': self.camera_topic,
                 'data_dir': self._simplify_path(self.dataset_dir),
                 'calibration_data_dir': self._simplify_path(self.calibration_data_dir),
