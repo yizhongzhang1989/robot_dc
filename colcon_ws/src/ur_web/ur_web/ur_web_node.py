@@ -74,8 +74,8 @@ class URWebNode(Node):
         # Declare parameters
         self.declare_parameter('camera_topic', '/ur15_camera/image_raw')
         self.declare_parameter('web_port', 8030)
-        self.declare_parameter('ur15_ip', '192.168.1.15')
-        self.declare_parameter('ur15_port', 30002)
+        self.declare_parameter('ur_ip', '192.168.1.15')
+        self.declare_parameter('ur_port', 30002)
         self.declare_parameter('dataset_dir', '/tmp/dataset')
         self.declare_parameter('calib_data_dir', '/tmp/ur15_cam_calibration_data')
         self.declare_parameter('calib_result_dir', '/tmp/ur15_cam_calibration_result')
@@ -101,8 +101,8 @@ class URWebNode(Node):
         # Get parameters
         self.camera_topic = self.get_parameter('camera_topic').value
         web_port = self.get_parameter('web_port').value
-        self.ur15_ip = self.get_parameter('ur15_ip').value
-        self.ur15_port = self.get_parameter('ur15_port').value
+        self.ur_ip = self.get_parameter('ur_ip').value
+        self.ur_port = self.get_parameter('ur_port').value
         self.dataset_dir = self.get_parameter('dataset_dir').value
         self.calibration_data_dir = self.get_parameter('calib_data_dir').value
         self.calibration_result_dir = self.get_parameter('calib_result_dir').value
@@ -225,7 +225,7 @@ class URWebNode(Node):
         self.calibration_lock = threading.Lock()
         
         # Generate 3D models for visualization
-        self.ur15_base_model = draw_utils.generate_ur15_base_curve(ray_length=3)
+        self.ur_base_model = draw_utils.generate_ur15_base_curve(ray_length=3)
         self.gb200rack_model = draw_utils.generate_gb200rack_curve()
         self.gb200server_model = draw_utils.generate_gb200server_wire()
         
@@ -245,7 +245,7 @@ class URWebNode(Node):
         self.cached_data_lock = threading.Lock()
         
         # UR15 robot control
-        self.ur15_robot = None
+        self.ur_robot = None
         self.freedrive_active = False
         self.validation_active = False
         self.corner_detection_enabled = False
@@ -253,7 +253,7 @@ class URWebNode(Node):
         self.draw_rack_enabled = False
         self.draw_server_enabled = False
         self.draw_keypoints_enabled = False
-        self.ur15_lock = threading.Lock()
+        self.ur_lock = threading.Lock()
         self._init_ur15_connection()
         
         # Initialize 30003 real-time data connection
@@ -369,14 +369,14 @@ class URWebNode(Node):
         This ensures robot_status is continuously updated for other components to use,
         independent of the web interface."""
         try:
-            with self.ur15_lock:
-                if self.ur15_robot is None:
+            with self.ur_lock:
+                if self.ur_robot is None:
                     return
                 
                 # Get joint positions and TCP pose
                 try:
-                    joint_positions_rad = self.ur15_robot.get_actual_joint_positions()
-                    tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                    joint_positions_rad = self.ur_robot.get_actual_joint_positions()
+                    tcp_pose_raw = self.ur_robot.get_actual_tcp_pose()
                     
                     # Update robot_status with joint positions (in degrees)
                     if joint_positions_rad:
@@ -478,8 +478,8 @@ class URWebNode(Node):
             return
         
         static_info = {
-            'robot_ip': self.ur15_ip,
-            'robot_port': int(self.ur15_port),
+            'robot_ip': self.ur_ip,
+            'robot_port': int(self.ur_port),
             'robot_type': self.robot_type,
             'camera_topic': self.camera_topic,
         }
@@ -543,19 +543,19 @@ class URWebNode(Node):
             self.child_processes.clear()
         
         # Exit freedrive mode if active
-        if self.freedrive_active and self.ur15_robot:
+        if self.freedrive_active and self.ur_robot:
             try:
-                with self.ur15_lock:
-                    self.ur15_robot.end_freedrive_mode()
+                with self.ur_lock:
+                    self.ur_robot.end_freedrive_mode()
                     self.get_logger().info("Exited freedrive mode during cleanup")
                     self.freedrive_active = False
             except Exception as e:
                 self.get_logger().error(f"Error exiting freedrive mode: {e}")
         
         # Disconnect from robot
-        if self.ur15_robot is not None:
+        if self.ur_robot is not None:
             try:
-                self.ur15_robot.close()
+                self.ur_robot.close()
                 self.get_logger().info("Disconnected from UR15 robot")
             except Exception as e:
                 self.get_logger().error(f"Error disconnecting from robot: {e}")
@@ -597,27 +597,27 @@ class URWebNode(Node):
             return
             
         try:
-            self.ur15_robot = URRobot(self.ur15_ip, self.ur15_port)
-            result = self.ur15_robot.open()
+            self.ur_robot = URRobot(self.ur_ip, self.ur_port)
+            result = self.ur_robot.open()
             
             if result == 0:
-                self.get_logger().info(f"Connected to UR15 robot at {self.ur15_ip}:{self.ur15_port} for freedrive control")
+                self.get_logger().info(f"Connected to UR15 robot at {self.ur_ip}:{self.ur_port} for freedrive control")
             else:
                 self.get_logger().warning(f"Failed to connect to UR15 robot for freedrive control")
-                self.ur15_robot = None
+                self.ur_robot = None
         except Exception as e:
             self.get_logger().error(f"Error initializing UR15 connection: {e}")
-            self.ur15_robot = None
+            self.ur_robot = None
     
     def _init_rt_data_connection(self):
         """Initialize persistent connection to 30003 port for real-time data."""
         try:
-            self.get_logger().info(f"Connecting to real-time data port 30003 at {self.ur15_ip}...")
+            self.get_logger().info(f"Connecting to real-time data port 30003 at {self.ur_ip}...")
             self.rt_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             # Set timeout to 0.5s - robot sends at ~10Hz (100ms intervals)
             # Timeout should be longer than packet interval to avoid false timeouts
             self.rt_socket.settimeout(0.5)
-            self.rt_socket.connect((self.ur15_ip, 30003))
+            self.rt_socket.connect((self.ur_ip, 30003))
             self.rt_connected = True
             self.get_logger().info("Successfully connected to real-time data port 30003")
         except Exception as e:
@@ -646,7 +646,7 @@ class URWebNode(Node):
                     # Create new connection
                     self.rt_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     self.rt_socket.settimeout(0.5)
-                    self.rt_socket.connect((self.ur15_ip, 30003))
+                    self.rt_socket.connect((self.ur_ip, 30003))
                     self.rt_connected = True
                     self.get_logger().info("Successfully connected to port 30003")
                 except Exception as e:
@@ -747,9 +747,9 @@ class URWebNode(Node):
     
     def destroy_node(self):
         """Override destroy_node to clean up UR15 connection."""
-        if self.ur15_robot:
+        if self.ur_robot:
             try:
-                self.ur15_robot.close()
+                self.ur_robot.close()
             except Exception as e:
                 self.get_logger().error(f"Error closing UR15 connection: {e}")
         super().destroy_node()
@@ -1074,19 +1074,19 @@ class URWebNode(Node):
             joint_positions = []
             tcp_pose = None
             
-            with self.ur15_lock:
+            with self.ur_lock:
                 freedrive_active = self.freedrive_active
-                robot_connected = self.ur15_robot is not None
+                robot_connected = self.ur_robot is not None
                 
-                if self.ur15_robot is not None:
+                if self.ur_robot is not None:
                     try:
                         # Get joint positions in radians and convert to degrees
-                        joint_positions_rad = self.ur15_robot.get_actual_joint_positions()
+                        joint_positions_rad = self.ur_robot.get_actual_joint_positions()
                         if joint_positions_rad:
                             joint_positions = [j * 180.0 / np.pi for j in joint_positions_rad]
                         
                         # Get TCP pose [x, y, z, rx, ry, rz] in meters and radians
-                        tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose_raw = self.ur_robot.get_actual_tcp_pose()
                         if tcp_pose_raw:
                             tcp_pose = {
                                 'x': tcp_pose_raw[0] * 1000.0,  # m to mm
@@ -2278,8 +2278,8 @@ class URWebNode(Node):
             from flask import jsonify
             
             try:
-                with self.ur15_lock:
-                    if not self.ur15_robot:
+                with self.ur_lock:
+                    if not self.ur_robot:
                         return jsonify({
                             'success': False, 
                             'message': 'UR15 robot not connected',
@@ -2287,7 +2287,7 @@ class URWebNode(Node):
                         })
                     
                     if not self.freedrive_active:
-                        result = self.ur15_robot.freedrive_mode()
+                        result = self.ur_robot.freedrive_mode()
                         if result == 0:
                             self.freedrive_active = True
                             self.get_logger().info("Freedrive mode activated")
@@ -2303,7 +2303,7 @@ class URWebNode(Node):
                                 'freedrive_active': False
                             })
                     else:
-                        result = self.ur15_robot.end_freedrive_mode()
+                        result = self.ur_robot.end_freedrive_mode()
                         if result == 0:
                             self.freedrive_active = False
                             self.get_logger().info("Freedrive mode deactivated")
@@ -2547,8 +2547,8 @@ class URWebNode(Node):
                     cv_image = self.current_image.copy()
                 
                 # Check if robot is connected
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -2556,14 +2556,14 @@ class URWebNode(Node):
                     
                     # Read actual joint positions and TCP pose
                     try:
-                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        joint_positions = self.ur_robot.get_actual_joint_positions()
                         if joint_positions is None:
                             return jsonify({
                                 'success': False,
                                 'message': 'Failed to read joint positions'
                             })
                         
-                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose = self.ur_robot.get_actual_tcp_pose()
                         if tcp_pose is None:
                             return jsonify({
                                 'success': False,
@@ -2826,8 +2826,8 @@ class URWebNode(Node):
                 cmd = ['python3', script_path]
                 
                 # Add robot IP parameter
-                if hasattr(self, 'ur15_ip') and self.ur15_ip:
-                    cmd.extend(['--robot-ip', self.ur15_ip])
+                if hasattr(self, 'ur_ip') and self.ur_ip:
+                    cmd.extend(['--robot-ip', self.ur_ip])
                 
                 # Add data directory parameter (only pass data-dir, no positions-file)
                 if hasattr(self, 'calibration_data_dir') and self.calibration_data_dir:
@@ -2841,7 +2841,7 @@ class URWebNode(Node):
                     cmd.extend(['--camera-topic', self.camera_topic])
                 
                 self.get_logger().info(f"Auto collect command: {' '.join(cmd)}")
-                self.get_logger().info(f"Robot IP: {self.ur15_ip if hasattr(self, 'ur15_ip') else 'default'}")
+                self.get_logger().info(f"Robot IP: {self.ur_ip if hasattr(self, 'ur_ip') else 'default'}")
                 self.get_logger().info(f"Camera topic: {self.camera_topic if hasattr(self, 'camera_topic') else 'default'}")
                 self.get_logger().info(f"Data directory: {self.calibration_data_dir if hasattr(self, 'calibration_data_dir') else 'default'}")
                 self.get_logger().info("Will use existing JSON files in data directory for positions")
@@ -2901,7 +2901,7 @@ class URWebNode(Node):
                 
                 # Push start message to web log
                 self.push_web_log("🤖 Starting auto collection process...", 'info')
-                self.push_web_log(f"🎯 Robot IP: {self.ur15_ip if hasattr(self, 'ur15_ip') else 'default'}", 'info')
+                self.push_web_log(f"🎯 Robot IP: {self.ur_ip if hasattr(self, 'ur_ip') else 'default'}", 'info')
                 self.push_web_log(f"📁 Data directory: {self._simplify_path(self.calibration_data_dir)}", 'info')
                 
                 return jsonify({
@@ -3184,8 +3184,8 @@ class URWebNode(Node):
                 
                 # 2. Get current robot pose and save as ref_pose.json
                 current_tcp_pose = None
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -3193,14 +3193,14 @@ class URWebNode(Node):
                     
                     try:
                         # Read both joint positions and TCP pose like in screenshot
-                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        joint_positions = self.ur_robot.get_actual_joint_positions()
                         if joint_positions is None:
                             return jsonify({
                                 'success': False,
                                 'message': 'Failed to read joint positions'
                             })
                         
-                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose = self.ur_robot.get_actual_tcp_pose()
                         if tcp_pose is None:
                             return jsonify({
                                 'success': False,
@@ -3331,8 +3331,8 @@ class URWebNode(Node):
                 
                 # 2. Get current robot pose
                 current_tcp_pose = None
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -3340,14 +3340,14 @@ class URWebNode(Node):
                     
                     try:
                         # Read both joint positions and TCP pose
-                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        joint_positions = self.ur_robot.get_actual_joint_positions()
                         if joint_positions is None:
                             return jsonify({
                                 'success': False,
                                 'message': 'Failed to read joint positions'
                             })
                         
-                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose = self.ur_robot.get_actual_tcp_pose()
                         if tcp_pose is None:
                             return jsonify({
                                 'success': False,
@@ -3539,8 +3539,8 @@ class URWebNode(Node):
                     })
                 
                 # Check robot connection
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -3556,7 +3556,7 @@ class URWebNode(Node):
                     # Send movej command
                     try:
                         self.get_logger().info(f"Moving robot to joint positions: {joint_positions_rad}, blocking: {blocking}")
-                        result = self.ur15_robot.movej(
+                        result = self.ur_robot.movej(
                             joint_positions_rad,
                             a=0.5,  # acceleration 0.5 rad/s^2
                             v=0.3,  # velocity 0.3 rad/s
@@ -3650,8 +3650,8 @@ class URWebNode(Node):
                     })
                 
                 # Check robot connection
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -3667,7 +3667,7 @@ class URWebNode(Node):
                     # Send movel command
                     try:
                         self.get_logger().info(f"Moving robot to TCP pose: {tcp_pose_meters_radians}")
-                        result = self.ur15_robot.movel(
+                        result = self.ur_robot.movel(
                             tcp_pose_meters_radians,
                             a=0.5,  # acceleration 0.5 m/s^2
                             v=0.5,  # velocity 0.1 m/s
@@ -4324,10 +4324,10 @@ class URWebNode(Node):
             
             # Get current TCP pose using URRobot (more reliable)
             tcp_pose_raw = None
-            with self.ur15_lock:
-                if self.ur15_robot is not None:
+            with self.ur_lock:
+                if self.ur_robot is not None:
                     try:
-                        tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose_raw = self.ur_robot.get_actual_tcp_pose()
                     except Exception as e:
                         self.get_logger().debug(f"Error getting TCP pose: {e}")
             
@@ -4381,7 +4381,7 @@ class URWebNode(Node):
                 frame,
                 intrinsic=params['intrinsic'],
                 extrinsic=params['extrinsic'],
-                model=self.ur15_base_model,
+                model=self.ur_base_model,
                 distortion=params['distortion'],
                 thickness=2
             )

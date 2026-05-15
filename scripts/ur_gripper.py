@@ -15,10 +15,10 @@ try:
 except ImportError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.abspath(os.path.join(current_dir, '..'))
-ur15_path = os.path.join(repo_root, 'colcon_ws/src/ur_robot_arm/ur_robot_arm')
-sys.path.append(ur15_path)
+ur_robot_arm_path = os.path.join(repo_root, 'colcon_ws/src/ur_robot_arm/ur_robot_arm')
+sys.path.append(ur_robot_arm_path)
 
-from ur15 import URRobot
+from ur_robot import URRobot
 import socket
 import time
 from typing import List, Optional, Union

@@ -6,10 +6,6 @@ Starts a second ``ur_web_node`` instance (the executable shipped by the
 ``ur_web`` package) configured from ``ur10e.web`` / ``ur10e.robot`` in
 robot_config.yaml. Uses a distinct ROS node name (``ur10e_web_node``)
 and disjoint web port so it coexists with the ur15 web.
-
-NOTE: the underlying node still declares its parameters as ``ur15_ip`` /
-``ur15_port`` (these describe "the UR's IP and control port"); we feed them
-the ur10e values here. Renaming the node parameters is a future cleanup.
 """
 
 from launch import LaunchDescription
@@ -141,8 +137,6 @@ def generate_launch_description():
 
     # Distinct ROS node name so this instance does not collide with the
     # ur15 web instance (both run the same ``ur_web_node`` executable).
-    # NOTE: parameter names below (`ur15_ip`, `ur15_port`) match what the
-    # node code declares; we are feeding them the ur10e values intentionally.
     ur10e_web_node = Node(
         package='ur_web',
         executable='ur_web_node',
@@ -151,8 +145,8 @@ def generate_launch_description():
         parameters=[{
             'camera_topic': camera_topic,
             'web_port': web_port,
-            'ur15_ip': ur_ip,
-            'ur15_port': ur_port,
+            'ur_ip': ur_ip,
+            'ur_port': ur_port,
             'dataset_dir': dataset_dir,
             'calib_data_dir': calib_data_dir,
             'calib_result_dir': calib_result_dir,

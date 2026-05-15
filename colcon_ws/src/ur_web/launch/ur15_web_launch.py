@@ -152,8 +152,8 @@ def generate_launch_description():
         parameters=[{
             'camera_topic': camera_topic,
             'web_port': web_port,
-            'ur15_ip': ur15_ip,
-            'ur15_port': ur15_port,
+            'ur_ip': ur15_ip,
+            'ur_port': ur15_port,
             'dataset_dir': dataset_dir,
             'calib_data_dir': calib_data_dir,
             'calib_result_dir': calib_result_dir,
