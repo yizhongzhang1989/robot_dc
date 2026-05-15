@@ -279,6 +279,7 @@ The web dashboard at `http://<host>:8030` (UR15) and `http://<host>:8031` (UR10e
 2. **Record** — type a name (letters/digits/`_`/`-`), then click 💾. This dashboard's robot captures its current TCP pose and writes it to `temp/tcp_poses/<name>.json` in the rack frame.
 3. **Move To Selected Pose** — pick a name from the dropdown and click 🎯. The pose is converted to base frame using this dashboard's robot's current `rack2base_matrix` and sent as a single `movel`.
 4. **Delete** — remove the selected JSON file (shared across both dashboards).
+5. **📡 Broadcast Rack Calibration** — propagate this dashboard's `rack2base_matrix` (and `rack_points_3d` if present) to every other namespace on the status server that has a `target2base_matrix`. Internally runs [scripts/ur_broadcase_rack_calibration.py](../scripts/ur_broadcase_rack_calibration.py) with `--base-namespace` fixed to this dashboard's robot. Use it right after Stage 3 on one arm so the other arm can pick up the same rack model without re-running Stages 1–3 — see §4.1 for the math and prerequisites. Completion (or failure) is reported as a single `Summary: …` line in the on-page log.
 
 All actions stream their stdout to the on-page log panel.
 
