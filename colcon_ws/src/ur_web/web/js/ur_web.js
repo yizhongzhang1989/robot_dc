@@ -1034,9 +1034,9 @@ function toggleValidation() {
             checkbox.checked = validationActive;
             
             if (validationActive) {
-                logToWeb('Draw UR15 base activated', 'success');
+                logToWeb('Draw UR base activated', 'success');
             } else {
-                logToWeb('Draw UR15 base deactivated', 'info');
+                logToWeb('Draw UR base deactivated', 'info');
             }
         } else {
             logToWeb(`Failed to toggle validation: ${data.message}`, 'error');
