@@ -16,7 +16,7 @@ from datetime import datetime
 from scipy.spatial.transform import Rotation as R
 
 # Robot control imports
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 
 # ROS2 imports
 import rclpy
@@ -169,7 +169,7 @@ class URCapture(Node):
         """Initialize UR15 robot instance and establish connection"""
         try:
             print(f'>>> Initializing UR15 robot at {self.robot_ip}:{self.robot_port}...')
-            self.robot = UR15Robot(ip=self.robot_ip, port=self.robot_port)
+            self.robot = URRobot(ip=self.robot_ip, port=self.robot_port)
             
             # Attempt to connect
             res = self.robot.open()
@@ -299,7 +299,7 @@ class URCapture(Node):
             save_dir: Directory to save the files
             img_filename: Filename for the image
             pose_filename: Filename for the pose JSON
-            robot: Optional UR15Robot instance (if None, uses self.robot)
+            robot: Optional URRobot instance (if None, uses self.robot)
         """
         robot = robot or self.robot
         if robot is None:

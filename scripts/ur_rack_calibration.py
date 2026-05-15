@@ -24,6 +24,15 @@ Usage (CLI):
     # Or pass an absolute path
     python3 scripts/ur_rack_calibration.py /abs/path/to/workflow.json
 
+    # --config / -c is accepted as an alternative to the positional argument
+    # (parity with `ros2 run ur_workflow run_workflow.py --config ...`)
+    python3 scripts/ur_rack_calibration.py --config localize_rack_at_working_pos.json
+
+    # Add --broadcast (or --broadcase) to also propagate the resulting
+    # rack2base_matrix and rack_points_3d to every other namespace on the
+    # robot_status server that has a target2base_matrix.
+    python3 scripts/ur_rack_calibration.py --config localize_rack_at_working_pos.json --broadcast
+
 Usage (library):
     from ur_rack_calibration import RackCalibrator
 
@@ -32,6 +41,8 @@ Usage (library):
     cal.run()                       # spawns the ros2 workflow
     result = cal.get_result()       # {'rack2base_matrix': ndarray,
                                     #  'rack_points_3d':   ndarray}
+    cal.broadcast()                 # optional: propagate to every other
+                                    # namespace that has a target2base_matrix
 
 Prerequisites:
     - UR15 bringup must already be running:
@@ -49,30 +60,28 @@ from typing import Optional
 
 import numpy as np
 
-# Make the colcon install tree importable so we can use RobotStatusClient
-# without requiring the user to source setup.bash beforehand. The exact
-# layout under colcon_ws/install/<pkg>/ varies by ROS distro / build flavour,
-# so probe the common locations and fall back to a glob search.
-_WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
-_INSTALL_ROOT = _WORKSPACE_ROOT / 'colcon_ws' / 'install' / 'robot_status_redis'
-_CANDIDATE_SITES = [
-    _INSTALL_ROOT / 'local' / 'lib' / 'python3.10' / 'dist-packages',
-    _INSTALL_ROOT / 'lib' / 'python3.10' / 'site-packages',
-    _INSTALL_ROOT / 'lib' / 'python3.10' / 'dist-packages',
-]
-for _site in _CANDIDATE_SITES:
-    if (_site / 'robot_status_redis' / 'client_utils.py').exists():
-        if str(_site) not in sys.path:
-            sys.path.insert(0, str(_site))
-        break
-else:
-    # Last-resort glob in case the layout differs
-    for _candidate in _INSTALL_ROOT.rglob('robot_status_redis/client_utils.py'):
-        _site = _candidate.parent.parent
-        if str(_site) not in sys.path:
-            sys.path.insert(0, str(_site))
-        break
+# Resolve the project root using the shared helper in the ``common`` package.
+# Insert ``colcon_ws/src`` first so ``common.workspace_utils`` is importable
+# even when the colcon overlay has not been sourced (development mode); if
+# that still fails we fall back to a ``__file__``-based guess.
+try:
+    sys.path.insert(
+        0,
+        str(Path(__file__).resolve().parent.parent / 'colcon_ws' / 'src'),
+    )
+    from common.workspace_utils import get_workspace_root  # noqa: E402
 
+    _detected_root = get_workspace_root()
+    _WORKSPACE_ROOT = (
+        Path(_detected_root) if _detected_root
+        else Path(__file__).resolve().parent.parent
+    )
+except ImportError:
+    _WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
+
+# Requires the colcon overlay to be sourced
+# (``source colcon_ws/install/setup.bash``), which is already listed under
+# Prerequisites in the module docstring above.
 from robot_status_redis.client_utils import RobotStatusClient  # noqa: E402
 
 
@@ -333,6 +342,49 @@ class RackCalibrator:
             return None
         return self.get_result()
 
+    # ------------------------------------------------------------- broadcast
+    def broadcast(
+        self,
+        target_namespaces=None,
+        dry_run: bool = False,
+    ) -> dict:
+        """Propagate the freshly calibrated rack pose to other robots.
+
+        Uses :class:`RackCalibrationBroadcaster` with ``self.namespace`` as
+        the base. ``rack2base_matrix`` and (if present) ``rack_points_3d``
+        on the base namespace are re-expressed in every other robot's
+        base frame via the shared ``target2base_matrix`` anchor.
+
+        Parameters
+        ----------
+        target_namespaces : iterable of str, optional
+            Limit broadcast to these namespaces. Default: auto-discover.
+        dry_run : bool, optional
+            Compute but do not write back.
+
+        Returns
+        -------
+        dict
+            The per-namespace report from
+            :meth:`RackCalibrationBroadcaster.broadcast`.
+        """
+        # Defer the import so the broadcaster is only loaded when needed,
+        # and add the script directory to sys.path so library users who
+        # import this module from anywhere can still reach its sibling.
+        _scripts_dir = str(Path(__file__).resolve().parent)
+        if _scripts_dir not in sys.path:
+            sys.path.insert(0, _scripts_dir)
+        from ur_broadcase_rack_calibration import RackCalibrationBroadcaster
+
+        broadcaster = RackCalibrationBroadcaster(
+            base_namespace=self._namespace,
+            status_client=self._status_client,
+        )
+        return broadcaster.broadcast(
+            target_namespaces=target_namespaces,
+            dry_run=dry_run,
+        )
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -344,16 +396,44 @@ def main() -> int:
     )
     parser.add_argument(
         'workflow',
+        nargs='?',
+        default=None,
         help=(
             "Workflow file: basename under temp/workflow_files/ "
-            "(e.g. localize_rack_at_working_pos.json) or an absolute path."
+            "(e.g. localize_rack_at_working_pos.json) or an absolute path. "
+            "May also be passed as --config for parity with the underlying "
+            "`ros2 run ur_workflow run_workflow.py --config ...` command."
+        ),
+    )
+    parser.add_argument(
+        '--config', '-c',
+        dest='config',
+        default=None,
+        help='Alternative way to pass the workflow file (same as the positional argument).',
+    )
+    # Accept both '--broadcast' (correct spelling) and '--broadcase' (matches
+    # the sibling script filename) so either form works on the CLI.
+    parser.add_argument(
+        '--broadcast', '--broadcase',
+        action='store_true',
+        help=(
+            "After a successful calibration, propagate rack2base_matrix "
+            "(and rack_points_3d if present) from this robot's namespace "
+            "to every other namespace on the robot_status server that has "
+            "a target2base_matrix. See scripts/ur_broadcase_rack_calibration.py."
         ),
     )
     args = parser.parse_args()
 
+    workflow_arg = args.workflow or args.config
+    if not workflow_arg:
+        parser.error(
+            "a workflow file is required (pass it positionally or via --config/-c)"
+        )
+
     cal = RackCalibrator()
     try:
-        cal.set_config(args.workflow)
+        cal.set_config(workflow_arg)
     except FileNotFoundError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 2
@@ -390,6 +470,47 @@ def main() -> int:
             print("  <not stored>")
         else:
             print(format_matrix(value))
+
+    if args.broadcast:
+        print(
+            f"\n>>> Broadcasting rack calibration from '{cal.namespace}' to "
+            f"every other namespace with a target2base_matrix..."
+        )
+        try:
+            report = cal.broadcast()
+        except RuntimeError as exc:
+            print(f"✗ Broadcast failed: {exc}", file=sys.stderr)
+            return 5
+        except ConnectionError as exc:
+            print(
+                f"✗ Cannot reach robot status (Redis) during broadcast: {exc}",
+                file=sys.stderr,
+            )
+            return 3
+
+        if not report:
+            print(
+                "  No other namespaces with 'target2base_matrix' found; "
+                "nothing to broadcast."
+            )
+        else:
+            written = skipped = failed = 0
+            for ns, info in report.items():
+                status = info['status']
+                marker = {'ok': '✓', 'skipped': '·', 'failed': '✗'}.get(status, '?')
+                print(f"  {marker} {ns}: {status} — {info['message']}")
+                if status == 'ok':
+                    written += 1
+                elif status == 'skipped':
+                    skipped += 1
+                else:
+                    failed += 1
+            print(
+                f"  Summary: {written} written, {skipped} skipped, {failed} failed"
+            )
+            if failed:
+                return 1
+
     return 0
 
 

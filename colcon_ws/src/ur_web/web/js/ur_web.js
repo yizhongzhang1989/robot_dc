@@ -651,6 +651,47 @@ function deleteTcpPose() {
         });
 }
 
+// Propagate this robot's freshly calibrated rack pose to every other
+// namespace on the robot_status server that has a target2base_matrix.
+// Backed by scripts/ur_broadcase_rack_calibration.py — see
+// doc/rack_calibration.md §4.1 for the math and CLI equivalent.
+function broadcastRackCalibration() {
+    const btn = document.getElementById('broadcastRackCalibrationBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
+    logToWeb(`📡 Broadcasting rack calibration from '${currentRobotNamespace}'...`, 'info');
+
+    fetch('/broadcast_rack_calibration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ robot: currentRobotNamespace })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                logToWeb(`✅ ${data.message}`, 'success');
+            } else {
+                logToWeb(`❌ Error: ${data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            logToWeb(`❌ Network error: ${error.message}`, 'error');
+        })
+        .finally(() => {
+            // Re-enable the button after a short grace period so the
+            // background subprocess has time to push its completion log.
+            setTimeout(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }, 3000);
+        });
+}
+
 function labelLastCapturedImage() {
     logToWeb('Preparing ref_img_1 for labeling...', 'info');
     
@@ -993,9 +1034,9 @@ function toggleValidation() {
             checkbox.checked = validationActive;
             
             if (validationActive) {
-                logToWeb('Draw UR15 base activated', 'success');
+                logToWeb('Draw UR base activated', 'success');
             } else {
-                logToWeb('Draw UR15 base deactivated', 'info');
+                logToWeb('Draw UR base deactivated', 'info');
             }
         } else {
             logToWeb(`Failed to toggle validation: ${data.message}`, 'error');
@@ -1276,6 +1317,17 @@ function updateStatus() {
         
         // Update image topic in status bar
         document.getElementById('statusBarImageTopic').textContent = data.camera_topic;
+
+        // Update image resolution next to the camera topic. Empty/em-dash when
+        // no image has been received yet; live W×H when a frame is available.
+        const statusBarImageResolutionElement = document.getElementById('statusBarImageResolution');
+        if (statusBarImageResolutionElement) {
+            if (data.has_image && data.image_width && data.image_height) {
+                statusBarImageResolutionElement.textContent = `${data.image_width}×${data.image_height}`;
+            } else {
+                statusBarImageResolutionElement.textContent = '—';
+            }
+        }
         
         // Update data dir in path panel
         if (data.data_dir) {
@@ -2447,6 +2499,41 @@ async function toggleDrawRack() {
     } catch (error) {
         logToWeb(`Error toggling rack drawing: ${error.message}`, 'error');
         // Revert checkbox on error
+        checkbox.checked = !checkbox.checked;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
+async function toggleDrawOtherUrBase() {
+    const checkbox = document.getElementById('drawOtherUrBaseCheckbox');
+    checkbox.disabled = true;
+
+    try {
+        const response = await fetch('/toggle_draw_other_ur_base', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: checkbox.checked })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            checkbox.checked = data.enabled;
+
+            if (data.enabled) {
+                logToWeb('Draw Other UR Base enabled', 'success');
+            } else {
+                logToWeb('Draw Other UR Base disabled', 'info');
+            }
+        } else {
+            logToWeb(`Failed to toggle Other UR Base drawing: ${data.message}`, 'error');
+            checkbox.checked = !checkbox.checked;
+        }
+    } catch (error) {
+        logToWeb(`Error toggling Other UR Base drawing: ${error.message}`, 'error');
         checkbox.checked = !checkbox.checked;
     } finally {
         checkbox.disabled = false;

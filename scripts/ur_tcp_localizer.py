@@ -75,7 +75,7 @@ import yaml
 from scipy.spatial.transform import Rotation as R
 
 # Make the colcon install tree importable so we can use RobotStatusClient
-# and UR15Robot without requiring the user to source setup.bash beforehand.
+# and URRobot without requiring the user to source setup.bash beforehand.
 _WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 for _pkg in ('robot_status_redis', 'ur_robot_arm'):
     _install_root = _WORKSPACE_ROOT / 'colcon_ws' / 'install' / _pkg
@@ -99,9 +99,9 @@ for _pkg in ('robot_status_redis', 'ur_robot_arm'):
 from robot_status_redis.client_utils import RobotStatusClient  # noqa: E402
 
 try:
-    from ur_robot_arm.ur15 import UR15Robot  # noqa: E402
+    from ur_robot_arm.ur_robot import URRobot  # noqa: E402
 except ImportError as _exc:  # pragma: no cover
-    UR15Robot = None
+    URRobot = None
     _UR15_IMPORT_ERROR = _exc
 else:
     _UR15_IMPORT_ERROR = None
@@ -400,13 +400,13 @@ class TCPLocalizer:
         """Open a URScript connection on first use."""
         if self._robot is not None:
             return self._robot
-        if UR15Robot is None:
+        if URRobot is None:
             raise RuntimeError(
                 f"UR robot client is not importable: {_UR15_IMPORT_ERROR}. "
                 "Make sure the colcon workspace is sourced."
             )
         print(f"Connecting to {self.robot_name} at {self.robot_ip}:{self.robot_port}...")
-        robot = UR15Robot(ip=self.robot_ip, port=self.robot_port)
+        robot = URRobot(ip=self.robot_ip, port=self.robot_port)
         rc = robot.open()
         if rc != 0:
             raise ConnectionError(

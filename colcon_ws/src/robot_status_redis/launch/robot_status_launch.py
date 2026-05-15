@@ -9,11 +9,14 @@ Usage:
     ros2 launch robot_status_redis robot_status_launch.py web_enabled:=true web_port:=8005
 """
 
+import os
+import sys
+
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
-from launch_ros.actions import Node
+from ament_index_python.packages import get_package_prefix
 from common.config_manager import ConfigManager
 from common.workspace_utils import get_workspace_root
 from pathlib import Path
@@ -65,26 +68,46 @@ def generate_launch_description():
     web_port = LaunchConfiguration('web_port')
     web_host = LaunchConfiguration('web_host')
     
-    # Robot status node (always runs)
-    robot_status_node = Node(
-        package='robot_status_redis',
-        executable='robot_status_node.py',
+    # Robot status node — launched as a Python module via the interpreter
+    # rather than `launch_ros.actions.Node(executable='robot_status_node.py')`.
+    # The Node action performs a libexec lookup that requires the script to
+    # be marked +x; under `colcon build --symlink-install` the installed
+    # path is a symlink to source, so its effective mode is whatever git
+    # tracks for the source file. By invoking `python3 <abs_path>` we let
+    # the Python interpreter open the script as a regular file — no +x
+    # required — matching the pattern used by the other web services
+    # (positioning_3d_service, image_labeling_service, camcalib_web_service).
+    node_script = os.path.join(
+        get_package_prefix('robot_status_redis'),
+        'lib', 'robot_status_redis', 'robot_status_node.py',
+    )
+
+    node_cmd = [
+        sys.executable,
+        node_script,
+        '--ros-args',
+        '-r', '__node:=robot_status_node',
+        '-p', ['auto_save_file_path:=', auto_save_file_path],
+        '-p', f'redis_host:={service_config["redis"]["host"]}',
+        '-p', f'redis_port:={int(service_config["redis"]["port"])}',
+        '-p', f'redis_db:={int(service_config["redis"]["db"])}',
+    ]
+    # Only forward redis_password when actually set; the node declares an
+    # empty-string default, and `key:=` with an empty value parses as YAML
+    # null which would surprise the param consumer.
+    if service_config['redis'].get('password'):
+        node_cmd += ['-p', f'redis_password:={service_config["redis"]["password"]}']
+
+    robot_status_node = ExecuteProcess(
+        cmd=node_cmd,
         name='robot_status_node',
         output='screen',
-        parameters=[{
-            'auto_save_file_path': auto_save_file_path,
-            'redis_host': service_config['redis']['host'],
-            'redis_port': service_config['redis']['port'],
-            'redis_db': service_config['redis']['db'],
-            'redis_password': service_config['redis']['password'] if service_config['redis']['password'] else ''
-        }],
-        emulate_tty=True
+        sigterm_timeout='2',
+        sigkill_timeout='2',
+        emulate_tty=True,
     )
-    
+
     # Web dashboard process (optional)
-    from launch.actions import ExecuteProcess
-    import sys
-    
     web_dashboard_process = ExecuteProcess(
         cmd=[
             sys.executable,

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UR15 Web Interface</title>
+    <title>{{ robot_type }} Web Interface</title>
     <script src="/static/tailwind.js"></script>
     <style>
         /* Custom styles for video container */
@@ -502,10 +502,6 @@
                         <div id="statusBarFreedriveStatus" class="status-bar-value">Normal</div>
                     </div>
                     <div class="status-bar-item">
-                        <div class="status-bar-label">Image Topic</div>
-                        <div id="statusBarImageTopic" class="status-bar-value">{{ camera_topic }}</div>
-                    </div>
-                    <div class="status-bar-item">
                         <div class="status-bar-label">Intrinsic Params</div>
                         <div id="statusBarIntrinsic" class="status-bar-value disconnected">Not Loaded</div>
                     </div>
@@ -694,10 +690,10 @@
                                 <input type="checkbox" id="cornerDetectCheckbox" onchange="toggleCornerDetect()" style="width: 18px; height: 18px; cursor: pointer;">
                                 <span style="font-weight: 600;">🔍 Draw Chessboard Corners</span>
                             </label>
-                            <!-- Draw UR15 Base -->
+                            <!-- Draw UR Base -->
                             <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 0.5rem; cursor: pointer;">
                                 <input type="checkbox" id="validateCalibrationCheckbox" onchange="toggleValidation()" style="width: 18px; height: 18px; cursor: pointer;">
-                                <span style="font-weight: 600;">🎯 Draw UR15 Base</span>
+                                <span style="font-weight: 600;">🎯 Draw UR Base</span>
                             </label>
                         </div>
                         
@@ -715,12 +711,17 @@
                             </label>
                         </div>
                         
-                        <!-- Third row: 1 column (centered) -->
-                        <div style="display: flex; justify-content: center;">
+                        <!-- Third row: 2 columns -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
                             <!-- Draw GB200 Server -->
-                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(245, 101, 101, 0.1); border: 1px solid rgba(245, 101, 101, 0.3); border-radius: 0.5rem; cursor: pointer; width: 48%;">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(245, 101, 101, 0.1); border: 1px solid rgba(245, 101, 101, 0.3); border-radius: 0.5rem; cursor: pointer;">
                                 <input type="checkbox" id="drawServerCheckbox" onchange="toggleDrawServer()" style="width: 18px; height: 18px; cursor: pointer;">
                                 <span style="font-weight: 600;">🖥️ Draw GB200 Server</span>
+                            </label>
+                            <!-- Draw Other UR Base -->
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" id="drawOtherUrBaseCheckbox" onchange="toggleDrawOtherUrBase()" style="width: 18px; height: 18px; cursor: pointer;">
+                                <span style="font-weight: 600;" title="Draw the UR base of every OTHER robot found on the status server (via shared chessboard).">🤖 Draw Other UR Base</span>
                             </label>
                         </div>
                         
@@ -865,6 +866,15 @@
                                 <span>Delete</span>
                             </button>
                         </div>
+
+                        <!-- Broadcast this robot's rack calibration to every other robot
+                             that shares a target2base_matrix on the status server. -->
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button id="broadcastRackCalibrationBtn" onclick="broadcastRackCalibration()" style="flex: 1; min-width: 0;" class="responsive-btn bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2" title="Propagate this robot's rack2base_matrix and rack_points_3d to every other namespace with a target2base_matrix on the status server">
+                                <span>📡</span>
+                                <span>Broadcast Rack Calibration</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -960,7 +970,11 @@
             <!-- Camera Feed Section -->
             <div class="bg-white rounded-lg shadow-md p-6">
                 <div class="text-left mb-6">
-                    <h2 class="text-2xl font-semibold text-gray-700">📹 Camera Feed</h2>
+                    <div class="flex items-baseline gap-3 flex-wrap">
+                        <h2 class="text-2xl font-semibold text-gray-700">📹 Camera Feed</h2>
+                        <span id="statusBarImageTopic" class="text-sm text-gray-500 font-mono" title="Image topic">{{ camera_topic }}</span>
+                        <span id="statusBarImageResolution" class="text-sm text-gray-500 font-mono" title="Image resolution (width × height)">—</span>
+                    </div>
                 </div>
                 <div class="video-container border-2 border-gray-300 shadow-lg">
                     <img id="videoFeed" class="video-frame" src="/video_feed" alt="Camera Feed">

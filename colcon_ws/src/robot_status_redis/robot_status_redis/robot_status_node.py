@@ -96,7 +96,7 @@ class RobotStatusNode(Node):
         
         # Import service types (will be available after build)
         try:
-            from robot_status.srv import SetStatus, GetStatus, ListStatus, DeleteStatus
+            from robot_status_redis.srv import SetStatus, GetStatus, ListStatus, DeleteStatus
             
             # Create services
             self.set_service = self.create_service(

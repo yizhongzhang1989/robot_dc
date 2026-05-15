@@ -11,7 +11,7 @@ from rclpy.node import Node
 import json
 import time
 
-from robot_status.client_utils import RobotStatusClient
+from robot_status_redis.client_utils import RobotStatusClient
 
 
 class TestRobotStatusNode(Node):

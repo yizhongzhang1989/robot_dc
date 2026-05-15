@@ -1,4 +1,4 @@
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 import time
 import socket
 import math
@@ -15,7 +15,7 @@ def main():
     ur15_port = 30002
 
     # Init the robot object
-    robot = UR15Robot(ur15_ip, ur15_port)
+    robot = URRobot(ur15_ip, ur15_port)
     # Open connection of robot
     ur15_start_res = robot.open()
 

@@ -13,7 +13,7 @@ ros2 launch ur_robot_driver ur_control.launch.py \
 
 Then run the UR15 robot arm node:
 ```bash
-ros2 run ur_robot_arm ur15_robot_arm_node
+ros2 run ur_robot_arm ur_robot_arm_node
 ```
 
 Or use the provided launch file:

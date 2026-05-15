@@ -4,7 +4,7 @@ print_joints.py — live joint-angle monitor for any UR robot (real or URSim).
 
 The easiest possible "is the robot moving?" check: opens one URScript socket
 and prints joint angles + TCP pose at a configurable rate. No ROS, no driver,
-no RViz. Re-uses the proven UR15Robot client from this repo.
+no RViz. Re-uses the proven URRobot client from this repo.
 
 Usage (after sourcing the workspace):
 
@@ -31,7 +31,7 @@ except AttributeError:
     pass
 os.environ.setdefault("PYTHONUNBUFFERED", "1")
 
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 
 
 def parse_args():
@@ -69,7 +69,7 @@ def fmt_row(joints_rad, tcp_pose):
 def main():
     args = parse_args()
     print(f"connecting to {args.ip}:{args.port}  ({args.rate} Hz, Ctrl-C to quit)\n")
-    r = UR15Robot(args.ip, args.port)
+    r = URRobot(args.ip, args.port)
     r.open()
     print(HEADER)
     period = 1.0 / max(args.rate, 0.1)

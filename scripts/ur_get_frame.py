@@ -15,17 +15,17 @@ try:
 except ImportError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.abspath(os.path.join(current_dir, '..'))
-ur15_path = os.path.join(repo_root, 'colcon_ws/src/ur_robot_arm/ur_robot_arm')
-sys.path.append(ur15_path)
+ur_robot_arm_path = os.path.join(repo_root, 'colcon_ws/src/ur_robot_arm/ur_robot_arm')
+sys.path.append(ur_robot_arm_path)
 
-from ur15 import UR15Robot
+from ur_robot import URRobot
 import socket
 import time
 
 
 def main():
     # Robot connection
-    robot = UR15Robot("192.168.1.15", 30002)
+    robot = URRobot("192.168.1.15", 30002)
     
     if robot.open() != 0:
         print("Failed to connect to robot")

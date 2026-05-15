@@ -59,29 +59,35 @@ try:
     )
     if os.path.exists(ur15_pkg_path):
         sys.path.insert(0, ur15_pkg_path)
-    from ur_robot_arm.ur15 import UR15Robot
+    from ur_robot_arm.ur_robot import URRobot
 except Exception as e:
-    print(f"Warning: Could not import UR15Robot: {e}")
-    UR15Robot = None
+    print(f"Warning: Could not import URRobot: {e}")
+    URRobot = None
 
 
-class UR15WebNode(Node):
+class URWebNode(Node):
     """ROS2 node for UR15 web interface with camera calibration validation."""
     
     def __init__(self):
-        super().__init__('ur15_web_node')
+        super().__init__('ur_web_node')
         
         # Declare parameters
         self.declare_parameter('camera_topic', '/ur15_camera/image_raw')
         self.declare_parameter('web_port', 8030)
-        self.declare_parameter('ur15_ip', '192.168.1.15')
-        self.declare_parameter('ur15_port', 30002)
+        self.declare_parameter('ur_ip', '192.168.1.15')
+        self.declare_parameter('ur_port', 30002)
         self.declare_parameter('dataset_dir', '/tmp/dataset')
         self.declare_parameter('calib_data_dir', '/tmp/ur15_cam_calibration_data')
         self.declare_parameter('calib_result_dir', '/tmp/ur15_cam_calibration_result')
         self.declare_parameter('chessboard_config', '/tmp/ur15_cam_calibration_data/chessboard_config.json')
         self.declare_parameter('image_labeling_port', 8007)
         self.declare_parameter('workflow_config_center_port', 8008)
+        # Seconds to wait after each movej during auto-capture for the arm to
+        # physically settle before recording the image/pose. Forwarded to
+        # scripts/ur_auto_collect_data.py via --stabilize-delay when the
+        # Calibration Panel's auto-capture button is pressed. Sourced from
+        # <robot>.web.stabilize_delay in robot_config.yaml.
+        self.declare_parameter('stabilize_delay', 1.0)
         # Namespace used when reading/writing to robot_status_redis. Defaults to
         # 'ur15' so existing callers/configs keep working unchanged; for ur10e
         # the launch file passes 'ur10e' so the two robots stay isolated.
@@ -101,14 +107,15 @@ class UR15WebNode(Node):
         # Get parameters
         self.camera_topic = self.get_parameter('camera_topic').value
         web_port = self.get_parameter('web_port').value
-        self.ur15_ip = self.get_parameter('ur15_ip').value
-        self.ur15_port = self.get_parameter('ur15_port').value
+        self.ur_ip = self.get_parameter('ur_ip').value
+        self.ur_port = self.get_parameter('ur_port').value
         self.dataset_dir = self.get_parameter('dataset_dir').value
         self.calibration_data_dir = self.get_parameter('calib_data_dir').value
         self.calibration_result_dir = self.get_parameter('calib_result_dir').value
         self.chessboard_config = self.get_parameter('chessboard_config').value
         self.image_labeling_port = self.get_parameter('image_labeling_port').value
         self.workflow_config_center_port = self.get_parameter('workflow_config_center_port').value
+        self.stabilize_delay = float(self.get_parameter('stabilize_delay').value)
         self.robot_namespace = self.get_parameter('robot_namespace').value
         # robot_type defaults to whatever robot_namespace is (so a launch that
         # only sets robot_namespace='ur10e' still publishes a sensible type).
@@ -210,6 +217,11 @@ class UR15WebNode(Node):
         
         # Current image storage
         self.current_image = None
+        # Resolution of the most recently received image (None until first frame).
+        # Updated in image_callback under image_lock so the /get_status endpoint
+        # can report a live value even when the camera stream changes resolution.
+        self.image_width = None
+        self.image_height = None
         self.image_lock = threading.Lock()
         
         # Camera calibration parameters
@@ -220,7 +232,7 @@ class UR15WebNode(Node):
         self.calibration_lock = threading.Lock()
         
         # Generate 3D models for visualization
-        self.ur15_base_model = draw_utils.generate_ur15_base_curve(ray_length=3)
+        self.ur_base_model = draw_utils.generate_ur15_base_curve(ray_length=3)
         self.gb200rack_model = draw_utils.generate_gb200rack_curve()
         self.gb200server_model = draw_utils.generate_gb200server_wire()
         
@@ -240,7 +252,7 @@ class UR15WebNode(Node):
         self.cached_data_lock = threading.Lock()
         
         # UR15 robot control
-        self.ur15_robot = None
+        self.ur_robot = None
         self.freedrive_active = False
         self.validation_active = False
         self.corner_detection_enabled = False
@@ -248,7 +260,8 @@ class UR15WebNode(Node):
         self.draw_rack_enabled = False
         self.draw_server_enabled = False
         self.draw_keypoints_enabled = False
-        self.ur15_lock = threading.Lock()
+        self.draw_other_ur_base_enabled = False
+        self.ur_lock = threading.Lock()
         self._init_ur15_connection()
         
         # Initialize 30003 real-time data connection
@@ -364,14 +377,14 @@ class UR15WebNode(Node):
         This ensures robot_status is continuously updated for other components to use,
         independent of the web interface."""
         try:
-            with self.ur15_lock:
-                if self.ur15_robot is None:
+            with self.ur_lock:
+                if self.ur_robot is None:
                     return
                 
                 # Get joint positions and TCP pose
                 try:
-                    joint_positions_rad = self.ur15_robot.get_actual_joint_positions()
-                    tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                    joint_positions_rad = self.ur_robot.get_actual_joint_positions()
+                    tcp_pose_raw = self.ur_robot.get_actual_tcp_pose()
                     
                     # Update robot_status with joint positions (in degrees)
                     if joint_positions_rad:
@@ -473,8 +486,8 @@ class UR15WebNode(Node):
             return
         
         static_info = {
-            'robot_ip': self.ur15_ip,
-            'robot_port': int(self.ur15_port),
+            'robot_ip': self.ur_ip,
+            'robot_port': int(self.ur_port),
             'robot_type': self.robot_type,
             'camera_topic': self.camera_topic,
         }
@@ -538,19 +551,19 @@ class UR15WebNode(Node):
             self.child_processes.clear()
         
         # Exit freedrive mode if active
-        if self.freedrive_active and self.ur15_robot:
+        if self.freedrive_active and self.ur_robot:
             try:
-                with self.ur15_lock:
-                    self.ur15_robot.end_freedrive_mode()
+                with self.ur_lock:
+                    self.ur_robot.end_freedrive_mode()
                     self.get_logger().info("Exited freedrive mode during cleanup")
                     self.freedrive_active = False
             except Exception as e:
                 self.get_logger().error(f"Error exiting freedrive mode: {e}")
         
         # Disconnect from robot
-        if self.ur15_robot is not None:
+        if self.ur_robot is not None:
             try:
-                self.ur15_robot.close()
+                self.ur_robot.close()
                 self.get_logger().info("Disconnected from UR15 robot")
             except Exception as e:
                 self.get_logger().error(f"Error disconnecting from robot: {e}")
@@ -587,32 +600,32 @@ class UR15WebNode(Node):
     
     def _init_ur15_connection(self):
         """Initialize connection to UR15 robot for freedrive control."""
-        if UR15Robot is None:
-            self.get_logger().warning("UR15Robot class not available, freedrive control disabled")
+        if URRobot is None:
+            self.get_logger().warning("URRobot class not available, freedrive control disabled")
             return
             
         try:
-            self.ur15_robot = UR15Robot(self.ur15_ip, self.ur15_port)
-            result = self.ur15_robot.open()
+            self.ur_robot = URRobot(self.ur_ip, self.ur_port)
+            result = self.ur_robot.open()
             
             if result == 0:
-                self.get_logger().info(f"Connected to UR15 robot at {self.ur15_ip}:{self.ur15_port} for freedrive control")
+                self.get_logger().info(f"Connected to UR15 robot at {self.ur_ip}:{self.ur_port} for freedrive control")
             else:
                 self.get_logger().warning(f"Failed to connect to UR15 robot for freedrive control")
-                self.ur15_robot = None
+                self.ur_robot = None
         except Exception as e:
             self.get_logger().error(f"Error initializing UR15 connection: {e}")
-            self.ur15_robot = None
+            self.ur_robot = None
     
     def _init_rt_data_connection(self):
         """Initialize persistent connection to 30003 port for real-time data."""
         try:
-            self.get_logger().info(f"Connecting to real-time data port 30003 at {self.ur15_ip}...")
+            self.get_logger().info(f"Connecting to real-time data port 30003 at {self.ur_ip}...")
             self.rt_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             # Set timeout to 0.5s - robot sends at ~10Hz (100ms intervals)
             # Timeout should be longer than packet interval to avoid false timeouts
             self.rt_socket.settimeout(0.5)
-            self.rt_socket.connect((self.ur15_ip, 30003))
+            self.rt_socket.connect((self.ur_ip, 30003))
             self.rt_connected = True
             self.get_logger().info("Successfully connected to real-time data port 30003")
         except Exception as e:
@@ -641,7 +654,7 @@ class UR15WebNode(Node):
                     # Create new connection
                     self.rt_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     self.rt_socket.settimeout(0.5)
-                    self.rt_socket.connect((self.ur15_ip, 30003))
+                    self.rt_socket.connect((self.ur_ip, 30003))
                     self.rt_connected = True
                     self.get_logger().info("Successfully connected to port 30003")
                 except Exception as e:
@@ -742,9 +755,9 @@ class UR15WebNode(Node):
     
     def destroy_node(self):
         """Override destroy_node to clean up UR15 connection."""
-        if self.ur15_robot:
+        if self.ur_robot:
             try:
-                self.ur15_robot.close()
+                self.ur_robot.close()
             except Exception as e:
                 self.get_logger().error(f"Error closing UR15 connection: {e}")
         super().destroy_node()
@@ -893,6 +906,9 @@ class UR15WebNode(Node):
             
             with self.image_lock:
                 self.current_image = cv_image.copy()
+                # cv_image.shape == (H, W, C); track per-frame so we report
+                # the *current* resolution if the stream changes mid-session.
+                self.image_height, self.image_width = cv_image.shape[:2]
             
             if not hasattr(self, '_first_image_logged'):
                 self.get_logger().info(f"First image received! Size: {cv_image.shape}")
@@ -1014,6 +1030,8 @@ class UR15WebNode(Node):
                 html_content = html_content.replace('{{ data_dir }}', self._simplify_path(self.dataset_dir))
                 html_content = html_content.replace('{{ calibration_data_dir }}', self._simplify_path(self.calibration_data_dir))
                 html_content = html_content.replace('{{ chessboard_config }}', self._simplify_path(self.chessboard_config))
+                # Title aligned with the robot type from config (e.g. "ur15" -> "UR15").
+                html_content = html_content.replace('{{ robot_type }}', (self.robot_type or 'UR').upper())
                 
                 return html_content
             except Exception as e:
@@ -1042,7 +1060,10 @@ class UR15WebNode(Node):
         def get_status():
             """Get current status."""
             from flask import jsonify
-            has_image = self.current_image is not None
+            with self.image_lock:
+                has_image = self.current_image is not None
+                image_width = self.image_width
+                image_height = self.image_height
             
             # Debug log for camera status (disabled - not critical)
             # if hasattr(self, '_debug_counter'):
@@ -1057,23 +1078,23 @@ class UR15WebNode(Node):
                 has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
                 has_extrinsic = self.cam2end_matrix is not None and self.target2base_matrix is not None
             
-            # Read robot data using UR15Robot (more reliable than 30003 port)
+            # Read robot data using URRobot (more reliable than 30003 port)
             joint_positions = []
             tcp_pose = None
             
-            with self.ur15_lock:
+            with self.ur_lock:
                 freedrive_active = self.freedrive_active
-                robot_connected = self.ur15_robot is not None
+                robot_connected = self.ur_robot is not None
                 
-                if self.ur15_robot is not None:
+                if self.ur_robot is not None:
                     try:
                         # Get joint positions in radians and convert to degrees
-                        joint_positions_rad = self.ur15_robot.get_actual_joint_positions()
+                        joint_positions_rad = self.ur_robot.get_actual_joint_positions()
                         if joint_positions_rad:
                             joint_positions = [j * 180.0 / np.pi for j in joint_positions_rad]
                         
                         # Get TCP pose [x, y, z, rx, ry, rz] in meters and radians
-                        tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose_raw = self.ur_robot.get_actual_tcp_pose()
                         if tcp_pose_raw:
                             tcp_pose = {
                                 'x': tcp_pose_raw[0] * 1000.0,  # m to mm
@@ -1115,6 +1136,8 @@ class UR15WebNode(Node):
             
             return jsonify({
                 'has_image': has_image,
+                'image_width': image_width,
+                'image_height': image_height,
                 'camera_topic': self.camera_topic,
                 'data_dir': self._simplify_path(self.dataset_dir),
                 'calibration_data_dir': self._simplify_path(self.calibration_data_dir),
@@ -1534,7 +1557,111 @@ class UR15WebNode(Node):
             except Exception as exc:
                 self.get_logger().error(f"Error deleting TCP pose: {exc}")
                 return jsonify({'success': False, 'message': str(exc)}), 500
-        
+
+        @self.app.route('/broadcast_rack_calibration', methods=['POST'])
+        def broadcast_rack_calibration():
+            """Run scripts/ur_broadcase_rack_calibration.py for this robot.
+
+            Propagates the freshly calibrated ``rack2base_matrix`` (and
+            ``rack_points_3d`` when present) from this robot's namespace
+            to every other namespace on the robot_status server that has
+            a ``target2base_matrix``. See doc/rack_calibration.md §4.1.
+            """
+            from flask import request, jsonify
+            import subprocess
+            import threading
+
+            data = request.get_json(silent=True) or {}
+            robot = _resolve_tcp_robot(data.get('robot'))
+            if robot is None:
+                return jsonify({'success': False, 'message': 'Invalid robot name'}), 400
+
+            scripts_dir = get_scripts_directory()
+            if scripts_dir is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'Could not find scripts directory',
+                }), 500
+
+            script_path = os.path.join(scripts_dir, 'ur_broadcase_rack_calibration.py')
+            if not os.path.exists(script_path):
+                return jsonify({
+                    'success': False,
+                    'message': f'Script not found: {script_path}',
+                }), 404
+
+            cmd = ['python3', script_path, '--base-namespace', robot]
+            self.get_logger().info(
+                f"Broadcast rack calibration [{robot}] command: {' '.join(cmd)}"
+            )
+
+            def monitor_process():
+                try:
+                    process = subprocess.Popen(
+                        cmd,
+                        cwd=os.path.dirname(script_path),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    with self.process_lock:
+                        self.child_processes.append(process)
+
+                    self.get_logger().info(
+                        f"Started broadcast script with PID: {process.pid}"
+                    )
+                    stdout, _ = process.communicate()
+                    return_code = process.returncode
+                    self.get_logger().info(
+                        f"Broadcast script finished with return code: {return_code}"
+                    )
+
+                    # The script ends with a single-line summary, e.g.
+                    # "Summary: 1 written, 0 skipped, 0 failed" — surface
+                    # it in the web log so the operator gets a meaningful
+                    # confirmation rather than just an exit code.
+                    summary_line = ''
+                    for line in reversed((stdout or '').splitlines()):
+                        if line.strip().lower().startswith('summary:'):
+                            summary_line = line.strip()
+                            break
+                    if not summary_line:
+                        tail = [l for l in (stdout or '').splitlines() if l.strip()]
+                        summary_line = tail[-1] if tail else ''
+
+                    if return_code == 0:
+                        self.push_web_log(
+                            f"✅ Rack broadcast from '{robot}' done"
+                            + (f" — {summary_line}" if summary_line else ''),
+                            'success',
+                        )
+                    else:
+                        self.push_web_log(
+                            f"❌ Rack broadcast from '{robot}' failed "
+                            f"(rc={return_code})"
+                            + (f": {summary_line}" if summary_line else ''),
+                            'error',
+                        )
+                        self.get_logger().error(
+                            f"Broadcast stdout:\n{stdout}"
+                        )
+                except Exception as exc:
+                    self.get_logger().error(
+                        f"Error in broadcast monitor thread: {exc}"
+                    )
+                    self.push_web_log(
+                        f"❌ Rack broadcast error: {str(exc)}", 'error'
+                    )
+
+            threading.Thread(target=monitor_process, daemon=True).start()
+            self.push_web_log(
+                f"📡 Broadcasting rack calibration from '{robot}'...", 'info'
+            )
+            return jsonify({
+                'success': True,
+                'message': f"Broadcast started for '{robot}'",
+            })
+
         @self.app.route('/workflow_config_center_url', methods=['GET'])
         def workflow_config_center_url():
             """Return the URL for workflow configuration center."""
@@ -2263,8 +2390,8 @@ class UR15WebNode(Node):
             from flask import jsonify
             
             try:
-                with self.ur15_lock:
-                    if not self.ur15_robot:
+                with self.ur_lock:
+                    if not self.ur_robot:
                         return jsonify({
                             'success': False, 
                             'message': 'UR15 robot not connected',
@@ -2272,7 +2399,7 @@ class UR15WebNode(Node):
                         })
                     
                     if not self.freedrive_active:
-                        result = self.ur15_robot.freedrive_mode()
+                        result = self.ur_robot.freedrive_mode()
                         if result == 0:
                             self.freedrive_active = True
                             self.get_logger().info("Freedrive mode activated")
@@ -2288,7 +2415,7 @@ class UR15WebNode(Node):
                                 'freedrive_active': False
                             })
                     else:
-                        result = self.ur15_robot.end_freedrive_mode()
+                        result = self.ur_robot.end_freedrive_mode()
                         if result == 0:
                             self.freedrive_active = False
                             self.get_logger().info("Freedrive mode deactivated")
@@ -2501,7 +2628,41 @@ class UR15WebNode(Node):
                     'message': str(e),
                     'enabled': False
                 })
-        
+
+        @self.app.route('/toggle_draw_other_ur_base', methods=['POST'])
+        def toggle_draw_other_ur_base():
+            """Toggle drawing of the OTHER robot's UR base into this view."""
+            from flask import jsonify, request
+
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+
+                self.draw_other_ur_base_enabled = enable
+
+                if enable:
+                    self.get_logger().info("Other UR base drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Other UR base drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("Other UR base drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Other UR base drawing disabled',
+                        'enabled': False
+                    })
+
+            except Exception as e:
+                self.get_logger().error(f"Error toggling other UR base drawing: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+
         @self.app.route('/take_screenshot', methods=['POST'])
         def take_screenshot():
             """Take a screenshot of current camera feed and save robot pose."""
@@ -2532,8 +2693,8 @@ class UR15WebNode(Node):
                     cv_image = self.current_image.copy()
                 
                 # Check if robot is connected
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -2541,14 +2702,14 @@ class UR15WebNode(Node):
                     
                     # Read actual joint positions and TCP pose
                     try:
-                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        joint_positions = self.ur_robot.get_actual_joint_positions()
                         if joint_positions is None:
                             return jsonify({
                                 'success': False,
                                 'message': 'Failed to read joint positions'
                             })
                         
-                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose = self.ur_robot.get_actual_tcp_pose()
                         if tcp_pose is None:
                             return jsonify({
                                 'success': False,
@@ -2811,8 +2972,8 @@ class UR15WebNode(Node):
                 cmd = ['python3', script_path]
                 
                 # Add robot IP parameter
-                if hasattr(self, 'ur15_ip') and self.ur15_ip:
-                    cmd.extend(['--robot-ip', self.ur15_ip])
+                if hasattr(self, 'ur_ip') and self.ur_ip:
+                    cmd.extend(['--robot-ip', self.ur_ip])
                 
                 # Add data directory parameter (only pass data-dir, no positions-file)
                 if hasattr(self, 'calibration_data_dir') and self.calibration_data_dir:
@@ -2824,9 +2985,14 @@ class UR15WebNode(Node):
                 # but record images from the ur15 camera.
                 if hasattr(self, 'camera_topic') and self.camera_topic:
                     cmd.extend(['--camera-topic', self.camera_topic])
+
+                # Per-arm stabilize delay (seconds) sourced from
+                # <robot>.web.stabilize_delay in robot_config.yaml.
+                if hasattr(self, 'stabilize_delay') and self.stabilize_delay is not None:
+                    cmd.extend(['--stabilize-delay', str(self.stabilize_delay)])
                 
                 self.get_logger().info(f"Auto collect command: {' '.join(cmd)}")
-                self.get_logger().info(f"Robot IP: {self.ur15_ip if hasattr(self, 'ur15_ip') else 'default'}")
+                self.get_logger().info(f"Robot IP: {self.ur_ip if hasattr(self, 'ur_ip') else 'default'}")
                 self.get_logger().info(f"Camera topic: {self.camera_topic if hasattr(self, 'camera_topic') else 'default'}")
                 self.get_logger().info(f"Data directory: {self.calibration_data_dir if hasattr(self, 'calibration_data_dir') else 'default'}")
                 self.get_logger().info("Will use existing JSON files in data directory for positions")
@@ -2886,7 +3052,7 @@ class UR15WebNode(Node):
                 
                 # Push start message to web log
                 self.push_web_log("🤖 Starting auto collection process...", 'info')
-                self.push_web_log(f"🎯 Robot IP: {self.ur15_ip if hasattr(self, 'ur15_ip') else 'default'}", 'info')
+                self.push_web_log(f"🎯 Robot IP: {self.ur_ip if hasattr(self, 'ur_ip') else 'default'}", 'info')
                 self.push_web_log(f"📁 Data directory: {self._simplify_path(self.calibration_data_dir)}", 'info')
                 
                 return jsonify({
@@ -3169,8 +3335,8 @@ class UR15WebNode(Node):
                 
                 # 2. Get current robot pose and save as ref_pose.json
                 current_tcp_pose = None
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -3178,14 +3344,14 @@ class UR15WebNode(Node):
                     
                     try:
                         # Read both joint positions and TCP pose like in screenshot
-                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        joint_positions = self.ur_robot.get_actual_joint_positions()
                         if joint_positions is None:
                             return jsonify({
                                 'success': False,
                                 'message': 'Failed to read joint positions'
                             })
                         
-                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose = self.ur_robot.get_actual_tcp_pose()
                         if tcp_pose is None:
                             return jsonify({
                                 'success': False,
@@ -3316,8 +3482,8 @@ class UR15WebNode(Node):
                 
                 # 2. Get current robot pose
                 current_tcp_pose = None
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -3325,14 +3491,14 @@ class UR15WebNode(Node):
                     
                     try:
                         # Read both joint positions and TCP pose
-                        joint_positions = self.ur15_robot.get_actual_joint_positions()
+                        joint_positions = self.ur_robot.get_actual_joint_positions()
                         if joint_positions is None:
                             return jsonify({
                                 'success': False,
                                 'message': 'Failed to read joint positions'
                             })
                         
-                        tcp_pose = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose = self.ur_robot.get_actual_tcp_pose()
                         if tcp_pose is None:
                             return jsonify({
                                 'success': False,
@@ -3524,8 +3690,8 @@ class UR15WebNode(Node):
                     })
                 
                 # Check robot connection
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -3541,7 +3707,7 @@ class UR15WebNode(Node):
                     # Send movej command
                     try:
                         self.get_logger().info(f"Moving robot to joint positions: {joint_positions_rad}, blocking: {blocking}")
-                        result = self.ur15_robot.movej(
+                        result = self.ur_robot.movej(
                             joint_positions_rad,
                             a=0.5,  # acceleration 0.5 rad/s^2
                             v=0.3,  # velocity 0.3 rad/s
@@ -3635,8 +3801,8 @@ class UR15WebNode(Node):
                     })
                 
                 # Check robot connection
-                with self.ur15_lock:
-                    if self.ur15_robot is None:
+                with self.ur_lock:
+                    if self.ur_robot is None:
                         return jsonify({
                             'success': False,
                             'message': 'Robot not connected'
@@ -3652,7 +3818,7 @@ class UR15WebNode(Node):
                     # Send movel command
                     try:
                         self.get_logger().info(f"Moving robot to TCP pose: {tcp_pose_meters_radians}")
-                        result = self.ur15_robot.movel(
+                        result = self.ur_robot.movel(
                             tcp_pose_meters_radians,
                             a=0.5,  # acceleration 0.5 m/s^2
                             v=0.5,  # velocity 0.1 m/s
@@ -4307,12 +4473,12 @@ class UR15WebNode(Node):
                 distortion_coefficients = self.distortion_coefficients.copy()
                 cam2end_matrix = self.cam2end_matrix.copy()
             
-            # Get current TCP pose using UR15Robot (more reliable)
+            # Get current TCP pose using URRobot (more reliable)
             tcp_pose_raw = None
-            with self.ur15_lock:
-                if self.ur15_robot is not None:
+            with self.ur_lock:
+                if self.ur_robot is not None:
                     try:
-                        tcp_pose_raw = self.ur15_robot.get_actual_tcp_pose()
+                        tcp_pose_raw = self.ur_robot.get_actual_tcp_pose()
                     except Exception as e:
                         self.get_logger().debug(f"Error getting TCP pose: {e}")
             
@@ -4366,7 +4532,7 @@ class UR15WebNode(Node):
                 frame,
                 intrinsic=params['intrinsic'],
                 extrinsic=params['extrinsic'],
-                model=self.ur15_base_model,
+                model=self.ur_base_model,
                 distortion=params['distortion'],
                 thickness=2
             )
@@ -4374,6 +4540,88 @@ class UR15WebNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error projecting curves to image: {e}")
         
+        return frame
+
+    def project_other_ur_base_to_image(self, frame):
+        """Project every OTHER robot's UR base into this camera view.
+
+        Math:
+            Let T_t_c = target2base for THIS robot (current dashboard).
+            Let T_t_o = target2base for the OTHER robot.
+            The chessboard target frame is the shared physical reference, so
+            the rigid transform from the other robot's base to this robot's
+            base is
+                T_o_c = T_t_c @ inv(T_t_o)
+            and the extrinsic used to render the other base in this camera is
+                other_base2cam = base2cam @ T_o_c
+            where ``base2cam`` is the current dashboard's live extrinsic
+            from ``_get_camera_calib_params``.
+
+        Discovery: every namespace on the status server that has a
+        ``target2base_matrix`` and is NOT this dashboard's namespace is
+        treated as an "other robot".
+        """
+        try:
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+
+            # This dashboard's target2base (loaded at startup / after calibration).
+            target2base_current = self.target2base_matrix
+            if target2base_current is None:
+                return frame
+            target2base_current = np.asarray(target2base_current, dtype=np.float64)
+            if target2base_current.shape != (4, 4):
+                return frame
+
+            # Enumerate every namespace on the status server.
+            try:
+                all_status = self.status_client.list_status()
+            except Exception as e:
+                self.get_logger().debug(f"list_status failed: {e}")
+                return frame
+
+            base2cam = params['extrinsic']
+            for ns, keys in all_status.items():
+                if ns == self.robot_namespace:
+                    continue
+                if 'target2base_matrix' not in keys:
+                    continue
+                try:
+                    target2base_other = self.status_client.get_status(
+                        ns, 'target2base_matrix'
+                    )
+                except Exception as e:
+                    self.get_logger().debug(
+                        f"Failed to get target2base_matrix for '{ns}': {e}"
+                    )
+                    continue
+                if target2base_other is None:
+                    continue
+                target2base_other = np.asarray(target2base_other, dtype=np.float64)
+                if target2base_other.shape != (4, 4):
+                    continue
+
+                try:
+                    other_to_current = target2base_current @ np.linalg.inv(
+                        target2base_other
+                    )
+                except np.linalg.LinAlgError:
+                    continue
+                other_base2cam = base2cam @ other_to_current
+
+                frame = draw_utils.draw_model_on_image(
+                    frame,
+                    intrinsic=params['intrinsic'],
+                    extrinsic=other_base2cam,
+                    model=self.ur_base_model,
+                    distortion=params['distortion'],
+                    thickness=2,
+                )
+
+        except Exception as e:
+            self.get_logger().error(f"Error projecting other UR base: {e}")
+
         return frame
     
     def project_rack_to_image(self, frame):
@@ -4584,6 +4832,10 @@ class UR15WebNode(Node):
                         # Draw UR15 base if enabled
                         if self.validation_active:
                             frame = self.project_base_origin_to_image(frame)
+
+                        # Draw OTHER robots' UR bases if enabled
+                        if self.draw_other_ur_base_enabled:
+                            frame = self.project_other_ur_base_to_image(frame)
                         
                         # Draw GB200 rack if enabled
                         if self.draw_rack_enabled:
@@ -4771,7 +5023,7 @@ def main(args=None):
     node = None
     
     try:
-        node = UR15WebNode()
+        node = URWebNode()
         rclpy.spin(node)
         
     except KeyboardInterrupt:

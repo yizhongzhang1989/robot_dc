@@ -63,7 +63,7 @@ After the manual capture, use the **Auto Capture** function to re-visit the same
 
 The auto capture process:
 1. The robot moves back to each previously recorded pose
-2. Waits for stabilization
+2. Waits for the arm to stabilize — `stabilize_delay` seconds (default `1.0`), configurable per robot in [`config/robot_config.yaml`](../config/robot_config.yaml) under `<robot>.web.stabilize_delay`. Raise it for heavier tools or visibly oscillating tips.
 3. Captures the image automatically
 4. Proceeds to the next pose
 

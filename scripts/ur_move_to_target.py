@@ -35,7 +35,7 @@ except ImportError:
 ur_robot_arm_dir = os.path.join(project_root, 'colcon_ws', 'src', 'ur_robot_arm')
 sys.path.insert(0, ur_robot_arm_dir)
 
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 
 
 class URMoveToTarget:
@@ -132,7 +132,7 @@ class URMoveToTarget:
         """
         try:
             print(f"Initializing UR robot at {self.robot_ip}:{self.robot_port}...")
-            self.robot = UR15Robot(ip=self.robot_ip, port=self.robot_port)
+            self.robot = URRobot(ip=self.robot_ip, port=self.robot_port)
             
             # Attempt to connect
             res = self.robot.open()

@@ -14,9 +14,9 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import ReentrantCallbackGroup
 
 
-class UR15RobotArmNode(Node):
+class URRobotArmNode(Node):
     def __init__(self):
-        super().__init__('ur15_robot_arm_node')
+        super().__init__('ur_robot_arm_node')
         
         self.get_logger().info('UR15 Robot Arm Node initializing...')
         
@@ -132,7 +132,7 @@ def main(args=None):
     rclpy.init(args=args)
     
     try:
-        ur15_node = UR15RobotArmNode()
+        ur15_node = URRobotArmNode()
         
         # Use multi-threaded executor to handle multiple callbacks concurrently
         executor = MultiThreadedExecutor()

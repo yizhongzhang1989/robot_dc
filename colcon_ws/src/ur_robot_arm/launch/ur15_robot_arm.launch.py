@@ -53,7 +53,7 @@ def generate_launch_description():
     # Create UR15 robot arm node
     ur15_robot_arm_node = Node(
         package='ur_robot_arm',
-        executable='ur15_robot_arm_node',
+        executable='ur_robot_arm_node',
         name='ur15_robot_arm_node',
         output='screen',
         parameters=[{

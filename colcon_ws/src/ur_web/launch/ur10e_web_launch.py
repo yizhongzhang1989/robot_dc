@@ -2,14 +2,10 @@
 """
 UR10e Web Launch File
 
-Starts a second ``ur15_web_node`` instance (the executable name is unchanged
-to avoid touching node entry points) configured from ``ur10e.web`` /
-``ur10e.robot`` in robot_config.yaml. Uses a distinct node name
-(``ur10e_web_node``) and disjoint web port so it coexists with the ur15 web.
-
-NOTE: the underlying node still declares its parameters as ``ur15_ip`` /
-``ur15_port`` (these describe "the UR's IP and control port"); we feed them
-the ur10e values here. Renaming the node parameters is a future cleanup.
+Starts a second ``ur_web_node`` instance (the executable shipped by the
+``ur_web`` package) configured from ``ur10e.web`` / ``ur10e.robot`` in
+robot_config.yaml. Uses a distinct ROS node name (``ur10e_web_node``)
+and disjoint web port so it coexists with the ur15 web.
 """
 
 from launch import LaunchDescription
@@ -107,6 +103,14 @@ def generate_launch_description():
         description='JSON file containing chessboard pattern configuration'
     )
 
+    stabilize_delay_arg = DeclareLaunchArgument(
+        'stabilize_delay',
+        default_value=str(ur10e_config.get('web.stabilize_delay', 1.0)),
+        description='Seconds to wait after each movej during auto-capture '
+                    'before recording the image/pose. Forwarded to '
+                    'scripts/ur_auto_collect_data.py via --stabilize-delay.'
+    )
+
     # Shared service ports (read from services.* — same singleton instances as ur15)
     all_config = config.get_all()
     services_config = all_config.get('services', {})
@@ -133,29 +137,30 @@ def generate_launch_description():
     calib_data_dir = LaunchConfiguration('calib_data_dir')
     calib_result_dir = LaunchConfiguration('calib_result_dir')
     chessboard_config = LaunchConfiguration('chessboard_config')
+    stabilize_delay = LaunchConfiguration('stabilize_delay')
     image_labeling_port_cfg = LaunchConfiguration('image_labeling_port')
     workflow_config_center_port_cfg = LaunchConfiguration('workflow_config_center_port')
     robot_namespace = LaunchConfiguration('robot_namespace')
     robot_type = LaunchConfiguration('robot_type')
     joint_prefix = LaunchConfiguration('joint_prefix')
 
-    # Distinct node name so this instance does not collide with ur15_web_node.
-    # NOTE: parameter names below (`ur15_ip`, `ur15_port`) match what the node
-    # code declares; we are feeding them the ur10e values intentionally.
+    # Distinct ROS node name so this instance does not collide with the
+    # ur15 web instance (both run the same ``ur_web_node`` executable).
     ur10e_web_node = Node(
         package='ur_web',
-        executable='ur15_web_node',
+        executable='ur_web_node',
         name='ur10e_web_node',
         output='screen',
         parameters=[{
             'camera_topic': camera_topic,
             'web_port': web_port,
-            'ur15_ip': ur_ip,
-            'ur15_port': ur_port,
+            'ur_ip': ur_ip,
+            'ur_port': ur_port,
             'dataset_dir': dataset_dir,
             'calib_data_dir': calib_data_dir,
             'calib_result_dir': calib_result_dir,
             'chessboard_config': chessboard_config,
+            'stabilize_delay': stabilize_delay,
             'image_labeling_port': image_labeling_port_cfg,
             'workflow_config_center_port': workflow_config_center_port_cfg,
             'robot_namespace': robot_namespace,
@@ -183,6 +188,7 @@ def generate_launch_description():
         calib_data_dir_arg,
         calib_result_dir_arg,
         chessboard_config_arg,
+        stabilize_delay_arg,
         image_labeling_port_arg,
         workflow_config_center_port_arg,
         robot_namespace_arg,

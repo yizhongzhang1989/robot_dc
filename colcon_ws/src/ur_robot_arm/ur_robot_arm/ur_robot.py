@@ -26,7 +26,7 @@ def matrix_to_rotvec(rotation_matrix):
     return R.from_matrix(rotation_matrix).as_rotvec()
 
 
-class UR15Robot:
+class URRobot:
     def __init__(self, ip, port):
         """Initialize UR15 connection parameters"""
         self.ip = ip

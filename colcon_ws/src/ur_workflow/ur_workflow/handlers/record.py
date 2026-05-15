@@ -13,10 +13,10 @@ from scipy.spatial.transform import Rotation as R
 from ur_workflow.base import OperationHandler
 
 try:
-    from ur_robot_arm.ur15 import UR15Robot
+    from ur_robot_arm.ur_robot import URRobot
 except ImportError:
-    print("Warning: UR15Robot not available")
-    UR15Robot = None
+    print("Warning: URRobot not available")
+    URRobot = None
 
 
 class RecordDataHandler(OperationHandler):
@@ -34,8 +34,8 @@ class RecordDataHandler(OperationHandler):
             - pose_name: Name to identify this pose data in context (e.g., "1.json")
         """
         try:
-            if UR15Robot is None:
-                return {'status': 'error', 'error': 'UR15Robot not available'}
+            if URRobot is None:
+                return {'status': 'error', 'error': 'URRobot not available'}
             
             # Get robot from context
             robot = context.get('robot')

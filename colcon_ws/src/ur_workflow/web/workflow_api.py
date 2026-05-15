@@ -33,13 +33,13 @@ except Exception as e:
 
 # Robot client registry — populated at startup from --robot CLI args (one
 # entry per UR robot in robot_config.yaml). Each entry is a dict with
-# 'ip' and 'port' string values; the actual UR15Robot socket is lazy-opened
+# 'ip' and 'port' string values; the actual URRobot socket is lazy-opened
 # on first /api/<robot_name>/actual_joint_positions request and cached
 # under 'robot'. This service is shared by every dashboard, so we must
 # never assume only one robot is connected — historically the editor read
 # joints from a hard-coded ur15 connection, which silently fed ur15 joints
 # into ur10e workflows.
-robot_clients = {}  # robot_name → {'ip': str, 'port': int, 'robot': UR15Robot|None}
+robot_clients = {}  # robot_name → {'ip': str, 'port': int, 'robot': URRobot|None}
 # Legacy alias for the previous single-robot endpoint, set to whichever
 # entry was configured with --robot ur15 (or the first one if no ur15).
 _legacy_default_robot_name = None
@@ -362,7 +362,7 @@ def get_context_defaults(robot_name):
 
 
 def _get_or_open_robot(robot_name: str):
-    """Return a connected UR15Robot for ``robot_name`` or (None, error_msg)."""
+    """Return a connected URRobot for ``robot_name`` or (None, error_msg)."""
     entry = robot_clients.get(robot_name)
     if entry is None:
         return None, f"Robot '{robot_name}' is not configured on this service"
@@ -372,10 +372,10 @@ def _get_or_open_robot(robot_name: str):
         # Lazy import — keeps the service importable on hosts without
         # ur_robot_arm installed (e.g. during unit testing).
         try:
-            from ur_robot_arm.ur15 import UR15Robot
+            from ur_robot_arm.ur_robot import URRobot
         except Exception as exc:  # noqa: BLE001
-            return None, f"UR15Robot module unavailable: {exc}"
-        robot = UR15Robot(entry['ip'], entry['port'])
+            return None, f"URRobot module unavailable: {exc}"
+        robot = URRobot(entry['ip'], entry['port'])
         entry['robot'] = robot
 
     if not getattr(robot, 'connected', False):
