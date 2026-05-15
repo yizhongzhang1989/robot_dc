@@ -711,12 +711,17 @@
                             </label>
                         </div>
                         
-                        <!-- Third row: 1 column (centered) -->
-                        <div style="display: flex; justify-content: center;">
+                        <!-- Third row: 2 columns -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
                             <!-- Draw GB200 Server -->
-                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(245, 101, 101, 0.1); border: 1px solid rgba(245, 101, 101, 0.3); border-radius: 0.5rem; cursor: pointer; width: 48%;">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(245, 101, 101, 0.1); border: 1px solid rgba(245, 101, 101, 0.3); border-radius: 0.5rem; cursor: pointer;">
                                 <input type="checkbox" id="drawServerCheckbox" onchange="toggleDrawServer()" style="width: 18px; height: 18px; cursor: pointer;">
                                 <span style="font-weight: 600;">🖥️ Draw GB200 Server</span>
+                            </label>
+                            <!-- Draw Other UR Base -->
+                            <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" id="drawOtherUrBaseCheckbox" onchange="toggleDrawOtherUrBase()" style="width: 18px; height: 18px; cursor: pointer;">
+                                <span style="font-weight: 600;" title="Draw the UR base of every OTHER robot found on the status server (via shared chessboard).">🤖 Draw Other UR Base</span>
                             </label>
                         </div>
                         

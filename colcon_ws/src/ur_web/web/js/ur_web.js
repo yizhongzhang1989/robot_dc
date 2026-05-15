@@ -2505,6 +2505,41 @@ async function toggleDrawRack() {
     }
 }
 
+async function toggleDrawOtherUrBase() {
+    const checkbox = document.getElementById('drawOtherUrBaseCheckbox');
+    checkbox.disabled = true;
+
+    try {
+        const response = await fetch('/toggle_draw_other_ur_base', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enable: checkbox.checked })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            checkbox.checked = data.enabled;
+
+            if (data.enabled) {
+                logToWeb('Draw Other UR Base enabled', 'success');
+            } else {
+                logToWeb('Draw Other UR Base disabled', 'info');
+            }
+        } else {
+            logToWeb(`Failed to toggle Other UR Base drawing: ${data.message}`, 'error');
+            checkbox.checked = !checkbox.checked;
+        }
+    } catch (error) {
+        logToWeb(`Error toggling Other UR Base drawing: ${error.message}`, 'error');
+        checkbox.checked = !checkbox.checked;
+    } finally {
+        checkbox.disabled = false;
+    }
+}
+
 async function toggleDrawServer() {
     const checkbox = document.getElementById('drawServerCheckbox');
     checkbox.disabled = true;

@@ -260,6 +260,7 @@ class URWebNode(Node):
         self.draw_rack_enabled = False
         self.draw_server_enabled = False
         self.draw_keypoints_enabled = False
+        self.draw_other_ur_base_enabled = False
         self.ur_lock = threading.Lock()
         self._init_ur15_connection()
         
@@ -2627,7 +2628,41 @@ class URWebNode(Node):
                     'message': str(e),
                     'enabled': False
                 })
-        
+
+        @self.app.route('/toggle_draw_other_ur_base', methods=['POST'])
+        def toggle_draw_other_ur_base():
+            """Toggle drawing of the OTHER robot's UR base into this view."""
+            from flask import jsonify, request
+
+            try:
+                data = request.get_json()
+                enable = data.get('enable', False)
+
+                self.draw_other_ur_base_enabled = enable
+
+                if enable:
+                    self.get_logger().info("Other UR base drawing enabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Other UR base drawing enabled',
+                        'enabled': True
+                    })
+                else:
+                    self.get_logger().info("Other UR base drawing disabled")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Other UR base drawing disabled',
+                        'enabled': False
+                    })
+
+            except Exception as e:
+                self.get_logger().error(f"Error toggling other UR base drawing: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': str(e),
+                    'enabled': False
+                })
+
         @self.app.route('/take_screenshot', methods=['POST'])
         def take_screenshot():
             """Take a screenshot of current camera feed and save robot pose."""
@@ -4506,6 +4541,88 @@ class URWebNode(Node):
             self.get_logger().error(f"Error projecting curves to image: {e}")
         
         return frame
+
+    def project_other_ur_base_to_image(self, frame):
+        """Project every OTHER robot's UR base into this camera view.
+
+        Math:
+            Let T_t_c = target2base for THIS robot (current dashboard).
+            Let T_t_o = target2base for the OTHER robot.
+            The chessboard target frame is the shared physical reference, so
+            the rigid transform from the other robot's base to this robot's
+            base is
+                T_o_c = T_t_c @ inv(T_t_o)
+            and the extrinsic used to render the other base in this camera is
+                other_base2cam = base2cam @ T_o_c
+            where ``base2cam`` is the current dashboard's live extrinsic
+            from ``_get_camera_calib_params``.
+
+        Discovery: every namespace on the status server that has a
+        ``target2base_matrix`` and is NOT this dashboard's namespace is
+        treated as an "other robot".
+        """
+        try:
+            params = self._get_camera_calib_params()
+            if params is None:
+                return frame
+
+            # This dashboard's target2base (loaded at startup / after calibration).
+            target2base_current = self.target2base_matrix
+            if target2base_current is None:
+                return frame
+            target2base_current = np.asarray(target2base_current, dtype=np.float64)
+            if target2base_current.shape != (4, 4):
+                return frame
+
+            # Enumerate every namespace on the status server.
+            try:
+                all_status = self.status_client.list_status()
+            except Exception as e:
+                self.get_logger().debug(f"list_status failed: {e}")
+                return frame
+
+            base2cam = params['extrinsic']
+            for ns, keys in all_status.items():
+                if ns == self.robot_namespace:
+                    continue
+                if 'target2base_matrix' not in keys:
+                    continue
+                try:
+                    target2base_other = self.status_client.get_status(
+                        ns, 'target2base_matrix'
+                    )
+                except Exception as e:
+                    self.get_logger().debug(
+                        f"Failed to get target2base_matrix for '{ns}': {e}"
+                    )
+                    continue
+                if target2base_other is None:
+                    continue
+                target2base_other = np.asarray(target2base_other, dtype=np.float64)
+                if target2base_other.shape != (4, 4):
+                    continue
+
+                try:
+                    other_to_current = target2base_current @ np.linalg.inv(
+                        target2base_other
+                    )
+                except np.linalg.LinAlgError:
+                    continue
+                other_base2cam = base2cam @ other_to_current
+
+                frame = draw_utils.draw_model_on_image(
+                    frame,
+                    intrinsic=params['intrinsic'],
+                    extrinsic=other_base2cam,
+                    model=self.ur_base_model,
+                    distortion=params['distortion'],
+                    thickness=2,
+                )
+
+        except Exception as e:
+            self.get_logger().error(f"Error projecting other UR base: {e}")
+
+        return frame
     
     def project_rack_to_image(self, frame):
         """Project GB200 rack to image using draw_curves_on_image."""
@@ -4715,6 +4832,10 @@ class URWebNode(Node):
                         # Draw UR15 base if enabled
                         if self.validation_active:
                             frame = self.project_base_origin_to_image(frame)
+
+                        # Draw OTHER robots' UR bases if enabled
+                        if self.draw_other_ur_base_enabled:
+                            frame = self.project_other_ur_base_to_image(frame)
                         
                         # Draw GB200 rack if enabled
                         if self.draw_rack_enabled:
