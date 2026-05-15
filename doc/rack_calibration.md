@@ -158,6 +158,15 @@ Or an absolute path:
 python3 scripts/ur_rack_calibration.py /abs/path/to/<workflow_file>.json
 ```
 
+Add `--broadcast` to also propagate the freshly calibrated `rack2base_matrix` and `rack_points_3d` from this robot's namespace to every other namespace on the robot_status server that has a `target2base_matrix` — useful in multi-robot setups where every arm shares the same physical chessboard, so a single rack calibration can be re-expressed in every other base frame without re-running Stages 1–3 per arm (math: `rack2base_ns = target2base_ns @ inv(target2base_base) @ rack2base_base`; the same change-of-basis is applied to each row of `rack_points_3d`):
+
+```bash
+python3 scripts/ur_rack_calibration.py \
+    --config localize_rack_at_working_pos.json --broadcast
+```
+
+The same propagation logic is also available standalone in [scripts/ur_broadcase_rack_calibration.py](../scripts/ur_broadcase_rack_calibration.py) (`--base-namespace <ns>`, `--dry-run`, `-n <ns>`) when no fresh calibration is needed.
+
 The script:
 
 1. Spawns `ros2 run ur_workflow run_workflow.py --config <resolved_path>` and streams its output to the terminal.
@@ -180,6 +189,12 @@ result = cal.get_result()                             # dict of result arrays
 
 matrix = result['rack2base_matrix']                   # 4x4 numpy.ndarray (or None)
 points = result['rack_points_3d']                     # 4x3 numpy.ndarray (or None)
+
+# Optional: re-express the freshly calibrated rack pose for every other
+# robot on the robot_status server that has a target2base_matrix. Anchors
+# at cal.namespace; writes both rack2base_matrix and (if available) the
+# rack_points_3d under each target namespace.
+report = cal.broadcast()                              # or broadcast(dry_run=True) to preview
 ```
 
 Or in one line:
@@ -197,6 +212,7 @@ Key members:
 | `run()` → `int` | Spawn `ros2 run ur_workflow run_workflow.py --config <path>`. Returns the exit code. Raises `RuntimeError` if no config set, `FileNotFoundError` if `ros2` is not on PATH. |
 | `get_result()` → `dict` | Read all configured `result_keys` from robot status under `self.namespace` and return them as a dict (values are `numpy.ndarray` or `None` if not stored). Does **not** run the workflow — call this anytime to inspect the last computed result. |
 | `calibrate()` → `Optional[dict]` | Convenience: `run()` followed by `get_result()`. Returns `None` if the workflow exited non-zero. |
+| `broadcast(target_namespaces=None, dry_run=False)` → `dict` | Propagate `rack2base_matrix` and (if present on the base) `rack_points_3d` from `self.namespace` to every other namespace with a `target2base_matrix`. Returns a per-namespace report `{ns: {'status', 'message', 'rack2base_matrix', 'rack_points_3d'}}`. Auto-discovers targets if `target_namespaces` is omitted. Delegates to [`RackCalibrationBroadcaster`](../scripts/ur_broadcase_rack_calibration.py), which is also importable directly when no fresh calibration is needed. |
 | `config` (property) | Currently configured absolute workflow path, or `None`. |
 | `namespace` (property) | Status-redis namespace currently in use (auto-detected from the workflow unless overridden). |
 | `last_returncode` (property) | Exit code of the most recent `run()`, or `None`. |
