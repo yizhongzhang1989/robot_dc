@@ -1014,6 +1014,8 @@ class UR15WebNode(Node):
                 html_content = html_content.replace('{{ data_dir }}', self._simplify_path(self.dataset_dir))
                 html_content = html_content.replace('{{ calibration_data_dir }}', self._simplify_path(self.calibration_data_dir))
                 html_content = html_content.replace('{{ chessboard_config }}', self._simplify_path(self.chessboard_config))
+                # Title aligned with the robot type from config (e.g. "ur15" -> "UR15").
+                html_content = html_content.replace('{{ robot_type }}', (self.robot_type or 'UR').upper())
                 
                 return html_content
             except Exception as e:
