@@ -1556,7 +1556,111 @@ class URWebNode(Node):
             except Exception as exc:
                 self.get_logger().error(f"Error deleting TCP pose: {exc}")
                 return jsonify({'success': False, 'message': str(exc)}), 500
-        
+
+        @self.app.route('/broadcast_rack_calibration', methods=['POST'])
+        def broadcast_rack_calibration():
+            """Run scripts/ur_broadcase_rack_calibration.py for this robot.
+
+            Propagates the freshly calibrated ``rack2base_matrix`` (and
+            ``rack_points_3d`` when present) from this robot's namespace
+            to every other namespace on the robot_status server that has
+            a ``target2base_matrix``. See doc/rack_calibration.md §4.1.
+            """
+            from flask import request, jsonify
+            import subprocess
+            import threading
+
+            data = request.get_json(silent=True) or {}
+            robot = _resolve_tcp_robot(data.get('robot'))
+            if robot is None:
+                return jsonify({'success': False, 'message': 'Invalid robot name'}), 400
+
+            scripts_dir = get_scripts_directory()
+            if scripts_dir is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'Could not find scripts directory',
+                }), 500
+
+            script_path = os.path.join(scripts_dir, 'ur_broadcase_rack_calibration.py')
+            if not os.path.exists(script_path):
+                return jsonify({
+                    'success': False,
+                    'message': f'Script not found: {script_path}',
+                }), 404
+
+            cmd = ['python3', script_path, '--base-namespace', robot]
+            self.get_logger().info(
+                f"Broadcast rack calibration [{robot}] command: {' '.join(cmd)}"
+            )
+
+            def monitor_process():
+                try:
+                    process = subprocess.Popen(
+                        cmd,
+                        cwd=os.path.dirname(script_path),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    with self.process_lock:
+                        self.child_processes.append(process)
+
+                    self.get_logger().info(
+                        f"Started broadcast script with PID: {process.pid}"
+                    )
+                    stdout, _ = process.communicate()
+                    return_code = process.returncode
+                    self.get_logger().info(
+                        f"Broadcast script finished with return code: {return_code}"
+                    )
+
+                    # The script ends with a single-line summary, e.g.
+                    # "Summary: 1 written, 0 skipped, 0 failed" — surface
+                    # it in the web log so the operator gets a meaningful
+                    # confirmation rather than just an exit code.
+                    summary_line = ''
+                    for line in reversed((stdout or '').splitlines()):
+                        if line.strip().lower().startswith('summary:'):
+                            summary_line = line.strip()
+                            break
+                    if not summary_line:
+                        tail = [l for l in (stdout or '').splitlines() if l.strip()]
+                        summary_line = tail[-1] if tail else ''
+
+                    if return_code == 0:
+                        self.push_web_log(
+                            f"✅ Rack broadcast from '{robot}' done"
+                            + (f" — {summary_line}" if summary_line else ''),
+                            'success',
+                        )
+                    else:
+                        self.push_web_log(
+                            f"❌ Rack broadcast from '{robot}' failed "
+                            f"(rc={return_code})"
+                            + (f": {summary_line}" if summary_line else ''),
+                            'error',
+                        )
+                        self.get_logger().error(
+                            f"Broadcast stdout:\n{stdout}"
+                        )
+                except Exception as exc:
+                    self.get_logger().error(
+                        f"Error in broadcast monitor thread: {exc}"
+                    )
+                    self.push_web_log(
+                        f"❌ Rack broadcast error: {str(exc)}", 'error'
+                    )
+
+            threading.Thread(target=monitor_process, daemon=True).start()
+            self.push_web_log(
+                f"📡 Broadcasting rack calibration from '{robot}'...", 'info'
+            )
+            return jsonify({
+                'success': True,
+                'message': f"Broadcast started for '{robot}'",
+            })
+
         @self.app.route('/workflow_config_center_url', methods=['GET'])
         def workflow_config_center_url():
             """Return the URL for workflow configuration center."""

@@ -651,6 +651,47 @@ function deleteTcpPose() {
         });
 }
 
+// Propagate this robot's freshly calibrated rack pose to every other
+// namespace on the robot_status server that has a target2base_matrix.
+// Backed by scripts/ur_broadcase_rack_calibration.py — see
+// doc/rack_calibration.md §4.1 for the math and CLI equivalent.
+function broadcastRackCalibration() {
+    const btn = document.getElementById('broadcastRackCalibrationBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
+    logToWeb(`📡 Broadcasting rack calibration from '${currentRobotNamespace}'...`, 'info');
+
+    fetch('/broadcast_rack_calibration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ robot: currentRobotNamespace })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                logToWeb(`✅ ${data.message}`, 'success');
+            } else {
+                logToWeb(`❌ Error: ${data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            logToWeb(`❌ Network error: ${error.message}`, 'error');
+        })
+        .finally(() => {
+            // Re-enable the button after a short grace period so the
+            // background subprocess has time to push its completion log.
+            setTimeout(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }, 3000);
+        });
+}
+
 function labelLastCapturedImage() {
     logToWeb('Preparing ref_img_1 for labeling...', 'info');
     
