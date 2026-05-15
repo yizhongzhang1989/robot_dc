@@ -106,6 +106,14 @@ def generate_launch_description():
         default_value=chessboard_config_path,
         description='JSON file containing chessboard pattern configuration'
     )
+
+    stabilize_delay_arg = DeclareLaunchArgument(
+        'stabilize_delay',
+        default_value=str(ur15_config.get('web.stabilize_delay', 1.0)),
+        description='Seconds to wait after each movej during auto-capture '
+                    'before recording the image/pose. Forwarded to '
+                    'scripts/ur_auto_collect_data.py via --stabilize-delay.'
+    )
     
     # Get service ports from config
     all_config = config.get_all()
@@ -134,6 +142,7 @@ def generate_launch_description():
     calib_data_dir = LaunchConfiguration('calib_data_dir')
     calib_result_dir = LaunchConfiguration('calib_result_dir')
     chessboard_config = LaunchConfiguration('chessboard_config')
+    stabilize_delay = LaunchConfiguration('stabilize_delay')
     image_labeling_port = LaunchConfiguration('image_labeling_port')
     workflow_config_center_port = LaunchConfiguration('workflow_config_center_port')
     robot_namespace = LaunchConfiguration('robot_namespace')
@@ -158,6 +167,7 @@ def generate_launch_description():
             'calib_data_dir': calib_data_dir,
             'calib_result_dir': calib_result_dir,
             'chessboard_config': chessboard_config,
+            'stabilize_delay': stabilize_delay,
             'image_labeling_port': image_labeling_port,
             'workflow_config_center_port': workflow_config_center_port,
             'robot_namespace': robot_namespace,
@@ -182,6 +192,7 @@ def generate_launch_description():
         calib_data_dir_arg,
         calib_result_dir_arg,
         chessboard_config_arg,
+        stabilize_delay_arg,
         image_labeling_port_arg,
         workflow_config_center_port_arg,
         robot_namespace_arg,

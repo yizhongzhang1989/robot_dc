@@ -108,6 +108,11 @@ ur15:
     dataset_path: "dataset"
     calibration_data_path: "temp/ur15_cam_calibration_data"
     calibration_result_path: "temp/ur15_cam_calibration_result"
+    # Seconds to wait after each movej during auto-capture for the arm to
+    # physically settle before recording the image/pose. Forwarded to
+    # scripts/ur_auto_collect_data.py via --stabilize-delay when the
+    # Calibration Panel's auto-capture button is pressed.
+    stabilize_delay: 1.0
     chessboard_config_path: "temp/ur15_cam_calibration_data/chessboard_config.json"
     rack_positions: "temp/ur15_rack_positions.json"
   
@@ -183,6 +188,7 @@ ur10e:
     dataset_path: "dataset_ur10e"
     calibration_data_path: "temp/ur10e_cam_calibration_data"
     calibration_result_path: "temp/ur10e_cam_calibration_result"
+    stabilize_delay: 1.0
     chessboard_config_path: "temp/ur10e_cam_calibration_data/chessboard_config.json"
     rack_positions: "temp/ur10e_rack_positions.json"
 

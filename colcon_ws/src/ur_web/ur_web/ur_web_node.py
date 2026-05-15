@@ -82,6 +82,12 @@ class URWebNode(Node):
         self.declare_parameter('chessboard_config', '/tmp/ur15_cam_calibration_data/chessboard_config.json')
         self.declare_parameter('image_labeling_port', 8007)
         self.declare_parameter('workflow_config_center_port', 8008)
+        # Seconds to wait after each movej during auto-capture for the arm to
+        # physically settle before recording the image/pose. Forwarded to
+        # scripts/ur_auto_collect_data.py via --stabilize-delay when the
+        # Calibration Panel's auto-capture button is pressed. Sourced from
+        # <robot>.web.stabilize_delay in robot_config.yaml.
+        self.declare_parameter('stabilize_delay', 1.0)
         # Namespace used when reading/writing to robot_status_redis. Defaults to
         # 'ur15' so existing callers/configs keep working unchanged; for ur10e
         # the launch file passes 'ur10e' so the two robots stay isolated.
@@ -109,6 +115,7 @@ class URWebNode(Node):
         self.chessboard_config = self.get_parameter('chessboard_config').value
         self.image_labeling_port = self.get_parameter('image_labeling_port').value
         self.workflow_config_center_port = self.get_parameter('workflow_config_center_port').value
+        self.stabilize_delay = float(self.get_parameter('stabilize_delay').value)
         self.robot_namespace = self.get_parameter('robot_namespace').value
         # robot_type defaults to whatever robot_namespace is (so a launch that
         # only sets robot_namespace='ur10e' still publishes a sensible type).
@@ -2839,6 +2846,11 @@ class URWebNode(Node):
                 # but record images from the ur15 camera.
                 if hasattr(self, 'camera_topic') and self.camera_topic:
                     cmd.extend(['--camera-topic', self.camera_topic])
+
+                # Per-arm stabilize delay (seconds) sourced from
+                # <robot>.web.stabilize_delay in robot_config.yaml.
+                if hasattr(self, 'stabilize_delay') and self.stabilize_delay is not None:
+                    cmd.extend(['--stabilize-delay', str(self.stabilize_delay)])
                 
                 self.get_logger().info(f"Auto collect command: {' '.join(cmd)}")
                 self.get_logger().info(f"Robot IP: {self.ur_ip if hasattr(self, 'ur_ip') else 'default'}")

@@ -72,7 +72,16 @@ def parse_arguments():
         default='../temp/ur15_cam_calibration_data',
         help='Directory to save collected data'
     )
-    
+
+    parser.add_argument(
+        '--stabilize-delay',
+        type=float,
+        default=1.0,
+        help='Seconds to wait after each movej for the arm to physically '
+             'settle before recording the image/pose (default: 1.0). '
+             'Increase when running with a heavier tool or softer payload.'
+    )
+
     return parser.parse_args()
 
 
@@ -80,7 +89,8 @@ class URAutoCollectData(Node):
     def __init__(self, robot_ip="192.168.1.15", 
                  collect_positions_file=None,
                  data_save_dir="../temp/ur15_cam_calibration_data",
-                 camera_topic="/ur15_camera/image_raw"):
+                 camera_topic="/ur15_camera/image_raw",
+                 stabilize_delay=1.0):
         super().__init__('ur_auto_collect_data')
         
         # UR Robot connection
@@ -88,6 +98,9 @@ class URAutoCollectData(Node):
         self.robot_port = 30002  # URScript primary port (same for UR15/UR10e)
         self.ur_robot = None
         self.camera_topic = camera_topic
+        # How long to wait after movej for the arm to physically settle.
+        # Exposed as a parameter so the dashboard / config can tune it.
+        self.stabilize_delay = float(stabilize_delay)
         
         # File paths - handle relative paths relative to script directory
         try:
@@ -369,8 +382,10 @@ class URAutoCollectData(Node):
                     continue
                 
                 # Wait for robot to stabilize
-                self.get_logger().info('Waiting for robot to stabilize...')
-                time.sleep(1.0)
+                self.get_logger().info(
+                    f'Waiting {self.stabilize_delay:.2f}s for robot to stabilize...'
+                )
+                time.sleep(self.stabilize_delay)
                 
                 # Save pose and image
                 if self.save_pose_and_image(idx, joint_angles):
@@ -407,7 +422,8 @@ def main():
             robot_ip=args.robot_ip,
             collect_positions_file=args.positions_file,
             data_save_dir=args.data_dir,
-            camera_topic=args.camera_topic
+            camera_topic=args.camera_topic,
+            stabilize_delay=args.stabilize_delay,
         )
         
         # Create executor for multithreaded spinning
