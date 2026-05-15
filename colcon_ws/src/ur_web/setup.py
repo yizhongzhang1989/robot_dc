@@ -26,7 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'ur15_web_node = ur_web.ur15_web_node:main',
+            'ur_web_node = ur_web.ur_web_node:main',
         ],
     },
 )

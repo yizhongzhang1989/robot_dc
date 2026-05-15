@@ -2,7 +2,7 @@ import os
 import json
 import numpy as np
 import requests
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 import time
 import socket
 import argparse

@@ -18,7 +18,7 @@ from flask import Flask, render_template_string, Response
 
 # Add ur_robot_arm to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../colcon_ws/src/ur_robot_arm'))
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 
 
 def find_available_port(start_port=8030, max_attempts=10):
@@ -144,7 +144,7 @@ class CameraViewerNode(Node):
             ur15_ip = "192.168.1.15"
             ur15_port = 30002
             
-            self.ur15_robot = UR15Robot(ur15_ip, ur15_port)
+            self.ur15_robot = URRobot(ur15_ip, ur15_port)
             result = self.ur15_robot.open()
             
             if result == 0:

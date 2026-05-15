@@ -13,7 +13,7 @@ Values are serialized using pickle, which supports:
 - Any picklable Python object
 
 Usage:
-    from robot_status.client_utils import RobotStatusClient
+    from robot_status_redis.client_utils import RobotStatusClient
     import numpy as np
     
     # Create client (no ROS2 node required)
@@ -46,7 +46,7 @@ from typing import Optional, Any, Dict
 try:
     from .redis_backend import get_redis_backend, is_redis_available
 except ImportError:
-    from robot_status.redis_backend import get_redis_backend, is_redis_available
+    from robot_status_redis.redis_backend import get_redis_backend, is_redis_available
 
 
 class RobotStatusClient:

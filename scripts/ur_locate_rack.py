@@ -19,7 +19,7 @@ from rclpy.node import Node
 # Add ThirdParty robot_vision to path for Web API client
 sys.path.append(os.path.join(os.path.dirname(__file__), 'ThirdParty', 'robot_vision'))
 from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_params_from_json
-from robot_status.client_utils import RobotStatusClient
+from robot_status_redis.client_utils import RobotStatusClient
 
 # Import URCapture base class
 from ur_capture import URCapture

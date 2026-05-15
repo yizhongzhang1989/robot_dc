@@ -18,14 +18,14 @@ except ImportError:
 ur15_path = os.path.join(repo_root, 'colcon_ws/src/ur_robot_arm/ur_robot_arm')
 sys.path.append(ur15_path)
 
-from ur15 import UR15Robot
+from ur15 import URRobot
 import socket
 import time
 
 
 def main():
     # Robot connection
-    robot = UR15Robot("192.168.1.15", 30002)
+    robot = URRobot("192.168.1.15", 30002)
     
     if robot.open() != 0:
         print("Failed to connect to robot")

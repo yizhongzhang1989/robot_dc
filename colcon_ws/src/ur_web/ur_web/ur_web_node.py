@@ -59,17 +59,17 @@ try:
     )
     if os.path.exists(ur15_pkg_path):
         sys.path.insert(0, ur15_pkg_path)
-    from ur_robot_arm.ur15 import UR15Robot
+    from ur_robot_arm.ur_robot import URRobot
 except Exception as e:
-    print(f"Warning: Could not import UR15Robot: {e}")
-    UR15Robot = None
+    print(f"Warning: Could not import URRobot: {e}")
+    URRobot = None
 
 
-class UR15WebNode(Node):
+class URWebNode(Node):
     """ROS2 node for UR15 web interface with camera calibration validation."""
     
     def __init__(self):
-        super().__init__('ur15_web_node')
+        super().__init__('ur_web_node')
         
         # Declare parameters
         self.declare_parameter('camera_topic', '/ur15_camera/image_raw')
@@ -592,12 +592,12 @@ class UR15WebNode(Node):
     
     def _init_ur15_connection(self):
         """Initialize connection to UR15 robot for freedrive control."""
-        if UR15Robot is None:
-            self.get_logger().warning("UR15Robot class not available, freedrive control disabled")
+        if URRobot is None:
+            self.get_logger().warning("URRobot class not available, freedrive control disabled")
             return
             
         try:
-            self.ur15_robot = UR15Robot(self.ur15_ip, self.ur15_port)
+            self.ur15_robot = URRobot(self.ur15_ip, self.ur15_port)
             result = self.ur15_robot.open()
             
             if result == 0:
@@ -1070,7 +1070,7 @@ class UR15WebNode(Node):
                 has_intrinsic = self.camera_matrix is not None and self.distortion_coefficients is not None
                 has_extrinsic = self.cam2end_matrix is not None and self.target2base_matrix is not None
             
-            # Read robot data using UR15Robot (more reliable than 30003 port)
+            # Read robot data using URRobot (more reliable than 30003 port)
             joint_positions = []
             tcp_pose = None
             
@@ -4322,7 +4322,7 @@ class UR15WebNode(Node):
                 distortion_coefficients = self.distortion_coefficients.copy()
                 cam2end_matrix = self.cam2end_matrix.copy()
             
-            # Get current TCP pose using UR15Robot (more reliable)
+            # Get current TCP pose using URRobot (more reliable)
             tcp_pose_raw = None
             with self.ur15_lock:
                 if self.ur15_robot is not None:
@@ -4786,7 +4786,7 @@ def main(args=None):
     node = None
     
     try:
-        node = UR15WebNode()
+        node = URWebNode()
         rclpy.spin(node)
         
     except KeyboardInterrupt:

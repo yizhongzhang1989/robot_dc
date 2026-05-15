@@ -5,7 +5,7 @@ sensor_msgs/JointState at a configurable rate.
 
 This is the "no ur_robot_driver / no ros2_control" path to RViz visualization.
 Use it whenever you want to *see* the robot move in RViz but you control the
-arm via direct URScript (e.g. ur_robot_arm.UR15Robot) rather than ROS
+arm via direct URScript (e.g. ur_robot_arm.URRobot) rather than ROS
 controllers.
 
 The message is published on the *relative* topic ``joint_states`` so the
@@ -29,7 +29,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
 # Re-use the proven URScript client from this repo.
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 
 
 # URScript reports joints in this order; the standard UR URDF uses these names.
@@ -66,7 +66,7 @@ class JointPublisher(Node):
         self.pub = self.create_publisher(JointState, "joint_states", 10)
 
         # ----- URScript socket (lazy reconnect on failure) -----
-        self._robot: UR15Robot | None = None
+        self._robot: URRobot | None = None
         self._robot_lock = threading.Lock()
         self._reconnect_backoff = 0.5  # seconds
 
@@ -86,7 +86,7 @@ class JointPublisher(Node):
             if self._robot is not None:
                 return True
             try:
-                r = UR15Robot(self.robot_ip, self.port)
+                r = URRobot(self.robot_ip, self.port)
                 r.open()
                 self._robot = r
                 self._reconnect_backoff = 0.5

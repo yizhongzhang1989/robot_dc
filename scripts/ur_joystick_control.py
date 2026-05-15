@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation as R
 import json
 import os
 from datetime import datetime
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 from cv_bridge import CvBridge
 import cv2
 
@@ -155,7 +155,7 @@ class JoystickCartesianControl(Node):
         """Connect to UR robot for reading actual pose and joint data"""
         try:
             self.get_logger().info(f'Connecting to UR robot at {self.robot_ip}:{self.robot_port}...')
-            self.ur_robot = UR15Robot(self.robot_ip, self.robot_port)
+            self.ur_robot = URRobot(self.robot_ip, self.robot_port)
             result = self.ur_robot.open()
             if result == 0:
                 self.get_logger().info('Successfully connected to UR robot for data reading')

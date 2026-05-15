@@ -103,7 +103,7 @@ Store a status value for any namespace.key combination. **Triggers auto-save aft
 
 **Command:**
 ```bash
-ros2 service call /robot_status/set robot_status/srv/SetStatus \
+ros2 service call /robot_status/set robot_status_redis/srv/SetStatus \
   "{ns: 'robot1', key: 'pose', value: '{\"x\":1.5,\"y\":2.3,\"z\":0.5}'}"
 ```
 
@@ -119,19 +119,19 @@ ros2 service call /robot_status/set robot_status/srv/SetStatus \
 **Examples:**
 ```bash
 # Set robot pose (JSON)
-ros2 service call /robot_status/set robot_status/srv/SetStatus \
+ros2 service call /robot_status/set robot_status_redis/srv/SetStatus \
   "{ns: 'robot1', key: 'pose', value: '{\"x\":1.5,\"y\":2.3,\"z\":0.5}'}"
 
 # Set battery level (plain string)
-ros2 service call /robot_status/set robot_status/srv/SetStatus \
+ros2 service call /robot_status/set robot_status_redis/srv/SetStatus \
   "{ns: 'robot2', key: 'battery', value: '85'}"
 
 # Set shared mission ID
-ros2 service call /robot_status/set robot_status/srv/SetStatus \
+ros2 service call /robot_status/set robot_status_redis/srv/SetStatus \
   "{ns: 'shared', key: 'mission_id', value: 'task_123'}"
 
 # Set robot state
-ros2 service call /robot_status/set robot_status/srv/SetStatus \
+ros2 service call /robot_status/set robot_status_redis/srv/SetStatus \
   "{ns: 'robot1', key: 'state', value: 'IDLE'}"
 ```
 
@@ -143,7 +143,7 @@ Retrieve a specific status value.
 
 **Command:**
 ```bash
-ros2 service call /robot_status/get robot_status/srv/GetStatus \
+ros2 service call /robot_status/get robot_status_redis/srv/GetStatus \
   "{ns: 'robot1', key: 'pose'}"
 ```
 
@@ -159,15 +159,15 @@ ros2 service call /robot_status/get robot_status/srv/GetStatus \
 **Examples:**
 ```bash
 # Get robot1 pose
-ros2 service call /robot_status/get robot_status/srv/GetStatus \
+ros2 service call /robot_status/get robot_status_redis/srv/GetStatus \
   "{ns: 'robot1', key: 'pose'}"
 
 # Get robot2 battery
-ros2 service call /robot_status/get robot_status/srv/GetStatus \
+ros2 service call /robot_status/get robot_status_redis/srv/GetStatus \
   "{ns: 'robot2', key: 'battery'}"
 
 # Get shared mission_id
-ros2 service call /robot_status/get robot_status/srv/GetStatus \
+ros2 service call /robot_status/get robot_status_redis/srv/GetStatus \
   "{ns: 'shared', key: 'mission_id'}"
 ```
 
@@ -180,10 +180,10 @@ List all status or filter by namespace.
 **Command:**
 ```bash
 # List all status
-ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: ''}"
+ros2 service call /robot_status/list robot_status_redis/srv/ListStatus "{ns: ''}"
 
 # List only robot1 status
-ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: 'robot1'}"
+ros2 service call /robot_status/list robot_status_redis/srv/ListStatus "{ns: 'robot1'}"
 ```
 
 **Parameters:**
@@ -198,13 +198,13 @@ ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: 'robot1'}
 **Examples:**
 ```bash
 # List all namespaces and status
-ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: ''}"
+ros2 service call /robot_status/list robot_status_redis/srv/ListStatus "{ns: ''}"
 
 # Filter by robot1 only
-ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: 'robot1'}"
+ros2 service call /robot_status/list robot_status_redis/srv/ListStatus "{ns: 'robot1'}"
 
 # Filter by shared namespace
-ros2 service call /robot_status/list robot_status/srv/ListStatus "{ns: 'shared'}"
+ros2 service call /robot_status/list robot_status_redis/srv/ListStatus "{ns: 'shared'}"
 ```
 
 ### Delete Status
@@ -216,11 +216,11 @@ Remove a specific status key or an entire namespace. **Triggers auto-save after 
 **Command:**
 ```bash
 # Delete specific key
-ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+ros2 service call /robot_status/delete robot_status_redis/srv/DeleteStatus \
   "{ns: 'robot1', key: 'pose'}"
 
 # Delete entire namespace
-ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+ros2 service call /robot_status/delete robot_status_redis/srv/DeleteStatus \
   "{ns: 'robot1', key: ''}"
 ```
 
@@ -235,19 +235,19 @@ ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
 **Examples:**
 ```bash
 # Delete robot1 pose
-ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+ros2 service call /robot_status/delete robot_status_redis/srv/DeleteStatus \
   "{ns: 'robot1', key: 'pose'}"
 
 # Delete robot1 battery
-ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+ros2 service call /robot_status/delete robot_status_redis/srv/DeleteStatus \
   "{ns: 'robot2', key: 'battery'}"
 
 # Delete entire robot1 namespace (all keys)
-ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+ros2 service call /robot_status/delete robot_status_redis/srv/DeleteStatus \
   "{ns: 'robot1', key: ''}"
 
 # Delete entire shared namespace
-ros2 service call /robot_status/delete robot_status/srv/DeleteStatus \
+ros2 service call /robot_status/delete robot_status_redis/srv/DeleteStatus \
   "{ns: 'shared', key: ''}"
 ```
 

@@ -146,7 +146,7 @@ def generate_launch_description():
     # global scope; see ur15_cam_launch.py).
     ur15_web_node = Node(
         package='ur_web',
-        executable='ur15_web_node',
+        executable='ur_web_node',
         name='ur15_web_node',
         output='screen',
         parameters=[{

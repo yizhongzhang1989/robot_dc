@@ -140,12 +140,12 @@ After launch, the following web interfaces are available:
 
 ## 7. Robot Control API
 
-The `UR15Robot` class (`ur_robot_arm.ur15`) provides direct socket-based control:
+The `URRobot` class (`ur_robot_arm.ur_robot`) provides direct socket-based control:
 
 ```python
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 
-robot = UR15Robot()
+robot = URRobot()
 robot.open("192.168.1.15", 30002)
 
 # Joint-space move (6 joint angles in radians)

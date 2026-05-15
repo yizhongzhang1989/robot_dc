@@ -17,10 +17,10 @@ if scripts_dir:
 from ur_workflow.base import OperationHandler
 
 try:
-    from ur_robot_arm.ur15 import UR15Robot
+    from ur_robot_arm.ur_robot import URRobot
 except ImportError:
-    print("Warning: UR15Robot not available")
-    UR15Robot = None
+    print("Warning: URRobot not available")
+    URRobot = None
 
 
 class RobotMoveHandler(OperationHandler):
@@ -86,15 +86,15 @@ class RobotMoveHandler(OperationHandler):
             - wait_time: Time to wait after movement (default: 1.0)
         """
         try:
-            if UR15Robot is None:
-                return {'status': 'error', 'error': 'UR15Robot not available'}
+            if URRobot is None:
+                return {'status': 'error', 'error': 'URRobot not available'}
             
             # Get robot from context or create new instance
             robot = context.get('robot')
             if robot is None:
                 robot_ip, robot_port, source = self._resolve_robot_endpoint(context)
                 print(f"    Connecting to robot at {robot_ip}:{robot_port} (source: {source})")
-                robot = UR15Robot(robot_ip, robot_port)
+                robot = URRobot(robot_ip, robot_port)
                 if robot.open() != 0:
                     return {'status': 'error',
                             'error': f'Failed to connect to robot at {robot_ip}:{robot_port}'}

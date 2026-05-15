@@ -2,10 +2,10 @@
 """
 UR10e Web Launch File
 
-Starts a second ``ur15_web_node`` instance (the executable name is unchanged
-to avoid touching node entry points) configured from ``ur10e.web`` /
-``ur10e.robot`` in robot_config.yaml. Uses a distinct node name
-(``ur10e_web_node``) and disjoint web port so it coexists with the ur15 web.
+Starts a second ``ur_web_node`` instance (the executable shipped by the
+``ur_web`` package) configured from ``ur10e.web`` / ``ur10e.robot`` in
+robot_config.yaml. Uses a distinct ROS node name (``ur10e_web_node``)
+and disjoint web port so it coexists with the ur15 web.
 
 NOTE: the underlying node still declares its parameters as ``ur15_ip`` /
 ``ur15_port`` (these describe "the UR's IP and control port"); we feed them
@@ -139,12 +139,13 @@ def generate_launch_description():
     robot_type = LaunchConfiguration('robot_type')
     joint_prefix = LaunchConfiguration('joint_prefix')
 
-    # Distinct node name so this instance does not collide with ur15_web_node.
-    # NOTE: parameter names below (`ur15_ip`, `ur15_port`) match what the node
-    # code declares; we are feeding them the ur10e values intentionally.
+    # Distinct ROS node name so this instance does not collide with the
+    # ur15 web instance (both run the same ``ur_web_node`` executable).
+    # NOTE: parameter names below (`ur15_ip`, `ur15_port`) match what the
+    # node code declares; we are feeding them the ur10e values intentionally.
     ur10e_web_node = Node(
         package='ur_web',
-        executable='ur15_web_node',
+        executable='ur_web_node',
         name='ur10e_web_node',
         output='screen',
         parameters=[{

@@ -78,9 +78,9 @@ PY
 ```bash
 cd /home/robot/Documents/robot_dc/colcon_ws && source install/setup.bash
 python3 - <<'PY'
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 import time
-r = UR15Robot("192.168.1.16", 30002); r.open()
+r = URRobot("192.168.1.16", 30002); r.open()
 r.popup("Hello from URSim", title="Mock Robot")
 before = r.get_actual_joint_positions()
 target = list(before); target[0] += 0.2
@@ -98,7 +98,7 @@ You should see the popup on the Polyscope teach pendant and `delta j0: 0.2` prin
 
 ## 5. Visualize the mock in RViz
 
-The [`mock_ur_visualization`](../colcon_ws/src/mock_ur_visualization) package drives RViz from the same URScript port `UR15Robot` uses — no `ur_robot_driver` needed (avoids RTDE port-30004 contention with the rest of this repo's stack). It launches a single arm: `robot_state_publisher` + a URScript-polling joint publisher + RViz2, all under the `/mock` ROS namespace so it never collides with a real driver running in the same graph.
+The [`mock_ur_visualization`](../colcon_ws/src/mock_ur_visualization) package drives RViz from the same URScript port `URRobot` uses — no `ur_robot_driver` needed (avoids RTDE port-30004 contention with the rest of this repo's stack). It launches a single arm: `robot_state_publisher` + a URScript-polling joint publisher + RViz2, all under the `/mock` ROS namespace so it never collides with a real driver running in the same graph.
 
 Build once:
 
@@ -214,7 +214,7 @@ For URScript / dashboard / RTDE work alone, this stack is **not** required.
 |---|---|---|
 | 29999 | Dashboard | UR Dashboard protocol (not HTTP). |
 | 30001 | Secondary URScript | RTSI / secondary client interface. |
-| 30002 | Primary URScript | What `UR15Robot` uses for `movej`, `popup`, `textmsg`, … |
+| 30002 | Primary URScript | What `URRobot` uses for `movej`, `popup`, `textmsg`, … |
 | 30003 | Realtime data | 1 ms cycle joint / TCP / force readback. |
 | 30004 | RTDE | `ur_robot_driver` controller pipeline. |
 | 5900 | VNC | Native client (e.g. Remmina). |

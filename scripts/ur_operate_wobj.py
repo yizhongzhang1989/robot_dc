@@ -2,7 +2,7 @@ import os
 import json
 import numpy as np
 import requests
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 import time
 import socket
 import argparse
@@ -124,7 +124,7 @@ class UROperateWobj:
         """Initialize UR15 robot instance and establish connection"""
         try:
             print(f'Initializing UR15 robot at {self.robot_ip}:{self.robot_port}...')
-            self.robot = UR15Robot(ip=self.robot_ip, port=self.robot_port)
+            self.robot = URRobot(ip=self.robot_ip, port=self.robot_port)
             
             # Attempt to connect
             res = self.robot.open()

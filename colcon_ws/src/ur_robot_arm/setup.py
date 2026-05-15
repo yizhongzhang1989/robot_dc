@@ -22,7 +22,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'ur15_robot_arm_node = ur_robot_arm.ur15_robot_arm_node:main',
+            'ur_robot_arm_node = ur_robot_arm.ur_robot_arm_node:main',
         ],
     },
 )

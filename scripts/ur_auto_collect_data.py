@@ -31,7 +31,7 @@ import json
 import os
 import time
 import argparse
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 from cv_bridge import CvBridge
 import cv2
 import sys
@@ -223,7 +223,7 @@ class URAutoCollectData(Node):
         """Connect to UR robot"""
         try:
             self.get_logger().info(f'Connecting to UR robot at {self.robot_ip}:{self.robot_port}...')
-            self.ur_robot = UR15Robot(self.robot_ip, self.robot_port)
+            self.ur_robot = URRobot(self.robot_ip, self.robot_port)
             result = self.ur_robot.open()
             if result == 0:
                 self.get_logger().info('Successfully connected to UR robot')

@@ -28,7 +28,7 @@ from core.positioning_3d_webapi import Positioning3DWebAPIClient, load_camera_pa
 
 
 # Robot control imports
-from ur_robot_arm.ur15 import UR15Robot
+from ur_robot_arm.ur_robot import URRobot
 
 # ROS2 imports
 import rclpy
@@ -39,7 +39,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
 # Robot status imports
-from robot_status.client_utils import RobotStatusClient
+from robot_status_redis.client_utils import RobotStatusClient
 
 
 class URLocate(URCapture):

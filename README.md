@@ -141,8 +141,7 @@ A modular ROS 2-based control system for the DC robot, which consists of a dual-
   * [cam\_node](colcon_ws/src/cam_node/README.md)
   * [leadshine\_motor](colcon_ws/src/leadshine_motor/README.md)
   * [modbus\_driver](colcon_ws/src/modbus_driver/README.md)
-  * [robot\_status](colcon_ws/src/robot_status/README.md) - Original file-based status management
-  * [robot\_status\_redis](colcon_ws/src/robot_status_redis/README.md) - **Recommended** high-performance Redis-based status management
+  * [robot\_status\_redis](colcon_ws/src/robot_status_redis/README.md) - High-performance Redis-based status management with web dashboard
   * [robot\_teleop](colcon_ws/src/robot_teleop/README.md)
   * [robot\_web](colcon_ws/src/robot_web/README.md)
 * Shared interfaces are in [`modbus_driver_interfaces`](colcon_ws/src/modbus_driver_interfaces).
@@ -195,8 +194,7 @@ robot_dc/
 │       ├── robotiq_gripper_msgs/  # Robotiq gripper message definitions
 │       ├── robot_arm_web/         # Generic robot arm web interface
 │       ├── robot_bringup/         # Unified system-level launch entry points
-│       ├── robot_status/          # Original file-based robot status management
-│       ├── robot_status_redis/    # Redis-based status management (recommended)
+│       ├── robot_status_redis/    # Redis-based status management with web dashboard
 │       ├── robot_teleop/          # Joystick teleoperation support
 │       ├── robot_web/             # Web-based interface for control and monitoring
 │       ├── system_monitor/        # System monitoring utilities
